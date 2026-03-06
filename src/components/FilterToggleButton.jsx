@@ -27,21 +27,18 @@ const FilterToggleButton = ({
         sx={{
           color: filtersVisible ? 'primary.contrastText' : 'text.secondary',
           backgroundColor: filtersVisible ? 'primary.main' : 'transparent',
-          transition: 'all 0.2s ease',
+          // 只过渡交互相关属性，避免首次挂载时 'all' 导致的抖动
+          transition: 'color 0.2s ease, background-color 0.2s ease',
           '&:hover': {
             color: filtersVisible ? 'primary.contrastText' : 'text.primary',
             backgroundColor: filtersVisible ? 'primary.dark' : 'action.hover',
-            transform: 'scale(1.1)'
           },
           '&:active': {
-            transform: 'scale(0.95)'
+            opacity: 0.7
           }
         }}
       >
-        <FilterIcon sx={{
-          transition: 'transform 0.2s ease',
-          transform: filtersVisible ? 'rotate(0deg)' : 'rotate(-90deg)'
-        }} />
+        <FilterIcon />
       </IconButton>
     </Tooltip>
   );

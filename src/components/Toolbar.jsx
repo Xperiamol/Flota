@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useState, useCallback } from 'react'
 import {
   Box,
   Toolbar as MuiToolbar,
@@ -34,6 +34,7 @@ import { executePluginCommand } from '../api/pluginAPI'
 import { getPluginCommandIcon } from '../utils/pluginCommandUtils.jsx'
 import { createTransitionString, ANIMATIONS } from '../utils/animationConfig'
 import { t } from '../utils/i18n'
+import logger from '../utils/logger'
 
 const Toolbar = ({
   onToggleSidebar,
@@ -82,14 +83,13 @@ const Toolbar = ({
 
   // 移除settingsAnchor状态，改用DropdownMenu组件
 
-  const deletedNotesCount = notes.filter(note => note.is_deleted).length
+  const deletedNotesCount = useMemo(() => notes.filter(note => note.is_deleted).length, [notes])
 
-  const handleCreateNote = async () => {
+  const handleCreateNote = useCallback(async () => {
     try {
       const result = await createNote({
         title: t('notes.untitled'),
         content: '',
-        category: '',
         tags: []
       })
       if (result?.success && result.data) {
@@ -98,15 +98,14 @@ const Toolbar = ({
     } catch (error) {
       console.error('创建笔记失败:', error)
     }
-  }
+  }, [createNote, setSelectedNoteId, t])
 
   // 快速输入：创建空白笔记并在独立窗口打开
-  const handleQuickInput = async () => {
+  const handleQuickInput = useCallback(async () => {
     try {
       const result = await createNote({
         title: t('notes.untitled'),
         content: '',
-        category: '',
         tags: []
       })
       if (result?.success && result.data) {
@@ -116,38 +115,17 @@ const Toolbar = ({
     } catch (error) {
       console.error('快速输入失败:', error)
     }
-  }
-
-
-  const createSettingsConfig = () => ({
-    options: [
-      {
-        value: 'preferences',
-        label: t('settings.general'),
-        icon: SettingsIcon
-      }
-    ],
-    handleSelect: (value) => {
-      // 设置选项的处理逻辑可以在这里添加
-    }
-  });
-
-  // 当前设置配置已隐藏
-  // const settingsConfig = createSettingsConfig();
-
+  }, [createNote, t])
 
 
   // 其他视图的创建处理函数
-  const handleCreateTodo = async () => {
+  const handleCreateTodo = useCallback(async () => {
     if (onCreateTodo) {
       onCreateTodo();
     }
-  };
+  }, [onCreateTodo]);
 
-  const handleCreateEvent = async () => {
-    console.log('handleCreateEvent被调用了');
-    console.log('selectedDate:', selectedDate);
-
+  const handleCreateEvent = useCallback(async () => {
     // 创建日历事件，预设选中的日期
     const initialData = {}
 
@@ -158,16 +136,12 @@ const Toolbar = ({
       const month = String(selectedDate.getMonth() + 1).padStart(2, '0')
       const day = String(selectedDate.getDate()).padStart(2, '0')
       initialData.due_date = `${year}-${month}-${day}`
-      console.log('设置初始日期:', initialData.due_date);
     }
 
-    console.log('调用onCreateTodo，参数:', initialData);
     if (onCreateTodo) {
       onCreateTodo(initialData)
-    } else {
-      console.log('onCreateTodo不存在');
     }
-  };
+  }, [selectedDate, onCreateTodo]);
 
   // 日历导航函数 - 遵循DRY原则的通用日期处理
   const createDateNavigationHandler = (dateTransform) => {
@@ -215,7 +189,7 @@ const Toolbar = ({
     getPluginCommandIcon(command, { fontSize: 'small', size: 20 })
 
   // 根据当前视图获取标题和新建按钮文本
-  const getViewConfig = () => {
+  const viewConfig = useMemo(() => {
     switch (currentView) {
       case 'notes':
         return {
@@ -313,9 +287,9 @@ const Toolbar = ({
           showSidebarToggle: true
         };
     }
-  };
-
-  const viewConfig = getViewConfig();
+  }, [currentView, showDeleted, todoViewMode, calendarShowCompleted, calendarCurrentDate, calendarViewMode,
+      handleCreateNote, handleCreateTodo, handleCreateEvent, handleQuickInput,
+      onTodoViewModeChange, onTodoShowCompletedChange, onCalendarShowCompletedChange, onCalendarViewModeChange, t]);
 
   return (
     <MuiToolbar
@@ -429,7 +403,7 @@ const Toolbar = ({
                         key={option.value}
                         variant={(calendarViewMode || 'todos') === option.value ? 'contained' : 'outlined'}
                         onClick={() => {
-                          console.log('Calendar view mode clicked:', option.value);
+                          logger.log('Calendar view mode clicked:', option.value);
                           if (onCalendarViewModeChange) {
                             onCalendarViewModeChange(option.value);
                           }

@@ -116,21 +116,23 @@ const ImageUploadButton = ({ onImageInsert, disabled = false }) => {
   return (
     <>
       <Tooltip title="插入图片">
-        <IconButton
-          size="small"
-          onClick={() => setDialogOpen(true)}
-          disabled={disabled}
-          sx={{
-            border: '1px solid',
-            borderColor: 'divider',
-            borderRadius: 1,
-            '&:hover': {
-              backgroundColor: 'action.hover'
-            }
-          }}
-        >
-          <ImageIcon />
-        </IconButton>
+        <span>
+          <IconButton
+            size="small"
+            onClick={() => setDialogOpen(true)}
+            disabled={disabled}
+            sx={{
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 1,
+              '&:hover': {
+                backgroundColor: 'action.hover'
+              }
+            }}
+          >
+            <ImageIcon />
+          </IconButton>
+        </span>
       </Tooltip>
       
       <ImageUploadDialog

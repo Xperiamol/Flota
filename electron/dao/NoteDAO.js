@@ -290,7 +290,9 @@ class NoteDAO {
    */
   findAll(options = {}) {
     const db = this.getDB();
-    const {
+    const VALID_SORT_COLUMNS = ['updated_at', 'created_at', 'title'];
+    const VALID_SORT_ORDERS = ['ASC', 'DESC'];
+    let {
       page = 1,
       limit = 50,
       category = null,
@@ -301,6 +303,10 @@ class NoteDAO {
       includeDeleted = false,
       pinnedFirst = true
     } = options;
+    
+    // 防止 SQL 注入：白名单校验
+    if (!VALID_SORT_COLUMNS.includes(sortBy)) sortBy = 'updated_at';
+    if (!VALID_SORT_ORDERS.includes(sortOrder.toUpperCase())) sortOrder = 'DESC';
     
     let whereConditions = [];
     let params = [];

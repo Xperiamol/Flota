@@ -35,6 +35,7 @@ import { createTransitionString, ANIMATIONS } from '../utils/animationConfig';
 import { useTranslation } from '../utils/i18n';
 import TimeZoneUtils from '../utils/timeZoneUtils';
 import { useError } from './ErrorProvider';
+import logger from '../utils/logger';
 
 const Profile = () => {
   const { t } = useTranslation();
@@ -55,15 +56,15 @@ const Profile = () => {
 
         // 获取待办事项统计
         const todoStatsResult = await fetchTodoStats();
-        console.log('[Profile] 待办统计结果:', todoStatsResult);
+        logger.log('[Profile] 待办统计结果:', todoStatsResult);
 
         // invoke函数会自动解包数据，直接返回stats对象
         if (todoStatsResult && typeof todoStatsResult === 'object') {
-          console.log('[Profile] 待办总数:', todoStatsResult.total);
-          console.log('[Profile] 已完成:', todoStatsResult.completed);
-          console.log('[Profile] 进行中:', todoStatsResult.pending);
-          console.log('[Profile] 逾期:', todoStatsResult.overdue);
-          console.log('[Profile] 今日到期:', todoStatsResult.dueToday);
+          logger.log('[Profile] 待办总数:', todoStatsResult.total);
+          logger.log('[Profile] 已完成:', todoStatsResult.completed);
+          logger.log('[Profile] 进行中:', todoStatsResult.pending);
+          logger.log('[Profile] 逾期:', todoStatsResult.overdue);
+          logger.log('[Profile] 今日到期:', todoStatsResult.dueToday);
           setTodoStats(todoStatsResult);
         } else {
           console.error('[Profile] 待办统计数据格式错误:', todoStatsResult);
@@ -81,7 +82,7 @@ const Profile = () => {
 
         // 获取已安装插件
         const pluginsResult = await fetchInstalledPlugins();
-        console.log('[Profile] 插件列表:', pluginsResult);
+        logger.log('[Profile] 插件列表:', pluginsResult);
         if (Array.isArray(pluginsResult)) {
           setInstalledPlugins(pluginsResult);
         }
@@ -908,7 +909,7 @@ const Profile = () => {
                               backgroundColor: colors[day.level],
                               borderRadius: '2px',
                               cursor: 'pointer',
-                              transition: 'all 0.2s',
+                              transition: 'transform 0.2s, box-shadow 0.2s',
                               '&:hover': {
                                 transform: 'scale(1.3)',
                                 boxShadow: 1
@@ -994,7 +995,7 @@ const Profile = () => {
                           fontWeight: index < 3 ? 600 : 400,
                           bgcolor: index < 3 ? 'info.main' : 'default',
                           color: index < 3 ? 'white' : 'text.primary',
-                          transition: 'all 0.2s',
+                          transition: 'transform 0.2s, box-shadow 0.2s',
                           '&:hover': {
                             transform: 'scale(1.1)',
                             boxShadow: 2

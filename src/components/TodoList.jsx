@@ -81,6 +81,8 @@ import {
 } from '../api/todoAPI';
 import { ANIMATIONS, createAnimationString, createTransitionString, GREEN_SWEEP_KEYFRAMES } from '../utils/animationConfig';
 import { useStore } from '../store/useStore';
+import { isTodoCompleted, isFutureRecurringTodo } from '../utils/todoDisplayUtils';
+import logger from '../utils/logger';
 
 // 简单的 Web Audio API 铃铛声
 const playChristmasBell = () => {
@@ -182,11 +184,11 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
   }, {
     onDragStart: (dragData) => {
       // 添加Todo拖拽开始时的自定义逻辑
-      console.log('Todo列表拖拽开始，添加视觉反馈');
+      logger.log('Todo列表拖拽开始，添加视觉反馈');
     },
     onCreateWindow: (dragData) => {
       // Todo独立窗口创建成功后的回调
-      console.log('Todo独立窗口创建成功');
+      logger.log('Todo独立窗口创建成功');
     }
   })
 
@@ -213,7 +215,7 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
       if (isExternalData && externalTodos) {
         rawTodos = [...externalTodos].map(todo => ({
           ...todo,
-          completed: Boolean(todo.is_completed || todo.completed),
+          completed: isTodoCompleted(todo),
           title: todo.content || todo.title,
           priority: todo.priority || getPriorityFromQuadrant(todo.is_important, todo.is_urgent),
           focus_time_seconds: (() => {
@@ -234,7 +236,7 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
 
         rawTodos = (result || []).map(todo => ({
           ...todo,
-          completed: Boolean(todo.is_completed),
+          completed: isTodoCompleted(todo),
           title: todo.content,
           priority: getPriorityFromQuadrant(todo.is_important, todo.is_urgent),
           focus_time_seconds: (() => {
@@ -348,6 +350,9 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
   };
 
   const handleToggleComplete = async (todo) => {
+    // 未来重复待办不可完成
+    if (isFutureRecurringTodo(todo)) return;
+
     // 如果已经完成，直接切换状态
     if (todo.completed) {
       try {
@@ -494,7 +499,7 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
         // 刷新待办列表
         loadTodos();
 
-        console.log('已转换为笔记:', result);
+        logger.log('已转换为笔记:', result);
       }
 
       handleMenuClose();
@@ -713,7 +718,7 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
                       borderRadius: '12px',
                       border: '1px solid transparent',
                       backgroundColor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.6)',
-                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                      transition: 'background-color 0.2s cubic-bezier(0.4,0,0.2,1), box-shadow 0.2s cubic-bezier(0.4,0,0.2,1), border-color 0.2s cubic-bezier(0.4,0,0.2,1)',
                       position: 'relative',
                       overflow: 'hidden',
                       // 完成动画作用于按钮本身
@@ -759,6 +764,9 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
                       </ListItemIcon>
                     )}
                     <ListItemIcon sx={{ minWidth: 40 }}>
+                      {isFutureRecurringTodo(todo) ? (
+                        <ScheduleIcon sx={{ color: 'text.disabled', opacity: 0.35 }} />
+                      ) : (
                       <IconButton
                         size="small"
                         onClick={(e) => {
@@ -797,6 +805,7 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
                           <RadioButtonUncheckedIcon sx={{ color: 'text.secondary' }} />
                         )}
                       </IconButton>
+                      )}
                     </ListItemIcon>
 
                     <ListItemText

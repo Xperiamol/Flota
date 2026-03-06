@@ -433,6 +433,10 @@ class WindowManager extends EventEmitter {
       noteWindow.on('closed', () => {
         this.windows.delete(windowId);
         this.noteWindows.delete(noteId);
+        // 通知主窗口笔记独立窗口已关闭
+        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+          this.mainWindow.webContents.send('window:closed', { noteId, windowId });
+        }
       });
 
       // 添加页面加载失败的错误处理
@@ -448,6 +452,10 @@ class WindowManager extends EventEmitter {
       });
 
       console.log(`笔记窗口创建成功: ${windowId}`);
+      // 通知主窗口笔记独立窗口已创建
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('window:created', { noteId, windowId });
+      }
       return { windowId };
     } catch (error) {
       console.error('创建笔记窗口失败:', error);

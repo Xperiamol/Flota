@@ -186,6 +186,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     test: (config) => ipcRenderer.invoke('proxy:test', config)
   },
 
+  // 本地备份/恢复
+  backup: {
+    create: () => ipcRenderer.invoke('backup:create'),
+    restore: () => ipcRenderer.invoke('backup:restore')
+  },
+
   // 数据导入导出API
   dataImport: {
     // 文件选择
@@ -386,7 +392,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     deleteImages: (fileMap) => ipcRenderer.invoke('whiteboard:delete-images', fileMap),
 
     // 获取存储统计
-    getStorageStats: () => ipcRenderer.invoke('whiteboard:get-storage-stats')
+    getStorageStats: () => ipcRenderer.invoke('whiteboard:get-storage-stats'),
+
+    // 保存白板预览图（PNG）
+    savePreview: (syncId, pngBase64) => ipcRenderer.invoke('whiteboard:save-preview', { syncId, pngBase64 })
   },
 
   // AI 相关 API
@@ -418,11 +427,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // 测试连接
     testConnection: (config) => ipcRenderer.invoke('stt:test-connection', config),
 
-    // 获取支持的提供商列表
-    getProviders: () => ipcRenderer.invoke('stt:get-providers'),
-
     // 语音转文字
     transcribe: (audioFile, options) => ipcRenderer.invoke('stt:transcribe', { audioFile, options })
+  },
+
+  // 音频相关 API
+  audio: {
+    saveFromBuffer: (buffer, fileName) => ipcRenderer.invoke('audio:save-from-buffer', buffer, fileName)
   },
 
   // 插件商店与插件运行时 API

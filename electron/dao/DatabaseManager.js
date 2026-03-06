@@ -185,6 +185,7 @@ class DatabaseManager {
         next_due_date DATETIME NULL,
         is_recurring INTEGER DEFAULT 0,
         parent_todo_id INTEGER NULL,
+        completions TEXT DEFAULT '[]',
         is_deleted INTEGER DEFAULT 0,
         deleted_at DATETIME NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -216,7 +217,7 @@ class DatabaseManager {
       )`
     ];
 
-    // 创建索引
+    // 创建索引（移除 sync_id 相关索引，将在迁移阶段创建）
     const indexes = [
       'CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes(created_at DESC)',
       'CREATE INDEX IF NOT EXISTS idx_notes_updated_at ON notes(updated_at DESC)',
@@ -224,14 +225,14 @@ class DatabaseManager {
       'CREATE INDEX IF NOT EXISTS idx_notes_is_pinned ON notes(is_pinned)',
       'CREATE INDEX IF NOT EXISTS idx_notes_is_deleted ON notes(is_deleted)',
       'CREATE INDEX IF NOT EXISTS idx_notes_title ON notes(title)',
-      'CREATE INDEX IF NOT EXISTS idx_notes_sync_id ON notes(sync_id)',
+      // sync_id 索引移到 _migrateSyncId() 中创建
       'CREATE INDEX IF NOT EXISTS idx_settings_key ON settings(key)',
       'CREATE INDEX IF NOT EXISTS idx_todos_created_at ON todos(created_at DESC)',
       'CREATE INDEX IF NOT EXISTS idx_todos_due_date ON todos(due_date)',
       'CREATE INDEX IF NOT EXISTS idx_todos_is_completed ON todos(is_completed)',
       'CREATE INDEX IF NOT EXISTS idx_todos_is_important ON todos(is_important)',
       'CREATE INDEX IF NOT EXISTS idx_todos_is_urgent ON todos(is_urgent)',
-      'CREATE INDEX IF NOT EXISTS idx_todos_sync_id ON todos(sync_id)',
+      // sync_id 索引移到 _migrateSyncId() 中创建
       'CREATE INDEX IF NOT EXISTS idx_changes_entity ON changes(entity_type, entity_id)',
       'CREATE INDEX IF NOT EXISTS idx_changes_synced ON changes(synced)',
       'CREATE INDEX IF NOT EXISTS idx_changes_created_at ON changes(created_at DESC)',
@@ -355,6 +356,12 @@ class DatabaseManager {
           console.log(`添加${column.name}字段到todos表...`);
           this.db.exec(column.sql);
         }
+      }
+
+      // ===== Schedule model: completions 字段 =====
+      if (!columnNames.includes('completions')) {
+        console.log('添加completions字段到todos表 (schedule model)...');
+        this.db.exec("ALTER TABLE todos ADD COLUMN completions TEXT DEFAULT '[]'");
       }
 
       if (!columnNames.includes('focus_time_seconds')) {

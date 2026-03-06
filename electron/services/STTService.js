@@ -4,8 +4,15 @@
  */
 
 const { EventEmitter } = require('events');
-const FormData = require('form-data');
 const fs = require('fs');
+const crypto = require('crypto');
+const zlib = require('zlib');
+
+let uuidv4;
+try { uuidv4 = require('uuid').v4; } catch (_) { uuidv4 = null; }
+
+let WSClass;
+try { WSClass = require('ws'); } catch (_) { WSClass = null; }
 
 class STTService extends EventEmitter {
   constructor(settingDAO) {
@@ -36,11 +43,9 @@ class STTService extends EventEmitter {
   ensureDefaultSettings() {
     const defaults = [
       { key: 'stt_enabled', value: 'false', type: 'boolean', description: 'STT功能开关' },
-      { key: 'stt_provider', value: 'openai', type: 'string', description: 'STT服务提供商' },
-      { key: 'stt_api_key', value: '', type: 'string', description: 'STT API密钥' },
-      { key: 'stt_api_url', value: '', type: 'string', description: '自定义API地址' },
-      { key: 'stt_model', value: 'whisper-1', type: 'string', description: 'STT模型' },
-      { key: 'stt_language', value: 'auto', type: 'string', description: '识别语言' }
+      { key: 'stt_volc_appid', value: '', type: 'string', description: '火山引擎 App ID' },
+      { key: 'stt_volc_token', value: '', type: 'string', description: '火山引擎 Access Token' },
+      { key: 'stt_volc_resource_id', value: 'volcengine_short_sentence', type: 'string', description: '火山引擎 Cluster ID (一句话识别)' }
     ];
 
     defaults.forEach(({ key, value, type, description }) => {
@@ -56,32 +61,17 @@ class STTService extends EventEmitter {
    */
   async getConfig() {
     try {
-      const enabledSetting = this.settingDAO.get('stt_enabled');
-      const providerSetting = this.settingDAO.get('stt_provider');
-      const apiKeySetting = this.settingDAO.get('stt_api_key');
-      const apiUrlSetting = this.settingDAO.get('stt_api_url');
-      const modelSetting = this.settingDAO.get('stt_model');
-      const languageSetting = this.settingDAO.get('stt_language');
-
+      const g = (key, def = '') => { const s = this.settingDAO.get(key); return s ? s.value : def; };
       const config = {
-        enabled: enabledSetting ? enabledSetting.value : false,
-        provider: providerSetting ? providerSetting.value : 'openai',
-        apiKey: apiKeySetting ? apiKeySetting.value : '',
-        apiUrl: apiUrlSetting ? apiUrlSetting.value : '',
-        model: modelSetting ? modelSetting.value : 'whisper-1',
-        language: languageSetting ? languageSetting.value : 'auto'
+        enabled: g('stt_enabled') === true || g('stt_enabled') === 'true',
+        volcAppId: g('stt_volc_appid'),
+        volcToken: g('stt_volc_token'),
+        volcResourceId: g('stt_volc_resource_id', 'volcengine_short_sentence')
       };
-
-      return {
-        success: true,
-        data: config
-      };
+      return { success: true, data: config };
     } catch (error) {
       console.error('Failed to get STT config:', error);
-      return {
-        success: false,
-        error: error.message
-      };
+      return { success: false, error: error.message };
     }
   }
 
@@ -90,14 +80,12 @@ class STTService extends EventEmitter {
    */
   async saveConfig(config) {
     try {
-      const { enabled, provider, apiKey, apiUrl, model, language } = config;
+      const { enabled, volcAppId, volcToken, volcResourceId } = config;
 
       this.settingDAO.set('stt_enabled', enabled, 'boolean', 'STT功能开关');
-      this.settingDAO.set('stt_provider', provider, 'string', 'STT服务提供商');
-      this.settingDAO.set('stt_api_key', apiKey, 'string', 'STT API密钥');
-      this.settingDAO.set('stt_api_url', apiUrl || '', 'string', '自定义API地址');
-      this.settingDAO.set('stt_model', model, 'string', 'STT模型');
-      this.settingDAO.set('stt_language', language || 'auto', 'string', '识别语言');
+      this.settingDAO.set('stt_volc_appid', volcAppId || '', 'string', '火山引擎 App ID');
+      this.settingDAO.set('stt_volc_token', volcToken || '', 'string', '火山引擎 Access Token');
+      this.settingDAO.set('stt_volc_resource_id', volcResourceId || 'volcengine_short_sentence', 'string', '火山引擎 Cluster ID');
 
       // 触发配置更改事件
       this.emit('config-changed', config);
@@ -120,174 +108,63 @@ class STTService extends EventEmitter {
    */
   async testConnection(config) {
     try {
-      const { provider, apiKey, apiUrl } = config;
-
-      if (!apiKey) {
-        return {
-          success: false,
-          error: '请先配置API密钥'
-        };
-      }
-
-      // 根据不同的提供商测试连接
-      let testResult;
-      switch (provider) {
-        case 'openai':
-          testResult = await this.testOpenAI(apiKey);
-          break;
-        case 'aliyun':
-          testResult = await this.testAliyun(apiKey);
-          break;
-        case 'custom':
-          testResult = await this.testCustom(apiUrl, apiKey);
-          break;
-        default:
-          return {
-            success: false,
-            error: '不支持的STT提供商'
-          };
-      }
-
-      return testResult;
+      const { volcAppId, volcToken, volcResourceId } = config;
+      if (!volcAppId || !volcToken) return { success: false, error: '请先配置火山引擎 App ID 和 Access Token' };
+      return await this.testVolcengine(volcAppId, volcToken, volcResourceId);
     } catch (error) {
       console.error('Failed to test STT connection:', error);
-      return {
-        success: false,
-        error: error.message
-      };
+      return { success: false, error: error.message };
     }
   }
 
   /**
-   * 测试OpenAI Whisper连接
+   * 测试火山引擎连接（通过 AUC HTTP 接口验证 token/appid 有效性）
    */
-  async testOpenAI(apiKey) {
+  async testVolcengine(appId, token, resourceId = 'volcengine_short_sentence') {
     try {
-      // 简单的验证请求，检查API密钥是否有效
-      const response = await fetch('https://api.openai.com/v1/models', {
-        method: 'GET',
+      // 使用固定的 AUC cluster 来测试 token/appid 有效性
+      // 实际转文字使用 WebSocket 接口（一句话识别），cluster 在那里才使用 resourceId
+      const testCluster = 'volc_auc_common_flash';
+      // 提交一个无效 URL 任务，通过返回的应用错误码判断认证是否正确
+      // 认证通过: code=1001(参数无效/音频无效) 或 1015(下载失败)
+      // 认证失败: code=1002
+      const response = await fetch('https://openspeech.bytedance.com/api/v1/auc/submit', {
+        method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiKey}`
-        }
+          'Authorization': `Bearer;${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          app: { appid: appId, token: token, cluster: testCluster },
+          user: { uid: appId },
+          audio: { format: 'wav', url: 'http://test.invalid/test.wav' }
+        })
       });
 
-      if (response.ok) {
-        return {
-          success: true,
-          message: 'OpenAI Whisper连接测试成功'
-        };
-      } else {
-        const error = await response.json();
-        return {
-          success: false,
-          error: error.error?.message || '连接失败'
-        };
+      let data;
+      try { data = await response.json(); } catch (_) { data = {}; }
+      console.log('[STT] testVolcengine status:', response.status, 'body:', JSON.stringify(data));
+
+      // 火山引擎返回结构: 顶层 { code, message } 或嵌套 { resp: { code, message } }
+      const code = data?.resp?.code ?? data?.code;
+      const msg  = data?.resp?.message || data?.message || '';
+
+      // 认证通过: 发送无效 URL 后得到 1014/1015(下载/参数无效) 说明 token 已被接受
+      if (code === 1000 || code === 1014 || code === 1015) {
+        return { success: true, message: `连接成功（appid=${appId}）` };
       }
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-
-  /**
-   * 测试阿里云语音识别连接
-   */
-  async testAliyun(apiKey) {
-    try {
-      // 阿里云语音识别的测试逻辑
-      // 这里简化处理，实际需要根据阿里云SDK进行验证
-      return {
-        success: true,
-        message: '阿里云语音识别连接测试成功（简化验证）'
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-
-  /**
-   * 测试自定义API连接
-   */
-  async testCustom(apiUrl, apiKey) {
-    try {
-      if (!apiUrl) {
-        return {
-          success: false,
-          error: '请先配置自定义API地址'
-        };
+      // 明确认证失败
+      if (code === 1002 || code === 1001) {
+        return { success: false, error: `认证失败(${code}): token 或 appid 无效 — ${msg}` };
       }
-
-      // 简单的ping测试
-      return {
-        success: true,
-        message: '自定义API连接测试成功（简化验证）'
-      };
+      // HTTP 层面失败且无可识别的业务码
+      if (!response.ok) {
+        return { success: false, error: `HTTP ${response.status}: ${msg || response.statusText}` };
+      }
+      return { success: false, error: `未知响应 code=${code}: ${msg}` };
     } catch (error) {
-      return {
-        success: false,
-        error: error.message
-      };
+      return { success: false, error: error.message };
     }
-  }
-
-  /**
-   * 获取支持的STT提供商列表
-   */
-  getProviders() {
-    return {
-      success: true,
-      data: [
-        {
-          id: 'openai',
-          name: 'OpenAI Whisper',
-          description: 'OpenAI的Whisper语音识别模型',
-          models: ['whisper-1'],
-          languages: [
-            { code: 'auto', name: '自动检测' },
-            { code: 'zh', name: '中文' },
-            { code: 'en', name: '英文' },
-            { code: 'ja', name: '日文' },
-            { code: 'ko', name: '韩文' },
-            { code: 'fr', name: '法文' },
-            { code: 'de', name: '德文' },
-            { code: 'es', name: '西班牙文' }
-          ],
-          requiresApiKey: true,
-          requiresApiUrl: false
-        },
-        {
-          id: 'aliyun',
-          name: '阿里云语音识别',
-          description: '阿里云智能语音服务',
-          models: ['paraformer-realtime-v1'],
-          languages: [
-            { code: 'auto', name: '自动检测' },
-            { code: 'zh', name: '中文' },
-            { code: 'en', name: '英文' }
-          ],
-          requiresApiKey: true,
-          requiresApiUrl: false
-        },
-        {
-          id: 'custom',
-          name: '自定义',
-          description: '兼容Whisper API格式的自定义服务',
-          models: [],
-          languages: [
-            { code: 'auto', name: '自动检测' },
-            { code: 'zh', name: '中文' },
-            { code: 'en', name: '英文' }
-          ],
-          requiresApiKey: true,
-          requiresApiUrl: true
-        }
-      ]
-    };
   }
 
   /**
@@ -305,39 +182,14 @@ class STTService extends EventEmitter {
       const config = configResult.data;
       
       if (!config.enabled) {
-        return {
-          success: false,
-          error: 'STT功能未启用'
-        };
+        return { success: false, error: 'STT功能未启用' };
       }
 
-      if (!config.apiKey) {
-        return {
-          success: false,
-          error: '请先配置API密钥'
-        };
+      if (!config.volcAppId || !config.volcToken) {
+        return { success: false, error: '请先配置火山引擎 App ID 和 Access Token' };
       }
 
-      // 根据提供商调用相应的API
-      let result;
-      switch (config.provider) {
-        case 'openai':
-          result = await this.transcribeOpenAI(config, audioFile, options);
-          break;
-        case 'aliyun':
-          result = await this.transcribeAliyun(config, audioFile, options);
-          break;
-        case 'custom':
-          result = await this.transcribeCustom(config, audioFile, options);
-          break;
-        default:
-          return {
-            success: false,
-            error: '不支持的STT提供商'
-          };
-      }
-
-      return result;
+      return await this.transcribeVolcengine(config, audioFile, options);
     } catch (error) {
       console.error('STT transcribe failed:', error);
       return {
@@ -348,143 +200,162 @@ class STTService extends EventEmitter {
   }
 
   /**
-   * OpenAI Whisper语音转文字
+   * 火山引擎一句话识别（WebSocket 二进制协议）
    */
-  async transcribeOpenAI(config, audioFile, options = {}) {
+  async transcribeVolcengine(config, audioFile, options = {}) {
     try {
-      const formData = new FormData();
-      
-      // 处理音频文件
+      if (!config.volcAppId || !config.volcToken) throw new Error('请先配置火山引擎 App ID 和 Access Token');
+      if (!WSClass) throw new Error('WebSocket 模块 (ws) 不可用，请运行 npm install ws');
+
+      const cluster = config.volcResourceId || 'volcengine_short_sentence';
+
+      // 准备音频: 不支持的格式用 ffmpeg 转 wav
+      let audioBuffer, fmt, sampleRate = 16000;
       if (typeof audioFile === 'string') {
-        // 文件路径
-        formData.append('file', fs.createReadStream(audioFile));
-      } else if (Buffer.isBuffer(audioFile)) {
-        // Buffer数据
-        formData.append('file', audioFile, {
-          filename: 'audio.wav',
-          contentType: 'audio/wav'
-        });
-      } else {
-        throw new Error('不支持的音频文件格式');
-      }
-
-      formData.append('model', config.model || 'whisper-1');
-      
-      if (config.language && config.language !== 'auto') {
-        formData.append('language', config.language);
-      }
-
-      if (options.prompt) {
-        formData.append('prompt', options.prompt);
-      }
-
-      const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.apiKey}`,
-          ...formData.getHeaders()
-        },
-        body: formData
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error?.message || '语音识别失败');
-      }
-
-      const data = await response.json();
-      return {
-        success: true,
-        data: {
-          text: data.text,
-          language: data.language || config.language
+        const ext = audioFile.split('.').pop()?.toLowerCase() || '';
+        const supported = { wav: 'wav', mp3: 'mp3', ogg: 'ogg', opus: 'ogg', webm: 'ogg' };
+        if (supported[ext]) {
+          audioBuffer = fs.readFileSync(audioFile);
+          fmt = supported[ext];
+        } else {
+          const wavBuf = this._convertToWav(audioFile);
+          if (!wavBuf) throw new Error(`不支持 ${ext} 格式，且 ffmpeg 不可用。请安装 ffmpeg 或使用 wav/mp3/ogg 格式。`);
+          audioBuffer = wavBuf;
+          fmt = 'wav';
         }
+      } else if (Buffer.isBuffer(audioFile)) {
+        audioBuffer = audioFile;
+        fmt = 'wav';
+      } else {
+        throw new Error('不支持的音频文件类型');
+      }
+
+      function buildFrame(msgType, flags, serial, compress, payload) {
+        const comp = compress === 1 ? zlib.gzipSync(payload) : payload;
+        const hdr  = Buffer.from([0x11, (msgType << 4) | flags, (serial << 4) | compress, 0x00]);
+        const size = Buffer.alloc(4); size.writeUInt32BE(comp.length, 0);
+        return Buffer.concat([hdr, size, comp]);
+      }
+
+      function parseFrame(data) {
+        const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+        if (buf.length < 4) throw new Error('帧太短');
+        const hdrSize  = (buf[0] & 0x0F) * 4;
+        const msgType  = (buf[1] >> 4) & 0x0F;
+        const compress = buf[2] & 0x0F;
+
+        const gunzip = (d) => {
+          if (!d.length) return '{}';
+          try { return (compress === 1 ? zlib.gunzipSync(d) : d).toString('utf8'); }
+          catch (_) { return d.toString('utf8'); }
+        };
+
+        // 错误帧: header + errorCode(4) + payloadSize(4) + payload
+        if (msgType === 0xf) {
+          if (buf.length < hdrSize + 8) throw new Error('错误帧太短');
+          const errCode = buf.readUInt32BE(hdrSize);
+          const pSize   = buf.readUInt32BE(hdrSize + 4);
+          const start   = hdrSize + 8;
+          const payload = buf.slice(start, start + Math.min(pSize, buf.length - start));
+          const text    = gunzip(payload);
+          console.error(`[STT] 服务端错误 ${errCode}: ${text}`);
+          try { const j = JSON.parse(text); if (j.code === undefined) j.code = errCode; return j; }
+          catch (_) { return { code: errCode, message: text, sequence: -1 }; }
+        }
+
+        // 普通帧: header + payloadSize(4) + payload
+        if (buf.length <= hdrSize + 4) return { code: 1000, sequence: 0 };
+        const pSize   = buf.readUInt32BE(hdrSize);
+        const start   = hdrSize + 4;
+        const payload = buf.slice(start, start + Math.min(pSize, buf.length - start));
+        return JSON.parse(gunzip(payload));
+      }
+
+      const meta = {
+        app:     { appid: config.volcAppId, token: config.volcToken, cluster },
+        user:    { uid: config.volcAppId },
+        audio:   { format: fmt, rate: sampleRate, bits: 16, channel: 1 },
+        request: { reqid: this._uuid(), sequence: 1, nbest: 1,
+                   workflow: 'audio_in,resample,partition,vad,fe,decode,itn,nlu_punctuate' }
       };
+
+      const metaFrame  = buildFrame(0x1, 0x0, 0x1, 0x1, Buffer.from(JSON.stringify(meta)));
+      const audioFrame = buildFrame(0x2, 0x2, 0x0, 0x1, audioBuffer);
+
+      return await new Promise((resolve, reject) => {
+        const ws = new WSClass('wss://openspeech.bytedance.com/api/v2/asr', {
+          headers: { Authorization: `Bearer;${config.volcToken}` }
+        });
+        let result = null;
+        let settled = false;
+        const timer = setTimeout(() => { ws.terminate(); if (!settled) { settled = true; reject(new Error('识别超时（120s）')); } }, 120_000);
+
+        const done = (err) => {
+          clearTimeout(timer);
+          if (settled) return;
+          settled = true;
+          if (err) { ws.close(); reject(err); }
+          else { ws.close(); resolve({ success: true, data: { text: result || '' } }); }
+        };
+
+        ws.on('open', () => { ws.send(metaFrame); ws.send(audioFrame); });
+
+        ws.on('message', (data) => {
+          try {
+            const json = Buffer.isBuffer(data) ? parseFrame(data) : JSON.parse(data.toString());
+            const code = json.code ?? -1;
+            const seq  = json.sequence ?? 0;
+            console.log(`[STT] resp code=${code} seq=${seq}`);
+            if (code !== 1000) { done(new Error(`识别失败(${code}): ${json.message || ''}`)); return; }
+            const arr = json.result;
+            if (arr?.length > 0 && arr[0].text) result = arr[0].text;
+            if (seq < 0) done(null);
+          } catch (e) { done(e); }
+        });
+
+        ws.on('error', (err) => done(new Error(`WebSocket 错误: ${err.message}`)));
+        ws.on('close', () => { if (!settled) done(result ? null : new Error('连接关闭但未收到识别结果')); });
+      });
     } catch (error) {
-      console.error('OpenAI transcribe failed:', error);
-      return {
-        success: false,
-        error: error.message
-      };
+      console.error('Volcengine transcribe failed:', error);
+      return { success: false, error: error.message };
     }
   }
 
-  /**
-   * 阿里云语音转文字
-   */
-  async transcribeAliyun(config, audioFile, options = {}) {
-    try {
-      // 阿里云的实现会更复杂，需要使用其SDK
-      // 这里提供一个基本框架
-      return {
-        success: false,
-        error: '阿里云语音识别功能开发中'
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message
-      };
-    }
+  /** 生成 UUID */
+  _uuid() {
+    if (uuidv4) return uuidv4();
+    if (crypto.randomUUID) return crypto.randomUUID();
+    // fallback
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
   }
 
   /**
-   * 自定义API语音转文字
+   * 将音频文件通过 ffmpeg 转换为 16kHz mono WAV (PCM16-LE)
+   * @returns {Buffer|null} WAV Buffer 或 null（ffmpeg 不可用）
    */
-  async transcribeCustom(config, audioFile, options = {}) {
+  _convertToWav(inputPath) {
+    const { execFileSync } = require('child_process');
+    const path = require('path');
+    const os = require('os');
+    const tmpFile = path.join(os.tmpdir(), `flashnote_stt_${Date.now()}.wav`);
     try {
-      if (!config.apiUrl) {
-        throw new Error('请先配置自定义API地址');
-      }
-
-      const formData = new FormData();
-      
-      // 处理音频文件
-      if (typeof audioFile === 'string') {
-        formData.append('file', fs.createReadStream(audioFile));
-      } else if (Buffer.isBuffer(audioFile)) {
-        formData.append('file', audioFile, {
-          filename: 'audio.wav',
-          contentType: 'audio/wav'
-        });
-      } else {
-        throw new Error('不支持的音频文件格式');
-      }
-
-      formData.append('model', config.model || 'whisper-1');
-      
-      if (config.language && config.language !== 'auto') {
-        formData.append('language', config.language);
-      }
-
-      const response = await fetch(config.apiUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.apiKey}`,
-          ...formData.getHeaders()
-        },
-        body: formData
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error?.message || error.message || '语音识别失败');
-      }
-
-      const data = await response.json();
-      return {
-        success: true,
-        data: {
-          text: data.text,
-          language: data.language || config.language
-        }
-      };
-    } catch (error) {
-      console.error('Custom transcribe failed:', error);
-      return {
-        success: false,
-        error: error.message
-      };
+      execFileSync('ffmpeg', [
+        '-y', '-i', inputPath,
+        '-ar', '16000', '-ac', '1', '-sample_fmt', 's16',
+        '-f', 'wav', tmpFile
+      ], { timeout: 30000, stdio: 'pipe' });
+      const buf = fs.readFileSync(tmpFile);
+      try { fs.unlinkSync(tmpFile); } catch (_) {}
+      console.log(`[STT] ffmpeg 转换成功: ${inputPath} -> WAV ${buf.length} bytes`);
+      return buf;
+    } catch (e) {
+      try { fs.unlinkSync(tmpFile); } catch (_) {}
+      console.warn(`[STT] ffmpeg 转换失败: ${e.message}`);
+      return null;
     }
   }
 }

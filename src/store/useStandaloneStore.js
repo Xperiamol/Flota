@@ -18,7 +18,7 @@ export const useStandaloneStore = create((set, get) => ({
   todos: [],
   
   // 编辑器模式
-  editorMode: 'markdown', // 'markdown' | 'wysiwyg'
+  editorMode: 'wysiwyg', // 'markdown' | 'wysiwyg'
   
   // 主题模式
   themeMode: 'light',

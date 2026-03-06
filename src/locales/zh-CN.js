@@ -120,7 +120,7 @@ const zhCN = {
     dragImageHere: '拖拽图片到这里',
     saveTooltip: '保存 (Ctrl+S)',
     saveWhiteboardTooltip: '保存白板 (Ctrl+S)',
-    exportPngTooltip: '导出 PNG',
+    exportPngTooltip: '导出 PNG（高清）',
     dragImageHere: '拖拽图片到这里'
   },
   settings: {
@@ -145,10 +145,10 @@ const zhCN = {
     themeDark: '深色',
     themeSystem: '跟随系统',
     editorMode: '编辑器模式',
-    editorModeDesc: '选择笔记的默认编辑器模式',
-    editorMarkdown: 'Markdown',
+    editorModeDesc: '源码模式显示 Markdown 原文，所见即所得模式类似 Obsidian 实时预览',
+    editorMarkdown: '源码模式',
     editorWysiwyg: '所见即所得',
-    editorWarning: '重要提示：Markdown模式保存为Markdown文本，WYSIWYG模式保存为HTML格式。两种模式不兼容。切换模式可能导致现有笔记显示异常。建议在创建新笔记前选择一种模式。',
+    editorWarning: '两种模式底层均保存为 Markdown 格式，可随时自由切换。所见即所得模式下，输入即渲染，无需手动切换预览。',
     userAvatar: '用户头像',
     uploadAvatar: '上传头像',
     deleteAvatar: '删除头像',

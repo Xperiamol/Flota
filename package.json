@@ -35,8 +35,19 @@
     "@modelcontextprotocol/sdk": "^1.25.2",
     "@mui/icons-material": "^7.3.1",
     "@mui/material": "^7.3.1",
+    "@tiptap/extension-code-block-lowlight": "^3.20.0",
     "@tiptap/extension-highlight": "^3.10.7",
+    "@tiptap/extension-image": "^3.20.0",
+    "@tiptap/extension-link": "^3.20.0",
     "@tiptap/extension-placeholder": "^3.10.7",
+    "@tiptap/extension-table": "^3.20.0",
+    "@tiptap/extension-table-cell": "^3.20.0",
+    "@tiptap/extension-table-header": "^3.20.0",
+    "@tiptap/extension-table-row": "^3.20.0",
+    "@tiptap/extension-task-item": "^3.20.0",
+    "@tiptap/extension-task-list": "^3.20.0",
+    "@tiptap/extension-typography": "^3.20.0",
+    "@tiptap/extension-underline": "^3.20.0",
     "@tiptap/react": "^3.10.7",
     "@tiptap/starter-kit": "^3.10.7",
     "@vitejs/plugin-react": "^4.7.0",
@@ -66,8 +77,10 @@
     "rehype-highlight": "^7.0.2",
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
+    "tiptap-markdown": "^0.9.0",
     "tsdav": "^2.1.6",
     "vite": "^6.3.5",
+    "ws": "^8.19.0",
     "yup": "^1.7.1",
     "zustand": "^5.0.8"
   },
@@ -88,7 +101,6 @@
       "dist/**/*",
       "electron/**/*",
       "models/**/*",
-      ".env",
       "package.json",
       "node_modules/**/*",
       "!node_modules/.cache"
@@ -110,7 +122,13 @@
       {
         "from": "plugins",
         "to": "plugins",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": ".env",
+        "to": ".env"
       }
     ],
     "npmRebuild": false,

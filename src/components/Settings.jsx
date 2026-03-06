@@ -547,9 +547,9 @@ const Settings = () => {
                             )}
                         />
 
-                        <Alert severity="warning" sx={{ mt: 1, mb: 2 }}>
+                        <Alert severity="info" sx={{ mt: 1, mb: 2 }}>
                             <Typography variant="caption">
-                                <strong>{t('settings.editorWarning')}</strong>
+                                {t('settings.editorWarning')}
                             </Typography>
                         </Alert>
 
@@ -860,6 +860,48 @@ const Settings = () => {
 
                 {/* 数据管理 */}
                 <TabPanel value={settingsTabValue} index={8}>
+                    <Box sx={{ mb: 4 }}>
+                        <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
+                            本地备份与恢复
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                            将所有数据（笔记、待办、图片、音频）打包为 ZIP 备份文件，或从备份恢复
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 2 }}>
+                            <Button
+                                variant="contained"
+                                size="small"
+                                onClick={async () => {
+                                    const res = await window.electronAPI?.backup?.create();
+                                    if (res?.success) {
+                                        showSnackbar(`备份成功：${(res.data.size / 1024 / 1024).toFixed(1)} MB`);
+                                    } else if (res?.error && res.error !== '用户取消') {
+                                        showSnackbar(`备份失败：${res.error}`);
+                                    }
+                                }}
+                            >
+                                创建备份
+                            </Button>
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                color="warning"
+                                onClick={async () => {
+                                    const res = await window.electronAPI?.backup?.restore();
+                                    if (res?.success) {
+                                        showSnackbar(`恢复成功：${res.data.restoredItems.join('、')}，重启后生效`);
+                                    } else if (res?.error && res.error !== '用户取消') {
+                                        showSnackbar(`恢复失败：${res.error}`);
+                                    }
+                                }}
+                            >
+                                从备份恢复
+                            </Button>
+                        </Box>
+                    </Box>
+
+                    <Divider sx={{ my: 4 }} />
+
                     <Box sx={{ mb: 4 }}>
                         <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
                             Obsidian 导入导出

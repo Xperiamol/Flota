@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Skeleton,
-  Collapse
+  Collapse,
+  IconButton,
+  Typography
 } from '@mui/material';
+import { ExpandMore as ExpandMoreIcon } from '@mui/icons-material';
 import { getTagColor } from '../utils/tagUtils';
 import BaseFilter from './BaseFilter';
 import FilterChip from './FilterChip';
@@ -21,7 +24,6 @@ const TagFilter = ({
   sx = {} 
 }) => {
   const [allTags, setAllTags] = useState([]);
-  const [popularTags, setPopularTags] = useState([]);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -35,8 +37,6 @@ const TagFilter = ({
         if (todoTagsResult.success) {
           const validTags = todoTagsResult.data.filter(tag => tag.usage_count > 0);
           setAllTags(validTags);
-          // 对于待办事项，热门标签就是使用次数最多的前几个
-          setPopularTags(validTags.slice(0, 10));
         }
       } else {
         if (!window.electronAPI?.tags) return;
@@ -44,21 +44,12 @@ const TagFilter = ({
         // 首先重新计算标签使用次数，确保统计准确
         await window.electronAPI.tags.recalculateUsage();
         
-        const [allTagsResult, popularTagsResult] = await Promise.all([
-          window.electronAPI.tags.getAll(),
-          window.electronAPI.tags.getPopular(8) // 获取前8个热门标签
-        ]);
+        const allTagsResult = await window.electronAPI.tags.getAll();
         
         if (allTagsResult?.success) {
           // 过滤掉使用次数为0的标签
           const validTags = allTagsResult.data.filter(tag => tag.usage_count > 0);
           setAllTags(validTags);
-        }
-        
-        if (popularTagsResult?.success) {
-          // 过滤掉使用次数为0的标签
-          const validPopularTags = popularTagsResult.data.filter(tag => tag.usage_count > 0);
-          setPopularTags(validPopularTags);
         }
       }
     } catch (error) {
@@ -87,20 +78,107 @@ const TagFilter = ({
     onTagsChange?.([]);
   };
 
-  // 渲染标签芯片
-  const renderTagChips = (tags) => (
-    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-      {tags.map(tag => (
-        <FilterChip
-          key={tag.name}
-          label={tag.name}
-          value={tag.name}
-          isSelected={selectedTags.includes(tag.name)}
-          onClick={toggleTag}
-          color={getTagColor(tag.name)}
-          count={tag.usage_count}
-        />
-      ))}
+  // 构建层级标签树
+  const tagGroups = useMemo(() => {
+    const groupMap = new Map(); // root -> { rootTag, children: [] }
+    for (const tag of allTags) {
+      const slashIdx = tag.name.indexOf('/');
+      if (slashIdx > 0) {
+        const root = tag.name.substring(0, slashIdx);
+        if (!groupMap.has(root)) groupMap.set(root, { rootTag: null, children: [] });
+        groupMap.get(root).children.push(tag);
+      } else {
+        if (!groupMap.has(tag.name)) groupMap.set(tag.name, { rootTag: null, children: [] });
+        groupMap.get(tag.name).rootTag = tag;
+      }
+    }
+    // For implicit parents (children exist but no standalone parent tag), create a virtual root
+    for (const [root, group] of groupMap) {
+      if (!group.rootTag && group.children.length > 0) {
+        const totalCount = group.children.reduce((sum, c) => sum + (c.usage_count || 0), 0);
+        group.rootTag = { name: root, usage_count: totalCount, isVirtual: true };
+      }
+    }
+    return groupMap;
+  }, [allTags]);
+
+  const [expandedGroups, setExpandedGroups] = useState(new Set());
+
+  const toggleGroupExpand = (root) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(root)) next.delete(root); else next.add(root);
+      return next;
+    });
+  };
+
+  // 渲染层级标签树
+  const renderHierarchicalTags = () => (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+      {Array.from(tagGroups.entries()).map(([root, group]) => {
+        if (group.children.length === 0 && group.rootTag) {
+          // Standalone tag — flat chip
+          return (
+            <Box key={root} sx={{ display: 'inline-flex' }}>
+              <FilterChip
+                label={group.rootTag.name}
+                value={group.rootTag.name}
+                isSelected={selectedTags.includes(group.rootTag.name)}
+                onClick={toggleTag}
+                color={getTagColor(group.rootTag.name)}
+                count={group.rootTag.usage_count}
+              />
+            </Box>
+          );
+        }
+        // Group with children
+        const isExpanded = expandedGroups.has(root);
+        return (
+          <Box key={root}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <IconButton
+                size="small"
+                onClick={() => toggleGroupExpand(root)}
+                sx={{
+                  p: 0, width: 20, height: 20,
+                  transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',
+                  transition: 'transform 0.2s'
+                }}
+              >
+                <ExpandMoreIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+              {group.rootTag && (
+                <FilterChip
+                  label={group.rootTag.name}
+                  value={group.rootTag.name}
+                  isSelected={selectedTags.includes(group.rootTag.name)}
+                  onClick={toggleTag}
+                  color={getTagColor(group.rootTag.name)}
+                  count={group.rootTag.usage_count}
+                />
+              )}
+              <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+                {group.children.length}
+              </Typography>
+            </Box>
+            <Collapse in={isExpanded}>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, pl: 3, pt: 0.5, pb: 0.5 }}>
+                {group.children.map(child => (
+                  <FilterChip
+                    key={child.name}
+                    label={child.name.substring(root.length + 1)}
+                    value={child.name}
+                    isSelected={selectedTags.includes(child.name)}
+                    onClick={toggleTag}
+                    color={getTagColor(child.name)}
+                    count={child.usage_count}
+                  />
+                ))}
+              </Box>
+            </Collapse>
+          </Box>
+        );
+      })}
     </Box>
   );
 
@@ -131,8 +209,8 @@ const TagFilter = ({
 
     return (
       <Box>
-        {/* 所有标签 */}
-        {renderTagChips(allTags)}
+        {/* 层级标签树 */}
+        {renderHierarchicalTags()}
       </Box>
     );
   };

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, shell, Tray, Menu, nativeImage, protocol, nativeTheme } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, shell, Tray, Menu, nativeImage, protocol, nativeTheme, net } = require('electron')
 const path = require('path')
 
 // 加载环境变量
@@ -42,6 +42,7 @@ const TodoService = require('./services/TodoService')
 const TagService = require('./services/TagService')
 const WindowManager = require('./services/WindowManager')
 const DataImportService = require('./services/DataImportService')
+const BackupService = require('./services/BackupService')
 const ShortcutService = require('./services/ShortcutService')
 const NotificationService = require('./services/NotificationService')
 const ImageService = require('./services/ImageService')
@@ -478,6 +479,7 @@ async function initializeServices() {
     services.todoService = new TodoService()
     services.tagService = new TagService()
     services.dataImportService = new DataImportService(services.noteService, services.settingsService, services.imageStorageService)
+    services.backupService = new BackupService()
     services.imageService = new ImageService()
 
     // 暴露 DAO 供插件使用
@@ -790,12 +792,19 @@ if (!gotTheLock) {
       try {
         const url = request.url
         // app://images/abc.png -> images/abc.png
+        // app://audio/abc.m4a -> audio/abc.m4a
         const relativePath = url.replace('app://', '')
 
         console.log('[Protocol] 处理 app:// 请求:', relativePath)
 
         // 获取完整路径
-        const fullPath = services.imageService.getImagePath(relativePath)
+        // 音频文件存储在 userData/audio/，图片存储在 userData/images/
+        let fullPath
+        if (relativePath.startsWith('audio/')) {
+          fullPath = path.join(app.getPath('userData'), relativePath)
+        } else {
+          fullPath = services.imageService.getImagePath(relativePath)
+        }
         console.log('[Protocol] 完整路径:', fullPath)
 
         // 检查文件是否存在
@@ -812,9 +821,24 @@ if (!gotTheLock) {
           '.png': 'image/png',
           '.gif': 'image/gif',
           '.webp': 'image/webp',
-          '.svg': 'image/svg+xml'
+          '.svg': 'image/svg+xml',
+          // 音频格式
+          '.m4a': 'audio/mp4',
+          '.mp3': 'audio/mpeg',
+          '.ogg': 'audio/ogg',
+          '.wav': 'audio/wav',
+          '.aac': 'audio/aac',
+          '.opus': 'audio/ogg; codecs=opus',
+          '.flac': 'audio/flac',
+          '.webm': 'audio/webm'
         }
         const mimeType = mimeTypes[ext] || 'application/octet-stream'
+
+        // 音频文件：用 net.fetch 代理本地文件，自动处理 Range/Content-Length/streaming
+        if (mimeType.startsWith('audio/')) {
+          const fileUrl = 'file://' + fullPath.replace(/\\/g, '/')
+          return net.fetch(fileUrl, { headers: request.headers })
+        }
 
         // 使用流式读取，提升大文件性能
         const data = fs.readFileSync(fullPath)
@@ -823,6 +847,7 @@ if (!gotTheLock) {
         return new Response(data, {
           headers: { 
             'Content-Type': mimeType,
+            'Accept-Ranges': 'bytes',
             'Cache-Control': 'public, max-age=31536000'
           }
         })
@@ -1405,6 +1430,15 @@ registerIpcHandlers([
   }
 ])
 
+// 本地备份/恢复 IPC 处理
+ipcMain.handle('backup:create', async () => {
+  return await services.backupService.createBackup()
+})
+
+ipcMain.handle('backup:restore', async () => {
+  return await services.backupService.restoreBackup()
+})
+
 // AI 相关 IPC 处理
 const createTryCatchHandler = (serviceName, methodName, errorMsg) => {
   return async (event, ...args) => {
@@ -1431,12 +1465,16 @@ registerIpcHandlers([
   { channel: 'stt:get-config', handler: createTryCatchHandler('sttService', 'getConfig', '获取STT配置失败') },
   { channel: 'stt:save-config', handler: createTryCatchHandler('sttService', 'saveConfig', '保存STT配置失败') },
   { channel: 'stt:test-connection', handler: createTryCatchHandler('sttService', 'testConnection', '测试STT连接失败') },
-  { channel: 'stt:get-providers', handler: createTryCatchHandler('sttService', 'getProviders', '获取STT提供商列表失败') },
   {
     channel: 'stt:transcribe',
     handler: async (event, { audioFile, options }) => {
       try {
-        return await services.sttService.transcribe(audioFile, options)
+        // 相对路径（如 audio/xxx.m4a）→ 绝对路径
+        let resolvedFile = audioFile
+        if (audioFile && !path.isAbsolute(audioFile)) {
+          resolvedFile = path.join(app.getPath('userData'), audioFile)
+        }
+        return await services.sttService.transcribe(resolvedFile, options)
       } catch (error) {
         console.error('语音转文字失败:', error)
         return { success: false, error: error.message }
@@ -1994,6 +2032,21 @@ registerIpcHandlers([
   { channel: 'image:save-from-path', handler: createImageServiceHandler('saveImageFromPath', '从路径保存图片失败') }
 ])
 
+// ── 音频文件保存 ──
+ipcMain.handle('audio:save-from-buffer', async (event, buffer, fileName) => {
+  try {
+    const audioDir = path.join(app.getPath('userData'), 'audio')
+    if (!fs.existsSync(audioDir)) fs.mkdirSync(audioDir, { recursive: true })
+    const safeName = path.basename(fileName)
+    const filePath = path.join(audioDir, safeName)
+    fs.writeFileSync(filePath, Buffer.from(buffer))
+    return { success: true, data: `audio/${safeName}` }
+  } catch (error) {
+    console.error('保存音频失败:', error)
+    return { success: false, error: error.message }
+  }
+})
+
 ipcMain.handle('image:select-file', async () => {
   try {
     const result = await dialog.showOpenDialog({
@@ -2137,6 +2190,35 @@ ipcMain.handle('whiteboard:get-storage-stats', async () => {
   }
 })
 
+// 保存白板预览图（PNG），供移动端只读查看
+ipcMain.handle('whiteboard:save-preview', async (event, { syncId, pngBase64 }) => {
+  try {
+    if (!syncId || !pngBase64) return { success: false, error: '参数缺失' }
+    const previewDir = path.join(app.getPath('userData'), 'images', 'whiteboard-preview')
+    await require('fs').promises.mkdir(previewDir, { recursive: true })
+    const filePath = path.join(previewDir, `${syncId}.png`)
+    const buffer = Buffer.from(pngBase64, 'base64')
+    await require('fs').promises.writeFile(filePath, buffer)
+
+    // 自动上传预览图到云端（V3 同步）
+    try {
+      const { getInstance: getV3SyncService } = require('./services/sync/V3SyncService')
+      const v3Service = getV3SyncService()
+      if (v3Service && v3Service.isEnabled && v3Service.uploadImage) {
+        const relativePath = `images/whiteboard-preview/${syncId}.png`
+        v3Service.uploadImage(filePath, relativePath).catch(err =>
+          console.error('[白板预览上传] 失败:', err)
+        )
+      }
+    } catch (_) { /* 不阻塞 */ }
+
+    return { success: true }
+  } catch (error) {
+    console.error('保存白板预览图失败:', error)
+    return { success: false, error: error.message }
+  }
+})
+
 // 图片云同步相关 IPC 处理器
 ipcMain.handle('sync:download-image', async (event, relativePath) => {
   try {
@@ -2147,12 +2229,9 @@ ipcMain.handle('sync:download-image', async (event, relativePath) => {
       return { success: false, error: '云同步服务未启用' }
     }
 
-    const localPath = path.join(
-      relativePath.startsWith('images/whiteboard/')
-        ? path.join(app.getPath('userData'), 'images', 'whiteboard')
-        : path.join(app.getPath('userData'), 'images'),
-      path.basename(relativePath)
-    )
+    // 保留完整子目录结构 (images/whiteboard/xxx, images/whiteboard-preview/xxx 等)
+    const localPath = path.join(app.getPath('userData'), relativePath)
+    await require('fs').promises.mkdir(path.dirname(localPath), { recursive: true })
 
     await v3Service.downloadImage(relativePath, localPath)
     return { success: true }

@@ -6,11 +6,7 @@ import {
   TextField,
   Button,
   Switch,
-  FormControl,
   FormControlLabel,
-  InputLabel,
-  Select,
-  MenuItem,
   Alert,
   Divider,
   CircularProgress,
@@ -21,30 +17,26 @@ import {
   ListItemSecondaryAction
 } from '@mui/material';
 import {
-  RecordVoiceOver as STTIcon,
   Check as CheckIcon,
-  Info as InfoIcon
+  Info as InfoIcon,
+  GraphicEq as TranscribeIcon
 } from '@mui/icons-material';
 
 const STTSettings = ({ showSnackbar }) => {
   const { t } = useTranslation();
   const [config, setConfig] = useState({
     enabled: false,
-    provider: 'openai',
-    apiKey: '',
-    apiUrl: '',
-    model: 'whisper-1',
-    language: 'auto'
+    volcAppId: '',
+    volcToken: '',
+    volcResourceId: 'volcengine_short_sentence'
   });
 
-  const [providers, setProviders] = useState([]);
-  const [selectedProvider, setSelectedProvider] = useState(null);
   const [testing, setTesting] = useState(false);
+  const [testingTranscribe, setTestingTranscribe] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     loadConfig();
-    loadProviders();
   }, []);
 
   const loadConfig = async () => {
@@ -53,7 +45,6 @@ const STTSettings = ({ showSnackbar }) => {
         const result = await window.electronAPI.stt.getConfig();
         if (result?.success && result.data) {
           setConfig(result.data);
-          updateSelectedProvider(result.data.provider);
         }
       }
     } catch (error) {
@@ -62,36 +53,10 @@ const STTSettings = ({ showSnackbar }) => {
     }
   };
 
-  const loadProviders = async () => {
-    try {
-      if (window.electronAPI?.stt) {
-        const result = await window.electronAPI.stt.getProviders();
-        if (result?.success && result.data) {
-          setProviders(result.data);
-          if (result.data.length > 0) {
-            updateSelectedProvider(config.provider);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('加载STT提供商列表失败:', error);
-    }
-  };
-
-  const updateSelectedProvider = (providerId) => {
-    const provider = providers.find(p => p.id === providerId);
-    setSelectedProvider(provider);
-  };
-
   const handleConfigChange = async (field, value) => {
-    const newConfig = {
-      ...config,
-      [field]: value
-    };
+    const newConfig = { ...config, [field]: value };
     setConfig(newConfig);
-
-    // 自动保存逻辑：除了文本输入框外，其他修改立即保存
-    if (!['apiKey', 'apiUrl'].includes(field)) {
+    if (field === 'enabled') {
       await saveConfigToBackend(newConfig);
     }
   };
@@ -117,35 +82,12 @@ const STTSettings = ({ showSnackbar }) => {
     }
   };
 
-  const handleProviderChange = (providerId) => {
-    const provider = providers.find(p => p.id === providerId);
-    setSelectedProvider(provider);
-
-    const newConfig = {
-      ...config,
-      provider: providerId,
-      // 切换提供商时，更新默认模型和语言
-      model: (provider && provider.models && provider.models.length > 0) ? provider.models[0] : config.model,
-      language: 'auto'
-    };
-
-    setConfig(newConfig);
-    saveConfigToBackend(newConfig);
-  };
-
   const handleTestConnection = async () => {
-    if (!config.apiKey) {
-      if (showSnackbar) showSnackbar(t('stt.enterApiKey'), 'warning');
+    if (!config.volcAppId || !config.volcToken) {
+      if (showSnackbar) showSnackbar('请填写 App ID 和 Access Token', 'warning');
       return;
     }
-
-    if (config.provider === 'custom' && !config.apiUrl) {
-      if (showSnackbar) showSnackbar(t('stt.enterCustomApiUrl'), 'warning');
-      return;
-    }
-
     setTesting(true);
-
     try {
       const result = await window.electronAPI.stt.testConnection(config);
       if (result?.success) {
@@ -160,12 +102,27 @@ const STTSettings = ({ showSnackbar }) => {
     }
   };
 
-  const getProviderDocLink = (providerId) => {
-    const links = {
-      openai: 'https://platform.openai.com/api-keys',
-      aliyun: 'https://www.aliyun.com/product/speech'
-    };
-    return links[providerId] || null;
+  const handleTestTranscribe = async () => {
+    try {
+      const result = await window.electronAPI.system.showOpenDialog({
+        title: '选择音频文件进行识别测试',
+        filters: [{ name: '音频文件', extensions: ['wav', 'mp3', 'm4a', 'ogg', 'flac', 'webm'] }],
+        properties: ['openFile']
+      });
+      if (result?.canceled || !result?.filePaths?.length) return;
+      setTestingTranscribe(true);
+      const transcribeResult = await window.electronAPI.stt.transcribe(result.filePaths[0], {});
+      if (transcribeResult?.success) {
+        const text = transcribeResult.data?.text;
+        if (showSnackbar) showSnackbar(text ? `识别结果：${text}` : '识别完成，结果为空', 'success');
+      } else {
+        if (showSnackbar) showSnackbar(`识别失败：${transcribeResult?.error || '未知错误'}`, 'error');
+      }
+    } catch (error) {
+      if (showSnackbar) showSnackbar(`识别出错：${error.message}`, 'error');
+    } finally {
+      setTestingTranscribe(false);
+    }
   };
 
   return (
@@ -188,153 +145,61 @@ const STTSettings = ({ showSnackbar }) => {
 
         <Divider />
 
-        {/* 提供商选择 */}
-        <ListItem>
-          <Box sx={{ width: '100%', pt: 1, pb: 1 }}>
-            <FormControl fullWidth size="small">
-              <InputLabel>{t('stt.sttProvider')}</InputLabel>
-              <Select
-                value={config.provider}
-                label={t('stt.sttProvider')}
-                onChange={(e) => handleProviderChange(e.target.value)}
-              >
-                {providers.map(provider => (
-                  <MenuItem key={provider.id} value={provider.id}>
-                    <Box>
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        {provider.name}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                        {provider.description}
-                      </Typography>
-                    </Box>
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
-        </ListItem>
-
-        <Divider />
-
-        {/* API Key */}
+        {/* 火山引擎配置 */}
         <ListItem>
           <Box sx={{ width: '100%', pt: 1, pb: 1 }}>
             <TextField
               fullWidth
               size="small"
-              label={t('stt.apiKey')}
-              type="password"
-              value={config.apiKey}
-              onChange={(e) => handleConfigChange('apiKey', e.target.value)}
+              label="App ID"
+              value={config.volcAppId}
+              onChange={(e) => handleConfigChange('volcAppId', e.target.value)}
               onBlur={handleTextBlur}
-              placeholder={t('stt.apiKeyPlaceholder')}
+              placeholder="控制台获取的应用 ID"
               helperText={
-                selectedProvider && getProviderDocLink(config.provider) && (
-                  <Link
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      if (window.electronAPI?.system) {
-                        window.electronAPI.system.openExternal(getProviderDocLink(config.provider));
-                      }
-                    }}
-                  >
-                    {t('stt.howToGetApiKey')}
-                  </Link>
-                )
+                <Link
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (window.electronAPI?.system) {
+                      window.electronAPI.system.openExternal('https://console.volcengine.com/speech/service/8');
+                    }
+                  }}
+                >
+                  前往火山引擎控制台获取
+                </Link>
               }
             />
           </Box>
         </ListItem>
-
-        {/* 自定义 API URL */}
-        {config.provider === 'custom' && (
-          <>
-            <Divider />
-            <ListItem>
-              <Box sx={{ width: '100%', pt: 1, pb: 1 }}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  label={t('stt.apiUrl')}
-                  value={config.apiUrl}
-                  onChange={(e) => handleConfigChange('apiUrl', e.target.value)}
-                  onBlur={handleTextBlur}
-                  placeholder={t('stt.apiUrlPlaceholder')}
-                  helperText={t('stt.apiUrlDesc')}
-                />
-              </Box>
-            </ListItem>
-          </>
-        )}
-
         <Divider />
-
-        {/* 模型选择 */}
         <ListItem>
           <Box sx={{ width: '100%', pt: 1, pb: 1 }}>
-            {selectedProvider && selectedProvider.models && selectedProvider.models.length > 0 ? (
-              <FormControl fullWidth size="small">
-                <InputLabel>{t('stt.model')}</InputLabel>
-                <Select
-                  value={config.model}
-                  label={t('stt.model')}
-                  onChange={(e) => handleConfigChange('model', e.target.value)}
-                >
-                  {selectedProvider.models.map(model => (
-                    <MenuItem key={model} value={model}>
-                      {model}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            ) : (
-              <TextField
-                fullWidth
-                size="small"
-                label={t('stt.modelName')}
-                value={config.model}
-                onChange={(e) => handleConfigChange('model', e.target.value)}
-                onBlur={handleTextBlur}
-                placeholder={t('stt.modelPlaceholder')}
-              />
-            )}
+            <TextField
+              fullWidth
+              size="small"
+              label="Access Token"
+              type="password"
+              value={config.volcToken}
+              onChange={(e) => handleConfigChange('volcToken', e.target.value)}
+              onBlur={handleTextBlur}
+              placeholder="控制台获取的令牌"
+            />
           </Box>
         </ListItem>
-
         <Divider />
-
-        {/* 语言选择 */}
         <ListItem>
           <Box sx={{ width: '100%', pt: 1, pb: 1 }}>
-            {selectedProvider && selectedProvider.languages && selectedProvider.languages.length > 0 ? (
-              <FormControl fullWidth size="small">
-                <InputLabel>{t('stt.recognitionLanguage')}</InputLabel>
-                <Select
-                  value={config.language}
-                  label={t('stt.recognitionLanguage')}
-                  onChange={(e) => handleConfigChange('language', e.target.value)}
-                >
-                  {selectedProvider.languages.map(lang => (
-                    <MenuItem key={lang.code} value={lang.code}>
-                      {lang.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            ) : (
-              <TextField
-                fullWidth
-                size="small"
-                label={t('stt.languageCode')}
-                value={config.language}
-                onChange={(e) => handleConfigChange('language', e.target.value)}
-                onBlur={handleTextBlur}
-                placeholder={t('stt.languageCodePlaceholder')}
-                helperText={t('stt.languageCodeDesc')}
-              />
-            )}
+            <TextField
+              fullWidth
+              size="small"
+              label="Cluster ID"
+              value={config.volcResourceId}
+              onChange={(e) => handleConfigChange('volcResourceId', e.target.value)}
+              onBlur={handleTextBlur}
+              placeholder="volcengine_short_sentence"
+              helperText="在控制台开通「一句话识别」服务后获取的 Cluster ID（如 volcengine_short_sentence）"
+            />
           </Box>
         </ListItem>
 
@@ -347,8 +212,17 @@ const STTSettings = ({ showSnackbar }) => {
             <Button
               variant="outlined"
               size="small"
+              onClick={handleTestTranscribe}
+              disabled={!config.volcAppId || !config.volcToken || testingTranscribe}
+              startIcon={testingTranscribe ? <CircularProgress size={16} /> : <TranscribeIcon />}
+            >
+              {testingTranscribe ? '识别中...' : '测试识别'}
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
               onClick={handleTestConnection}
-              disabled={!config.apiKey || testing}
+              disabled={!config.volcAppId || !config.volcToken || testing}
               startIcon={testing ? <CircularProgress size={16} /> : <CheckIcon />}
             >
               {testing ? t('stt.testing') : t('stt.testConnection')}

@@ -148,17 +148,26 @@ class SyncEngine extends EventEmitter {
       this.emit('syncProgress', { stage: 'execute', progress: 0.4 });
       const result = await this.executeTasks(tasks);
 
-      // 阶段 4: 提交
-      if (result.success && result.errors === 0) {
-        this.emit('syncProgress', { stage: 'commit', progress: 0.9 });
-        await this.commit(localManifest, remoteManifest, tasks);
-        this.log('同步提交成功');
-      } else {
-        this.logError('同步存在错误，跳过提交');
+      // 阶段 4: 提交 — 即使有非致命错误（如图片上传失败）也提交已成功部分
+      this.emit('syncProgress', { stage: 'commit', progress: 0.9 });
+      await this.commit(localManifest, remoteManifest, tasks);
+      this.log('同步提交成功');
+      if (result.errors > 0) {
+        this.logError(`同步完成但有 ${result.errors} 个非致命错误`);
       }
 
       result.duration = Date.now() - startTime;
       this.lastSyncTime = Date.now();
+
+      // Periodic GC: purge soft-deleted todos older than 30 days
+      try {
+        const purged = await this.storage.purgeOldDeletedTodos(30);
+        if (purged > 0) {
+          this.log(`[GC] 清理了 ${purged} 条超过30天的软删除待办`);
+        }
+      } catch (e) {
+        this.logError('[GC] 清理旧删除记录失败', e);
+      }
 
       this.emit('syncComplete', result);
       this.log(`========== 同步完成 (${result.duration}ms) ==========`);
@@ -267,6 +276,8 @@ class SyncEngine extends EventEmitter {
       await this.client.createDirectory(this.config.rootPath + 'assets/');
       await this.client.createDirectory(this.config.rootPath + 'images/');
       await this.client.createDirectory(this.config.rootPath + 'images/whiteboard/');
+      await this.client.createDirectory(this.config.rootPath + 'images/whiteboard-preview/');
+      await this.client.createDirectory(this.config.rootPath + 'audio/');
       this.log('[Init] 子目录结构创建完成');
     } catch (error) {
       this.log('[Init] 子目录创建失败:', error.message);
@@ -300,6 +311,15 @@ class SyncEngine extends EventEmitter {
     uploadCount += imageCount;
     if (imageCount > 0) {
       this.log(`[Init] ${imageCount} 个图片上传完成`);
+    }
+
+    // 5.5 上传白板预览图
+    if (enabledCategories.includes('images')) {
+      const previewCount = await this.uploadAllWhiteboardPreviews(localNotes);
+      uploadCount += previewCount;
+      if (previewCount > 0) {
+        this.log(`[Init] ${previewCount} 个白板预览图上传完成`);
+      }
     }
 
     // 6. 上传 todos 和 settings（如果有数据且类别已启用，覆盖空文件）
@@ -680,13 +700,39 @@ class SyncEngine extends EventEmitter {
       return { operation: 'skip', fileId, remotePath };
     }
 
-    // 对于全局数据（todos/settings），使用简单的时间戳策略，不启用冲突检测
-    const isGlobalData = fileId === 'global_todos' || fileId === 'global_settings';
-
     // Hash 不同，检测是否为真正的冲突
     // 真正的冲突：两端都相对于缓存版本发生了变化
     const localChanged = !cachedEntry || (cachedEntry.h !== localEntry.h);
     const remoteChanged = !cachedEntry || (cachedEntry.h !== remoteEntry.h);
+
+    // ── global_todos 特殊处理：使用三向 hash 策略，避免"时间戳最大值仲裁"的误判 ──
+    // 问题根因：global_todos.t = max(todos.updated_at)，与具体 todo 的变更无关。
+    // 若电脑有任何 todo 的 updated_at > 手机完成时刻，电脑会错误地 UPLOAD 覆盖手机的完成状态。
+    // 修复：双端都变更时，始终做 merge（先下载远端逐条仲裁，再上传合并结果）。
+    if (fileId === 'global_todos') {
+      if (remoteChanged && !localChanged) {
+        // 只有远端变更 → 下载
+        this.log(`[Decide] global_todos: 只有远端变更 → download`);
+        return { operation: 'download', fileId, remotePath, remoteEntry };
+      } else if (localChanged && !remoteChanged) {
+        // 只有本地变更 → 上传
+        this.log(`[Decide] global_todos: 只有本地变更 → upload`);
+        return {
+          operation: 'upload', fileId, remotePath, localEntry,
+          data: this.getLocalData(fileId, localData),
+        };
+      } else {
+        // 双端都变更（或首次同步无缓存）→ 合并：逐条 updated_at 仲裁后上传
+        this.log(`[Decide] global_todos: 双端都变更 → merge-todos`);
+        return {
+          operation: 'merge-todos', fileId, remotePath, remoteEntry, localEntry,
+          data: this.getLocalData(fileId, localData),
+        };
+      }
+    }
+
+    // ── global_settings 及笔记：原有逻辑保留 ──
+    const isGlobalData = fileId === 'global_settings';
 
     if (!isGlobalData && localChanged && remoteChanged && this.syncIPCHandler && this.config.conflictStrategy === 'ask') {
       // 检测到真正的冲突，需要用户决策（仅对笔记启用）
@@ -736,7 +782,7 @@ class SyncEngine extends EventEmitter {
       }
     }
 
-    // 全局数据直接使用时间戳策略；笔记在没有冲突或冲突解决失败时也使用时间戳策略
+    // global_settings 及笔记：时间戳策略兜底
     if (remoteEntry.t > localEntry.t) {
       // 远程更新
       return {
@@ -831,6 +877,11 @@ class SyncEngine extends EventEmitter {
           // 本地删除同步到远程（删除云端文件）
           await this.executeUploadDelete(task);
           result.deleted++;
+        } else if (task.operation === 'merge-todos') {
+          // todos 双端冲突：逐条 updated_at 仲裁后上传合并结果
+          await this.executeMergeTodos(task);
+          result.downloaded++;
+          result.uploaded++;
         } else {
           result.skipped++;
         }
@@ -876,6 +927,11 @@ class SyncEngine extends EventEmitter {
 
         // 上传笔记中引用的图片
         await this.uploadNoteImages(note.content, note.note_type || 'markdown');
+
+        // 白板笔记：同步上传预览图
+        if ((note.note_type || 'markdown') === 'whiteboard') {
+          await this.syncWhiteboardPreview(task.fileId, true);
+        }
       }
     }
   }
@@ -959,6 +1015,7 @@ class SyncEngine extends EventEmitter {
       const remoteTodos = await this.client.downloadJson(task.remotePath);
       this.log(`[Download] 下载了 ${remoteTodos.length} 个 todos`);
 
+      const cloudIds = new Set();
       for (const todo of remoteTodos) {
         // 确保每个 todo 都有有效的时间戳
         if (!todo.created_at) {
@@ -967,7 +1024,18 @@ class SyncEngine extends EventEmitter {
         if (!todo.updated_at) {
           todo.updated_at = Date.now();
         }
+        if (todo.id) cloudIds.add(todo.id);
         await this.storage.upsertTodo(todo, true);
+      }
+
+      // Safety net: soft-delete local active todos not present in cloud
+      // (handles the case where another device deleted a todo)
+      const localTodos = await this.storage.getAllTodos(false); // active only
+      for (const [syncId, todo] of Object.entries(localTodos)) {
+        if (!cloudIds.has(syncId)) {
+          this.log(`[Download] 云端不存在，软删除本地 todo: ${syncId}`);
+          await this.storage.softDeleteTodo(syncId, true);
+        }
       }
     } else if (task.fileId === 'global_settings') {
       // 下载 settings
@@ -1015,6 +1083,7 @@ class SyncEngine extends EventEmitter {
         tags: meta.tags || '',
         category: meta.category || '',
         is_pinned: meta.is_pinned || 0,
+        is_favorite: meta.is_favorite || 0,
         created_at: task.remoteEntry.c || task.remoteEntry.t, // 使用 c (created_at) 或回退到 t (updated_at)
         updated_at: task.remoteEntry.t,
       };
@@ -1024,7 +1093,86 @@ class SyncEngine extends EventEmitter {
 
       // 下载笔记中引用的图片
       await this.downloadNoteImages(content, noteType);
+
+      // 白板笔记：同步下载预览图
+      if (noteType === 'whiteboard') {
+        await this.syncWhiteboardPreview(task.fileId, false);
+      }
     }
+  }
+
+  /**
+   * 同步白板预览图 (上传/下载)
+   * @private
+   * @param {string} syncId - 笔记的 sync_id
+   * @param {boolean} upload - true=上传, false=下载
+   */
+  async syncWhiteboardPreview(syncId, upload) {
+    const localPath = path.join(getUserDataPath(), 'images', 'whiteboard-preview', `${syncId}.png`);
+    const remotePath = this.config.rootPath + `images/whiteboard-preview/${syncId}.png`;
+
+    try {
+      if (upload) {
+        if (!fs.existsSync(localPath)) return;
+
+        // 检查本地文件是否已在上次同步后修改过（通过 mtime）
+        // 如果 localMtime 早于上次同步时间，说明没有更新，跳过
+        if (this.lastSyncTime) {
+          const stat = fs.statSync(localPath);
+          if (stat.mtimeMs < this.lastSyncTime) return;
+        }
+
+        // 确保远端目录存在（仅首次创建）
+        if (!this._wbPreviewDirEnsured) {
+          try {
+            await this.client.createDirectory(this.config.rootPath + 'images/');
+          } catch (_) { /* 目录可能已存在 */ }
+          try {
+            await this.client.createDirectory(this.config.rootPath + 'images/whiteboard-preview/');
+          } catch (_) { /* 目录可能已存在 */ }
+          this._wbPreviewDirEnsured = true;
+        }
+        const imageData = fs.readFileSync(localPath);
+        await this.client.uploadBinary(remotePath, imageData);
+        this.log(`[WhiteboardPreview] 上传成功: ${syncId}`);
+      } else {
+        // 下载预览图 — 始终覆盖本地（确保获取最新版本）
+        const imageData = await this.client.downloadBinary(remotePath);
+        if (imageData) {
+          const dir = path.dirname(localPath);
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(localPath, Buffer.from(imageData));
+          this.log(`[WhiteboardPreview] 下载成功: ${syncId}`);
+        }
+      }
+    } catch (error) {
+      // 预览图同步失败不阻塞主流程
+      this.log(`[WhiteboardPreview] ${upload ? '上传' : '下载'}失败: ${syncId}, ${error.message}`);
+    }
+  }
+
+  /**
+   * 批量上传所有白板笔记的预览图 (初始化时使用)
+   * @private
+   */
+  async uploadAllWhiteboardPreviews(notes) {
+    let count = 0;
+    for (const note of Object.values(notes)) {
+      if ((note.note_type || 'markdown') === 'whiteboard') {
+        const localPath = path.join(getUserDataPath(), 'images', 'whiteboard-preview', `${note.id}.png`);
+        if (fs.existsSync(localPath)) {
+          const remotePath = this.config.rootPath + `images/whiteboard-preview/${note.id}.png`;
+          try {
+            const imageData = fs.readFileSync(localPath);
+            await this.client.uploadBinary(remotePath, imageData);
+            count++;
+          } catch (error) {
+            this.log(`[Init WhiteboardPreview] 上传失败: ${note.id}, ${error.message}`);
+          }
+        }
+      }
+    }
+    return count;
   }
 
   /**
@@ -1120,19 +1268,24 @@ class SyncEngine extends EventEmitter {
         this.log(`[Extract Images] 解析白板内容失败: ${error.message}`);
       }
     } else {
-      // Markdown 笔记 - 使用正则匹配
-      // 匹配: ![](images/xxx.png) 或 ![](app://images/xxx.png) 或 src="images/xxx.png"
+      // Markdown 笔记 - 使用正则匹配图片和音频
       const patterns = [
         /!\[.*?\]\((?:app:\/\/)?images\/((?:whiteboard\/)?[^)]+)\)/g,  // Markdown 图片语法
         /src=["'](?:app:\/\/)?images\/((?:whiteboard\/)?[^"']+)["']/g,  // HTML img src
+        /!\[.*?\]\((audio\/[^)]+)\)/g,  // Markdown 音频语法
       ];
 
       for (const pattern of patterns) {
         let match;
         while ((match = pattern.exec(content)) !== null) {
-          const imagePath = match[1];
-          if (imagePath) {
-            imageRefs.add(`images/${imagePath}`);
+          const captured = match[1];
+          if (captured) {
+            // 音频已经包含 "audio/" 前缀，图片需要加 "images/"
+            if (captured.startsWith('audio/')) {
+              imageRefs.add(captured);
+            } else {
+              imageRefs.add(`images/${captured}`);
+            }
           }
         }
       }
@@ -1183,18 +1336,48 @@ class SyncEngine extends EventEmitter {
       return;
     }
 
-    // 删除云端文件
-    try {
-      await this.client.delete(task.remotePath);
-      this.log(`[Upload Delete] 已删除云端文件: ${task.remotePath}`);
-    } catch (error) {
-      // 如果文件不存在（404），不算错误
-      if (error.response?.status === 404) {
-        this.log(`[Upload Delete] 云端文件已不存在: ${task.remotePath}`);
-      } else {
-        throw error;
+    // 删除云端文件（尝试删除 .md 和 .wb 两种扩展名，与 Android 保持一致）
+    const extensions = ['.md', '.wb'];
+    for (const ext of extensions) {
+      const delPath = this.getRemotePath(task.fileId, ext);
+      try {
+        await this.client.delete(delPath);
+        this.log(`[Upload Delete] 已删除云端文件: ${delPath}`);
+      } catch (error) {
+        if (error.response?.status === 404) {
+          this.log(`[Upload Delete] 云端文件已不存在: ${delPath}`);
+        } else {
+          throw error;
+        }
       }
     }
+  }
+
+  /**
+   * 执行 todos 合并（双端冲突专用）
+   *
+   * 策略：
+   * 1. 下载远端 todos.json，逐条用 upsertTodo 做 updated_at 仲裁写入本地
+   * 2. 读取合并后的本地 todos，上传至远端（保证远端与本地一致）
+   *
+   * @private
+   */
+  async executeMergeTodos(task) {
+    this.log(`[MergeTodos] 开始合并 todos`);
+
+    // Step 1: 下载远端 todos，逐条 upsertTodo（内部按 updated_at 仲裁）
+    await this.executeDownload({ ...task, operation: 'download' });
+
+    // Step 2: 读取合并后的所有本地 todos（含已删除，确保墓碑同步）
+    const allTodos = await this.storage.getAllTodos(true);
+    const mergedArray = Object.values(allTodos).map(todo => {
+      const { db_id, ...syncData } = todo;
+      return syncData;
+    });
+
+    // Step 3: 上传合并结果到远端，确保远端与本地完全一致
+    await this.client.uploadJson(task.remotePath, mergedArray);
+    this.log(`[MergeTodos] 合并完成，已上传 ${mergedArray.length} 条 todos`);
   }
 
   /**
@@ -1247,6 +1430,31 @@ class SyncEngine extends EventEmitter {
             newFiles[task.fileId] = localManifest.files[task.fileId];
           }
         }
+
+        // merge-todos：远端已被更新为合并后的本地状态，重新计算 manifest 条目
+        if (task.operation === 'merge-todos') {
+          try {
+            const allTodos = await this.storage.getAllTodos(true);
+            const todosArray = Object.values(allTodos);
+            let t = 0;
+            for (const todo of todosArray) {
+              const ts = this.storage.parseTimestamp(todo.updated_at);
+              if (ts > t) t = ts;
+            }
+            if (t === 0) t = 1000000000000;
+            newFiles[task.fileId] = {
+              v: 1,
+              t,
+              h: this.storage.calculateTodosHash(todosArray),
+              d: 0,
+              ext: '.json',
+            };
+          } catch (e) {
+            this.logError('[Commit] 重新计算 global_todos hash 失败', e);
+            // 回退：使用 remoteManifest 的条目（已含下载内容）
+          }
+        }
+
         // 对于下载操作，本地状态已更新为服务器状态
         // newFiles 中已包含 remoteManifest 的条目，无需更改
 
@@ -1340,11 +1548,14 @@ class SyncEngine extends EventEmitter {
       return 'todos';
     } else if (fileId === 'global_settings') {
       return 'settings';
-    } else if (fileId.endsWith('.wb')) {
-      return 'whiteboard';
-    } else {
-      return 'note';
     }
+    // 使用 manifest entry 的 ext 字段判断类型，而非 fileId 字符串
+    const cached = this.loadLocalManifest();
+    const entry = cached?.files?.[fileId];
+    if (entry?.ext === '.wb' || entry?.meta?.note_type === 'whiteboard') {
+      return 'whiteboard';
+    }
+    return 'note';
   }
 
   /**

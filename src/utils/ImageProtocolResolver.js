@@ -2,6 +2,8 @@
  * 图片协议解析器
  * 支持 app:// 协议，自动处理本地和云端图片
  */
+import logger from './logger';
+
 class ImageProtocolResolver {
   constructor() {
     this.cache = new Map(); // 图片缓存
@@ -113,18 +115,18 @@ class ImageProtocolResolver {
    * 优先从本地加载，失败则尝试从云端下载
    */
   async fetchImage(relativePath) {
-    console.log(`[ImageResolver] fetchImage 开始:`, relativePath)
+    logger.log(`[ImageResolver] fetchImage 开始:`, relativePath)
     
     try {
       // 1. 检查本地文件是否存在
-      console.log(`[ImageResolver] 调用 images.getPath:`, relativePath)
+      logger.log(`[ImageResolver] 调用 images.getPath:`, relativePath)
       const pathResult = await window.electronAPI.images.getPath(relativePath);
-      console.log(`[ImageResolver] getPath 返回:`, pathResult)
+      logger.log(`[ImageResolver] getPath 返回:`, pathResult)
       
       if (pathResult.success && pathResult.data) {
         // 返回 app:// 协议（Electron 会处理）
         const appUrl = `app://${relativePath}`;
-        console.log(`[ImageResolver] 返回 app:// URL:`, appUrl)
+        logger.log(`[ImageResolver] 返回 app:// URL:`, appUrl)
         return appUrl;
       }
     } catch (localError) {
@@ -133,15 +135,15 @@ class ImageProtocolResolver {
 
     try {
       // 2. 本地不存在，尝试从云端下载
-      console.log(`[ImageResolver] 尝试从云端下载图片: ${relativePath}`);
+      logger.log(`[ImageResolver] 尝试从云端下载图片: ${relativePath}`);
       
       const downloadResult = await window.electronAPI.sync.downloadImage(relativePath);
-      console.log(`[ImageResolver] 云端下载结果:`, downloadResult)
+      logger.log(`[ImageResolver] 云端下载结果:`, downloadResult)
       
       if (downloadResult.success) {
         // 下载成功后，返回 app:// URL
         const appUrl = `app://${relativePath}`;
-        console.log(`[ImageResolver] 下载成功，返回 app:// URL:`, appUrl)
+        logger.log(`[ImageResolver] 下载成功，返回 app:// URL:`, appUrl)
         return appUrl;
       }
     } catch (cloudError) {

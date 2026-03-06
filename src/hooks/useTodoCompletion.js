@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { isTodoCompleted, isFutureRecurringTodo } from '../utils/todoDisplayUtils';
 
 /**
  * 管理Todo完成状态和动画的自定义Hook
@@ -9,8 +10,11 @@ export const useTodoCompletion = (onRefresh) => {
   const [celebratingTodos, setCelebratingTodos] = useState(new Set());
 
   const handleToggleComplete = useCallback(async (todo) => {
+    // 未来重复待办不可完成
+    if (isFutureRecurringTodo(todo)) return;
+
     // 如果已经完成，直接切换状态
-    if (todo.completed || todo.is_completed) {
+    if (isTodoCompleted(todo)) {
       try {
         await window.electronAPI.todos.toggleComplete(todo.id);
         if (onRefresh) {

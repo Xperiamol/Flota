@@ -90,10 +90,10 @@ function calculateTodosHash(todos) {
     return calculateHash('[]');
   }
 
-  // 排序并清理
+  // 排序并清理（移除非同步字段 db_id、updated_at）
   const cleaned = todos
     .map(todo => {
-      const { updated_at, ...rest } = todo;
+      const { updated_at, db_id, ...rest } = todo;
       return rest;
     })
     .sort((a, b) => a.id.localeCompare(b.id));

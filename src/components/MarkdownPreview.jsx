@@ -10,6 +10,7 @@ import { createMarkdownRenderer } from '../markdown/index.js'
 import { useError } from './ErrorProvider'
 import '../markdown/markdown.css'
 import 'highlight.js/styles/github.css'
+import logger from '../utils/logger'
 
 // 自定义图片组件 - 支持 app:// 协议和云端图片
 const CustomImage = ({ src, alt, ...props }) => {
@@ -211,28 +212,155 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
       const images = previewElement.querySelectorAll('img')
       const resolver = getImageResolver()
 
-      console.log(`[MarkdownPreview] 开始加载 ${images.length} 张图片`)
+      logger.log(`[MarkdownPreview] 开始加载 ${images.length} 张图片`)
+
+      // 音频扩展名集合
+      const audioExts = new Set(['.m4a', '.mp3', '.ogg', '.wav', '.aac', '.opus', '.flac', '.webm'])
 
       for (const img of images) {
         const originalSrc = img.getAttribute('src')
 
-        console.log(`[MarkdownPreview] 图片原始路径:`, originalSrc)
+        logger.log(`[MarkdownPreview] 图片原始路径:`, originalSrc)
+
+        // ── 音频文件：替换为 <audio> 播放器 ──
+        if (originalSrc) {
+          const srcLower = originalSrc.toLowerCase()
+          const extMatch = srcLower.match(/\.([a-z0-9]+)(?:\?|$)/)
+          const ext = extMatch ? '.' + extMatch[1] : ''
+          // markdown-it 已将 "audio/xxx" 转为 "app://audio/xxx"，需同时检查两种前缀
+          const isAudio = audioExts.has(ext) || originalSrc.startsWith('audio/') || originalSrc.startsWith('app://audio/')
+
+          if (isAudio) {
+            // 构造 app:// URL：audio/file.m4a → app://audio/file.m4a
+            let appSrc = originalSrc
+            if (!originalSrc.startsWith('app://') && !originalSrc.startsWith('http')) {
+              appSrc = `app://${originalSrc.replace(/^\/+/, '')}`
+            }
+
+            // 创建播放器容器（去掉图标和标签）
+            const wrapper = document.createElement('div')
+            wrapper.style.cssText = 'margin:8px 0;padding:6px 12px;background:var(--md-audio-bg,rgba(0,0,0,.04));border-radius:10px;'
+
+            // 注入 range thumb 样式（仅首次）
+            if (!document.getElementById('_md-audio-style')) {
+              const _s = document.createElement('style')
+              _s.id = '_md-audio-style'
+              _s.textContent = '.md-ap-range{-webkit-appearance:none;appearance:none;flex:1;height:4px;border-radius:2px;cursor:pointer;border:none;outline:none;overflow:visible;padding:0;margin:0}.md-ap-range::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:#1976d2;cursor:pointer}'
+              document.head.appendChild(_s)
+            }
+
+            const audio = document.createElement('audio')
+            audio.preload = 'none'
+            audio.src = appSrc
+
+            const playerRow = document.createElement('div')
+            playerRow.style.cssText = 'display:flex;align-items:center;gap:8px;'
+
+            const playBtn = document.createElement('button')
+            playBtn.textContent = '▶'
+            playBtn.style.cssText = 'border:none;background:none;cursor:pointer;padding:0 2px;font-size:14px;color:inherit;line-height:1;flex-shrink:0;opacity:.75;'
+
+            const progressEl = document.createElement('input')
+            progressEl.type = 'range'
+            progressEl.min = 0; progressEl.max = 1; progressEl.step = '0.01'; progressEl.value = 0
+            progressEl.className = 'md-ap-range'
+            progressEl.style.background = 'rgba(0,0,0,.15)'
+
+            const timeEl = document.createElement('span')
+            timeEl.textContent = '0:00 / –:--'
+            timeEl.style.cssText = 'font-size:11px;opacity:.55;min-width:70px;text-align:right;white-space:nowrap;'
+
+            const _fmt = s => (isFinite(s) && s >= 0)
+              ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : '–:--'
+            const _applyProg = () => {
+              const dur = isFinite(audio.duration) ? audio.duration : 0
+              const pct = dur > 0 ? (audio.currentTime / dur) * 100 : 0
+              progressEl.max = dur || 1
+              progressEl.value = audio.currentTime
+              progressEl.style.background = `linear-gradient(to right,#1976d2 ${pct}%,rgba(0,0,0,.15) ${pct}%)`
+              timeEl.textContent = `${_fmt(audio.currentTime)} / ${_fmt(audio.duration)}`
+            }
+            let _pl = false
+            audio.addEventListener('timeupdate', _applyProg)
+            audio.addEventListener('loadedmetadata', _applyProg)
+            audio.addEventListener('durationchange', _applyProg)
+            audio.addEventListener('ended', () => { _pl = false; playBtn.textContent = '▶'; _applyProg() })
+            playBtn.onclick = () => {
+              if (_pl) { audio.pause(); _pl = false; playBtn.textContent = '▶' }
+              else { audio.play().then(() => { _pl = true; playBtn.textContent = '⏸' }).catch(() => {}) }
+            }
+            progressEl.oninput = () => { audio.currentTime = Number(progressEl.value); _applyProg() }
+
+            playerRow.appendChild(playBtn)
+            playerRow.appendChild(progressEl)
+            playerRow.appendChild(timeEl)
+            wrapper.appendChild(audio)
+            wrapper.appendChild(playerRow)
+
+            // 转文字按钮
+            const sttRow = document.createElement('div')
+            sttRow.style.cssText = 'margin-top:8px;display:flex;align-items:center;gap:8px;'
+
+            const sttBtn = document.createElement('button')
+            sttBtn.textContent = '🗣 转文字'
+            sttBtn.style.cssText = 'border:1px solid var(--md-audio-btn-border, rgba(0,0,0,.15));background:var(--md-audio-btn-bg,rgba(0,0,0,.04));border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer;color:inherit;transition:background .2s;'
+            sttBtn.onmouseenter = () => { sttBtn.style.background = 'var(--md-audio-btn-hover,rgba(0,0,0,.08))' }
+            sttBtn.onmouseleave = () => { sttBtn.style.background = 'var(--md-audio-btn-bg,rgba(0,0,0,.04))' }
+
+            const sttResult = document.createElement('div')
+            sttResult.style.cssText = 'font-size:13px;line-height:1.6;color:inherit;opacity:.85;display:none;margin-top:6px;white-space:pre-wrap;'
+
+            sttBtn.onclick = async () => {
+              sttBtn.disabled = true
+              sttBtn.textContent = '⏳ 转文字中…'
+              try {
+                // 剥离 app:// 协议前缀，IPC 端需要相对路径
+                const sttSrc = originalSrc.replace(/^app:\/\//, '')
+                const result = await window.electronAPI.stt.transcribe(sttSrc)
+                if (result?.success && result?.data?.text) {
+                  sttResult.textContent = result.data.text
+                  sttResult.style.display = 'block'
+                  sttBtn.textContent = '🗣 重新转文字'
+                } else {
+                  sttBtn.textContent = '❌ 转文字失败'
+                  setTimeout(() => { sttBtn.textContent = '🗣 转文字' }, 2000)
+                }
+              } catch (err) {
+                console.error('转文字失败:', err)
+                sttBtn.textContent = '❌ 转文字失败'
+                setTimeout(() => { sttBtn.textContent = '🗣 转文字' }, 2000)
+              } finally {
+                sttBtn.disabled = false
+              }
+            }
+
+            sttRow.appendChild(sttBtn)
+            wrapper.appendChild(sttRow)
+            wrapper.appendChild(sttResult)
+
+            if (img.parentNode) {
+              img.parentNode.replaceChild(wrapper, img)
+            }
+            logger.log(`[MarkdownPreview] 音频文件已替换为播放器:`, appSrc)
+            continue
+          }
+        }
 
         // 跳过已经是 data:、file:// 或 http(s) 的图片
         if (!originalSrc || originalSrc.startsWith('data:') || originalSrc.startsWith('file://') || originalSrc.startsWith('http://') || originalSrc.startsWith('https://')) {
-          console.log(`[MarkdownPreview] 跳过已处理的图片:`, originalSrc)
+          logger.log(`[MarkdownPreview] 跳过已处理的图片:`, originalSrc)
           continue
         }
 
         try {
           // 使用协议解析器加载图片
-          console.log(`[MarkdownPreview] 解析图片路径:`, originalSrc)
+          logger.log(`[MarkdownPreview] 解析图片路径:`, originalSrc)
           const resolvedSrc = await resolver.resolve(originalSrc)
-          console.log(`[MarkdownPreview] 解析结果:`, resolvedSrc)
+          logger.log(`[MarkdownPreview] 解析结果:`, resolvedSrc)
 
           if (resolvedSrc) {
             img.src = resolvedSrc
-            console.log(`[MarkdownPreview] 图片加载成功:`, originalSrc)
+            logger.log(`[MarkdownPreview] 图片加载成功:`, originalSrc)
           } else {
             throw new Error('图片解析失败')
           }

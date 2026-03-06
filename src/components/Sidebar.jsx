@@ -457,4 +457,4 @@ const Sidebar = ({ open = true, onClose }) => {
   );
 };
 
-export default Sidebar;
+export default React.memo(Sidebar);

@@ -101,7 +101,7 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                         boxShadow: isDark
                             ? 'inset 0 1px 0 rgba(255,255,255,0.05)'
                             : 'inset 0 1px 0 rgba(255,255,255,0.4), 0 1px 2px rgba(0,0,0,0.05)',
-                        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                        transition: 'background-color 0.2s cubic-bezier(0.4,0,0.2,1), box-shadow 0.2s cubic-bezier(0.4,0,0.2,1), transform 0.2s cubic-bezier(0.4,0,0.2,1), color 0.2s cubic-bezier(0.4,0,0.2,1)',
                         '&:hover': {
                             boxShadow: isDark
                                 ? 'inset 0 1px 0 rgba(255,255,255,0.1), 0 4px 12px rgba(0,0,0,0.3)'
@@ -127,7 +127,7 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                     root: {
                         borderRadius: 12,
                         backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-                        transition: 'all 0.2s ease',
+                        transition: 'background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease',
                         '&:hover': {
                             backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
                         },
@@ -250,7 +250,7 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                     root: {
                         borderRadius: 12,
                         margin: '4px 8px',
-                        transition: 'all 0.2s ease',
+                        transition: 'background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease',
                         '&.Mui-selected': {
                             backgroundColor: alpha(primaryColor, 0.15),
                             '&:hover': {

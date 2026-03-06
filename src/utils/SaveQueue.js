@@ -3,6 +3,8 @@
  * 防止并发保存冲突，确保保存操作按顺序执行
  * 遵循SOLID原则中的单一职责原则
  */
+import logger from './logger';
+
 class SaveQueue {
   constructor() {
     this.queue = [];
@@ -61,18 +63,18 @@ class SaveQueue {
 
       // 检查是否已经在保存中（防止重复保存）
       if (this.saveInProgress.has(task.id)) {
-        console.log(`[SaveQueue] 跳过重复保存: ${task.id}`);
+        logger.log(`[SaveQueue] 跳过重复保存: ${task.id}`);
         task.resolve();
         continue;
       }
 
       try {
         this.saveInProgress.set(task.id, true);
-        console.log(`[SaveQueue] 开始保存: ${task.id}`);
+        logger.log(`[SaveQueue] 开始保存: ${task.id}`);
         
         await task.saveFunc();
         
-        console.log(`[SaveQueue] 保存成功: ${task.id}`);
+        logger.log(`[SaveQueue] 保存成功: ${task.id}`);
         task.resolve();
       } catch (error) {
         console.error(`[SaveQueue] 保存失败: ${task.id}`, error);

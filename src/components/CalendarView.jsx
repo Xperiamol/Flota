@@ -18,7 +18,8 @@ import {
   CheckCircle as CheckCircleIcon,
   RadioButtonUnchecked as RadioButtonUncheckedIcon,
   OpenInNew as OpenInNewIcon,
-  Close as CloseIcon
+  Close as CloseIcon,
+  Schedule as ScheduleIcon
 } from '@mui/icons-material';
 import {
   Dialog,
@@ -36,6 +37,7 @@ import MarkdownPreview from './MarkdownPreview';
 import { Excalidraw } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import { useError } from './ErrorProvider';
+import { isTodoCompleted, isFutureRecurringTodo } from '../utils/todoDisplayUtils';
 
 // 白板预览组件 - 只读模式
 const WhiteboardPreview = ({ content, theme }) => {
@@ -237,7 +239,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
       const data = await fetchTodos({ includeCompleted });
       const normalizedTodos = (data || []).map(todo => ({
         ...todo,
-        completed: Boolean(todo.completed ?? todo.is_completed)
+        completed: isTodoCompleted(todo)
       }));
       setTodos(normalizedTodos);
     } catch (error) {
@@ -262,6 +264,9 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
 
   // 处理todo完成状态切换
   const handleToggleComplete = useCallback(async (todo) => {
+    // 未来重复待办不可完成
+    if (isFutureRecurringTodo(todo)) return;
+
     // 已完成的任务直接切换状态
     if (todo.completed) {
       try {
@@ -744,6 +749,9 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                               }}
                             >
                               {/* 完成状态按钮 */}
+                              {isFutureRecurringTodo(todo) ? (
+                                <ScheduleIcon sx={{ color: 'text.disabled', fontSize: 16, mr: 0.5, opacity: 0.35 }} />
+                              ) : (
                               <IconButton
                                 size="small"
                                 onClick={(e) => {
@@ -789,6 +797,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                                   <RadioButtonUncheckedIcon sx={{ color: 'text.secondary', fontSize: 16 }} />
                                 )}
                               </IconButton>
+                              )}
 
                               {/* Todo内容 */}
                               <Box
@@ -1155,7 +1164,9 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                             : 'inherit'
                         }}
                       >
-                        {todo.completed ? (
+                        {isFutureRecurringTodo(todo) ? (
+                          <ScheduleIcon sx={{ color: 'text.disabled', fontSize: 20, opacity: 0.35 }} />
+                        ) : todo.completed ? (
                           <CheckCircleIcon sx={{ color: 'rgb(34, 197, 94)', fontSize: 20 }} />
                         ) : (
                           <RadioButtonUncheckedIcon sx={{ color: theme.palette.text.secondary, fontSize: 20 }} />

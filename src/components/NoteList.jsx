@@ -8,7 +8,6 @@ import {
   ListItemText,
   ListItemIcon,
   Typography,
-  Chip,
   IconButton,
   Menu,
   MenuItem,
@@ -65,6 +64,7 @@ import { createDragHandler } from '../utils/DragManager'
 import { useDragAnimation } from './DragAnimationProvider'
 import { ANIMATIONS, createTransitionString } from '../utils/animationConfig'
 import { useError } from './ErrorProvider'
+import logger from '../utils/logger'
 
 const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefChange }) => {
   const { t } = useTranslation()
@@ -126,11 +126,11 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
   }, {
     onDragStart: (dragData) => {
       // 添加拖拽开始时的自定义逻辑
-      console.log('笔记拖拽开始，添加视觉反馈');
+      logger.log('笔记拖拽开始，添加视觉反馈');
     },
     onCreateWindow: (dragData) => {
       // 独立窗口创建成功后的回调
-      console.log('笔记独立窗口创建成功');
+      logger.log('笔记独立窗口创建成功');
     }
   })
 
@@ -144,11 +144,11 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
         return matchesDeletedStatus;
       }
 
-      // 检查笔记是否包含选中的标签
+      // 检查笔记是否包含选中的标签（层级前缀匹配：选中 "论文" 也匹配 "论文/初稿"）
       const noteTags = note.tags ?
         (Array.isArray(note.tags) ? note.tags : note.tags.split(',').map(tag => tag.trim())) : [];
       const hasSelectedTags = selectedTagFilters.some(filterTag =>
-        noteTags.includes(filterTag)
+        noteTags.some(noteTag => noteTag === filterTag || noteTag.startsWith(filterTag + '/'))
       );
 
       return matchesDeletedStatus && hasSelectedTags;
@@ -168,11 +168,18 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
       const alreadyLoadedCurrentView = lastFetchedViewRef.current === showDeleted && notesRef.current.length > 0
       if (alreadyLoadedCurrentView) return
 
+      // 初次挂载（从其他视图切回笔记页）且 store 中已有笔记数据时，
+      // 跳过过渡动画和重复加载，由 App.jsx 的 loadNotes 负责后台刷新
+      const isInitialMount = lastFetchedViewRef.current === null
+      if (isInitialMount && notesRef.current.length > 0) {
+        lastFetchedViewRef.current = showDeleted
+        return
+      }
+
       lastFetchedViewRef.current = showDeleted
       isLoadingRef.current = true
 
       setIsTransitioning(true)
-      await new Promise(resolve => setTimeout(resolve, 150))
 
       if (showDeleted) {
         await loadNotes({ deleted: true })
@@ -325,7 +332,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
         await deleteNote(selectedNote.id)
 
         // 显示成功提示
-        console.log('已转换为待办事项:', result)
+        logger.log('已转换为待办事项:', result)
       }
 
       handleMenuClose()
@@ -468,7 +475,9 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
     </Box>
   )
 
-  if (isLoading && !isTransitioning) {
+  // 仅在完全没有笔记数据时才显示骨架屏，
+  // 已有数据时让列表保持可见，后台静默刷新，避免切换视图时闪烁
+  if (isLoading && !isTransitioning && filteredNotes.length === 0) {
     return (
       <Box sx={{
         flex: 1,
@@ -677,7 +686,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                           border: '1px solid',
                           borderColor: 'transparent',
                           backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.6)',
-                          transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                          transition: 'background-color 0.2s cubic-bezier(0.4,0,0.2,1), box-shadow 0.2s cubic-bezier(0.4,0,0.2,1), border-color 0.2s cubic-bezier(0.4,0,0.2,1)',
                           py: 1,
                           pr: multiSelect.isMultiSelectMode ? 2 : 6,
                           '&:hover': {
@@ -735,14 +744,6 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                               >
                                 {getNoteDisplayTitle(note)}
                               </Typography>
-                              {note.category && (
-                                <Chip
-                                  label={note.category}
-                                  size="small"
-                                  variant="outlined"
-                                  sx={{ fontSize: '0.7rem', height: 20 }}
-                                />
-                              )}
                             </Box>
                           }
                           secondary={

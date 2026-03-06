@@ -42,7 +42,7 @@ const useStore = create(
                 currentView: 'notes', // 当前选中的视图：notes, todo, calendar, files, profile, settings
                 userAvatar: '', // 用户头像
                 userName: '', // 用户名称
-                editorMode: 'markdown', // 编辑器模式：'markdown' | 'wysiwyg'
+                editorMode: 'wysiwyg', // 编辑器模式：'markdown' | 'wysiwyg'
                 defaultMinibarMode: false, // 独立窗口默认minibar模式
                 maskOpacity: 'medium', // 遮罩透明度：'none' | 'light' | 'medium' | 'heavy'
                 christmasMode: false, // 圣诞模式：true | false
@@ -609,7 +609,8 @@ const useStore = create(
                 theme: state.theme,
                 primaryColor: state.primaryColor,
                 titleBarStyle: state.titleBarStyle,
-                christmasMode: state.christmasMode
+                christmasMode: state.christmasMode,
+                editorMode: state.editorMode,
             })
         }
     )

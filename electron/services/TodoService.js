@@ -344,9 +344,12 @@ class TodoService extends EventEmitter {
       throw new Error('待办事项内容不能为空');
     }
 
-    // 处理日期格式
+    // 处理日期格式：仅包含时间的日期才转 ISO，date-only 保持原样以免误判 has_time
     if (todoData.due_date) {
-      todoData.due_date = new Date(todoData.due_date).toISOString();
+      const hasTime = /T\d{2}:\d{2}|\s\d{2}:\d{2}/.test(todoData.due_date);
+      if (hasTime) {
+        todoData.due_date = new Date(todoData.due_date).toISOString();
+      }
     }
 
     // 处理标签格式
@@ -402,9 +405,12 @@ class TodoService extends EventEmitter {
       throw new Error('待办事项不存在');
     }
 
-    // 处理日期格式
+    // 处理日期格式：仅包含时间的日期才转 ISO。date-only 保持原样以免误判 has_time
     if (todoData.due_date) {
-      todoData.due_date = new Date(todoData.due_date).toISOString();
+      const hasTime = /T\d{2}:\d{2}|\s\d{2}:\d{2}/.test(todoData.due_date);
+      if (hasTime) {
+        todoData.due_date = new Date(todoData.due_date).toISOString();
+      }
     }
 
     // 处理标签字段和使用次数
@@ -459,7 +465,7 @@ class TodoService extends EventEmitter {
   }
 
   /**
-   * 切换待办事项完成状态
+   * 切换待办事项完成状态 (Schedule model)
    */
   toggleTodoComplete(id) {
     const todo = this.todoDAO.findById(id);
@@ -467,15 +473,45 @@ class TodoService extends EventEmitter {
       throw new Error('待办事项不存在');
     }
 
-    const newStatus = todo.is_completed ? 0 : 1;
-    const updatedTodo = this.todoDAO.update(id, { is_completed: newStatus });
+    // Schedule model: recurring todos track completions instead of is_completed
+    if (todo.repeat_type && todo.repeat_type !== 'none' && todo.due_date) {
+      const todayKey = RepeatUtils.todayKey();
 
-    // 如果任务被标记为完成且有重复设置，创建下次重复任务
-    if (newStatus === 1 && todo.repeat_type && todo.repeat_type !== 'none') {
-      this.handleRecurringTodo(todo);
+      // Guard: due_date > today 表示下一周期尚未到来，禁止提前完成
+      const dueDateKey = String(todo.due_date).substring(0, 10);
+      if (dueDateKey > todayKey) return todo;
+
+      let completions = RepeatUtils.parseCompletions(todo.completions);
+      const isDoneToday = completions.includes(todayKey);
+
+      if (isDoneToday) {
+        // Uncheck: remove today from completions, reset due_date to today (preserve time part)
+        completions = completions.filter(d => d !== todayKey);
+        const timePart = todo.due_date.length > 10 ? todo.due_date.substring(10) : '';
+        return this.todoDAO.update(id, {
+          completions: JSON.stringify(completions),
+          due_date: todayKey + timePart
+        });
+      } else {
+        // Check: add today to completions, advance due_date
+        completions.push(todayKey);
+        // GC old completions (keep 90 days)
+        completions = RepeatUtils.gcCompletions(completions, 90);
+        // 逾期修正：如果 due_date < 今天，从今天开始推进，避免推进后仍落在过去
+        const baseDueDate = RepeatUtils.adjustOverdueDueDate(todo.due_date);
+        const nextDueDate = RepeatUtils.calculateNextDueDate(
+          baseDueDate, todo.repeat_type, todo.repeat_interval, todo.repeat_days
+        );
+        return this.todoDAO.update(id, {
+          completions: JSON.stringify(completions),
+          due_date: nextDueDate || todo.due_date
+        });
+      }
     }
 
-    return updatedTodo;
+    // Non-recurring: standard toggle
+    const newStatus = todo.is_completed ? 0 : 1;
+    return this.todoDAO.update(id, { is_completed: newStatus });
   }
 
   /**
@@ -592,10 +628,28 @@ class TodoService extends EventEmitter {
   }
 
   /**
-   * 批量完成待办事项
+   * 批量完成待办事项 (Schedule model aware)
    */
   batchCompleteTodos(ids) {
-    return this.todoDAO.batchComplete(ids);
+    let count = 0;
+    ids.forEach(id => {
+      try {
+        const todo = this.todoDAO.findById(id);
+        if (!todo) return;
+        // For recurring todos, check if already completed for today via completions array
+        if (todo.repeat_type && todo.repeat_type !== 'none') {
+          const isAlreadyDone = RepeatUtils.isCompletedForToday(todo.completions, todo.repeat_type);
+          if (!isAlreadyDone) {
+            this.toggleTodoComplete(id);
+            count++;
+          }
+        } else if (!todo.is_completed) {
+          this.toggleTodoComplete(id);
+          count++;
+        }
+      } catch (_) { /* skip */ }
+    });
+    return count;
   }
 
   /**
@@ -654,30 +708,11 @@ class TodoService extends EventEmitter {
   }
 
   /**
-   * 处理重复任务
+   * 处理重复任务 (Schedule model: no longer clones, kept for API compatibility)
    */
   handleRecurringTodo(todo) {
-    if (!todo.repeat_type || todo.repeat_type === 'none') {
-      return null;
-    }
-
-    const nextDueDate = RepeatUtils.calculateNextDueDate(todo.due_date, todo.repeat_type, todo.repeat_interval, todo.repeat_days);
-    
-    if (nextDueDate) {
-      const newTodo = {
-        content: todo.content,
-        tags: todo.tags,
-        is_important: todo.is_important,
-        is_urgent: todo.is_urgent,
-        due_date: nextDueDate,
-        repeat_type: todo.repeat_type,
-        repeat_interval: todo.repeat_interval,
-        repeat_days: todo.repeat_days
-      };
-      
-      return this.createTodo(newTodo);
-    }
-    
+    // Schedule model: completions are tracked in-place, no cloning needed.
+    // This method is retained for backward compatibility but is now a no-op.
     return null;
   }
 
@@ -689,26 +724,14 @@ class TodoService extends EventEmitter {
   }
 
   /**
-   * 处理到期的重复事项
+   * 处理到期的重复事项 (Schedule model: no-op, kept for API compatibility)
    */
   processRecurringTodos() {
-    const recurringTodos = this.getRecurringTodos();
-    let processedCount = 0;
-    const newTodos = [];
-
-    recurringTodos.forEach(todo => {
-      if (todo.is_completed && todo.repeat_type && todo.repeat_type !== 'none') {
-        const newTodo = this.handleRecurringTodo(todo);
-        if (newTodo) {
-          newTodos.push(newTodo);
-          processedCount++;
-        }
-      }
-    });
-
+    // Schedule model: recurring todos are handled in-place via toggleTodoComplete.
+    // No periodic processing needed.
     return {
-      processedCount,
-      newTodos
+      processedCount: 0,
+      newTodos: []
     };
   }
 

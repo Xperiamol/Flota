@@ -13,6 +13,7 @@
 import flashnoteUICSS from './flashnote-ui.css?inline'
 import { registerFlashNoteComponents } from './flashnote-components'
 import { injectReactBridge } from './flashnote-react-bridge'
+import logger from './logger'
 
 /**
  * 将 UI Bridge 注入到插件窗口
@@ -299,7 +300,7 @@ export function injectUIBridge(iframeWindow, theme, manifestOrOptions = null) {
     styleElement.id = 'flashnote-ui-styles'
     styleElement.textContent = flashnoteUICSS
     iframeWindow.document.head.appendChild(styleElement)
-    console.log('[FlashNote UI Bridge] CSS 类库已注入')
+    logger.log('[FlashNote UI Bridge] CSS 类库已注入')
   } catch (error) {
     console.error('[FlashNote UI Bridge] 注入 CSS 类库失败:', error)
   }
@@ -307,7 +308,7 @@ export function injectUIBridge(iframeWindow, theme, manifestOrOptions = null) {
   // 注册 Web Components 到 iframe
   try {
     registerFlashNoteComponents(iframeWindow)
-    console.log('[FlashNote UI Bridge] Web Components 已注册')
+    logger.log('[FlashNote UI Bridge] Web Components 已注册')
   } catch (error) {
     console.error('[FlashNote UI Bridge] 注册 Web Components 失败:', error)
   }
@@ -316,7 +317,7 @@ export function injectUIBridge(iframeWindow, theme, manifestOrOptions = null) {
   if (pluginManifest && pluginManifest.framework === 'react') {
     try {
       injectReactBridge(iframeWindow)
-      console.log('[FlashNote UI Bridge] React Bridge 已注入')
+      logger.log('[FlashNote UI Bridge] React Bridge 已注入')
     } catch (error) {
       console.error('[FlashNote UI Bridge] 注入 React Bridge 失败:', error)
     }
@@ -325,7 +326,7 @@ export function injectUIBridge(iframeWindow, theme, manifestOrOptions = null) {
   // 自动应用 CSS 变量
   try {
     bridge.applyCSSVariables()
-    console.log('[FlashNote UI Bridge] 已注入，版本:', bridge.version)
+    logger.log('[FlashNote UI Bridge] 已注入，版本:', bridge.version)
   } catch (error) {
     console.error('[FlashNote UI Bridge] 应用 CSS 变量失败:', error)
   }

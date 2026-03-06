@@ -9,6 +9,7 @@ const { app } = require('electron');
 const NoteDAO = require('../../dao/NoteDAO');
 const TodoDAO = require('../../dao/TodoDAO');
 const DatabaseManager = require('../../dao/DatabaseManager');
+const RepeatUtils = require('../../utils/repeatUtils');
 const hashUtils = require('./utils/hash');
 
 /**
@@ -165,6 +166,7 @@ class StorageAdapter {
           tags: noteData.tags,
           category: noteData.category,
           is_pinned: noteData.is_pinned,
+          is_favorite: noteData.is_favorite || 0,
           is_deleted: noteData.is_deleted || 0,
           deleted_at: noteData.deleted_at,
           updated_at: this.toSQLiteDateTime(noteData.updated_at),
@@ -200,14 +202,45 @@ class StorageAdapter {
   async upsertTodo(todoData, skipChangeLog = true) {
     const existing = await this.getTodoById(todoData.id, true);
 
-    // 处理删除状态
+    // ── 逐条时间戳冲突解决 ──
+    // global_todos 以整组时间戳决定 download/upload，多设备场景下
+    // 某个 todo 被本地删除后，另一设备推送了更新的整组数据，
+    // 导致下载覆盖本地删除。此处用逐条 updated_at 做二次仲裁。
+    const cloudTime = this.parseTimestamp(todoData.updated_at);
+
+    // 处理远端已删除 (is_deleted === 1)
     if (todoData.is_deleted === 1) {
       if (existing) {
-        // 远程已删除，本地存在，执行软删除
-        await this.softDeleteTodo(todoData.id, skipChangeLog);
+        if (existing.is_deleted) {
+          // 双方都已删除，跳过
+          return;
+        }
+        // 远端删除 vs 本地存活 → 仅当远端更新时执行删除
+        if (cloudTime >= existing.updated_at) {
+          await this.softDeleteTodo(todoData.id, skipChangeLog);
+        }
+        // 否则本地数据更新，保留本地存活版本
       }
       // 如果本地不存在且远程已删除，不需要创建（跳过）
       return;
+    }
+
+    // 远端未删除，但本地已删除 → 比较时间戳决定是否恢复
+    if (existing && existing.is_deleted) {
+      if (existing.updated_at >= cloudTime) {
+        // 本地删除更新 → 保留删除状态，不恢复
+        return;
+      }
+      // 云端 updated_at 更新 → 继续执行下方更新逻辑，恢复该条目
+    }
+
+    // 对非循环 todo：本地 updated_at 严格更新时跳过（最后写入即为准 LWW）
+    // 避免用旧云端数据覆盖本地已修改的状态（例如手机已完成，但云端副本由另一设备推送了旧数据）
+    // 循环 todo 仍需继续处理以合并 completions 数组，不在此处跳过
+    if (existing && !existing.is_deleted && (existing.repeat_type || 'none') === 'none') {
+      if (existing.updated_at > cloudTime) {
+        return; // 本地更新，保留本地状态，跳过云端旧数据
+      }
     }
 
     // 规范化数据：确保所有字段都是 SQLite 兼容的类型
@@ -228,13 +261,22 @@ class StorageAdapter {
       next_due_date: todoData.next_due_date ?? null,
       is_recurring: this.toSQLiteBoolean(todoData.is_recurring),
       parent_todo_id: todoData.parent_todo_id ?? null,
+      completions: todoData.completions ?? '[]',
       item_type: todoData.item_type ?? 'todo',
       has_time: this.toSQLiteBoolean(todoData.has_time),
       is_deleted: this.toSQLiteBoolean(todoData.is_deleted),
+      completed_at: todoData.completed_at ? this.toSQLiteDateTime(todoData.completed_at) : null,
       updated_at: this.toSQLiteDateTime(todoData.updated_at),
     };
 
     if (existing) {
+
+      // Schedule model: merge completions arrays (union) instead of overwriting
+      if (existing.repeat_type && existing.repeat_type !== 'none') {
+        const localCompletions = RepeatUtils.parseCompletions(existing.completions);
+        const cloudCompletions = RepeatUtils.parseCompletions(normalizedData.completions);
+        normalizedData.completions = JSON.stringify(RepeatUtils.mergeCompletions(localCompletions, cloudCompletions));
+      }
 
       // 更新
       await this.todoDAO.update(
@@ -282,6 +324,16 @@ class StorageAdapter {
     if (existing) {
       await this.todoDAO.softDelete(existing.db_id || existing.id, { skipChangeLog });
     }
+  }
+
+  /**
+   * 清理软删除超过指定天数的待办事项（物理删除）
+   *
+   * @param {number} [keepDays=30] - 保留天数
+   * @returns {Promise<number>} 删除条数
+   */
+  async purgeOldDeletedTodos(keepDays = 30) {
+    return this.todoDAO.purgeOldDeleted(keepDays);
   }
 
   /**
@@ -378,6 +430,7 @@ class StorageAdapter {
       tags: row.tags || '',
       category: row.category || '',
       is_pinned: row.is_pinned || 0,
+      is_favorite: row.is_favorite || 0,
       is_deleted: row.is_deleted || 0,
       deleted_at: row.deleted_at ? this.parseTimestamp(row.deleted_at) : null,
     };
@@ -411,6 +464,7 @@ class StorageAdapter {
       next_due_date: row.next_due_date || null,
       is_recurring: row.is_recurring || 0,
       parent_todo_id: row.parent_todo_id || null,
+      completions: row.completions || '[]',
       // 其他字段
       item_type: row.item_type || 'todo',
       has_time: row.has_time || 0,

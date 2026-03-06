@@ -4,6 +4,7 @@
  */
 
 import { parseShortcut } from './shortcutUtils';
+import logger from './logger';
 
 class ShortcutManager {
   constructor() {
@@ -26,7 +27,7 @@ class ShortcutManager {
       }
       
       this.isInitialized = true;
-      console.log('快捷键管理器初始化完成:', this.shortcuts);
+      logger.log('快捷键管理器初始化完成:', this.shortcuts);
     } catch (error) {
       console.error('快捷键管理器初始化失败:', error);
       // 使用默认配置
@@ -45,13 +46,13 @@ class ShortcutManager {
         const result = await window.electronAPI.settings.get('shortcuts');
         if (result.success && result.data && typeof result.data === 'object' && Object.keys(result.data).length > 0) {
           this.shortcuts = result.data;
-          console.log('快捷键配置加载成功:', result.data);
+          logger.log('快捷键配置加载成功:', result.data);
           return;
         } else {
-          console.log('快捷键配置为空或无效，使用默认配置');
+          logger.log('快捷键配置为空或无效，使用默认配置');
         }
       } else {
-        console.log('electronAPI不可用，使用默认配置');
+        logger.log('electronAPI不可用，使用默认配置');
       }
     } catch (error) {
       console.error('加载快捷键配置时发生错误:', error);
@@ -61,7 +62,7 @@ class ShortcutManager {
     try {
       const { DEFAULT_SHORTCUTS } = await import('./shortcutUtils');
       this.shortcuts = DEFAULT_SHORTCUTS;
-      console.log('使用默认快捷键配置');
+      logger.log('使用默认快捷键配置');
     } catch (importError) {
       console.error('导入默认快捷键配置失败:', importError);
       this.shortcuts = {};
@@ -88,7 +89,7 @@ class ShortcutManager {
     // 存储监听器以便后续清理
     this.listeners.set(element, handleKeyDown);
     
-    console.log('快捷键监听器已注册到元素:', element.tagName);
+    logger.log('快捷键监听器已注册到元素:', element.tagName);
   }
 
   /**
@@ -100,7 +101,7 @@ class ShortcutManager {
       const handler = this.listeners.get(element);
       element.removeEventListener('keydown', handler);
       this.listeners.delete(element);
-      console.log('快捷键监听器已移除');
+      logger.log('快捷键监听器已移除');
     }
   }
 
@@ -122,7 +123,7 @@ class ShortcutManager {
 
     try {
       const pressedKey = this.getKeyFromEvent(event);
-      console.log('按键事件:', pressedKey, '修饰键:', {
+      logger.log('按键事件:', pressedKey, '修饰键:', {
         ctrl: event.ctrlKey,
         shift: event.shiftKey,
         alt: event.altKey,
@@ -137,7 +138,7 @@ class ShortcutManager {
         }
 
         if (config.type === 'local' && this.isShortcutMatch(event, config.currentKey)) {
-          console.log(`快捷键匹配: ${shortcutId} (${config.currentKey})`);
+          logger.log(`快捷键匹配: ${shortcutId} (${config.currentKey})`);
           
           // 查找对应的处理函数
           const handlerKey = shortcutId.split('.').pop(); // 获取动作名称
@@ -147,7 +148,7 @@ class ShortcutManager {
             try {
               event.preventDefault();
               event.stopPropagation();
-              console.log(`执行快捷键动作: ${shortcutId}`);
+              logger.log(`执行快捷键动作: ${shortcutId}`);
               handler(event);
               return;
             } catch (handlerError) {
@@ -330,7 +331,7 @@ class ShortcutManager {
       }
       
       this.shortcuts = { ...this.shortcuts, ...newShortcuts };
-      console.log('快捷键配置已更新:', this.shortcuts);
+      logger.log('快捷键配置已更新:', this.shortcuts);
       
       return {
         success: true,
@@ -375,7 +376,7 @@ class ShortcutManager {
       element.removeEventListener('keydown', handler);
     }
     this.listeners.clear();
-    console.log('快捷键管理器已清理');
+    logger.log('快捷键管理器已清理');
   }
 }
 

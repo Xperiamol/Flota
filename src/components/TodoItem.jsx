@@ -16,7 +16,9 @@ import {
   CheckCircle,
   Circle,
   CheckCircle as CheckCircleIcon,
-  RadioButtonUnchecked as RadioButtonUncheckedIcon
+  RadioButtonUnchecked as RadioButtonUncheckedIcon,
+  Repeat as RepeatIcon,
+  Schedule as ScheduleIcon
 } from '@mui/icons-material';
 import { useTheme } from '@mui/material/styles';
 import { format } from 'date-fns';
@@ -29,6 +31,7 @@ import {
 } from '../utils/priorityUtils';
 import { ANIMATIONS, createAnimationString, createTransitionString, GREEN_SWEEP_KEYFRAMES } from '../utils/animationConfig';
 import { t } from '../utils/i18n';
+import { isRecurringTodo, isTodoCompleted, isTodoOverdue, isTodoDueToday, isFutureRecurringTodo } from '../utils/todoDisplayUtils';
 
 /**
  * 获取Todo优先级颜色
@@ -87,8 +90,11 @@ const TodoItem = ({
 }) => {
   const theme = useTheme();
 
-  // 根据不同变体确定是否已完成
-  const isCompleted = todo.completed || todo.is_completed;
+  // Schedule model: for recurring todos, derive completion state from due_date
+  const isRecurring = isRecurringTodo(todo);
+  const isCompleted = isTodoCompleted(todo);
+  // due_date > today → 下一周期未到，不可提前完成
+  const isFutureRecurring = isFutureRecurringTodo(todo);
 
   // 优先级信息
   const priority = getPriorityLabel(todo);
@@ -102,7 +108,7 @@ const TodoItem = ({
       position: 'relative',
       overflow: 'hidden',
       borderRadius: '12px', // Consistent border radius
-      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+      transition: 'background-color 0.2s cubic-bezier(0.4,0,0.2,1), box-shadow 0.2s cubic-bezier(0.4,0,0.2,1), opacity 0.2s cubic-bezier(0.4,0,0.2,1)',
       '&:hover': {
         backgroundColor: theme.palette.action.hover,
         boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
@@ -134,6 +140,17 @@ const TodoItem = ({
 
   // 渲染完成状态图标
   const renderCompletionIcon = () => {
+    // 未来重复周期：显示时钟图标，不可点击
+    if (isFutureRecurring) {
+      return (
+        <Tooltip title="下一周期未到，暂不可完成">
+          <IconButton size="small" disabled sx={{ opacity: 0.35 }}>
+            <ScheduleIcon />
+          </IconButton>
+        </Tooltip>
+      );
+    }
+
     const iconProps = {
       size: "small",
       onClick: (e) => {
@@ -169,6 +186,17 @@ const TodoItem = ({
 
   // TodoList 变体的复杂图标渲染
   const renderTodoListIcon = () => {
+    // 未来重复周期：显示时钟图标，不可点击
+    if (isFutureRecurring) {
+      return (
+        <Tooltip title="下一周期未到，暂不可完成">
+          <IconButton size="small" disabled sx={{ opacity: 0.35 }}>
+            <ScheduleIcon />
+          </IconButton>
+        </Tooltip>
+      );
+    }
+
     return (
       <IconButton
         size="small"
@@ -235,19 +263,36 @@ const TodoItem = ({
             </Typography>
 
             {showSecondaryInfo && (
-              <Chip
-                size="small"
-                label={priority.label}
-                sx={{
-                  backgroundColor: `${priority.color}20`,
-                  color: priority.color,
-                  fontSize: '0.7rem',
-                  height: 20,
-                  '& .MuiChip-label': {
-                    px: 1
-                  }
-                }}
-              />
+              <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                {isRecurring && (
+                  <Chip
+                    icon={<RepeatIcon sx={{ fontSize: '0.8rem !important' }} />}
+                    size="small"
+                    label={todo.repeat_type === 'daily' ? '每天' : todo.repeat_type === 'weekly' ? '每周' : todo.repeat_type === 'monthly' ? '每月' : '重复'}
+                    sx={{
+                      backgroundColor: `${theme.palette.primary.main}15`,
+                      color: theme.palette.primary.main,
+                      fontSize: '0.7rem',
+                      height: 20,
+                      '& .MuiChip-label': { px: 0.5 },
+                      '& .MuiChip-icon': { ml: 0.5 }
+                    }}
+                  />
+                )}
+                <Chip
+                  size="small"
+                  label={priority.label}
+                  sx={{
+                    backgroundColor: `${priority.color}20`,
+                    color: priority.color,
+                    fontSize: '0.7rem',
+                    height: 20,
+                    '& .MuiChip-label': {
+                      px: 1
+                    }
+                  }}
+                />
+              </Box>
             )}
           </Box>
         }
@@ -304,8 +349,8 @@ const TodoItem = ({
 
   if (variant === 'quadrant') {
     // 四象限视图的Paper版本
-    const isOverdue = todo.due_date && new Date(todo.due_date) < new Date() && !isCompleted;
-    const isDueToday = todo.due_date && new Date(todo.due_date).toDateString() === new Date().toDateString();
+    const isOverdue = isTodoOverdue(todo);
+    const isDueToday = isTodoDueToday(todo);
 
     return (
       <Paper
@@ -420,4 +465,4 @@ const TodoItem = ({
   );
 };
 
-export default TodoItem;
+export default React.memo(TodoItem);

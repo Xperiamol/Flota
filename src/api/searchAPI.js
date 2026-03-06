@@ -10,6 +10,7 @@
  * @returns {Promise<Object>} 搜索结果
  */
 import { normalizeTags } from '../utils/tagUtils'
+import { isTodoCompleted } from '../utils/todoDisplayUtils'
 
 export const searchNotesAPI = async (query) => {
   try {
@@ -59,7 +60,7 @@ export const searchTodosAPI = async (query) => {
       // 标准化待办事项数据格式
       const normalizedTodos = (result.data || []).map(todo => ({
         ...todo,
-        completed: Boolean(todo.is_completed),
+        completed: isTodoCompleted(todo),
         title: todo.content,
         priority: getPriorityFromQuadrant(todo.is_important, todo.is_urgent)
       }));

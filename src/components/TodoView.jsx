@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from '../utils/i18n';
 import {
   Box,
@@ -57,6 +57,7 @@ import { todoSchema, extractValidationErrors } from '../validators/todoValidatio
 import { ANIMATIONS, createTransitionString } from '../utils/animationConfig';
 import useTodoDrag from '../hooks/useTodoDrag';
 import { useError } from './ErrorProvider';
+import { isTodoCompleted, isTodoOverdue, isFutureRecurringTodo } from '../utils/todoDisplayUtils';
 
 const {
   todo: { dialog: todoDialog }
@@ -99,12 +100,9 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
   // 加载待办事项
   const computeStatsFromList = (list = []) => {
     const total = list.length;
-    const completed = list.filter(todo => todo.is_completed || todo.completed).length;
+    const completed = list.filter(todo => isTodoCompleted(todo)).length;
     const pending = total - completed;
-    const overdue = list.filter(todo => {
-      const isCompleted = todo.is_completed || todo.completed;
-      return todo.due_date && !isCompleted && TimeZoneUtils.isOverdue(todo.due_date);
-    }).length;
+    const overdue = list.filter(todo => isTodoOverdue(todo)).length;
     return { total, completed, pending, overdue };
   };
 
@@ -151,8 +149,11 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
 
   // 切换待办事项完成状态 - 支持双击完成
   const handleToggleTodo = async (todo) => {
+    // 未来重复待办不可完成
+    if (isFutureRecurringTodo(todo)) return;
+
     // 如果已经完成，直接切换状态
-    if (todo.is_completed) {
+    if (isTodoCompleted(todo)) {
       try {
         await toggleTodoComplete(todo.id);
         loadTodos();
@@ -223,6 +224,7 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
 
   const completeTodoInstantly = async (todo) => {
     if (!todo) return;
+    if (isFutureRecurringTodo(todo)) return;
     try {
       await toggleTodoComplete(todo.id);
       await loadTodos();
@@ -280,7 +282,7 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
         key={todo.id}
         todo={{
           ...todo,
-          completed: todo.is_completed,
+          completed: isTodoCompleted(todo),
           quadrant: todo.is_important && todo.is_urgent ? 1 :
             todo.is_important ? 2 :
               todo.is_urgent ? 3 : 4
@@ -331,19 +333,15 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
     );
   };
 
-  // 渲染四象限视图 - 重新设计为2x2布局
-  const renderQuadrantView = () => {
-    if (!todos || typeof todos !== 'object') return null;
-
-    const quadrants = [
+  // 四象限配置 - 缓存避免每次渲染重新创建
+  const quadrants = useMemo(() => {
+    if (!todos || typeof todos !== 'object') return [];
+    return [
       {
         key: 'urgent_important',
         title: t('quadrant.urgentImportant'),
         subtitle: t('quadrant.urgentImportantDesc'),
         color: '#f44336',
-        bgGradient: theme.palette.mode === 'dark'
-          ? 'linear-gradient(135deg, #2d1b1b 0%, #3d2626 100%)'
-          : 'linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%)',
         icon: <WarningIcon />,
         todos: todos.urgent_important || [],
         isImportant: true,
@@ -354,9 +352,6 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
         title: t('quadrant.importantNotUrgent'),
         subtitle: t('quadrant.importantNotUrgentDesc'),
         color: '#ff9800',
-        bgGradient: theme.palette.mode === 'dark'
-          ? 'linear-gradient(135deg, #2d2419 0%, #3d3122 100%)'
-          : 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)',
         icon: <FlagIcon />,
         todos: todos.not_urgent_important || [],
         isImportant: true,
@@ -367,9 +362,6 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
         title: t('quadrant.urgentNotImportant'),
         subtitle: t('quadrant.urgentNotImportantDesc'),
         color: '#2196f3',
-        bgGradient: theme.palette.mode === 'dark'
-          ? 'linear-gradient(135deg, #1a2332 0%, #243242 100%)'
-          : 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)',
         icon: <FlashOnIcon />,
         todos: todos.urgent_not_important || [],
         isImportant: false,
@@ -380,15 +372,35 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
         title: t('quadrant.neitherUrgentNorImportant'),
         subtitle: t('quadrant.neitherUrgentNorImportantDesc'),
         color: '#9e9e9e',
-        bgGradient: theme.palette.mode === 'dark'
-          ? 'linear-gradient(135deg, #262626 0%, #333333 100%)'
-          : 'linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)',
         icon: <CircleIcon />,
         todos: todos.not_urgent_not_important || [],
         isImportant: false,
         isUrgent: false
       }
     ];
+  }, [todos, t]);
+
+  // 专注视图过滤后的待办 - 缓存避免每次渲染重新过滤
+  const focusFilteredTodos = useMemo(() => {
+    const flattenTodos = Array.isArray(todos)
+      ? todos
+      : todos && typeof todos === 'object'
+        ? Object.values(todos).flat()
+        : [];
+
+    return flattenTodos.filter((todo) => {
+      const completed = isTodoCompleted(todo);
+      if (filterBy === 'pending') return !completed;
+      if (filterBy === 'completed') return completed;
+      if (filterBy === 'overdue') return isTodoOverdue(todo);
+      if (filterBy === 'today') return todo.due_date && isToday(parseISO(todo.due_date));
+      return true;
+    });
+  }, [todos, filterBy]);
+
+  // 渲染四象限视图 - 重新设计为2x2布局
+  const renderQuadrantView = () => {
+    if (quadrants.length === 0) return null;
 
     return (
       <Box sx={{ width: '100%', maxWidth: '1200px', mx: 'auto' }}>
@@ -511,24 +523,9 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
 
   // 渲染专注视图
   const renderFocusView = () => {
-    const flattenTodos = Array.isArray(todos)
-      ? todos
-      : todos && typeof todos === 'object'
-        ? Object.values(todos).flat()
-        : [];
-
-    const filteredTodos = flattenTodos.filter((todo) => {
-      const completed = todo.completed !== undefined ? Boolean(todo.completed) : Boolean(todo.is_completed);
-      if (filterBy === 'pending') return !completed;
-      if (filterBy === 'completed') return completed;
-      if (filterBy === 'overdue') return todo.due_date && isPast(parseISO(todo.due_date)) && !completed;
-      if (filterBy === 'today') return todo.due_date && isToday(parseISO(todo.due_date));
-      return true;
-    });
-
     return (
       <FocusModeView
-        todos={filteredTodos}
+        todos={focusFilteredTodos}
         loading={loading}
         onToggleComplete={completeTodoInstantly}
         onLogFocusTime={addTodoFocusTime}
@@ -548,7 +545,10 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
   // 处理多选操作
   const handleMultiSelectComplete = async () => {
     try {
+      const allTodos = Array.isArray(todos) ? todos : Object.values(todos).flat();
       for (const todoId of selectedTodos) {
+        const todo = allTodos.find(t => t.id === todoId);
+        if (todo && isFutureRecurringTodo(todo)) continue;
         await toggleTodoComplete(todoId);
       }
       loadTodos();

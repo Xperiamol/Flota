@@ -2,6 +2,7 @@
  * 拖拽管理器 - 通用拖拽功能实现
  * 遵循SOLID和DRY原则，避免重复代码
  */
+import logger from './logger';
 
 class DragManager {
   constructor() {
@@ -332,18 +333,18 @@ export function createDragHandler(itemType, createWindowCallback) {
     handleDragStart: (event, item) => {
       dragManager.configure({
         onDragStart: (dragData) => {
-          console.log(`开始拖拽${itemType}:`, dragData.item);
+          logger.log(`开始拖拽${itemType}:`, dragData.item);
         },
         onDragMove: (dragData) => {
           // 可以在这里添加拖拽过程中的视觉反馈
         },
         onDragEnd: (dragData) => {
-          console.log(`拖拽${itemType}结束:`, dragData);
+          logger.log(`拖拽${itemType}结束:`, dragData);
         },
         onCreateWindow: async (dragData) => {
           try {
             await createWindowCallback(dragData.item);
-            console.log(`创建${itemType}独立窗口成功`);
+            logger.log(`创建${itemType}独立窗口成功`);
           } catch (error) {
             console.error(`创建${itemType}独立窗口失败:`, error);
           }

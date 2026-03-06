@@ -120,7 +120,7 @@ const enUS = {
     dragImageHere: 'Drag image here',
     saveTooltip: 'Save (Ctrl+S)',
     saveWhiteboardTooltip: 'Save Whiteboard (Ctrl+S)',
-    exportPngTooltip: 'Export PNG',
+    exportPngTooltip: 'Export PNG (high quality)',
     dragImageHere: 'Drag image here'
   },
   settings: {
@@ -145,10 +145,10 @@ const enUS = {
     themeDark: 'Dark',
     themeSystem: 'Follow System',
     editorMode: 'Editor Mode',
-    editorModeDesc: 'Select default editor mode for notes',
-    editorMarkdown: 'Markdown',
+    editorModeDesc: 'Source mode shows raw Markdown; WYSIWYG provides Obsidian-like live preview',
+    editorMarkdown: 'Source',
     editorWysiwyg: 'WYSIWYG',
-    editorWarning: 'Important: Markdown mode saves as Markdown text, WYSIWYG mode saves as HTML format. The two modes are not compatible. Switching modes may cause existing notes to display incorrectly. It is recommended to choose a mode before creating new notes.',
+    editorWarning: 'Both modes save as Markdown format and can be freely switched at any time. In WYSIWYG mode, content is rendered as you type — no manual preview needed.',
     userAvatar: 'User Avatar',
     uploadAvatar: 'Upload Avatar',
     deleteAvatar: 'Delete Avatar',

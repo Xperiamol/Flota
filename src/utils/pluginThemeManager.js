@@ -7,6 +7,7 @@
  * 3. 插件卸载时自动清理
  * 4. 样式热更新
  */
+import logger from './logger';
 
 class PluginThemeManager {
   constructor() {
@@ -81,7 +82,7 @@ class PluginThemeManager {
       element: styleElement
     })
 
-    console.log(`[PluginThemeManager] 已注册样式: ${pluginId}/${styleId} (优先级: ${priority})`)
+    logger.log(`[PluginThemeManager] 已注册样式: ${pluginId}/${styleId} (优先级: ${priority})`)
     return true
   }
 
@@ -128,12 +129,12 @@ class PluginThemeManager {
     const elementId = `plugin-theme-${pluginId}-${styleId}`
     const existingElement = document.getElementById(elementId)
     if (existingElement) {
-      console.log(`[PluginThemeManager] 从DOM移除样式元素: ${elementId}`)
+      logger.log(`[PluginThemeManager] 从DOM移除样式元素: ${elementId}`)
       existingElement.remove()
     }
 
     if (!pluginStylesMap || !pluginStylesMap.has(styleId)) {
-      console.log(`[PluginThemeManager] 样式未在内存中注册: ${pluginId}/${styleId}`)
+      logger.log(`[PluginThemeManager] 样式未在内存中注册: ${pluginId}/${styleId}`)
       return existingElement ? true : false
     }
 
@@ -152,7 +153,7 @@ class PluginThemeManager {
       this.pluginStyles.delete(pluginId)
     }
 
-    console.log(`[PluginThemeManager] 已注销样式: ${pluginId}/${styleId}`)
+    logger.log(`[PluginThemeManager] 已注销样式: ${pluginId}/${styleId}`)
     return true
   }
 
@@ -189,7 +190,7 @@ class PluginThemeManager {
     styleInfo.css = css
     styleInfo.element.textContent = css
 
-    console.log(`[PluginThemeManager] 已更新样式: ${pluginId}/${styleId}`)
+    logger.log(`[PluginThemeManager] 已更新样式: ${pluginId}/${styleId}`)
     return true
   }
 
@@ -219,12 +220,12 @@ class PluginThemeManager {
     // 兜底：直接从 DOM 中查找并移除该插件的所有样式
     const allPluginStyles = document.querySelectorAll(`[data-plugin-id="${pluginId}"]`)
     allPluginStyles.forEach(el => {
-      console.log(`[PluginThemeManager] 兜底移除DOM样式: ${el.id}`)
+      logger.log(`[PluginThemeManager] 兜底移除DOM样式: ${el.id}`)
       el.remove()
       count++
     })
 
-    console.log(`[PluginThemeManager] 已清理插件所有样式: ${pluginId} (共 ${count} 个)`)
+    logger.log(`[PluginThemeManager] 已清理插件所有样式: ${pluginId} (共 ${count} 个)`)
     return count
   }
 
@@ -278,7 +279,7 @@ class PluginThemeManager {
     // 清空Map
     this.pluginStyles.clear()
 
-    console.log('[PluginThemeManager] 已清理所有插件样式')
+    logger.log('[PluginThemeManager] 已清理所有插件样式')
   }
 }
 

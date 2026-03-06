@@ -72,8 +72,9 @@ class RepeatUtils {
     const jsDays = days.map(d => d === 7 ? 0 : d);
     const currentDay = currentDate.getDay();
     
-    // 查找本周内下一个重复日（包括今天之后的日期）
-    const nextDayInWeek = jsDays.find(day => day > currentDay);
+    // 查找本周内最近的下一个重复日
+    const sortedDays = [...jsDays].sort((a, b) => a - b);
+    const nextDayInWeek = sortedDays.find(day => day > currentDay);
     
     if (nextDayInWeek !== undefined) {
       // 本周内有下一个重复日
@@ -105,88 +106,90 @@ class RepeatUtils {
     return format(addDays(currentDate, repeatInterval), 'yyyy-MM-dd\'T\'HH:mm:ss');
   }
 
+  // ── Schedule model helpers ──────────────────────────────
+
   /**
-   * 验证重复设置是否有效
-   * @param {string} repeatType - 重复类型
-   * @param {number} repeatInterval - 重复间隔
-   * @param {string} repeatDays - 重复天数
-   * @returns {boolean} 是否有效
+   * 今天的日期字符串 (YYYY-MM-DD，本地时区)
+   * @returns {string}
    */
-  static validateRepeatSettings(repeatType, repeatInterval, repeatDays) {
-    if (repeatType === 'none') {
-      return true;
-    }
-
-    if (!repeatType || repeatInterval < 1) {
-      return false;
-    }
-
-    if (repeatType === 'weekly' && repeatDays) {
-      const days = repeatDays.split(',').map(d => parseInt(d.trim()));
-      return days.every(d => d >= 1 && d <= 7);
-    }
-
-    return ['daily', 'weekly', 'monthly', 'yearly', 'custom'].includes(repeatType);
+  static todayKey() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }
 
   /**
-   * 获取重复类型的显示文本
-   * @param {string} repeatType - 重复类型
-   * @param {number} repeatInterval - 重复间隔
-   * @param {string} repeatDays - 重复天数
-   * @returns {string} 显示文本
+   * 解析 completions JSON 字符串为数组
+   * @param {string|Array} completions
+   * @returns {string[]}
    */
-  static getRepeatDisplayText(repeatType, repeatInterval = 1, repeatDays = '') {
-    if (repeatType === 'none') {
-      return '不重复';
-    }
-
-    const intervalText = repeatInterval > 1 ? `每${repeatInterval}` : '每';
-
-    switch (repeatType) {
-      case 'daily':
-        return `${intervalText}天`;
-      
-      case 'weekly':
-        if (repeatDays) {
-          const dayNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-          const days = repeatDays.split(',').map(d => parseInt(d.trim()));
-          const dayTexts = days.map(d => dayNames[d]).join('、');
-          return `${intervalText}周的${dayTexts}`;
-        }
-        return `${intervalText}周`;
-      
-      case 'monthly':
-        return `${intervalText}月`;
-      
-      case 'yearly':
-        return `${intervalText}年`;
-      
-      case 'custom':
-        return '自定义重复';
-      
-      default:
-        return '未知重复类型';
+  static parseCompletions(completions) {
+    if (Array.isArray(completions)) return [...completions];
+    if (!completions || completions === '[]') return [];
+    try {
+      const parsed = JSON.parse(completions);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
     }
   }
 
   /**
-   * 解析重复天数字符串为数组
-   * @param {string} repeatDays - 重复天数字符串 '1,2,3'
-   * @returns {number[]} 天数数组
+   * 判断重复待办在当天是否已完成。
+   * 逻辑：直接检查 completions 数组中是否包含今天的日期 key。
+   * 比之前基于 due_date 位置的方案更可靠，不会混淆"due_date 本身就在未来"
+   * 和"因完成而推进到未来"两种情况。
+   * @param {string|Array} completions - completions JSON 字符串或数组
+   * @param {string} repeatType
+   * @returns {boolean}
    */
-  static parseRepeatDays(repeatDays) {
-    if (!repeatDays) return [];
-    return repeatDays.split(',').map(d => parseInt(d.trim())).filter(d => d >= 1 && d <= 7);
+  static isCompletedForToday(completions, repeatType) {
+    if (!repeatType || repeatType === 'none') return false;
+    const list = this.parseCompletions(completions);
+    return list.includes(this.todayKey());
   }
 
   /**
-   * 将天数数组转换为字符串
-   * @param {number[]} days - 天数数组
-   * @returns {string} 天数字符串
+   * 对逾期的 due_date 进行修正：如果 due_date 的日期部分早于今天，
+   * 将其日期替换为今天（保留时间部分），使 calculateNextDueDate 从今天开始推进。
+   * @param {string} dueDate
+   * @returns {string}
    */
-  static formatRepeatDays(days) {
-    return days.filter(d => d >= 1 && d <= 7).join(',');
+  static adjustOverdueDueDate(dueDate) {
+    if (!dueDate) return dueDate;
+    const todayStr = this.todayKey();
+    const dueKey = dueDate.substring(0, 10);
+    if (dueKey < todayStr) {
+      const timePart = dueDate.length > 10 ? dueDate.substring(10) : '';
+      return todayStr + timePart;
+    }
+    return dueDate;
+  }
+
+  /**
+   * 清理超过 keepDays 天的旧 completion 记录
+   * @param {string[]} completions - 日期字符串数组
+   * @param {number} keepDays
+   * @returns {string[]}
+   */
+  static gcCompletions(completions, keepDays = 90) {
+    if (!completions || completions.length === 0) return [];
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - keepDays);
+    const cutoffStr = format(cutoff, 'yyyy-MM-dd');
+    return completions.filter(d => d >= cutoffStr);
+  }
+
+  /**
+   * 合并两端的 completions 数组（取并集，去重排序）
+   * @param {string[]} a
+   * @param {string[]} b
+   * @returns {string[]}
+   */
+  static mergeCompletions(a, b) {
+    return [...new Set([...a, ...b])].sort();
   }
 }
 

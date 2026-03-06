@@ -123,6 +123,11 @@ class V3SyncService extends EventEmitter {
       this.emit('syncStart');
     });
 
+    // 恢复 lastSyncTime 到引擎（避免重启后白板预览全量重传）
+    if (this.lastSyncTime > 0) {
+      this.engine.lastSyncTime = this.lastSyncTime;
+    }
+
     this.engine.on('syncProgress', (data) => {
       this.emit('syncProgress', data);
     });
@@ -489,29 +494,6 @@ class V3SyncService extends EventEmitter {
     const remotePath = this.config.rootPath + relativePath;
 
     try {
-      // 检查图片是否已存在（避免重复上传）
-      try {
-        const checkResponse = await axios({
-          method: 'HEAD',
-          url: `${this.config.baseUrl}${remotePath}`,
-          auth: {
-            username: this.config.credentials.username,
-            password: this.config.credentials.password,
-          },
-          timeout: 5000,
-        });
-
-        // 文件已存在，跳过上传
-        console.log(`[V3图片同步] 图片已存在，跳过上传: ${relativePath}`);
-        return;
-      } catch (checkError) {
-        // 404 表示文件不存在，继续上传
-        if (checkError.response?.status !== 404) {
-          // 其他错误也继续尝试上传
-          console.log(`[V3图片同步] 检查文件存在性失败，继续上传: ${checkError.message}`);
-        }
-      }
-
       // 确保目录结构存在（逐级创建）
       await this.ensureImageDirectories();
 
@@ -557,6 +539,7 @@ class V3SyncService extends EventEmitter {
       this.config.rootPath,                           // /FlashNote/
       this.config.rootPath + 'images/',               // /FlashNote/images/
       this.config.rootPath + 'images/whiteboard/',    // /FlashNote/images/whiteboard/
+      this.config.rootPath + 'images/whiteboard-preview/',  // /FlashNote/images/whiteboard-preview/
     ];
 
     for (const dir of directories) {

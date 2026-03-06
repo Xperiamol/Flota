@@ -14,6 +14,7 @@ import TodoList from './components/TodoList'
 import StandaloneProvider, { useStandaloneContext } from './components/StandaloneProvider'
 import { useStandaloneStore } from './store/useStandaloneStore'
 import { ErrorProvider } from './components/ErrorProvider'
+import logger from './utils/logger'
 
 /**
  * 独立窗口内容组件
@@ -89,7 +90,7 @@ function StandaloneWindow() {
   useEffect(() => {
     const initializeWindow = async () => {
       try {
-        console.log('开始初始化独立窗口...')
+        logger.log('开始初始化独立窗口...')
         setIsLoading(true)
 
         // 如果不在Electron环境中，直接返回，不进行参数解析
@@ -105,7 +106,7 @@ function StandaloneWindow() {
         const todoData = urlParams.get('todoData')
         const minibarModeParam = urlParams.get('minibarMode')
 
-        console.log('独立窗口参数:', { type, noteId: noteIdParam, todoData, minibarMode: minibarModeParam })
+        logger.log('独立窗口参数:', { type, noteId: noteIdParam, todoData, minibarMode: minibarModeParam })
 
         // 将 minibarMode 参数传递给 StandaloneProvider 通过 windowData
         const minibarFlag = minibarModeParam === 'true'
@@ -118,13 +119,13 @@ function StandaloneWindow() {
             setError('无效的窗口参数: noteId')
             return
           }
-          console.log('设置笔记窗口类型')
+          logger.log('设置笔记窗口类型')
           setWindowType('note')
           setWindowData({ noteId: parsedNoteId, minibarMode: minibarFlag })
 
         } else if (type === 'todo' && todoData) {
           // Todo独立窗口
-          console.log('设置Todo窗口类型')
+          logger.log('设置Todo窗口类型')
           setWindowType('todo')
           try {
             const parsedTodoData = JSON.parse(decodeURIComponent(todoData))
@@ -142,13 +143,13 @@ function StandaloneWindow() {
           return
         }
 
-        console.log('独立窗口初始化完成')
+        logger.log('独立窗口初始化完成')
 
       } catch (error) {
         console.error('初始化独立窗口失败:', error)
         setError('初始化失败: ' + error.message)
       } finally {
-        console.log('设置加载状态为false')
+        logger.log('设置加载状态为false')
         setIsLoading(false)
       }
     }
@@ -164,7 +165,7 @@ function StandaloneWindow() {
   // 监听页面渲染完成，通知Electron窗口准备就绪
   useEffect(() => {
     if (!isLoading && !error && windowType) {
-      console.log('页面渲染完成，通知窗口准备就绪')
+      logger.log('页面渲染完成，通知窗口准备就绪')
 
       // 检查是否在Electron环境中
       if (!isElectronEnvironment) {
@@ -175,10 +176,10 @@ function StandaloneWindow() {
       // 通知 Electron 窗口页面已准备就绪
       const readyCaller = window.electronAPI?.window?.windowReady
       if (typeof readyCaller === 'function') {
-        console.log('通过electronAPI.window.windowReady通知窗口准备就绪')
+        logger.log('通过electronAPI.window.windowReady通知窗口准备就绪')
         try {
           readyCaller().then(() => {
-            console.log('windowReady调用成功')
+            logger.log('windowReady调用成功')
           }).catch((error) => {
             console.error('windowReady调用失败:', error)
           })
@@ -186,7 +187,7 @@ function StandaloneWindow() {
           console.error('windowReady调用异常:', error)
         }
       } else {
-        console.log('electronAPI.window.windowReady 不可用，手动触发DOMContentLoaded事件')
+        logger.log('electronAPI.window.windowReady 不可用，手动触发DOMContentLoaded事件')
         // 手动触发 DOMContentLoaded 事件作为备选方案
         const event = new Event('DOMContentLoaded')
         document.dispatchEvent(event)
@@ -200,12 +201,12 @@ function StandaloneWindow() {
 
     // 暴露保存函数供WindowManager调用
     window.__saveBeforeClose = async () => {
-      console.log('[StandaloneWindow] 执行窗口关闭前保存...');
+      logger.log('[StandaloneWindow] 执行窗口关闭前保存...');
       try {
         // 触发store中的保存逻辑
         if (store.saveNow) {
           await store.saveNow();
-          console.log('[StandaloneWindow] 保存完成');
+          logger.log('[StandaloneWindow] 保存完成');
         }
       } catch (error) {
         console.error('[StandaloneWindow] 保存失败:', error);

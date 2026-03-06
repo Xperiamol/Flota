@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Box, Alert, CircularProgress, IconButton, Tooltip } from '@mui/material'
 import { Save as SaveIcon, GetApp as ExportIcon } from '@mui/icons-material'
-import { Excalidraw, exportToBlob, THEME } from '@excalidraw/excalidraw'
+import { Excalidraw, exportToBlob, exportToSvg, THEME } from '@excalidraw/excalidraw'
 import { useStore } from '../store/useStore'
 import { useStandaloneContext } from './StandaloneProvider'
 import { useDebouncedSave } from '../hooks/useDebouncedSave'
 import '@excalidraw/excalidraw/index.css'
+import logger from '../utils/logger'
 
 /**
  * 白板编辑器组件
@@ -51,7 +52,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
   // 监听类型转换事件
   useEffect(() => {
     const handleTypeConversion = () => {
-      console.log('[WhiteboardEditor] 收到类型转换事件，标记为正在转换')
+      logger.log('[WhiteboardEditor] 收到类型转换事件，标记为正在转换')
       isTypeConvertingRef.current = true
       // 同时清除未保存标记，防止卸载时保存
       hasUnsavedChangesRef.current = false
@@ -71,7 +72,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
 
   // 只在开发环境输出调试日志
   if (process.env.NODE_ENV === 'development') {
-    console.log('[WhiteboardEditor] 组件渲染', { 
+    logger.log('[WhiteboardEditor] 组件渲染', { 
       noteId, 
       noteIdType: typeof noteId,
       hasExcalidrawAPI: !!excalidrawAPI
@@ -158,7 +159,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
       let files = {}
       if (excalidrawData.fileMap && Object.keys(excalidrawData.fileMap).length > 0) {
         if (process.env.NODE_ENV === 'development') {
-          console.log('[WhiteboardEditor] 处理图片文件', {
+          logger.log('[WhiteboardEditor] 处理图片文件', {
             filesCount: Object.keys(excalidrawData.fileMap).length
           })
         }
@@ -180,7 +181,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
               }
             }
           }
-          console.log('[WhiteboardEditor] 使用内联 dataURL 图片:', Object.keys(files).length)
+          logger.log('[WhiteboardEditor] 使用内联 dataURL 图片:', Object.keys(files).length)
         } else {
           // 从文件系统加载图片
           const result = await window.electronAPI.whiteboard.loadImages(excalidrawData.fileMap)
@@ -214,7 +215,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
     
     const loadWhiteboardData = async () => {
       if (process.env.NODE_ENV === 'development') {
-        console.log('[WhiteboardEditor] 首次加载数据', { noteId })
+        logger.log('[WhiteboardEditor] 首次加载数据', { noteId })
       }
       isApplyingRemoteDataRef.current = true
       
@@ -276,7 +277,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
         let files = {}
         if (excalidrawData.fileMap && Object.keys(excalidrawData.fileMap).length > 0) {
           if (process.env.NODE_ENV === 'development') {
-            console.log('[WhiteboardEditor] 初始加载 - 处理图片文件', {
+            logger.log('[WhiteboardEditor] 初始加载 - 处理图片文件', {
               filesCount: Object.keys(excalidrawData.fileMap).length
             })
           }
@@ -298,14 +299,14 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
                 }
               }
             }
-            console.log('[WhiteboardEditor] 初始加载 - 使用内联 dataURL 图片:', Object.keys(files).length)
+            logger.log('[WhiteboardEditor] 初始加载 - 使用内联 dataURL 图片:', Object.keys(files).length)
           } else {
             // 从文件系统加载图片
             const result = await window.electronAPI.whiteboard.loadImages(excalidrawData.fileMap)
             if (result.success) {
               files = result.data
               if (process.env.NODE_ENV === 'development') {
-                console.log('[WhiteboardEditor] 图片加载成功', {
+                logger.log('[WhiteboardEditor] 图片加载成功', {
                   filesCount: Object.keys(files).length
                 })
               }
@@ -379,7 +380,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
     
     if (excalidrawAPI && noteId && prevNoteId !== noteId) {
       if (process.env.NODE_ENV === 'development') {
-        console.log('[WhiteboardEditor] noteId变化，开始切换', { 
+        logger.log('[WhiteboardEditor] noteId变化，开始切换', { 
           prevNoteId, 
           newNoteId: noteId,
           hasUnsavedChanges: hasUnsavedChangesRef.current
@@ -398,7 +399,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
           // 如果有未保存的更改，先保存旧笔记
           if (hasUnsavedChangesRef.current) {
             if (process.env.NODE_ENV === 'development') {
-              console.log('[WhiteboardEditor] 切换前保存旧笔记', { prevNoteId })
+              logger.log('[WhiteboardEditor] 切换前保存旧笔记', { prevNoteId })
             }
             
             const sceneSnapshot = latestSceneRef.current || {}
@@ -407,7 +408,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
             const files = sceneSnapshot.files || {}
 
             if (process.env.NODE_ENV === 'development') {
-              console.log('[WhiteboardEditor] 获取到的数据', {
+              logger.log('[WhiteboardEditor] 获取到的数据', {
                 elementsCount: elements?.length || 0,
                 filesCount: Object.keys(files || {}).length
               })
@@ -444,7 +445,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
             setHasUnsavedChanges(false)
             
             if (process.env.NODE_ENV === 'development') {
-              console.log('[WhiteboardEditor] 旧笔记保存完成', { 
+              logger.log('[WhiteboardEditor] 旧笔记保存完成', { 
                 prevNoteId,
                 savedElementsCount: elements?.length || 0
               })
@@ -455,7 +456,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
           const note = notes.find(n => n.id === noteId)
           if (note) {
             if (process.env.NODE_ENV === 'development') {
-              console.log('[WhiteboardEditor] 开始加载新笔记', { noteId })
+              logger.log('[WhiteboardEditor] 开始加载新笔记', { noteId })
             }
             await resetExcalidrawContent(null, note)
             activeNoteIdRef.current = noteId
@@ -488,7 +489,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
     // 保存当前正在编辑的noteId的快照，避免切换时写错对象
     const currentNoteId = activeNoteIdRef.current
     if (process.env.NODE_ENV === 'development') {
-      console.log('[WhiteboardEditor] performSave调用', {
+      logger.log('[WhiteboardEditor] performSave调用', {
         currentNoteId,
         componentNoteId: noteId,
         hasExcalidrawAPI: !!excalidrawAPI,
@@ -521,7 +522,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
       let fileMap = {}
       if (files && Object.keys(files).length > 0) {
         if (process.env.NODE_ENV === 'development') {
-          console.log('[WhiteboardEditor] 保存图片到文件系统', {
+          logger.log('[WhiteboardEditor] 保存图片到文件系统', {
             filesCount: Object.keys(files).length
           })
         }
@@ -561,6 +562,47 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
         setHasUnsavedChanges(false)
         hasUnsavedChangesRef.current = false
       }
+
+      // 异步导出 PNG 预览图供移动端查看（不阻塞保存流程）
+      // 使用 SVG→Canvas 方式保证清晰度，scale: 2 兼顾质量与文件大小
+      try {
+        const note = notes?.find(n => n.id === currentNoteId)
+        const syncId = note?.sync_id
+        if (syncId && window.electronAPI?.whiteboard?.savePreview) {
+          exportToSvg({
+            elements,
+            appState: { ...appState, exportWithDarkMode: false },
+            files: files || {},
+          }).then(svgElement => {
+              const svgString = new XMLSerializer().serializeToString(svgElement)
+              const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
+              const svgUrl = URL.createObjectURL(svgBlob)
+              return new Promise((resolve, reject) => {
+                const img = new Image()
+                img.onload = () => {
+                  const SCALE = 2
+                  const canvas = document.createElement('canvas')
+                  canvas.width = img.naturalWidth * SCALE
+                  canvas.height = img.naturalHeight * SCALE
+                  const ctx = canvas.getContext('2d')
+                  ctx.scale(SCALE, SCALE)
+                  ctx.drawImage(img, 0, 0)
+                  URL.revokeObjectURL(svgUrl)
+                  canvas.toBlob(pngBlob => {
+                    const reader = new FileReader()
+                    reader.onloadend = () => resolve(reader.result.split(',')[1])
+                    reader.onerror = reject
+                    reader.readAsDataURL(pngBlob)
+                  }, 'image/png')
+                }
+                img.onerror = (e) => { URL.revokeObjectURL(svgUrl); reject(e) }
+                img.src = svgUrl
+              })
+            })
+            .then(base64 => window.electronAPI.whiteboard.savePreview(syncId, base64))
+            .catch(err => console.warn('[WhiteboardEditor] 预览图导出失败:', err))
+        }
+      } catch (_) { /* 预览导出失败不影响主保存 */ }
     } catch (error) {
       console.error('[WhiteboardEditor] 保存失败', error)
       setError('保存失败: ' + error.message)
@@ -570,7 +612,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
   // 保存开始日志
   const performSaveWithLog = useCallback(async () => {
     if (process.env.NODE_ENV === 'development') {
-      console.log('[WhiteboardEditor] 开始保存', { 
+      logger.log('[WhiteboardEditor] 开始保存', { 
         noteId, 
         hasUnsavedChanges: hasUnsavedChangesRef.current,
         hasExcalidrawAPI: !!excalidrawAPI 
@@ -580,7 +622,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
     const result = await performSave()
     
     if (process.env.NODE_ENV === 'development') {
-      console.log('[WhiteboardEditor] 保存完成', { 
+      logger.log('[WhiteboardEditor] 保存完成', { 
         noteId, 
         hasUnsavedChanges: hasUnsavedChangesRef.current 
       })
@@ -595,23 +637,23 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
   // 独立窗口模式：监听窗口关闭事件
   useEffect(() => {
     if (!actualIsStandaloneMode) {
-      console.log('[WhiteboardEditor] 非独立窗口模式，不监听关闭事件')
+      logger.log('[WhiteboardEditor] 非独立窗口模式，不监听关闭事件')
       return
     }
 
-    console.log('[WhiteboardEditor] 独立窗口模式，开始监听 standalone-window-save 事件')
+    logger.log('[WhiteboardEditor] 独立窗口模式，开始监听 standalone-window-save 事件')
 
     const handleWindowSave = async () => {
-      console.log('[WhiteboardEditor] 收到 standalone-window-save 事件', { 
+      logger.log('[WhiteboardEditor] 收到 standalone-window-save 事件', { 
         noteId, 
         hasUnsavedChanges: hasUnsavedChangesRef.current 
       })
       
       // 无论是否有未保存的更改，都尝试保存（因为可能有延迟的更改）
       try {
-        console.log('[WhiteboardEditor] 开始执行保存...')
+        logger.log('[WhiteboardEditor] 开始执行保存...')
         await saveNow()
-        console.log('[WhiteboardEditor] 保存完成')
+        logger.log('[WhiteboardEditor] 保存完成')
         // 通知主进程保存完成
         window.dispatchEvent(new CustomEvent('standalone-save-complete'))
       } catch (error) {
@@ -623,10 +665,10 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
 
     // 监听独立窗口保存事件
     window.addEventListener('standalone-window-save', handleWindowSave)
-    console.log('[WhiteboardEditor] 已添加 standalone-window-save 事件监听器')
+    logger.log('[WhiteboardEditor] 已添加 standalone-window-save 事件监听器')
 
     return () => {
-      console.log('[WhiteboardEditor] 移除 standalone-window-save 事件监听器')
+      logger.log('[WhiteboardEditor] 移除 standalone-window-save 事件监听器')
       window.removeEventListener('standalone-window-save', handleWindowSave)
     }
   }, [actualIsStandaloneMode, noteId, saveNow])
@@ -643,7 +685,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
     
     // 如果从笔记视图切换到其他视图，且有选中的笔记且有未保存的更改，立即保存
     if (prevView === 'notes' && currentView !== 'notes' && noteId && hasUnsavedChangesRef.current) {
-      console.log('[WhiteboardEditor] 切换视图前保存白板，从', prevView, '切换到', currentView)
+      logger.log('[WhiteboardEditor] 切换视图前保存白板，从', prevView, '切换到', currentView)
       // 先取消防抖保存
       cancelSave()
       // 立即保存
@@ -701,20 +743,46 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
     if (!excalidrawAPI) return
 
     try {
-      console.log('[WhiteboardEditor] 导出 PNG')
-      const blob = await exportToBlob({
+      logger.log('[WhiteboardEditor] 导出 PNG（SVG→Canvas 高清转换）')
+
+      // 第一步：导出 SVG（矢量，无损）
+      const svgElement = await exportToSvg({
         elements: excalidrawAPI.getSceneElements(),
         appState: excalidrawAPI.getAppState(),
         files: excalidrawAPI.getFiles(),
       })
 
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `whiteboard-${noteId}.png`
-      a.click()
-      URL.revokeObjectURL(url)
-      console.log('[WhiteboardEditor] 导出 PNG 成功')
+      // 第二步：将 SVG 以 3 倍分辨率光栅化为 PNG
+      const svgString = new XMLSerializer().serializeToString(svgElement)
+      const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
+      const svgUrl = URL.createObjectURL(svgBlob)
+
+      await new Promise((resolve, reject) => {
+        const img = new Image()
+        img.onload = () => {
+          const SCALE = 3
+          const canvas = document.createElement('canvas')
+          canvas.width = img.naturalWidth * SCALE
+          canvas.height = img.naturalHeight * SCALE
+          const ctx = canvas.getContext('2d')
+          ctx.scale(SCALE, SCALE)
+          ctx.drawImage(img, 0, 0)
+          URL.revokeObjectURL(svgUrl)
+
+          canvas.toBlob(pngBlob => {
+            const url = URL.createObjectURL(pngBlob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `whiteboard-${noteId}.png`
+            a.click()
+            URL.revokeObjectURL(url)
+            logger.log('[WhiteboardEditor] 导出 PNG 成功')
+            resolve()
+          }, 'image/png')
+        }
+        img.onerror = (e) => { URL.revokeObjectURL(svgUrl); reject(e) }
+        img.src = svgUrl
+      })
     } catch (error) {
       console.error('[WhiteboardEditor] 导出 PNG 失败', error)
     }
@@ -745,7 +813,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
       // 如果正在切换笔记，不要在卸载时保存（已在切换逻辑中处理）
       if (isSwitchingNoteRef.current) {
         if (process.env.NODE_ENV === 'development') {
-          console.log('[WhiteboardEditor] 组件卸载，但正在切换笔记，跳过保存')
+          logger.log('[WhiteboardEditor] 组件卸载，但正在切换笔记，跳过保存')
         }
         return
       }
@@ -753,13 +821,13 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
       // 如果正在进行类型转换，不要保存（会覆盖转换结果）
       if (isTypeConvertingRef.current) {
         if (process.env.NODE_ENV === 'development') {
-          console.log('[WhiteboardEditor] 组件卸载，但正在类型转换，跳过保存')
+          logger.log('[WhiteboardEditor] 组件卸载，但正在类型转换，跳过保存')
         }
         return
       }
       
       if (process.env.NODE_ENV === 'development') {
-        console.log('[WhiteboardEditor] 组件卸载，检查是否需要保存', { 
+        logger.log('[WhiteboardEditor] 组件卸载，检查是否需要保存', { 
           noteId: prevNoteIdRef.current,
           hasUnsavedChanges: hasUnsavedChangesRef.current 
         })
@@ -767,7 +835,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
       
       if (hasUnsavedChangesRef.current) {
         if (process.env.NODE_ENV === 'development') {
-          console.log('[WhiteboardEditor] 组件卸载，自动保存当前内容', { 
+          logger.log('[WhiteboardEditor] 组件卸载，自动保存当前内容', { 
             noteId: prevNoteIdRef.current 
           })
         }
@@ -821,7 +889,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
           key={excalidrawKey}
           excalidrawAPI={(api) => {
             if (api) {
-              console.log('[WhiteboardEditor] Excalidraw API 已设置')
+              logger.log('[WhiteboardEditor] Excalidraw API 已设置')
               setExcalidrawAPI(api)
             }
           }}

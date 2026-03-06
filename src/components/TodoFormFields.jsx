@@ -5,6 +5,7 @@ import RepeatSettings from './RepeatSettings';
 import DateTimePicker from './DateTimePicker';
 import TimeZoneUtils from '../utils/timeZoneUtils';
 import zhCN from '../locales/zh-CN';
+import logger from '../utils/logger';
 
 const {
   todo: { fields }
@@ -39,11 +40,11 @@ const TodoFormFields = ({
   };
 
   const handleTagChange = (tags) => {
-    console.log('[TodoFormFields] handleTagChange 被调用，参数:', tags);
+    logger.log('[TodoFormFields] handleTagChange 被调用，参数:', tags);
     const nextValue = { ...value, tags };
-    console.log('[TodoFormFields] 新的 todo 值:', nextValue);
+    logger.log('[TodoFormFields] 新的 todo 值:', nextValue);
     emitChange(nextValue, ['tags']);
-    console.log('[TodoFormFields] emitChange 调用完成');
+    logger.log('[TodoFormFields] emitChange 调用完成');
   };
 
   const handleRepeatSettingsChange = (repeatSettings) => {

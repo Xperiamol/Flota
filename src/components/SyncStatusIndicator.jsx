@@ -71,7 +71,7 @@ const SyncStatusIndicator = () => {
         todos: prev.todos.provider === 'nutcloud' && prev.todos.enabled ? { ...prev.todos, syncing: false, lastSync: now, error: null } : prev.todos,
       }));
 
-      if (result.downloaded > 0) {
+      if (result.downloaded > 0 || result.deleted > 0) {
         loadNotes?.();
         loadTodos?.();
       }

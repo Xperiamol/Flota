@@ -43,7 +43,7 @@ const FilterChip = ({
       disabled={disabled}
       sx={{
         cursor: disabled ? 'default' : 'pointer',
-        transition: 'all 0.2s ease-in-out',
+        transition: 'background-color 0.2s ease-in-out, color 0.2s ease-in-out, box-shadow 0.2s ease-in-out, border-color 0.2s ease-in-out',
         
         // 选中状态样式
         ...(isSelected && {

@@ -38,6 +38,7 @@ import TodoEditDialog from './components/TodoEditDialog'
 import CreateTodoModal from './components/CreateTodoModal'
 import CommandPalette from './components/CommandPalette'
 import { ErrorProvider, useError } from './components/ErrorProvider'
+import logger from './utils/logger'
 
 // 懒加载非首屏组件，减少初始bundle大小
 const TodoView = lazy(() => import('./components/TodoView'))
@@ -70,7 +71,7 @@ function rewriteCssUrls(cssText, sheetHref) {
       }
       try {
         const absolute = new URL(cleaned, sheetHref).href
-        // console.log('[Plugin Window] Rewriting URL:', cleaned, '->', absolute)
+        // logger.log('[Plugin Window] Rewriting URL:', cleaned, '->', absolute)
         return `url("${absolute}")`
       } catch (err) {
         console.warn('[Plugin Window] URL 重写失败:', cleaned, err)
@@ -122,7 +123,7 @@ const syncIframeStyles = async (iframe) => {
           iframeHead.appendChild(cloned)
           totalLength += style.textContent?.length || 0
         })
-        console.log(`[Plugin Window] ✅ 已同步 ${emotionStyles.length} 个 emotion 样式，总长度: ${totalLength} 字符`)
+        logger.log(`[Plugin Window] ✅ 已同步 ${emotionStyles.length} 个 emotion 样式，总长度: ${totalLength} 字符`)
       }
     }
 
@@ -148,7 +149,7 @@ const syncIframeStyles = async (iframe) => {
 
     const totalStyles = iframeHead.querySelectorAll('style').length
     const totalLinks = iframeHead.querySelectorAll('link[rel="stylesheet"]').length
-    console.log(`[Plugin Window] 样式初始化完成 - Style: ${totalStyles}, Link: ${totalLinks}`)
+    logger.log(`[Plugin Window] 样式初始化完成 - Style: ${totalStyles}, Link: ${totalLinks}`)
   } catch (err) {
     console.warn('[Plugin Window] 同步样式失败:', err)
   }
@@ -202,7 +203,7 @@ function App() {
 
   // 日历视图模式变化处理（带调试）
   const handleCalendarViewModeChange = useCallback((mode) => {
-    console.log('Calendar view mode changing from', calendarViewMode, 'to', mode);
+    logger.log('Calendar view mode changing from', calendarViewMode, 'to', mode);
     setCalendarViewMode(mode);
   }, [calendarViewMode])
 
@@ -283,11 +284,11 @@ function App() {
     if (!window.electronAPI?.ipcRenderer) return
 
     const handleSystemThemeChange = (event, data) => {
-      console.log('收到系统主题变化事件:', data)
+      logger.log('收到系统主题变化事件:', data)
       // 只有当当前主题设置为'system'时才自动切换
       if (theme === 'system') {
         const newTheme = data.shouldUseDarkColors ? 'dark' : 'light'
-        console.log('系统主题变化，自动切换到:', newTheme)
+        logger.log('系统主题变化，自动切换到:', newTheme)
         setTheme(newTheme)
       }
     }
@@ -313,7 +314,7 @@ function App() {
     if (!window.electronAPI?.notes?.onNoteUpdated) return
 
     const handleNoteUpdate = (updatedNote) => {
-      console.log('接收到笔记更新事件:', updatedNote)
+      logger.log('接收到笔记更新事件:', updatedNote)
       // 使用局部更新而不是重新加载整个列表，避免不必要的排序
       if (updatedNote && updatedNote.id) {
         updateNoteInList(updatedNote)
@@ -336,7 +337,7 @@ function App() {
   // 监听视图切换，只在切换到笔记视图时重新加载并排序笔记列表
   useEffect(() => {
     if (currentView === 'notes') {
-      console.log('[App] 切换到笔记视图，重新加载笔记列表');
+      logger.log('[App] 切换到笔记视图，重新加载笔记列表');
       loadNotes();
     }
   }, [currentView, loadNotes]);
@@ -367,7 +368,7 @@ function App() {
     const unsubscribe = subscribePluginEvents((event) => {
       if (!event) return
 
-      console.log('[App] 收到插件事件:', event.type, event)
+      logger.log('[App] 收到插件事件:', event.type, event)
 
       if (event.type === 'command-registered' && event.command && event.pluginId) {
         const surfaces = Array.isArray(event.command.surfaces)
@@ -401,7 +402,7 @@ function App() {
         const { pluginId, styleId, css, priority } = event
         if (pluginId && styleId && css !== undefined) {
           themeManager.registerStyle(pluginId, styleId, css, priority || 0)
-          console.log(`[App] 已注册插件主题样式: ${pluginId}/${styleId}`)
+          logger.log(`[App] 已注册插件主题样式: ${pluginId}/${styleId}`)
         }
         return
       }
@@ -410,7 +411,7 @@ function App() {
         const { pluginId, styleId } = event
         if (pluginId && styleId) {
           themeManager.unregisterStyle(pluginId, styleId)
-          console.log(`[App] 已移除插件主题样式: ${pluginId}/${styleId}`)
+          logger.log(`[App] 已移除插件主题样式: ${pluginId}/${styleId}`)
         }
         return
       }
@@ -419,7 +420,7 @@ function App() {
         const { pluginId, styleId, css, priority } = event
         if (pluginId && styleId && css !== undefined) {
           themeManager.updateStyle(pluginId, styleId, css, priority)
-          console.log(`[App] 已更新插件主题样式: ${pluginId}/${styleId}`)
+          logger.log(`[App] 已更新插件主题样式: ${pluginId}/${styleId}`)
         }
         return
       }
@@ -444,7 +445,7 @@ function App() {
     if (!window.electronAPI?.sync?.onConflictDetected) return
 
     const handleConflict = (conflict) => {
-      console.log('[App] 检测到同步冲突:', conflict)
+      logger.log('[App] 检测到同步冲突:', conflict)
       setCurrentConflict(conflict)
       setConflictDialogOpen(true)
     }
@@ -464,7 +465,7 @@ function App() {
 
     try {
       await window.electronAPI.sync.resolveConflict(currentConflict.conflictId, resolution)
-      console.log('[App] 冲突已解决:', resolution)
+      logger.log('[App] 冲突已解决:', resolution)
       setConflictDialogOpen(false)
       setCurrentConflict(null)
     } catch (error) {
@@ -479,7 +480,7 @@ function App() {
 
     try {
       await window.electronAPI.sync.resolveConflict(currentConflict.conflictId, 'cancel')
-      console.log('[App] 用户取消冲突解决')
+      logger.log('[App] 用户取消冲突解决')
       setConflictDialogOpen(false)
       setCurrentConflict(null)
     } catch (error) {
@@ -493,10 +494,10 @@ function App() {
       // 使用TimeZoneUtils转换日期时间为UTC
       const dueDateUTC = TimeZoneUtils.toUTC(newTodo.due_date, newTodo.due_time);
 
-      console.log('[App] 创建待办事项:');
-      console.log('  - 本地日期:', newTodo.due_date);
-      console.log('  - 本地时间:', newTodo.due_time);
-      console.log('  - UTC时间:', dueDateUTC);
+      logger.log('[App] 创建待办事项:');
+      logger.log('  - 本地日期:', newTodo.due_date);
+      logger.log('  - 本地时间:', newTodo.due_time);
+      logger.log('  - UTC时间:', dueDateUTC);
 
       await createTodoAPI({
         content: newTodo.content,
@@ -518,7 +519,7 @@ function App() {
       setTodoRefreshTrigger(prev => prev + 1);
       setCalendarRefreshTrigger(prev => prev + 1);
 
-      console.log('[App] 待办事项创建成功');
+      logger.log('[App] 待办事项创建成功');
     } catch (error) {
       console.error('创建待办事项失败:', error);
     }
@@ -537,7 +538,7 @@ function App() {
     try {
       const result = await batchSetTags(noteIds, tags, replaceMode);
       if (result.success) {
-        console.log(`成功为 ${noteIds.length} 个笔记设置标签`);
+        logger.log(`成功为 ${noteIds.length} 个笔记设置标签`);
         // 退出多选模式
         if (currentMultiSelectRef) {
           currentMultiSelectRef.exitMultiSelectMode();
@@ -557,8 +558,8 @@ function App() {
         if (window.electronAPI) {
           const version = await window.electronAPI.getVersion()
           const message = await window.electronAPI.helloWorld()
-          console.log('App Version:', version)
-          console.log('Hello World:', message)
+          logger.log('App Version:', version)
+          logger.log('Hello World:', message)
         }
       } catch (error) {
         console.error('Electron API 测试失败:', error)
@@ -614,7 +615,7 @@ function App() {
 
         // 监听刷新笔记列表事件（用于首次启动显示欢迎笔记）
         window.electronAPI.ipcRenderer.on('refresh-notes', async (event, data) => {
-          console.log('[App] 收到refresh-notes事件:', data)
+          logger.log('[App] 收到refresh-notes事件:', data)
           await loadNotes()
           if (data && data.selectNoteId) {
             setSelectedNoteId(data.selectNoteId)
@@ -630,7 +631,7 @@ function App() {
     const handlePluginNoteUpdate = async (event) => {
       const { noteId, result } = event.detail || {};
       if (noteId && result?.data) {
-        console.log('[App] 检测到插件更新笔记，局部更新:', noteId);
+        logger.log('[App] 检测到插件更新笔记，局部更新:', noteId);
         // 使用局部更新而不是重新加载整个列表，避免重新排序
         updateNoteInList(result.data);
       }
@@ -668,7 +669,7 @@ function App() {
     const unsubscribe = subscribePluginWindowRequests(async (payload) => {
       if (!payload) return
 
-      console.log('插件请求打开窗口:', payload)
+      logger.log('插件请求打开窗口:', payload)
 
       try {
         // 加载插件HTML文件内容
@@ -779,9 +780,9 @@ function App() {
           }
 
           injected = true
-          console.log('[UI Bridge] 已注入插件窗口:', pluginWindow.title)
-          console.log('[Dependencies] 已暴露: React, ReactDOM, MaterialUI, MaterialIcons, appTheme, emotionCache')
-          console.log('[UI Bridge] ✅ Emotion cache 已配置，样式将自动注入到 iframe')
+          logger.log('[UI Bridge] 已注入插件窗口:', pluginWindow.title)
+          logger.log('[Dependencies] 已暴露: React, ReactDOM, MaterialUI, MaterialIcons, appTheme, emotionCache')
+          logger.log('[UI Bridge] ✅ Emotion cache 已配置，样式将自动注入到 iframe')
 
           return true
         } catch (error) {
@@ -914,14 +915,14 @@ function App() {
                       if (multiSelectState.itemType === '笔记') {
                         const result = await batchDeleteNotes(multiSelectState.selectedIds);
                         if (result.success) {
-                          console.log(`成功删除 ${multiSelectState.selectedIds.length} 个笔记`);
+                          logger.log(`成功删除 ${multiSelectState.selectedIds.length} 个笔记`);
                         } else {
                           console.error('批量删除笔记失败:', result.error);
                         }
                       } else if (multiSelectState.itemType === '待办事项') {
                         const result = await batchDeleteTodos(multiSelectState.selectedIds);
                         if (result.success) {
-                          console.log(`成功删除 ${multiSelectState.selectedIds.length} 个待办事项`);
+                          logger.log(`成功删除 ${multiSelectState.selectedIds.length} 个待办事项`);
                           // 触发待办事项列表刷新
                           setTodoRefreshTrigger(prev => prev + 1);
                         } else {
@@ -954,7 +955,7 @@ function App() {
                           try {
                             const result = await batchRestoreNotes(multiSelectState.selectedIds);
                             if (result.success) {
-                              console.log(`成功恢复 ${multiSelectState.selectedIds.length} 个笔记`);
+                              logger.log(`成功恢复 ${multiSelectState.selectedIds.length} 个笔记`);
                             } else {
                               console.error('批量恢复笔记失败:', result.error);
                             }
@@ -986,7 +987,7 @@ function App() {
                             try {
                               const result = await batchPermanentDeleteNotes(multiSelectState.selectedIds);
                               if (result.success) {
-                                console.log(`成功永久删除 ${multiSelectState.selectedIds.length} 个笔记`);
+                                logger.log(`成功永久删除 ${multiSelectState.selectedIds.length} 个笔记`);
                               } else {
                                 console.error('批量永久删除笔记失败:', result.error);
                               }
@@ -1019,7 +1020,7 @@ function App() {
                           try {
                             const result = await batchCompleteTodos(multiSelectState.selectedIds);
                             if (result.success) {
-                              console.log(`成功完成 ${multiSelectState.selectedIds.length} 个待办事项`);
+                              logger.log(`成功完成 ${multiSelectState.selectedIds.length} 个待办事项`);
                               // 触发待办事项列表刷新
                               setTodoRefreshTrigger(prev => prev + 1);
                             } else {
@@ -1194,7 +1195,7 @@ function App() {
                   const iframe = e.target
                   if (iframe && iframe.contentWindow) {
                     try {
-                      console.log('[Plugin Window] iframe onLoad 触发')
+                      logger.log('[Plugin Window] iframe onLoad 触发')
 
                       // 注入 UI Bridge
                       injectUIBridge(iframe.contentWindow, appTheme, {
@@ -1219,7 +1220,7 @@ function App() {
                       iframe.contentWindow.emotionCache = iframeCache
                       iframe.contentWindow.CacheProvider = CacheProvider
 
-                      console.log('[Plugin Window] ✅ UI Bridge和依赖注入完成')
+                      logger.log('[Plugin Window] ✅ UI Bridge和依赖注入完成')
                     } catch (error) {
                       console.error('[Plugin Window] ❌ 依赖注入失败:', error)
                     }

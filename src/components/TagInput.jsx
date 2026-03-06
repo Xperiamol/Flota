@@ -19,6 +19,7 @@ import { scrollbar } from '../styles/commonStyles';
 import { Tag as TagIcon, Clear as ClearIcon, AutoAwesome as AiIcon, KeyboardArrowRight as RightArrowIcon, KeyboardArrowLeft as LeftArrowIcon } from '@mui/icons-material';
 import { parseTags, formatTags, validateTags, getTagColor } from '../utils/tagUtils';
 import { usePluginExtensions } from '../hooks/usePluginExtensions';
+import logger from '../utils/logger';
 
 /**
  * 标签输入组件
@@ -231,7 +232,7 @@ const TagInput = ({
     if (disabled || executingExtension) return;
     
     try {
-      console.log('[TagInput] 执行插件扩展:', extension);
+      logger.log('[TagInput] 执行插件扩展:', extension);
       setExecutingExtension(extension.commandId);
       
       const result = await executeExtension(extension, {
@@ -240,7 +241,7 @@ const TagInput = ({
         noteId
       });
       
-      console.log('[TagInput] 插件返回结果:', result);
+      logger.log('[TagInput] 插件返回结果:', result);
       
       // 处理返回的标签
       if (result?.data?.allTags && Array.isArray(result.data.allTags)) {
@@ -253,7 +254,7 @@ const TagInput = ({
       
       // 如果插件更新了笔记（applied=true），需要刷新笔记数据以显示更新后的分类
       if (result?.data?.applied && noteId) {
-        console.log('[TagInput] 插件已更新笔记，触发刷新');
+        logger.log('[TagInput] 插件已更新笔记，触发刷新');
         // 触发自定义事件，通知父组件刷新笔记
         window.dispatchEvent(new CustomEvent('plugin-note-updated', { 
           detail: { noteId, result: result.data } 

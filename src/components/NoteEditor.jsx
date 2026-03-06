@@ -4,22 +4,19 @@ import {
   TextField,
   Typography,
   Paper,
-  Chip,
   IconButton,
   Tooltip,
   Divider,
   Alert,
   Snackbar,
   ToggleButton,
-  ToggleButtonGroup,
-  InputAdornment
+  ToggleButtonGroup
 } from '@mui/material'
 import {
   Save as SaveIcon,
   AutoMode as AutoSaveIcon,
   PushPin as PinIcon,
   PushPinOutlined as PinOutlinedIcon,
-  Category as CategoryIcon,
   Tag as TagIcon,
   Edit as EditIcon,
   Visibility as PreviewIcon,
@@ -52,6 +49,7 @@ import { useError } from './ErrorProvider'
 import { useTranslation } from '../utils/i18n'
 import { saveQueue } from '../utils/SaveQueue'
 import { scrollbar } from '../styles/commonStyles'
+import logger from '../utils/logger'
 
 const NoteEditor = () => {
   // 检测是否在独立窗口模式下运行
@@ -86,7 +84,6 @@ const NoteEditor = () => {
 
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
-  const [category, setCategory] = useState('')
   const [tags, setTags] = useState('')
   const [noteType, setNoteType] = useState('markdown') // 'markdown' or 'whiteboard'
   const [isAutoSaving, setIsAutoSaving] = useState(false)
@@ -112,7 +109,7 @@ const NoteEditor = () => {
 
   const currentNote = notes.find(note => note.id === selectedNoteId)
   const prevNoteIdRef = useRef(null)
-  const prevStateRef = useRef({ title: '', content: '', category: '', tags: '', noteType: 'markdown' })
+  const prevStateRef = useRef({ title: '', content: '', tags: '', noteType: 'markdown' })
   const hasUnsavedChangesRef = useRef(false)
 
   // 保存函数（稳定引用，带重试机制和队列管理）
@@ -129,7 +126,6 @@ const NoteEditor = () => {
           await updateNote(selectedNoteId, {
             title: prevStateRef.current.title.trim() || '无标题',
             content: prevStateRef.current.content,
-            category: prevStateRef.current.category.trim(),
             tags: formatTags(tagsArray),
             note_type: prevStateRef.current.noteType
           })
@@ -137,7 +133,7 @@ const NoteEditor = () => {
           setHasUnsavedChanges(false)
           hasUnsavedChangesRef.current = false
           setShowSaveError(false)
-          console.log('[NoteEditor] 自动保存成功')
+          logger.log('[NoteEditor] 自动保存成功')
           setIsAutoSaving(false)
           return // 保存成功，退出
         } catch (error) {
@@ -221,7 +217,6 @@ const NoteEditor = () => {
         const stateToSave = {
           title: prevStateRef.current.title.trim() || '无标题',
           content: prevStateRef.current.content,
-          category: prevStateRef.current.category.trim(),
           tags: formatTags(parseTags(prevStateRef.current.tags)),
           note_type: prevStateRef.current.noteType
         }
@@ -231,7 +226,7 @@ const NoteEditor = () => {
 
         // 使用保存队列立即保存，确保按顺序执行
         saveQueue.add(oldNoteId, async () => {
-          console.log('[NoteEditor] 切换笔记前保存:', oldNoteId);
+          logger.log('[NoteEditor] 切换笔记前保存:', oldNoteId);
           await updateNote(oldNoteId, stateToSave);
         }).catch(error => {
           console.error('[NoteEditor] 切换笔记时保存失败:', error);
@@ -250,13 +245,12 @@ const NoteEditor = () => {
     
     // 如果从笔记视图切换到其他视图，且有选中的笔记且有未保存的更改，立即保存
     if (prevView === 'notes' && currentView !== 'notes' && selectedNoteId && hasUnsavedChangesRef.current) {
-      console.log('[NoteEditor] 切换视图前保存笔记，从', prevView, '切换到', currentView)
+      logger.log('[NoteEditor] 切换视图前保存笔记，从', prevView, '切换到', currentView)
       cancelSave()
       saveQueue.add(selectedNoteId, async () => {
         const stateToSave = {
           title: prevStateRef.current.title.trim() || '无标题',
           content: prevStateRef.current.content,
-          category: prevStateRef.current.category.trim(),
           tags: formatTags(parseTags(prevStateRef.current.tags)),
           note_type: prevStateRef.current.noteType
         }
@@ -270,13 +264,14 @@ const NoteEditor = () => {
     prevViewRef.current = currentView
   }, [currentView, selectedNoteId, updateNote, cancelSave])
 
-  // 检查笔记是否在独立窗口中打开（仅主窗口）
+  // 检查笔记是否在独立窗口中打开（仅主窗口，事件驱动）
   useEffect(() => {
     if (isStandaloneMode || !selectedNoteId) {
       setIsOpenInStandaloneWindow(false)
       return
     }
 
+    // 初始检查一次当前状态
     const checkWindowStatus = async () => {
       try {
         const result = await window.electronAPI?.isNoteOpenInWindow?.(selectedNoteId)
@@ -288,11 +283,24 @@ const NoteEditor = () => {
         showError(error, '检查窗口状态失败')
       }
     }
-
     checkWindowStatus()
-    // 定期检查状态（每2秒）
-    const interval = setInterval(checkWindowStatus, 2000)
-    return () => clearInterval(interval)
+
+    // 通过 IPC 事件驱动更新，替代 2 秒轮询
+    const unsubCreated = window.electronAPI?.onWindowCreated?.((data) => {
+      if (data?.noteId == selectedNoteId) {
+        setIsOpenInStandaloneWindow(true)
+      }
+    })
+    const unsubClosed = window.electronAPI?.onWindowClosed?.((data) => {
+      if (data?.noteId == selectedNoteId) {
+        setIsOpenInStandaloneWindow(false)
+      }
+    })
+
+    return () => {
+      unsubCreated?.()
+      unsubClosed?.()
+    }
   }, [selectedNoteId, isStandaloneMode])
 
   // 第二步：加载新笔记的数据
@@ -301,7 +309,6 @@ const NoteEditor = () => {
     if (currentNote) {
       const newTitle = currentNote.title || ''
       const newContent = currentNote.content || ''
-      const newCategory = currentNote.category || ''
       // 处理 tags：可能是数组或逗号分隔的字符串
       const newTags = Array.isArray(currentNote.tags)
         ? currentNote.tags.join(', ')
@@ -310,7 +317,6 @@ const NoteEditor = () => {
 
       setTitle(newTitle)
       setContent(newContent)
-      setCategory(newCategory)
       setTags(newTags)
       setNoteType(newNoteType)
       setLastSaved(currentNote.updated_at)
@@ -321,7 +327,6 @@ const NoteEditor = () => {
       prevStateRef.current = {
         title: newTitle,
         content: newContent,
-        category: newCategory,
         tags: newTags,
         noteType: newNoteType
       }
@@ -343,11 +348,10 @@ const NoteEditor = () => {
     } else {
       setTitle('')
       setContent('')
-      setCategory('')
       setTags('')
       setLastSaved(null)
       setHasUnsavedChanges(false)
-      prevStateRef.current = { title: '', content: '', category: '', tags: '' }
+      prevStateRef.current = { title: '', content: '', tags: '' }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedNoteId]) // 只依赖 selectedNoteId，不依赖 currentNote，防止同步更新覆盖编辑中的内容
@@ -356,7 +360,7 @@ const NoteEditor = () => {
   useEffect(() => {
     window.__saveBeforeClose = async () => {
       if (hasUnsavedChangesRef.current) {
-        console.log('[NoteEditor] 窗口关闭前保存');
+        logger.log('[NoteEditor] 窗口关闭前保存');
         await saveNow();
       }
     };
@@ -369,7 +373,7 @@ const NoteEditor = () => {
   // 初始化快捷键管理器和注册监听器
   useEffect(() => {
     const initializeShortcuts = async () => {
-      console.log('初始化快捷键管理器...')
+      logger.log('初始化快捷键管理器...')
       await shortcutManager.initialize()
 
       // 只注册保存快捷键，其他快捷键使用编辑器原生实现
@@ -378,7 +382,7 @@ const NoteEditor = () => {
       }
 
       shortcutManager.registerListener(document, handlers)
-      console.log('编辑器快捷键监听器已注册')
+      logger.log('编辑器快捷键监听器已注册')
     }
 
     initializeShortcuts()
@@ -393,7 +397,6 @@ const NoteEditor = () => {
         updateNote(selectedNoteId, {
           title: prevStateRef.current.title.trim() || '无标题',
           content: prevStateRef.current.content,
-          category: prevStateRef.current.category.trim(),
           tags: formatTags(tagsArray)
         }).catch(error => {
           console.error('组件卸载时保存失败:', error)
@@ -417,11 +420,11 @@ const NoteEditor = () => {
     if (!isStandaloneMode) return
 
     const handleStandaloneSave = async () => {
-      console.log('独立窗口保存事件触发', { noteType: prevStateRef.current.noteType })
+      logger.log('独立窗口保存事件触发', { noteType: prevStateRef.current.noteType })
 
       // 对于白板类型，触发全局保存事件由WhiteboardEditor处理
       if (prevStateRef.current.noteType === 'whiteboard') {
-        console.log('白板类型，触发白板保存事件')
+        logger.log('白板类型，触发白板保存事件')
         const whiteboardSaveEvent = new CustomEvent('whiteboard-save')
         window.dispatchEvent(whiteboardSaveEvent)
         // 等待白板保存完成
@@ -436,11 +439,10 @@ const NoteEditor = () => {
           await updateNote(selectedNoteId, {
             title: prevStateRef.current.title.trim() || '无标题',
             content: prevStateRef.current.content,
-            category: prevStateRef.current.category.trim(),
             tags: formatTags(tagsArray),
             note_type: prevStateRef.current.noteType
           })
-          console.log('独立窗口关闭前Markdown保存成功')
+          logger.log('独立窗口关闭前Markdown保存成功')
           // 通知主进程保存完成
           window.dispatchEvent(new CustomEvent('standalone-save-complete'))
         } catch (error) {
@@ -485,16 +487,6 @@ const NoteEditor = () => {
 
 
 
-  const handleCategoryChange = (e) => {
-    const newValue = e.target.value
-    setCategory(newValue)
-    setHasUnsavedChanges(true)
-    // 同时更新 ref，避免额外的 useEffect
-    prevStateRef.current.category = newValue
-    // 触发防抖保存
-    debouncedSave()
-  }
-
   const handleManualSave = async () => {
     if (!selectedNoteId) return
 
@@ -503,7 +495,6 @@ const NoteEditor = () => {
       await updateNote(selectedNoteId, {
         title: title.trim() || '无标题',
         content,
-        category: category.trim(),
         tags: formatTags(tagsArray)
       })
       setLastSaved(new Date().toISOString())
@@ -622,10 +613,10 @@ const NoteEditor = () => {
 
     try {
       // 先保存当前 MD 内容（和白板转换逻辑一样）
-      console.log('MD转白板: 先保存当前内容...')
+      logger.log('MD转白板: 先保存当前内容...')
       
       if (hasUnsavedChangesRef.current) {
-        console.log('MD转白板: 检测到未保存的更改，立即保存')
+        logger.log('MD转白板: 检测到未保存的更改，立即保存')
         cancelSave()
         saveNow()
         // 等待保存完成
@@ -636,11 +627,11 @@ const NoteEditor = () => {
       const latestNote = notes.find(n => n.id === selectedNoteId)
       const markdownContent = latestNote?.content || content || ''
       
-      console.log('MD转白板: 获取到MD内容长度:', markdownContent.length)
+      logger.log('MD转白板: 获取到MD内容长度:', markdownContent.length)
       
       // 提取 Markdown 中的图片 URL
       const imageUrls = extractImageUrls(markdownContent)
-      console.log('MD转白板: 提取到图片URL:', imageUrls)
+      logger.log('MD转白板: 提取到图片URL:', imageUrls)
       
       const imageDataMap = {}
       
@@ -658,7 +649,7 @@ const NoteEditor = () => {
                 dataURL: dataURL,
                 mimeType: mimeType
               }
-              console.log('MD转白板: 加载图片成功:', url)
+              logger.log('MD转白板: 加载图片成功:', url)
             }
           }
         } catch (error) {
@@ -667,22 +658,22 @@ const NoteEditor = () => {
       }
       
       // 转换 Markdown 内容为白板数据（包含图片）
-      console.log('MD转白板: 开始转换，图片数据:', Object.keys(imageDataMap).length)
+      logger.log('MD转白板: 开始转换，图片数据:', Object.keys(imageDataMap).length)
       const whiteboardContentStr = convertMarkdownToWhiteboard(markdownContent, imageDataMap)
-      console.log('MD转白板: 转换结果长度:', whiteboardContentStr?.length || 0)
+      logger.log('MD转白板: 转换结果长度:', whiteboardContentStr?.length || 0)
       
       // 解析白板数据，将图片保存到文件系统（和白板保存逻辑一致）
       const whiteboardData = JSON.parse(whiteboardContentStr)
       let finalFileMap = {}
       
       if (whiteboardData.fileMap && Object.keys(whiteboardData.fileMap).length > 0) {
-        console.log('MD转白板: 保存图片到文件系统...')
+        logger.log('MD转白板: 保存图片到文件系统...')
         const files = whiteboardData.fileMap
         const result = await window.electronAPI.whiteboard.saveImages(files)
         
         if (result.success) {
           finalFileMap = result.data
-          console.log('MD转白板: 图片保存成功，数量:', Object.keys(finalFileMap).length)
+          logger.log('MD转白板: 图片保存成功，数量:', Object.keys(finalFileMap).length)
         } else {
           console.warn('MD转白板: 图片保存失败:', result.error)
           // 继续，但图片可能丢失
@@ -695,14 +686,13 @@ const NoteEditor = () => {
         fileMap: finalFileMap
       }
       const finalWhiteboardContent = JSON.stringify(finalWhiteboardData)
-      console.log('MD转白板: 最终数据长度:', finalWhiteboardContent.length)
+      logger.log('MD转白板: 最终数据长度:', finalWhiteboardContent.length)
 
       // 先更新笔记到数据库（在切换类型之前，确保数据已保存）
       const updateResult = await updateNote(selectedNoteId, {
         content: finalWhiteboardContent,
         note_type: 'whiteboard',
         title: title.trim() || '无标题',
-        category: category.trim(),
         tags: formatTags(parseTags(tags))
       })
       
@@ -710,7 +700,7 @@ const NoteEditor = () => {
         throw new Error('保存失败: ' + (updateResult?.error || '未知错误'))
       }
       
-      console.log('MD转白板: 数据库更新完成')
+      logger.log('MD转白板: 数据库更新完成')
 
       // 然后更新本地状态，触发 WhiteboardEditor 挂载
       setNoteType('whiteboard')
@@ -720,7 +710,7 @@ const NoteEditor = () => {
       setHasUnsavedChanges(false)
       hasUnsavedChangesRef.current = false
 
-      console.log('Markdown 转白板成功，处理了', imageUrls.length, '张图片')
+      logger.log('Markdown 转白板成功，处理了', imageUrls.length, '张图片')
     } catch (error) {
       console.error('Markdown 转白板失败:', error)
       showError(error, 'Markdown 转白板失败')
@@ -734,7 +724,7 @@ const NoteEditor = () => {
 
     try {
       // 直接从白板编辑器获取最新内容（包括图片）
-      console.log('白板转MD: 从编辑器获取最新内容...')
+      logger.log('白板转MD: 从编辑器获取最新内容...')
       
       if (!whiteboardGetContentFunc) {
         console.error('白板转MD: whiteboardGetContentFunc 未初始化')
@@ -749,7 +739,7 @@ const NoteEditor = () => {
         return
       }
       
-      console.log('白板转MD: 获取到内容长度:', whiteboardContent.length)
+      logger.log('白板转MD: 获取到内容长度:', whiteboardContent.length)
       
       // 通知白板编辑器正在进行类型转换，避免卸载时自动保存覆盖转换结果
       window.dispatchEvent(new CustomEvent('whiteboard-type-converting'))
@@ -757,27 +747,27 @@ const NoteEditor = () => {
       // 转换白板为 Markdown
       const { markdown, imageMap } = convertWhiteboardToMarkdown(whiteboardContent)
       
-      console.log('白板转MD: 原始markdown长度:', markdown.length)
-      console.log('白板转MD: 图片数量:', Object.keys(imageMap).length)
-      console.log('白板转MD: 图片映射:', imageMap)
+      logger.log('白板转MD: 原始markdown长度:', markdown.length)
+      logger.log('白板转MD: 图片数量:', Object.keys(imageMap).length)
+      logger.log('白板转MD: 图片映射:', imageMap)
       
       // 处理图片：将白板中的图片保存为 Markdown 可用的格式
       let finalMarkdown = markdown
       
       for (const [fileName, imageData] of Object.entries(imageMap)) {
-        console.log('白板转MD: 处理图片:', fileName, imageData)
+        logger.log('白板转MD: 处理图片:', fileName, imageData)
         
         try {
           let dataURL = imageData.dataURL
           
           // 如果没有 dataURL，尝试从文件系统加载
           if (!dataURL && imageData.sourceFileName) {
-            console.log('白板转MD: 从文件系统加载图片:', imageData.sourceFileName)
+            logger.log('白板转MD: 从文件系统加载图片:', imageData.sourceFileName)
             // 加载白板图片
             const loadResult = await window.electronAPI.whiteboard.loadImage(imageData.sourceFileName)
             if (loadResult.success) {
               dataURL = loadResult.data
-              console.log('白板转MD: 图片加载成功，dataURL长度:', dataURL?.length || 0)
+              logger.log('白板转MD: 图片加载成功，dataURL长度:', dataURL?.length || 0)
             } else {
               console.warn('白板转MD: 图片加载失败:', loadResult.error)
             }
@@ -788,7 +778,7 @@ const NoteEditor = () => {
             const base64Data = dataURL.split(',')[1]
             const buffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0))
             const imagePath = await imageAPI.saveFromBuffer(buffer, fileName)
-            console.log('白板转MD: 图片保存成功:', imagePath)
+            logger.log('白板转MD: 图片保存成功:', imagePath)
             
             // 替换占位符为实际路径
             const placeholder = `{{IMAGE_PLACEHOLDER:${fileName}}}`
@@ -824,11 +814,10 @@ const NoteEditor = () => {
         content: finalMarkdown,
         note_type: 'markdown',
         title: title.trim() || '无标题',
-        category: category.trim(),
         tags: formatTags(parseTags(tags))
       })
 
-      console.log('白板转 Markdown 成功，提取了', Object.keys(imageMap).length, '张图片')
+      logger.log('白板转 Markdown 成功，提取了', Object.keys(imageMap).length, '张图片')
     } catch (error) {
       console.error('白板转 Markdown 失败:', error)
       showError(error, '白板转 Markdown 失败')
@@ -1486,29 +1475,9 @@ const NoteEditor = () => {
           }}
         />
 
-        {/* 分类和标签 - 紧凑布局 */}
+        {/* 标签 */}
         <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', gap: 0.5, justifyContent: 'flex-end' }}>
-          <TextField
-            size="small"
-            placeholder={t('common.categoryPlaceholder')}
-            value={category}
-            onChange={handleCategoryChange}
-            onKeyDown={handleKeyDown}
-            InputProps={{
-              startAdornment: <InputAdornment position="start">
-                <CategoryIcon sx={{ mr: 0.5, color: 'action.active', fontSize: '14px' }} />
-              </InputAdornment>
-            }}
-            sx={{
-              minWidth: 100,
-              maxWidth: '45%',  // 限制分类宽度
-              mr: 0.5,
-              '& .MuiInputBase-input': {
-                fontSize: '0.85rem'  // 减小字体大小
-              }
-            }}
-          />
-          <Box sx={{ flex: 1, maxWidth: '55%' }}>
+          <Box sx={{ flex: 1 }}>
             <TagInput
               value={tags}
               onChange={(newTags) => {
@@ -1526,7 +1495,6 @@ const NoteEditor = () => {
               size="small"
               sx={{
                 width: '100%',
-                // 确保标签输入框和分类输入框高度一致
                 '& .MuiInputBase-root': {
                   height: '100%',
                   fontSize: '0.85rem'
@@ -1569,13 +1537,51 @@ const NoteEditor = () => {
             >
               <MarkdownToolbar
                 onInsert={handleMarkdownInsert}
-                disabled={!selectedNoteId || viewMode === 'preview'}
-                viewMode={viewMode}
-                onViewModeChange={setViewMode}
+                disabled={!selectedNoteId || (editorMode === 'markdown' && viewMode === 'preview')}
+                viewMode={editorMode === 'wysiwyg' ? null : viewMode}
+                onViewModeChange={editorMode === 'wysiwyg' ? null : setViewMode}
                 editor={wysiwygEditorRef.current?.getEditor?.()}
                 editorMode={editorMode}
               />
             </Box>
+            {/* WYSIWYG 模式: 单一编辑器，无分屏/预览 */}
+            {editorMode === 'wysiwyg' ? (
+              <Box
+                sx={{
+                  flex: 1,
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minHeight: 0,
+                }}
+                onDragOver={handleDragOver}
+                onDrop={async (e) => {
+                  // 外层 onDrop 作为备用：TipTap 内部已处理大多数情况，
+                  // 当图片文件拖入时与源码模式保持相同逻辑
+                  const files = Array.from(e.dataTransfer?.files || [])
+                  const imageFiles = files.filter(f => f.type.startsWith('image/'))
+                  if (imageFiles.length === 0) return
+                  // 如果 TipTap 内部已 preventDefault，外层不再重复将去
+                  if (e.defaultPrevented) return
+                  e.preventDefault()
+                  e.stopPropagation()
+                  wysiwygEditorRef.current?.insertImageFiles(imageFiles)
+                }}
+              >
+                <WYSIWYGEditor
+                  ref={wysiwygEditorRef}
+                  content={content}
+                  onChange={(newContent) => {
+                    setContent(newContent)
+                    setHasUnsavedChanges(true)
+                    prevStateRef.current.content = newContent
+                    debouncedSave()
+                  }}
+                  placeholder={t('common.startWriting')}
+                />
+              </Box>
+            ) : (
+            /* Markdown 源码模式: 支持编辑/预览/分屏 */
             <Box
               sx={{
                 flex: 1,
@@ -1599,55 +1605,40 @@ const NoteEditor = () => {
                     position: 'relative',
                     overflow: 'hidden'
                   }}
-                  onDragOver={editorMode === 'markdown' ? handleDragOver : undefined}
-                  onDrop={editorMode === 'markdown' ? handleDrop : undefined}
-                  onPaste={editorMode === 'markdown' ? handlePaste : undefined}
+                  onDragOver={handleDragOver}
+                  onDrop={handleDrop}
+                  onPaste={handlePaste}
                 >
-                  {/* 内容编辑器 - 根据 editorMode 切换 */}
-                  {editorMode === 'markdown' ? (
-                    <TextField
-                      ref={contentRef}
-                      fullWidth
-                      multiline
-                      variant="standard"
-                      placeholder={t('common.startWritingMarkdown')}
-                      value={content}
-                      onChange={handleContentChange}
-                      onKeyDown={handleKeyDown}
-                      InputProps={{
-                        disableUnderline: true
-                      }}
-                      sx={{
-                        flex: 1,
-                        '& .MuiInput-root': {
-                          height: '100%',
-                          padding: 0
-                        },
-                        '& .MuiInput-input': {
-                          fontSize: '1rem',
-                          lineHeight: 1.6,
-                          fontFamily: '"OPPOSans R", "OPPOSans", system-ui, -apple-system, sans-serif',
-                          height: '100% !important',
-                          overflow: 'auto !important',
-                          padding: '16px',
-                          boxSizing: 'border-box',
-                          ...scrollbar.default,
-                        },
-                      }}
-                    />
-                  ) : (
-                    <WYSIWYGEditor
-                      ref={wysiwygEditorRef}
-                      content={content}
-                      onChange={(newContent) => {
-                        setContent(newContent)
-                        setHasUnsavedChanges(true)
-                        prevStateRef.current.content = newContent
-                        debouncedSave()
-                      }}
-                      placeholder={t('common.startWriting')}
-                    />
-                  )}
+                  <TextField
+                    ref={contentRef}
+                    fullWidth
+                    multiline
+                    variant="standard"
+                    placeholder={t('common.startWritingMarkdown')}
+                    value={content}
+                    onChange={handleContentChange}
+                    onKeyDown={handleKeyDown}
+                    InputProps={{
+                      disableUnderline: true
+                    }}
+                    sx={{
+                      flex: 1,
+                      '& .MuiInput-root': {
+                        height: '100%',
+                        padding: 0
+                      },
+                      '& .MuiInput-input': {
+                        fontSize: '1rem',
+                        lineHeight: 1.6,
+                        fontFamily: '"OPPOSans R", "OPPOSans", system-ui, -apple-system, sans-serif',
+                        height: '100% !important',
+                        overflow: 'auto !important',
+                        padding: '16px',
+                        boxSizing: 'border-box',
+                        ...scrollbar.default,
+                      },
+                    }}
+                  />
                 </Box>
               )}
 
@@ -1677,6 +1668,7 @@ const NoteEditor = () => {
                 </Box>
               )}
             </Box>
+            )}
           </Box>
         )}
 

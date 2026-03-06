@@ -4,6 +4,7 @@
  */
 
 import { createMarkdownRenderer, registerPlugin } from './index.js'
+import logger from '../utils/logger'
 
 /**
  * Markdown 扩展 API
@@ -40,7 +41,7 @@ export class MarkdownExtensionAPI {
         this.recreateRenderer()
       }
 
-      console.log(`[MarkdownExtension] 注册插件: ${name} (${pluginId})`)
+      logger.log(`[MarkdownExtension] 注册插件: ${name} (${pluginId})`)
       return true
     } catch (error) {
       console.error(`[MarkdownExtension] 注册插件失败:`, error)
@@ -66,7 +67,7 @@ export class MarkdownExtensionAPI {
         this.recreateRenderer()
       }
 
-      console.log(`[MarkdownExtension] 注销插件: ${pluginId}`)
+      logger.log(`[MarkdownExtension] 注销插件: ${pluginId}`)
       return true
     } catch (error) {
       console.error(`[MarkdownExtension] 注销插件失败:`, error)
@@ -105,7 +106,7 @@ export class MarkdownExtensionAPI {
     for (const [pluginId, config] of this.customPlugins.entries()) {
       try {
         registerPlugin(md, config.plugin, config.options)
-        console.log(`[MarkdownExtension] 应用插件: ${config.name}`)
+        logger.log(`[MarkdownExtension] 应用插件: ${config.name}`)
       } catch (error) {
         console.error(`[MarkdownExtension] 应用插件失败 (${pluginId}):`, error)
       }
@@ -205,7 +206,7 @@ export function integrateMarkdownExtension(pluginManager) {
     return await originalHandleRpc(pluginId, message)
   }
 
-  console.log('[MarkdownExtension] 已集成到插件系统')
+  logger.log('[MarkdownExtension] 已集成到插件系统')
 }
 
 /**

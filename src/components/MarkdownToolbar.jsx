@@ -35,6 +35,7 @@ import {
   ArrowDropDown as DropdownIcon
 } from '@mui/icons-material'
 import ImageUploadButton from './ImageUploadButton'
+import AudioRecordButton from './AudioRecordButton'
 
 const MarkdownToolbar = ({ onInsert, disabled = false, viewMode, onViewModeChange, editor = null, editorMode = 'markdown' }) => {
   const [calloutAnchor, setCalloutAnchor] = React.useState(null)
@@ -76,6 +77,14 @@ const MarkdownToolbar = ({ onInsert, disabled = false, viewMode, onViewModeChang
       editor.chain().focus().toggleHighlight().run()
     } else if (before.startsWith('```')) {
       editor.chain().focus().toggleCodeBlock().run()
+    } else if (before === '[' && after === '](url)') {
+      // 链接
+      const { from, to } = editor.state.selection
+      const selectedText = editor.state.doc.textBetween(from, to, '')
+      editor.chain().focus().setLink({ href: 'https://' }).run()
+    } else if (before.includes('|') && before.includes('---')) {
+      // 表格
+      editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
     } else {
       // 其他情况：插入文本
       const text = placeholder || '文本'
@@ -181,7 +190,7 @@ const MarkdownToolbar = ({ onInsert, disabled = false, viewMode, onViewModeChang
           icon: <LinkIcon />,
           tooltip: '链接',
           action: () => insertText('[', '](url)', '链接文本'),
-          supportedInWysiwyg: false
+          supportedInWysiwyg: true
         },
         {
           icon: <TableIcon />,
@@ -191,7 +200,7 @@ const MarkdownToolbar = ({ onInsert, disabled = false, viewMode, onViewModeChang
             '',
             ''
           ),
-          supportedInWysiwyg: false
+          supportedInWysiwyg: true
         }
       ].filter(item => editorMode !== 'wysiwyg' || item.supportedInWysiwyg)
     },
@@ -339,6 +348,14 @@ const MarkdownToolbar = ({ onInsert, disabled = false, viewMode, onViewModeChang
       {/* 图片上传按钮 */}
       <ImageUploadButton
         onImageInsert={onInsert}
+        disabled={disabled}
+      />
+
+      {/* 录音按钮 */}
+      <AudioRecordButton
+        onAudioInsert={(audioPath) => {
+          onInsert(`![录音](${audioPath})\n`, '', '')
+        }}
         disabled={disabled}
       />
 

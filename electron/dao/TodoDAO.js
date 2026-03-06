@@ -50,6 +50,7 @@ class TodoDAO {
       content, 
       description = '',
       tags = '',
+      is_completed = 0,
       is_important = 0, 
       is_urgent = 0, 
       due_date = null,
@@ -62,6 +63,10 @@ class TodoDAO {
       next_due_date = null,
       is_recurring = 0,
       parent_todo_id = null,
+      completions = '[]',
+      is_deleted = 0,
+      completed_at = null,
+      deleted_at = null,
       created_at,
       updated_at
     } = todoData;
@@ -79,21 +84,26 @@ class TodoDAO {
       // 如果指定了 ID（从远程同步），使用 INSERT OR REPLACE
       const stmt = db.prepare(`
         INSERT OR REPLACE INTO todos (
-          id, sync_id, content, description, tags, is_important, is_urgent, due_date, end_date, 
+          id, sync_id, content, description, tags, is_completed, is_important, is_urgent, due_date, end_date, 
           item_type, has_time,
           focus_time_seconds,
           repeat_type, repeat_days, repeat_interval, next_due_date, is_recurring, parent_todo_id,
+          completions,
+          is_deleted, completed_at, deleted_at,
           created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?,
           COALESCE((SELECT created_at FROM todos WHERE id = ?), COALESCE(?, CURRENT_TIMESTAMP)),
           COALESCE(?, CURRENT_TIMESTAMP))
       `);
       result = stmt.run(
-        id, finalSyncId, content, description, tags, is_important, is_urgent, due_date, end_date,
+        id, finalSyncId, content, description, tags, is_completed, is_important, is_urgent, due_date, end_date,
         item_type, has_time,
         focus_time_seconds,
         repeat_type, repeat_days, repeat_interval, next_due_date, is_recurring, parent_todo_id,
+        completions,
+        is_deleted, completed_at, deleted_at,
         id,
         created_at,
         updated_at
@@ -102,20 +112,26 @@ class TodoDAO {
     } else {
       const stmt = db.prepare(`
         INSERT INTO todos (
-          sync_id, content, description, tags, is_important, is_urgent, due_date, end_date, 
+          sync_id, content, description, tags, is_completed, is_important, is_urgent, due_date, end_date, 
           item_type, has_time,
           focus_time_seconds,
           repeat_type, repeat_days, repeat_interval, next_due_date, is_recurring, parent_todo_id,
+          completions,
+          is_deleted, completed_at, deleted_at,
           created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), COALESCE(?, CURRENT_TIMESTAMP))
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?,
+          COALESCE(?, CURRENT_TIMESTAMP), COALESCE(?, CURRENT_TIMESTAMP))
       `);
       result = stmt.run(
-        finalSyncId, content, description, tags, is_important, is_urgent, due_date, end_date,
+        finalSyncId, content, description, tags, is_completed, is_important, is_urgent, due_date, end_date,
         item_type, has_time,
         focus_time_seconds,
-        repeat_type, repeat_days, repeat_interval, next_due_date, is_recurring, parent_todo_id
-        , created_at, updated_at
+        repeat_type, repeat_days, repeat_interval, next_due_date, is_recurring, parent_todo_id,
+        completions,
+        is_deleted, completed_at, deleted_at,
+        created_at, updated_at
       );
     }
     
@@ -192,8 +208,10 @@ class TodoDAO {
       is_recurring,
       parent_todo_id,
       focus_time_seconds,
+      completions,
       is_deleted,
-      updated_at
+      updated_at,
+      completed_at
     } = todoData;
 
     let updateFields = [];
@@ -218,12 +236,21 @@ class TodoDAO {
       updateFields.push('is_completed = ?');
       params.push(is_completed);
 
-      // 如果标记为完成，设置完成时间
-      if (is_completed) {
+      if (completed_at !== undefined) {
+        // 显式传入了 completed_at（同步场景），直接使用
+        updateFields.push('completed_at = ?');
+        params.push(completed_at);
+      } else if (is_completed) {
+        // 用户手动完成，自动设置当前时间
         updateFields.push('completed_at = CURRENT_TIMESTAMP');
       } else {
+        // 标记为未完成，清空完成时间
         updateFields.push('completed_at = NULL');
       }
+    } else if (completed_at !== undefined) {
+      // 仅更新 completed_at（不常见但保持完整性）
+      updateFields.push('completed_at = ?');
+      params.push(completed_at);
     }
 
     if (is_important !== undefined) {
@@ -296,6 +323,11 @@ class TodoDAO {
     if (focus_time_seconds !== undefined) {
       updateFields.push('focus_time_seconds = ?');
       params.push(focus_time_seconds);
+    }
+
+    if (completions !== undefined) {
+      updateFields.push('completions = ?');
+      params.push(completions);
     }
 
     // 处理删除状态
@@ -436,16 +468,36 @@ class TodoDAO {
   }
 
   /**
+   * 清理软删除超过 keepDays 天的待办事项（物理删除）
+   * @param {number} keepDays - 保留天数，默认30天
+   * @returns {number} 删除的条数
+   */
+  purgeOldDeleted(keepDays = 30) {
+    const db = this.getDB();
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - keepDays);
+    const cutoffStr = cutoff.toISOString();
+    const stmt = db.prepare('DELETE FROM todos WHERE is_deleted = 1 AND deleted_at < ?');
+    return stmt.run(cutoffStr).changes;
+  }
+
+  /**
    * 获取所有待办事项
    */
   findAll(options = {}) {
     const db = this.getDB();
-    const {
+    const VALID_SORT_COLUMNS = ['quadrant', 'due_date', 'created_at', 'updated_at'];
+    const VALID_SORT_ORDERS = ['ASC', 'DESC'];
+    let {
       includeCompleted = true,
       includeDeleted = false,
       sortBy = 'quadrant', // 'quadrant', 'due_date', 'created_at'
       sortOrder = 'ASC'
     } = options;
+    
+    // 防止 SQL 注入：白名单校验
+    if (!VALID_SORT_COLUMNS.includes(sortBy)) sortBy = 'quadrant';
+    if (!VALID_SORT_ORDERS.includes(sortOrder.toUpperCase())) sortOrder = 'ASC';
     
     let whereConditions = [];
     let params = [];
@@ -690,13 +742,22 @@ class TodoDAO {
    */
   batchDelete(ids) {
     const db = this.getDB();
-    const placeholders = ids.map(() => '?').join(',');
-    const stmt = db.prepare(`
-      UPDATE todos 
-      SET is_deleted = 1, deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
-      WHERE id IN (${placeholders})
-    `);
-    return stmt.run(...ids).changes;
+    const transaction = db.transaction(() => {
+      ids.forEach(id => {
+        const todo = this.findById(id);
+        if (todo) {
+          const stmt = db.prepare(`
+            UPDATE todos 
+            SET is_deleted = 1, deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
+            WHERE id = ?
+          `);
+          if (stmt.run(id).changes > 0) {
+            this.changeLog.logChange('todo', id, 'delete', { ...todo, is_deleted: 1 });
+          }
+        }
+      });
+    });
+    return transaction();
   }
 
   /**
@@ -704,13 +765,22 @@ class TodoDAO {
    */
   batchRestore(ids) {
     const db = this.getDB();
-    const placeholders = ids.map(() => '?').join(',');
-    const stmt = db.prepare(`
-      UPDATE todos 
-      SET is_deleted = 0, deleted_at = NULL, updated_at = CURRENT_TIMESTAMP 
-      WHERE id IN (${placeholders})
-    `);
-    return stmt.run(...ids).changes;
+    const transaction = db.transaction(() => {
+      ids.forEach(id => {
+        const stmt = db.prepare(`
+          UPDATE todos 
+          SET is_deleted = 0, deleted_at = NULL, updated_at = CURRENT_TIMESTAMP 
+          WHERE id = ?
+        `);
+        if (stmt.run(id).changes > 0) {
+          const restored = this.findById(id);
+          if (restored) {
+            this.changeLog.logChange('todo', id, 'restore', restored);
+          }
+        }
+      });
+    });
+    return transaction();
   }
 
   /**
@@ -728,13 +798,22 @@ class TodoDAO {
    */
   batchComplete(ids) {
     const db = this.getDB();
-    const placeholders = ids.map(() => '?').join(',');
-    const stmt = db.prepare(`
-      UPDATE todos 
-      SET is_completed = 1, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
-      WHERE is_deleted = 0 AND id IN (${placeholders})
-    `);
-    return stmt.run(...ids).changes;
+    const transaction = db.transaction(() => {
+      ids.forEach(id => {
+        const stmt = db.prepare(`
+          UPDATE todos 
+          SET is_completed = 1, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
+          WHERE is_deleted = 0 AND id = ?
+        `);
+        if (stmt.run(id).changes > 0) {
+          const completed = this.findById(id);
+          if (completed) {
+            this.changeLog.logChange('todo', id, 'update', completed);
+          }
+        }
+      });
+    });
+    return transaction();
   }
 
   /**
@@ -750,17 +829,12 @@ class TodoDAO {
           WHEN is_important = 0 AND is_urgent = 1 THEN 'normal'
           ELSE 'low'
         END as priority,
-        CASE 
-          WHEN is_important = 1 AND is_urgent = 1 THEN 'urgent'
-          WHEN is_important = 1 AND is_urgent = 0 THEN 'important'
-          WHEN is_important = 0 AND is_urgent = 1 THEN 'normal'
-          ELSE 'low'
-        END as title
+        content as title
       FROM todos 
-      WHERE is_deleted = 0 AND content LIKE ? 
+      WHERE is_deleted = 0 AND (content LIKE ? OR description LIKE ?)
       ORDER BY created_at DESC
     `);
-    return stmt.all(`%${query}%`);
+    return stmt.all(`%${query}%`, `%${query}%`);
   }
 
   /**

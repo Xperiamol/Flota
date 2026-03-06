@@ -15,6 +15,7 @@ import { format, isToday } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import TodoList from './TodoList';
 import { fetchTodos } from '../api/todoAPI';
+import { isTodoCompleted } from '../utils/todoDisplayUtils';
 
 const MyDayPanel = ({ selectedDate, onTodoSelect, refreshToken = 0, onTodoUpdated }) => {
   const [todayTodos, setTodayTodos] = useState([]);
@@ -53,9 +54,9 @@ const MyDayPanel = ({ selectedDate, onTodoSelect, refreshToken = 0, onTodoUpdate
       
       // 计算统计信息
       const total = sortedTodos.length;
-      const completed = sortedTodos.filter(todo => todo.is_completed).length;
+      const completed = sortedTodos.filter(todo => isTodoCompleted(todo)).length;
       const pending = total - completed;
-      const urgent = sortedTodos.filter(todo => todo.is_urgent && !todo.is_completed).length;
+      const urgent = sortedTodos.filter(todo => todo.is_urgent && !isTodoCompleted(todo)).length;
       
       setTodayTodos(sortedTodos);
       setStats({ total, completed, pending, urgent });

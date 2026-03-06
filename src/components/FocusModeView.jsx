@@ -34,6 +34,7 @@ import {
   getPriorityFromQuadrant
 } from '../utils/priorityUtils';
 import { useStore } from '../store/useStore';
+import { isTodoCompleted, isFutureRecurringTodo } from '../utils/todoDisplayUtils';
 
 const LONG_PRESS_DURATION = 1200;
 
@@ -76,7 +77,7 @@ const FocusModeView = ({
 }) => {
   const normalizedTodos = useMemo(() => {
     return todos.map((todo) => {
-      const completed = todo.completed !== undefined ? Boolean(todo.completed) : Boolean(todo.is_completed);
+      const completed = isTodoCompleted(todo);
       const focusSeconds = Number.isFinite(todo.focus_time_seconds)
         ? Number(todo.focus_time_seconds)
         : 0;
@@ -310,6 +311,7 @@ const FocusModeView = ({
 
   const completeCurrentTodo = async () => {
     if (!currentTodo || !onToggleComplete) return;
+    if (isFutureRecurringTodo(currentTodo)) return;
     cancelLongPress();
     setIsCompleting(true);
     setFeedback(null);
@@ -638,7 +640,7 @@ const FocusModeView = ({
                   isFocusing 
                     ? `0 8px 32px ${theme.palette.error.main}40`
                     : `0 8px 32px ${theme.palette.primary.main}30`,
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                transition: 'background-color 0.3s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s cubic-bezier(0.4,0,0.2,1), transform 0.3s cubic-bezier(0.4,0,0.2,1), color 0.3s cubic-bezier(0.4,0,0.2,1)',
                 '&:hover': {
                   transform: 'scale(1.05)',
                 },
@@ -669,7 +671,7 @@ const FocusModeView = ({
                   height: 72,
                   fontSize: '1.5rem',
                   boxShadow: (theme) => `0 8px 32px ${theme.palette.success.main}30`,
-                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  transition: 'background-color 0.3s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s cubic-bezier(0.4,0,0.2,1), transform 0.3s cubic-bezier(0.4,0,0.2,1)',
                   '&:hover': {
                     transform: 'scale(1.05)',
                   },
@@ -717,7 +719,7 @@ const FocusModeView = ({
                 boxShadow: showTodoList 
                   ? (theme) => `0 8px 32px ${theme.palette.secondary.main}30`
                   : '0 4px 16px rgba(0,0,0,0.1)',
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                transition: 'background-color 0.3s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s cubic-bezier(0.4,0,0.2,1), transform 0.3s cubic-bezier(0.4,0,0.2,1), color 0.3s cubic-bezier(0.4,0,0.2,1)',
                 '&:hover': {
                   transform: 'scale(1.05)',
                   backgroundColor: showTodoList ? 'secondary.main' : 'action.selected',
@@ -813,7 +815,7 @@ const FocusModeView = ({
                             backgroundColor: isActive ? 'action.selected' : 'transparent',
                             borderRadius: '8px',
                             mb: 0.5,
-                            transition: 'all 0.2s ease',
+                            transition: 'background-color 0.2s ease, color 0.2s ease',
                             display: 'flex',
                             alignItems: 'center',
                             overflow: 'hidden',
@@ -931,4 +933,4 @@ const FocusModeView = ({
   );
 };
 
-export default FocusModeView;
+export default React.memo(FocusModeView);

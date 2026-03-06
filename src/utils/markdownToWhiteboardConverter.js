@@ -3,6 +3,7 @@
  * 将 Markdown 文本内容转换为 Excalidraw 元素
  * 支持：标题、段落、列表、代码块、图片
  */
+import logger from './logger';
 
 /**
  * 解析 Markdown 内容，提取标题、段落、列表、代码块和图片
@@ -394,17 +395,17 @@ function generateExcalidrawElements(blocks, imageDataMap = {}) {
  */
 export function convertMarkdownToWhiteboard(markdownContent, imageDataMap = {}) {
   try {
-    console.log('[convertMarkdownToWhiteboard] 输入内容长度:', markdownContent?.length || 0)
-    console.log('[convertMarkdownToWhiteboard] 输入内容前100字符:', markdownContent?.substring(0, 100))
+    logger.log('[convertMarkdownToWhiteboard] 输入内容长度:', markdownContent?.length || 0)
+    logger.log('[convertMarkdownToWhiteboard] 输入内容前100字符:', markdownContent?.substring(0, 100))
     
     // 1. 解析 Markdown
     const blocks = parseMarkdown(markdownContent)
-    console.log('[convertMarkdownToWhiteboard] 解析得到的blocks数量:', blocks.length)
-    console.log('[convertMarkdownToWhiteboard] 解析得到的blocks:', blocks)
+    logger.log('[convertMarkdownToWhiteboard] 解析得到的blocks数量:', blocks.length)
+    logger.log('[convertMarkdownToWhiteboard] 解析得到的blocks:', blocks)
     
     // 如果没有内容，返回空白板
     if (blocks.length === 0) {
-      console.log('[convertMarkdownToWhiteboard] blocks为空，返回空白板')
+      logger.log('[convertMarkdownToWhiteboard] blocks为空，返回空白板')
       return JSON.stringify({
         type: 'excalidraw',
         version: 2,
@@ -421,8 +422,8 @@ export function convertMarkdownToWhiteboard(markdownContent, imageDataMap = {}) 
     
     // 2. 生成 Excalidraw 元素（包括图片）
     const { elements, fileMap } = generateExcalidrawElements(blocks, imageDataMap)
-    console.log('[convertMarkdownToWhiteboard] 生成的elements数量:', elements.length)
-    console.log('[convertMarkdownToWhiteboard] 生成的fileMap:', Object.keys(fileMap))
+    logger.log('[convertMarkdownToWhiteboard] 生成的elements数量:', elements.length)
+    logger.log('[convertMarkdownToWhiteboard] 生成的fileMap:', Object.keys(fileMap))
     
     // 3. 构建完整的白板数据
     const whiteboardData = {

@@ -18,6 +18,7 @@ import {
 } from '@mui/material';
 import { CheckCircle, Error as ErrorIcon, Wifi, WifiOff } from '@mui/icons-material';
 import { spacing, flex, combo } from '../styles/commonStyles';
+import logger from '../utils/logger';
 
 const ProxySettings = ({ showSnackbar }) => {
   const { t } = useTranslation();
@@ -39,7 +40,7 @@ const ProxySettings = ({ showSnackbar }) => {
   const loadConfig = async () => {
     try {
       const result = await window.electronAPI.invoke('proxy:get-config');
-      console.log('[ProxySettings] 收到配置:', result);
+      logger.log('[ProxySettings] 收到配置:', result);
       if (result.success && result.data) {
         // 确保 protocol 是字符串
         const normalizedConfig = {
@@ -48,7 +49,7 @@ const ProxySettings = ({ showSnackbar }) => {
             ? result.data.protocol 
             : 'http'
         };
-        console.log('[ProxySettings] 标准化配置:', normalizedConfig);
+        logger.log('[ProxySettings] 标准化配置:', normalizedConfig);
         setConfig(normalizedConfig);
       }
     } catch (error) {
@@ -67,7 +68,7 @@ const ProxySettings = ({ showSnackbar }) => {
         host: config.host,
         port: config.port
       };
-      console.log('[ProxySettings] 保存配置:', configToSave);
+      logger.log('[ProxySettings] 保存配置:', configToSave);
       
       const result = await window.electronAPI.invoke('proxy:save-config', configToSave);
 
@@ -94,7 +95,7 @@ const ProxySettings = ({ showSnackbar }) => {
         host: config.host,
         port: config.port
       };
-      console.log('[ProxySettings] 测试配置:', configToTest);
+      logger.log('[ProxySettings] 测试配置:', configToTest);
       
       const result = await window.electronAPI.invoke('proxy:test', configToTest);
 
