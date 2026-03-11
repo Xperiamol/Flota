@@ -114,6 +114,7 @@ const CustomDatePicker = ({ value, onChange, onClose, anchorEl }) => {
           <IconButton
             onClick={handlePrevMonth}
             size="small"
+            aria-label="上个月"
             sx={{
               borderRadius: 1, // Match smaller button radius
               '&:hover': {
@@ -129,6 +130,7 @@ const CustomDatePicker = ({ value, onChange, onClose, anchorEl }) => {
           <IconButton
             onClick={handleNextMonth}
             size="small"
+            aria-label="下个月"
             sx={{
               borderRadius: 1, // Match smaller button radius
               '&:hover': {
@@ -496,6 +498,7 @@ const DateTimePicker = ({
                 onDateChange('');
                 onTimeChange('');
               }}
+              aria-label="清除日期"
               sx={{
                 position: 'absolute',
                 right: 8,
@@ -555,6 +558,7 @@ const DateTimePicker = ({
                 e.stopPropagation();
                 onTimeChange('');
               }}
+              aria-label="清除时间"
               sx={{
                 position: 'absolute',
                 right: 8,

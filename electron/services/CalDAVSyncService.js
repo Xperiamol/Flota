@@ -436,11 +436,11 @@ class CalDAVSyncService {
    * @returns {Promise<string>} UID
    */
   async createCalendarEvent(client, config, todo) {
-    const uid = `flashnote-todo-${todo.id}-${Date.now()}@flashnote.app`;
+    const uid = `Flota-todo-${todo.id}-${Date.now()}@Flota.app`;
 
     // 创建 iCalendar VTODO 组件
     const comp = new ICAL.Component(['vcalendar', [], []]);
-    comp.updatePropertyWithValue('prodid', '-//FlashNote//CalDAV Sync//EN');
+    comp.updatePropertyWithValue('prodid', '-//Flota//CalDAV Sync//EN');
     comp.updatePropertyWithValue('version', '2.0');
 
     const vtodo = new ICAL.Component('vtodo');
@@ -492,7 +492,7 @@ class CalDAVSyncService {
   async updateCalendarEvent(client, config, todo, uid) {
     // 类似 createCalendarEvent,但使用 updateCalendarObject
     const comp = new ICAL.Component(['vcalendar', [], []]);
-    comp.updatePropertyWithValue('prodid', '-//FlashNote//CalDAV Sync//EN');
+    comp.updatePropertyWithValue('prodid', '-//Flota//CalDAV Sync//EN');
     comp.updatePropertyWithValue('version', '2.0');
 
     const vtodo = new ICAL.Component('vtodo');

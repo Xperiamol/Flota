@@ -21,11 +21,11 @@ const getUserDataPath = () => {
   const platform = process.platform;
   const homeDir = process.env.HOME || process.env.USERPROFILE;
   if (platform === 'win32') {
-    return path.join(process.env.APPDATA || homeDir, 'flashnote');
+    return path.join(process.env.APPDATA || homeDir, 'Flota');
   } else if (platform === 'darwin') {
-    return path.join(homeDir, 'Library', 'Application Support', 'flashnote');
+    return path.join(homeDir, 'Library', 'Application Support', 'Flota');
   } else {
-    return path.join(homeDir, '.config', 'flashnote');
+    return path.join(homeDir, '.config', 'Flota');
   }
 };
 
@@ -36,6 +36,20 @@ class SettingsService extends EventEmitter {
     this.cache = new Map(); // 设置缓存
     this.loadCache();
   }
+
+  /**
+   * 关键设置的语义校验规则
+   */
+  static VALIDATION_RULES = {
+    ai_api_url: (v) => !v || /^https?:\/\/.+/.test(v) ? null : 'API地址必须以 http:// 或 https:// 开头',
+    ai_temperature: (v) => { const n = Number(v); return n >= 0 && n <= 2 ? null : '温度参数必须在 0-2 之间'; },
+    ai_max_tokens: (v) => { const n = Number(v); return Number.isInteger(n) && n >= 1 && n <= 128000 ? null : 'Token数必须为 1-128000 的整数'; },
+    auto_save_interval: (v) => { const n = Number(v); return Number.isInteger(n) && n >= 1000 && n <= 300000 ? null : '自动保存间隔必须在 1000-300000ms 之间'; },
+
+    sync_interval: (v) => { const n = Number(v); return Number.isInteger(n) && n >= 30000 ? null : '同步间隔不能少于 30 秒'; },
+    window_width: (v) => { const n = Number(v); return Number.isInteger(n) && n >= 400 ? null : '窗口宽度最小 400'; },
+    window_height: (v) => { const n = Number(v); return Number.isInteger(n) && n >= 300 ? null : '窗口高度最小 300'; },
+  };
 
   /**
    * 加载设置到缓存
@@ -52,6 +66,14 @@ class SettingsService extends EventEmitter {
       console.log('设置缓存加载完成');
     } catch (error) {
       console.error('加载设置缓存失败:', error);
+    }
+  }
+
+  /** 统一 try/catch 包装 */
+  async _wrap(fn, ctx) {
+    try { return await fn() } catch (e) {
+      console.error(`${ctx}失败:`, e)
+      return { success: false, error: e.message }
     }
   }
 
@@ -163,12 +185,19 @@ class SettingsService extends EventEmitter {
    */
   async setSetting(key, value, type = 'string', description = '') {
     try {
-      // 验证值
+      // 类型验证
       if (!this.settingDAO.validateValue(value, type)) {
         return {
           success: false,
           error: `无效的${type}类型值`
         };
+      }
+
+      // 语义校验
+      const rule = SettingsService.VALIDATION_RULES[key];
+      if (rule) {
+        const errorMsg = rule(value);
+        if (errorMsg) return { success: false, error: errorMsg };
       }
       
       const setting = this.settingDAO.set(key, value, type, description);
@@ -203,8 +232,25 @@ class SettingsService extends EventEmitter {
       for (const key of Object.keys(settings)) {
         oldValues[key] = this.cache.get(key);
       }
+
+      // 规范化输入：支持 { key: value } 和 { key: { value, type } } 两种格式
+      const normalized = {};
+      for (const [key, val] of Object.entries(settings)) {
+        if (val !== null && typeof val === 'object' && 'value' in val) {
+          // 已经是 { value, type?, description? } 格式
+          normalized[key] = val;
+        } else {
+          // 简化格式 { key: rawValue }，自动推断类型
+          let type = 'string';
+          if (typeof val === 'boolean') type = 'boolean';
+          else if (typeof val === 'number') type = 'number';
+          else if (Array.isArray(val)) type = 'array';
+          else if (typeof val === 'object' && val !== null) type = 'object';
+          normalized[key] = { value: val, type };
+        }
+      }
       
-      const result = this.settingDAO.setMultiple(settings);
+      const result = this.settingDAO.setMultiple(normalized);
       
       // 更新缓存
       for (const [key, setting] of Object.entries(result)) {
@@ -264,216 +310,109 @@ class SettingsService extends EventEmitter {
    * 重置所有设置为默认值
    */
   async resetToDefaults() {
-    try {
+    return this._wrap(async () => {
       const oldSettings = { ...Object.fromEntries(this.cache) };
-      
       const defaultSettings = this.settingDAO.resetToDefaults();
-      
-      // 重新加载缓存
       await this.loadCache();
-      
       this.emit('settings-reset', { oldSettings, newSettings: defaultSettings });
-      
-      return {
-        success: true,
-        data: defaultSettings
-      };
-    } catch (error) {
-      console.error('重置设置失败:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
+      return { success: true, data: defaultSettings };
+    }, '重置设置')
   }
 
   /**
    * 获取主题相关设置
    */
   async getThemeSettings() {
-    try {
-      const themeKeys = ['theme_mode', 'primary_color', 'font_size', 'font_family'];
-      return await this.getSettings(themeKeys);
-    } catch (error) {
-      console.error('获取主题设置失败:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
+    return this._wrap(() => this.getSettings(['theme', 'customThemeColor']), '获取主题设置')
   }
 
   /**
    * 设置主题
    */
   async setTheme(themeMode, primaryColor) {
-    try {
+    return this._wrap(() => {
       const settings = {};
-      
-      if (themeMode !== undefined) {
-        settings.theme_mode = { value: themeMode, type: 'string', description: '主题模式' };
-      }
-      
-      if (primaryColor !== undefined) {
-        settings.primary_color = { value: primaryColor, type: 'string', description: '主色调' };
-      }
-      
-      return await this.setSettings(settings);
-    } catch (error) {
-      console.error('设置主题失败:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
+      if (themeMode !== undefined) settings.theme = { value: themeMode, type: 'string', description: '主题模式' };
+      if (primaryColor !== undefined) settings.customThemeColor = { value: primaryColor, type: 'string', description: '主色调' };
+      return this.setSettings(settings);
+    }, '设置主题')
   }
 
   /**
    * 获取窗口相关设置
    */
   async getWindowSettings() {
-    try {
-      const windowKeys = ['window_width', 'window_height', 'window_x', 'window_y'];
-      return await this.getSettings(windowKeys);
-    } catch (error) {
-      console.error('获取窗口设置失败:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
+    return this._wrap(() => this.getSettings(['window_width', 'window_height', 'window_x', 'window_y']), '获取窗口设置')
   }
 
   /**
    * 保存窗口状态
    */
   async saveWindowState(bounds) {
-    try {
-      const settings = {
-        window_width: { value: bounds.width, type: 'number', description: '窗口宽度' },
-        window_height: { value: bounds.height, type: 'number', description: '窗口高度' },
-        window_x: { value: bounds.x, type: 'number', description: '窗口X位置' },
-        window_y: { value: bounds.y, type: 'number', description: '窗口Y位置' }
-      };
-      
-      return await this.setSettings(settings);
-    } catch (error) {
-      console.error('保存窗口状态失败:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
+    return this._wrap(() => this.setSettings({
+      window_width: { value: bounds.width, type: 'number', description: '窗口宽度' },
+      window_height: { value: bounds.height, type: 'number', description: '窗口高度' },
+      window_x: { value: bounds.x, type: 'number', description: '窗口X位置' },
+      window_y: { value: bounds.y, type: 'number', description: '窗口Y位置' },
+    }), '保存窗口状态')
   }
 
   /**
    * 获取编辑器相关设置
    */
   async getEditorSettings() {
-    try {
-      const editorKeys = [
-        'auto_save', 'auto_save_interval', 'show_line_numbers', 
-        'word_wrap', 'spell_check', 'font_size', 'font_family'
-      ];
-      return await this.getSettings(editorKeys);
-    } catch (error) {
-      console.error('获取编辑器设置失败:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
+    return this._wrap(() => this.getSettings([
+      'auto_save', 'auto_save_interval'
+    ]), '获取编辑器设置')
   }
 
   /**
    * 导出设置
    */
   async exportSettings() {
-    try {
-      const exportData = this.settingDAO.export();
-      
-      return {
-        success: true,
-        data: exportData,
-        filename: `flashnote-settings-${new Date().toISOString().split('T')[0]}.json`
-      };
-    } catch (error) {
-      console.error('导出设置失败:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
+    return this._wrap(() => ({
+      success: true, data: this.settingDAO.export(),
+      filename: `Flota-settings-${new Date().toISOString().split('T')[0]}.json`
+    }), '导出设置')
   }
 
   /**
    * 导入设置
    */
   async importSettings(data) {
-    try {
+    return this._wrap(async () => {
       const oldSettings = { ...Object.fromEntries(this.cache) };
-      
       const result = this.settingDAO.import(data);
-      
-      // 重新加载缓存
       await this.loadCache();
-      
       this.emit('settings-imported', { oldSettings, newSettings: result });
-      
-      return {
-        success: true,
-        data: result
-      };
-    } catch (error) {
-      console.error('导入设置失败:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
+      return { success: true, data: result };
+    }, '导入设置')
   }
 
   /**
    * 搜索设置
    */
   async searchSettings(query) {
-    try {
-      const settings = this.settingDAO.search(query);
-      
-      return {
-        success: true,
-        data: settings
-      };
-    } catch (error) {
-      console.error('搜索设置失败:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
+    return this._wrap(() => ({ success: true, data: this.settingDAO.search(query) }), '搜索设置')
+  }
+
+  async getSettingsByType(type) {
+    return this._wrap(() => ({ success: true, data: this.settingDAO.getByType(type) }), '按类型获取设置')
+  }
+
+  async deleteMultipleSettings(keys) {
+    return this._wrap(() => {
+      const result = this.settingDAO.deleteMultiple(keys)
+      keys.forEach(k => this.cache.delete(k))
+      return { success: true, data: result }
+    }, '批量删除设置')
   }
 
   /**
    * 获取设置统计信息
    */
   async getSettingsStats() {
-    try {
-      const stats = this.settingDAO.getStats();
-      
-      return {
-        success: true,
-        data: {
-          ...stats,
-          cacheSize: this.cache.size
-        }
-      };
-    } catch (error) {
-      console.error('获取设置统计失败:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
+    return this._wrap(() => ({ success: true, data: { ...this.settingDAO.getStats(), cacheSize: this.cache.size } }), '获取设置统计')
   }
 
   /**
@@ -581,10 +520,12 @@ class SettingsService extends EventEmitter {
   }
 
   /**
-   * 选择壁纸文件
+   * 选择壁纸文件，复制到 userData/wallpaper/ 并返回 app:// URL
    */
   async selectWallpaper() {
-    const { dialog } = require('electron');
+    const { dialog, app } = require('electron');
+    const path = require('path');
+    const fs = require('fs');
     
     try {
       const result = await dialog.showOpenDialog({
@@ -599,22 +540,29 @@ class SettingsService extends EventEmitter {
       });
       
       if (result.canceled || !result.filePaths.length) {
-        return {
-          success: false,
-          error: '用户取消选择'
-        };
+        return { success: false, error: '用户取消选择' };
       }
+
+      const srcPath = result.filePaths[0];
+      const ext = path.extname(srcPath).toLowerCase();
+      const wallpaperDir = path.join(app.getPath('userData'), 'wallpaper');
       
-      return {
-        success: true,
-        data: result.filePaths[0]
-      };
+      // 确保目录存在
+      if (!fs.existsSync(wallpaperDir)) {
+        fs.mkdirSync(wallpaperDir, { recursive: true });
+      }
+
+      // 固定文件名，覆盖旧壁纸
+      const destName = `current${ext}`;
+      const destPath = path.join(wallpaperDir, destName);
+      fs.copyFileSync(srcPath, destPath);
+
+      // 返回 app:// 协议 URL（带时间戳防缓存）
+      const appUrl = `app://wallpaper/${destName}?t=${Date.now()}`;
+      return { success: true, data: appUrl };
     } catch (error) {
       console.error('选择壁纸失败:', error);
-      return {
-        success: false,
-        error: error.message
-      };
+      return { success: false, error: error.message };
     }
   }
 }

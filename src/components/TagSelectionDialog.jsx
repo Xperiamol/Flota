@@ -169,6 +169,7 @@ const TagSelectionDialog = ({
           placeholder="搜索标签..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
+          aria-label="搜索标签"
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
@@ -177,7 +178,7 @@ const TagSelectionDialog = ({
             ),
             endAdornment: searchQuery && (
               <InputAdornment position="end">
-                <IconButton size="small" onClick={handleClearSearch}>
+                <IconButton size="small" onClick={handleClearSearch} aria-label="清除搜索">
                   <ClearIcon />
                 </IconButton>
               </InputAdornment>
@@ -195,6 +196,7 @@ const TagSelectionDialog = ({
             onChange={(e) => setNewTagInput(e.target.value)}
             onKeyDown={handleNewTagKeyDown}
             sx={{ flex: 1 }}
+            aria-label="添加新标签"
           />
           <Button
             variant="outlined"

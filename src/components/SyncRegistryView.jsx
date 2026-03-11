@@ -455,6 +455,7 @@ const SyncRegistryView = ({ onOpenSettings }) => {
               <IconButton
                 size="small"
                 onClick={() => onOpenSettings(item.selectedProvider)}
+                aria-label="设置"
                 sx={{
                   '&:hover': {
                     bgcolor: 'action.selected',

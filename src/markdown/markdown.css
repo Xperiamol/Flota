@@ -1,5 +1,5 @@
 /**
- * FlashNote Markdown 样式
+ * Flota Markdown 样式
  * 为自定义 Markdown 插件提供样式支持
  */
 
@@ -127,13 +127,14 @@
   }
 }
 
-/* ==================== Callout 样式 ==================== */
+/* ==================== Callout / Container 统一样式（对齐 WYSIWYG 编辑器）==================== */
 .markdown-callout {
-  border-left: 4px solid;
-  padding: 1rem;
-  margin: 1rem 0;
-  border-radius: 0.25rem;
-  background-color: rgba(59, 130, 246, 0.08);
+  --callout-color: #6b7280;
+  border-left: 4px solid var(--callout-color);
+  padding: 10px 14px;
+  margin: 0.5rem 0;
+  border-radius: 8px;
+  background-color: rgba(107, 114, 128, 0.05);
 }
 
 .markdown-callout-header {
@@ -142,15 +143,16 @@
   gap: 0.5rem;
   font-weight: 600;
   margin-bottom: 0.5rem;
+  color: var(--callout-color);
 }
 
 .markdown-callout-icon {
-  font-size: 1.25rem;
+  font-size: 1.1rem;
   line-height: 1;
 }
 
 .markdown-callout-title {
-  font-size: 1rem;
+  font-size: 0.95rem;
 }
 
 .markdown-callout-content {
@@ -165,256 +167,137 @@
   margin-bottom: 0;
 }
 
-/* 不同类型的 Callout */
-.markdown-callout-note {
-  border-left-color: #3b82f6;
-  background-color: rgba(59, 130, 246, 0.08);
+/* ── 类型颜色（5 标准 + 兼容旧类型）───────────────────── */
+.markdown-callout-note,
+.markdown-callout-info,
+.markdown-callout-todo {
+  --callout-color: #3b82f6;
+  background-color: rgba(59, 130, 246, 0.05);
 }
 
-.markdown-callout-tip {
-  border-left-color: #22c55e;
-  background-color: rgba(34, 197, 94, 0.08);
-}
-
-.markdown-callout-info {
-  border-left-color: #3b82f6;
-  background-color: rgba(59, 130, 246, 0.08);
-}
-
-.markdown-callout-warning {
-  border-left-color: #f59e0b;
-  background-color: rgba(245, 158, 11, 0.08);
-}
-
-.markdown-callout-danger,
-.markdown-callout-error {
-  border-left-color: #ef4444;
-  background-color: rgba(239, 68, 68, 0.08);
-}
-
+.markdown-callout-tip,
 .markdown-callout-success {
-  border-left-color: #22c55e;
-  background-color: rgba(34, 197, 94, 0.08);
+  --callout-color: #22c55e;
+  background-color: rgba(34, 197, 94, 0.05);
 }
 
+.markdown-callout-important,
 .markdown-callout-question {
-  border-left-color: #8b5cf6;
-  background-color: rgba(139, 92, 246, 0.08);
+  --callout-color: #8b5cf6;
+  background-color: rgba(139, 92, 246, 0.05);
+}
+
+.markdown-callout-warning,
+.markdown-callout-tldr {
+  --callout-color: #f59e0b;
+  background-color: rgba(245, 158, 11, 0.05);
+}
+
+.markdown-callout-caution,
+.markdown-callout-danger,
+.markdown-callout-error,
+.markdown-callout-bug,
+.markdown-callout-failure {
+  --callout-color: #ef4444;
+  background-color: rgba(239, 68, 68, 0.05);
 }
 
 .markdown-callout-quote {
-  border-left-color: #6b7280;
-  background-color: rgba(107, 114, 128, 0.08);
+  --callout-color: #6b7280;
+  background-color: rgba(107, 114, 128, 0.05);
 }
 
-.markdown-callout-example {
-  border-left-color: #06b6d4;
-  background-color: rgba(6, 182, 212, 0.08);
+.markdown-callout-example,
+.markdown-callout-abstract,
+.markdown-callout-summary {
+  --callout-color: #06b6d4;
+  background-color: rgba(6, 182, 212, 0.05);
 }
 
-.markdown-callout-abstract {
-  border-left-color: #06b6d4;
-  background-color: rgba(6, 182, 212, 0.08);
+.markdown-callout-details {
+  --callout-color: #6b7280;
+  background-color: rgba(107, 114, 128, 0.05);
 }
 
-.markdown-callout-todo {
-  border-left-color: #3b82f6;
-  background-color: rgba(59, 130, 246, 0.08);
-}
-
-.markdown-callout-bug {
-  border-left-color: #ef4444;
-  background-color: rgba(239, 68, 68, 0.08);
-}
-
-/* ==================== 自定义容器样式 ==================== */
-.markdown-container {
-  border-left: 4px solid;
-  padding: 1rem;
-  margin: 1rem 0;
-  border-radius: 0.25rem;
-}
-
-.markdown-container-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
-}
-
-.markdown-container-icon {
-  font-size: 1.25rem;
-  line-height: 1;
-}
-
-.markdown-container-title {
-  font-size: 1rem;
-}
-
-.markdown-container-content > *:first-child {
-  margin-top: 0;
-}
-
-.markdown-container-content > *:last-child {
-  margin-bottom: 0;
-}
-
-/* 容器类型样式 */
-.markdown-container-tip {
-  border-left-color: #22c55e;
-  background-color: rgba(34, 197, 94, 0.08);
-}
-
-.markdown-container-info {
-  border-left-color: #3b82f6;
-  background-color: rgba(59, 130, 246, 0.08);
-}
-
-.markdown-container-warning {
-  border-left-color: #f59e0b;
-  background-color: rgba(245, 158, 11, 0.08);
-}
-
-.markdown-container-danger {
-  border-left-color: #ef4444;
-  background-color: rgba(239, 68, 68, 0.08);
-}
-
-.markdown-container-details {
-  border-left-color: #6b7280;
-  background-color: rgba(107, 114, 128, 0.08);
-}
-
-.markdown-container-note {
-  border-left-color: #8b5cf6;
-  background-color: rgba(139, 92, 246, 0.08);
-}
-
-.markdown-container-abstract,
-.markdown-container-summary {
-  border-left-color: #06b6d4;
-  background-color: rgba(6, 182, 212, 0.08);
-}
-
-.markdown-container-tldr {
-  border-left-color: #f59e0b;
-  background-color: rgba(245, 158, 11, 0.08);
-}
-
-.markdown-container-success {
-  border-left-color: #22c55e;
-  background-color: rgba(34, 197, 94, 0.08);
-}
-
-.markdown-container-question {
-  border-left-color: #8b5cf6;
-  background-color: rgba(139, 92, 246, 0.08);
-}
-
-.markdown-container-failure {
-  border-left-color: #ef4444;
-  background-color: rgba(239, 68, 68, 0.08);
-}
-
-.markdown-container-bug {
-  border-left-color: #ef4444;
-  background-color: rgba(239, 68, 68, 0.08);
-}
-
-.markdown-container-example {
-  border-left-color: #06b6d4;
-  background-color: rgba(6, 182, 212, 0.08);
-}
-
-.markdown-container-quote {
-  border-left-color: #6b7280;
-  background-color: rgba(107, 114, 128, 0.08);
-}
-
-/* Details 容器特殊样式 */
-.markdown-container-details summary {
+/* ── Details 折叠特殊样式 ──────────────────────────── */
+details.markdown-callout summary {
   cursor: pointer;
   user-select: none;
   list-style: none;
 }
 
-.markdown-container-details summary::-webkit-details-marker {
+details.markdown-callout summary::-webkit-details-marker {
   display: none;
 }
 
-.markdown-container-details summary::before {
+details.markdown-callout summary::before {
   content: '▶';
   display: inline-block;
   margin-right: 0.5rem;
   transition: transform 0.2s ease;
+  font-size: 0.75rem;
 }
 
-.markdown-container-details[open] summary::before {
+details.markdown-callout[open] summary::before {
   transform: rotate(90deg);
 }
 
-/* 代码组容器 */
-.markdown-container-code-group {
-  margin: 1rem 0;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.5rem;
+details.markdown-callout .markdown-callout-content {
+  margin-top: 0.5rem;
+}
+
+/* ── 代码组容器（保留独立样式）───────────────────────── */
+.markdown-callout-code-group {
+  margin: 0.5rem 0;
+  border: 1px solid var(--divider-color, #e5e7eb);
+  border-radius: 8px;
   overflow: hidden;
 }
 
-.markdown-container-code-tabs {
+.markdown-callout-code-tabs {
   display: flex;
   gap: 0;
   background-color: #f9fafb;
   border-bottom: 1px solid #e5e7eb;
 }
 
-.markdown-container-code-tab {
+.markdown-callout-code-tab {
   padding: 0.5rem 1rem;
   cursor: pointer;
   border-bottom: 2px solid transparent;
   transition: all 0.2s ease;
 }
 
-.markdown-container-code-tab:hover {
+.markdown-callout-code-tab:hover {
   background-color: #f3f4f6;
 }
 
-.markdown-container-code-tab.active {
+.markdown-callout-code-tab.active {
   border-bottom-color: #3b82f6;
   color: #3b82f6;
   font-weight: 600;
 }
 
-.markdown-container-code-content {
+.markdown-callout-code-content {
   padding: 0;
 }
 
-.markdown-container-code-content pre {
+.markdown-callout-code-content pre {
   margin: 0;
   border-radius: 0;
 }
 
-/* 自定义容器 */
-.markdown-container-custom {
-  padding: 1rem;
-  margin: 1rem 0;
-  border-radius: 0.25rem;
-}
-
 /* ==================== 响应式设计 ==================== */
 @media (max-width: 768px) {
-  .markdown-callout,
-  .markdown-container {
-    padding: 0.75rem;
-    margin: 0.75rem 0;
+  .markdown-callout {
+    padding: 8px 10px;
+    margin: 0.5rem 0;
   }
-  
-  .markdown-callout-header,
-  .markdown-container-header {
+
+  .markdown-callout-header {
     font-size: 0.9rem;
   }
-  
+
   .markdown-wiki-link-embed {
     padding: 0.75rem;
   }
@@ -422,16 +305,15 @@
 
 /* ==================== 打印样式 ==================== */
 @media print {
-  .markdown-callout,
-  .markdown-container {
+  .markdown-callout {
     break-inside: avoid;
   }
-  
+
   .markdown-wiki-link {
     color: #000;
     text-decoration: underline;
   }
-  
+
   .markdown-tag {
     border: 1px solid #000;
     background-color: transparent;

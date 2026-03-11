@@ -147,7 +147,7 @@ class ProxyService {
         port: 443,
         path: '/discovery/v1/apis',
         method: 'GET',
-        headers: { 'User-Agent': 'FlashNote/2.0' },
+        headers: { 'User-Agent': 'Flota/2.0' },
         agent: proxyAgent,
         timeout: this.TEST_TIMEOUT
       };

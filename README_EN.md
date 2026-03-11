@@ -1,4 +1,4 @@
-# FlashNote 2.0
+# Flota 2.0
 
 [中文](./README.md) | English
 
@@ -58,15 +58,15 @@ The old 1.x version has been phased out. Welcome to the new version that is more
 ### Installation Methods
 
 #### Method 1: Download Installer (Recommended)
-1. Go to the [Releases](https://github.com/Xperiamol/FlashNote/releases) page
-2. Download the latest version of `FlashNote 2.x.x. Setup 2.x.x.exe`
+1. Go to the [Releases](https://github.com/Xperiamol/Flota/releases) page
+2. Download the latest version of `Flota 2.x.x. Setup 2.x.x.exe`
 3. Run the installer and follow the prompts to complete installation
 4. After installation, the app will start automatically
 
 #### Method 2: Portable Version (Temporarily Deprecated)
 1. Download the `win-unpacked` folder
 2. Extract to any directory
-3. Run `FlashNote 2.0.exe` to use
+3. Run `Flota 2.0.exe` to use
 
 ### First Use
 1. **Start App**: Double-click the desktop icon or start from the start menu
@@ -87,8 +87,8 @@ The old 1.x version has been phased out. Welcome to the new version that is more
 
 ```bash
 # Clone the project
-git clone https://github.com/Xperiamol/FlashNote.git
-cd FlashNote
+git clone https://github.com/Xperiamol/Flota.git
+cd Flota
 
 # Install dependencies
 npm install
@@ -112,7 +112,7 @@ npm run electron-build
 
 ### 🔌 Plugin Development
 
-FlashNote 2+ supports a powerful plugin system. You can create your own plugins to extend functionality!
+Flota 2+ supports a powerful plugin system. You can create your own plugins to extend functionality!
 
 #### Quick Start
 
@@ -125,7 +125,7 @@ runtime.onActivate(async () => {
   }, async () => {
     await runtime.notifications.show({
       title: 'Hello!',
-      body: 'Welcome to FlashNote plugin system',
+      body: 'Welcome to Flota plugin system',
       type: 'success'
     })
   })
@@ -154,7 +154,7 @@ Start creating your first plugin! Check the [Complete Developer Guide](./plugins
 ### Project Structure
 
 ```
-FlashNote/
+Flota/
 ├── src/                    # Frontend source code
 │   ├── components/         # React components
 │   ├── utils/             # Utility functions
@@ -187,6 +187,6 @@ Thanks to all users who have used this project demo! We are committed to creatin
 
 ---
 
-**FlashNote 2** - Make note-taking more efficient and enjoyable!
+**Flota 2** - Make note-taking more efficient and enjoyable!
 
 If this project helps you, please give us a ⭐️!

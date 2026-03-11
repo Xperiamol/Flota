@@ -112,7 +112,7 @@ class TrayManager {
       }
     ]);
     
-    this.tray.setToolTip('FlashNote');
+    this.tray.setToolTip('Flota');
     this.tray.setContextMenu(contextMenu);
   }
 
@@ -163,7 +163,7 @@ class TrayManager {
         ? path.join(__dirname, '../../logo.png')
         : path.join(process.resourcesPath, 'logo.png');
       new Notification({
-        title: 'FlashNote',
+        title: 'Flota',
         body: '应用已最小化到系统托盘，双击托盘图标可重新打开窗口',
         icon: fs.existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : undefined
       }).show();

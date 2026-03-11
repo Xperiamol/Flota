@@ -248,6 +248,7 @@ const CommandPalette = ({ open, onClose }) => {
             placeholder="搜索命令..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            aria-label="搜索命令"
             variant="outlined"
             size="small"
             InputProps={{

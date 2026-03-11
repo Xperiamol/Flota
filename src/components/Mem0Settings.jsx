@@ -381,6 +381,7 @@ const Mem0Settings = () => {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                  aria-label={t('mem0.searchPlaceholder')}
                 />
                 <Button
                   sx={{ whiteSpace: 'nowrap' }}

@@ -1,5 +1,5 @@
 /**
- * FlashNote UI - Web Components
+ * Flota UI - Web Components
  * 为插件提供开箱即用的原生 Web Components
  * 
  * 使用方法：
@@ -11,11 +11,11 @@
  */
 
 /**
- * FlashNote Button Component
+ * Flota Button Component
  * 使用方法：
  * <fn-button variant="primary|secondary|outlined|text" size="sm|md|lg">按钮文字</fn-button>
  */
-class FlashNoteButton extends HTMLElement {
+class FlotaButton extends HTMLElement {
   constructor() {
     super()
     this.attachShadow({ mode: 'open' })
@@ -155,14 +155,14 @@ class FlashNoteButton extends HTMLElement {
 }
 
 /**
- * FlashNote Card Component
+ * Flota Card Component
  * 使用方法：
  * <fn-card hover>
  *   <div slot="title">标题</div>
  *   <div slot="content">内容</div>
  * </fn-card>
  */
-class FlashNoteCard extends HTMLElement {
+class FlotaCard extends HTMLElement {
   constructor() {
     super()
     this.attachShadow({ mode: 'open' })
@@ -243,11 +243,11 @@ class FlashNoteCard extends HTMLElement {
 }
 
 /**
- * FlashNote Input Component
+ * Flota Input Component
  * 使用方法：
  * <fn-input placeholder="请输入..." value="" error></fn-input>
  */
-class FlashNoteInput extends HTMLElement {
+class FlotaInput extends HTMLElement {
   constructor() {
     super()
     this.attachShadow({ mode: 'open' })
@@ -374,11 +374,11 @@ class FlashNoteInput extends HTMLElement {
 }
 
 /**
- * FlashNote Chip Component
+ * Flota Chip Component
  * 使用方法：
  * <fn-chip variant="primary|success|error|warning|info">标签</fn-chip>
  */
-class FlashNoteChip extends HTMLElement {
+class FlotaChip extends HTMLElement {
   constructor() {
     super()
     this.attachShadow({ mode: 'open' })
@@ -465,11 +465,11 @@ class FlashNoteChip extends HTMLElement {
 }
 
 /**
- * FlashNote Alert Component
+ * Flota Alert Component
  * 使用方法：
  * <fn-alert variant="success|error|warning|info">提示信息</fn-alert>
  */
-class FlashNoteAlert extends HTMLElement {
+class FlotaAlert extends HTMLElement {
   constructor() {
     super()
     this.attachShadow({ mode: 'open' })
@@ -538,11 +538,11 @@ class FlashNoteAlert extends HTMLElement {
 }
 
 /**
- * FlashNote Spinner Component
+ * Flota Spinner Component
  * 使用方法：
  * <fn-spinner size="sm|md|lg"></fn-spinner>
  */
-class FlashNoteSpinner extends HTMLElement {
+class FlotaSpinner extends HTMLElement {
   constructor() {
     super()
     this.attachShadow({ mode: 'open' })
@@ -594,29 +594,29 @@ class FlashNoteSpinner extends HTMLElement {
 /**
  * 注册所有 Web Components
  */
-export function registerFlashNoteComponents(windowContext = window) {
+export function registerFlotaComponents(windowContext = window) {
   if (!windowContext.customElements) {
-    console.warn('[FlashNote Components] 当前环境不支持 Custom Elements')
+    console.warn('[Flota Components] 当前环境不支持 Custom Elements')
     return
   }
 
   const components = [
-    ['fn-button', FlashNoteButton],
-    ['fn-card', FlashNoteCard],
-    ['fn-input', FlashNoteInput],
-    ['fn-chip', FlashNoteChip],
-    ['fn-alert', FlashNoteAlert],
-    ['fn-spinner', FlashNoteSpinner]
+    ['fn-button', FlotaButton],
+    ['fn-card', FlotaCard],
+    ['fn-input', FlotaInput],
+    ['fn-chip', FlotaChip],
+    ['fn-alert', FlotaAlert],
+    ['fn-spinner', FlotaSpinner]
   ]
 
   components.forEach(([name, component]) => {
     try {
       if (!windowContext.customElements.get(name)) {
         windowContext.customElements.define(name, component)
-        console.log(`[FlashNote Components] 已注册: ${name}`)
+        console.log(`[Flota Components] 已注册: ${name}`)
       }
     } catch (error) {
-      console.error(`[FlashNote Components] 注册失败: ${name}`, error)
+      console.error(`[Flota Components] 注册失败: ${name}`, error)
     }
   })
 }

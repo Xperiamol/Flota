@@ -564,7 +564,7 @@ class NoteService extends EventEmitter {
         return {
           success: true,
           data: exportData,
-          filename: `flashnote-export-${new Date().toISOString().split('T')[0]}.json`
+          filename: `Flota-export-${new Date().toISOString().split('T')[0]}.json`
         };
       }
       

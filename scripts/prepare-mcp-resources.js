@@ -36,10 +36,10 @@ fs.copySync(path.join(ROOT, 'electron/utils'), path.join(MCP_BUILD, 'utils'));
 console.log('创建 package.json（完整版，包含 AI 功能）...');
 const parentPkg = require('../package.json');
 const mcpPackage = {
-  name: 'flashnote-mcp-server',
+  name: 'flota-mcp-server',
   version: '1.0.0',
   private: true,
-  description: 'FlashNote MCP Server - 完整版（包含 AI 和 Mem0 功能）',
+  description: 'Flota MCP Server - 完整版（包含 AI 和 Mem0 功能）',
   dependencies: {
     '@modelcontextprotocol/sdk': parentPkg.dependencies['@modelcontextprotocol/sdk'],
     'better-sqlite3': parentPkg.dependencies['better-sqlite3'],

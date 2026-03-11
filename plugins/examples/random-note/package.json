@@ -1,14 +1,14 @@
 {
-	"name": "@flashnote-plugin/random-note",
+	"name": "@Flota-plugin/random-note",
 	"version": "1.0.0",
-	"description": "随机打开一篇笔记的 FlashNote 插件示例",
+	"description": "随机打开一篇笔记的 Flota 插件示例",
 	"main": "index.js",
 	"license": "MIT",
 	"keywords": [
-		"flashnote",
+		"Flota",
 		"plugin",
 		"example"
 	],
-	"author": "FlashNote Team",
+	"author": "Flota Team",
 	"private": true
 }

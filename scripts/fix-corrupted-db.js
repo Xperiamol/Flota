@@ -10,9 +10,9 @@ const path = require('path');
 // 数据库路径
 const prodDbPath = path.join(
   process.env.APPDATA || path.join(process.env.USERPROFILE, 'AppData', 'Roaming'),
-  'flashnote',
+  'Flota',
   'database',
-  'flashnote.db'
+  'flota.db'
 );
 
 console.log('🔧 开始修复数据库...\n');

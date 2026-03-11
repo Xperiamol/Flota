@@ -1,26 +1,14 @@
 import React, { useState, useRef, useCallback } from 'react'
-import { IconButton, Tooltip, Box, Typography, Dialog, DialogContent } from '@mui/material'
-import { Mic as MicIcon, Stop as StopIcon, FiberManualRecord as RecordingIcon } from '@mui/icons-material'
+import { IconButton, Tooltip } from '@mui/material'
+import { Mic as MicIcon, Stop as StopIcon } from '@mui/icons-material'
+import { blobToWav } from '../utils/audioCodec'
 
-/**
- * 录音按钮组件 — 录制音频并保存为 m4a 文件
- *
- * 使用 Web MediaRecorder API 录制，录制完成后通过 Electron IPC 保存到 audio/ 目录。
- * @param {Function} onAudioInsert - 录音完成后回调，传入相对路径（如 "audio/rec_xxx.m4a"）
- */
-const AudioRecordButton = ({ onAudioInsert, disabled = false }) => {
+const AudioRecordButton = ({ onAudioInsert, onTranscription, disabled = false, sx }) => {
   const [isRecording, setIsRecording] = useState(false)
-  const [elapsed, setElapsed] = useState(0)
+  const [sttBusy, setSttBusy] = useState(false)
   const mediaRecorderRef = useRef(null)
   const chunksRef = useRef([])
-  const timerRef = useRef(null)
   const streamRef = useRef(null)
-
-  const formatTime = (sec) => {
-    const m = Math.floor(sec / 60)
-    const s = sec % 60
-    return `${m}:${s.toString().padStart(2, '0')}`
-  }
 
   const startRecording = useCallback(async () => {
     try {
@@ -29,14 +17,9 @@ const AudioRecordButton = ({ onAudioInsert, disabled = false }) => {
       })
       streamRef.current = stream
 
-      // 检查支持的格式：优先 webm/opus，其次 ogg/opus
-      let mimeType = 'audio/webm;codecs=opus'
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = 'audio/ogg;codecs=opus'
-      }
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = '' // 使用浏览器默认
-      }
+      let mimeType = 'audio/ogg;codecs=opus'
+      if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/webm;codecs=opus'
+      if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = ''
 
       const opts = mimeType ? { mimeType, audioBitsPerSecond: 48000 } : { audioBitsPerSecond: 48000 }
       const recorder = new MediaRecorder(stream, opts)
@@ -47,25 +30,42 @@ const AudioRecordButton = ({ onAudioInsert, disabled = false }) => {
       }
 
       recorder.onstop = async () => {
-        clearInterval(timerRef.current)
         stream.getTracks().forEach(t => t.stop())
         streamRef.current = null
 
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' })
+        const mime = recorder.mimeType || 'audio/webm'
+        const blob = new Blob(chunksRef.current, { type: mime })
         if (blob.size === 0) return
 
-        // 根据 MIME 类型确定扩展名
-        const ext = (recorder.mimeType || '').includes('ogg') ? 'ogg' : 'webm'
+        const ext = mime.includes('ogg') ? 'ogg' : 'webm'
         const fileName = `rec_${Date.now()}.${ext}`
 
         try {
           const buffer = await blob.arrayBuffer()
           const result = await window.electronAPI.audio.saveFromBuffer(
-            Array.from(new Uint8Array(buffer)),
-            fileName
+            Array.from(new Uint8Array(buffer)), fileName
           )
-          if (result.success && onAudioInsert) {
-            onAudioInsert(result.data)
+          if (!result.success) return
+          const audioPath = result.data
+
+          // 先插入音频节点
+          onAudioInsert?.(audioPath)
+
+          // 自动转文字
+          if (window.electronAPI?.stt?.transcribe && onTranscription) {
+            setSttBusy(true)
+            try {
+              const isWebm = ext === 'webm'
+              const sttArg = isWebm ? await blobToWav(blob) : audioPath
+              const sttResult = await window.electronAPI.stt.transcribe(sttArg)
+              if (sttResult?.success && sttResult?.data?.text) {
+                onTranscription(sttResult.data.text, audioPath)
+              }
+            } catch (e) {
+              console.error('自动转文字失败:', e)
+            } finally {
+              setSttBusy(false)
+            }
           }
         } catch (error) {
           console.error('保存录音失败:', error)
@@ -73,79 +73,55 @@ const AudioRecordButton = ({ onAudioInsert, disabled = false }) => {
       }
 
       mediaRecorderRef.current = recorder
-      recorder.start(250) // 每 250ms 一个 chunk
+      recorder.start(250)
       setIsRecording(true)
-      setElapsed(0)
-      timerRef.current = setInterval(() => setElapsed(prev => prev + 1), 1000)
     } catch (error) {
       console.error('启动录音失败:', error)
     }
-  }, [onAudioInsert])
+  }, [onAudioInsert, onTranscription])
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop()
     }
     setIsRecording(false)
-    setElapsed(0)
   }, [])
 
   return (
     <>
-      <Tooltip title={isRecording ? '停止录音' : '录音'}>
+      <Tooltip title={sttBusy ? '转文字中…' : isRecording ? '点击停止' : '录音'}>
         <span>
           <IconButton
             size="small"
             onClick={isRecording ? stopRecording : startRecording}
-            disabled={disabled}
-            color={isRecording ? 'error' : 'default'}
+            disabled={disabled || sttBusy}
             sx={{
-              border: '1px solid',
-              borderColor: isRecording ? 'error.main' : 'divider',
-              borderRadius: 1,
-              '&:hover': { backgroundColor: 'action.hover' }
+              ...sx,
+              overflow: 'hidden',
+              ...(isRecording && {
+                color: '#fff',
+                background: 'linear-gradient(90deg, #e91e63, #9c27b0, #2196f3, #e91e63)',
+                backgroundSize: '200% 100%',
+                animation: 'fluid-flow 3s linear infinite',
+                '&:hover': { opacity: 0.85 },
+              }),
+              ...(sttBusy && {
+                color: '#fff',
+                background: 'linear-gradient(90deg, #00bcd4, #7c4dff, #00bcd4)',
+                backgroundSize: '200% 100%',
+                animation: 'fluid-flow 2s linear infinite',
+                '&:hover': { opacity: 0.85 },
+              }),
             }}
           >
-            {isRecording ? <StopIcon fontSize="small" /> : <MicIcon fontSize="small" />}
+            {sttBusy ? <MicIcon fontSize="small" /> : isRecording ? <StopIcon fontSize="small" /> : <MicIcon fontSize="small" />}
           </IconButton>
         </span>
       </Tooltip>
-
-      {/* 录音中指示器 */}
-      <Dialog open={isRecording} onClose={stopRecording} maxWidth="xs">
-        <DialogContent sx={{ textAlign: 'center', py: 4, px: 6 }}>
-          <RecordingIcon sx={{ fontSize: 48, color: 'error.main', animation: 'pulse 1.5s infinite' }} />
-          <Typography variant="h6" sx={{ mt: 2 }}>
-            录音中
-          </Typography>
-          <Typography variant="h4" sx={{ mt: 1, fontFamily: 'monospace' }}>
-            {formatTime(elapsed)}
-          </Typography>
-          <Box sx={{ mt: 3 }}>
-            <IconButton
-              onClick={stopRecording}
-              size="large"
-              sx={{
-                bgcolor: 'error.main',
-                color: 'white',
-                '&:hover': { bgcolor: 'error.dark' },
-                width: 56,
-                height: 56
-              }}
-            >
-              <StopIcon />
-            </IconButton>
-          </Box>
-          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-            点击停止录音
-          </Typography>
-        </DialogContent>
-      </Dialog>
-
       <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.3; }
+        @keyframes fluid-flow {
+          0% { background-position: 0% 50%; }
+          100% { background-position: 200% 50%; }
         }
       `}</style>
     </>

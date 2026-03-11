@@ -1,5 +1,5 @@
 /**
- * FlashNote v3.0 原子化同步系统 - 类型定义
+ * Flota v3.0 原子化同步系统 - 类型定义
  *
  * 本文件定义了云同步系统的所有数据结构
  */
@@ -115,7 +115,7 @@
  * @property {string} baseUrl - WebDAV 基础URL
  * @property {string} username - 用户名
  * @property {string} password - 密码
- * @property {string} rootPath - 根路径 (默认 /FlashNote/)
+ * @property {string} rootPath - 根路径 (默认 /Flota/)
  * @property {number} maxConcurrency - 最大并发数 (默认 3)
  * @property {number} requestDelay - 请求间隔 (毫秒，默认 200)
  * @property {number} retryAttempts - 重试次数 (默认 3)

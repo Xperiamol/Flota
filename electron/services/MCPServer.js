@@ -1,6 +1,6 @@
 /**
- * FlashNote MCP Server
- * 实现 Model Context Protocol，允许其他 AI 应用调用 FlashNote 功能
+ * Flota MCP Server
+ * 实现 Model Context Protocol，允许其他 AI 应用调用 Flota 功能
  */
 
 const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
@@ -25,7 +25,7 @@ class MCPServer {
       // 创建 MCP Server 实例
       this.server = new Server(
         {
-          name: 'flashnote',
+          name: 'Flota',
           version: '1.0.0',
         },
         {
@@ -307,7 +307,7 @@ class MCPServer {
       // ==================== AI 相关工具 ====================
       {
         name: 'ai_chat',
-        description: '使用 FlashNote 配置的 AI 进行对话',
+        description: '使用 Flota 配置的 AI 进行对话',
         inputSchema: {
           type: 'object',
           properties: {

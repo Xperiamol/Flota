@@ -758,6 +758,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                                   e.stopPropagation();
                                   handleToggleComplete(todo);
                                 }}
+                                aria-label="切换完成状态"
                                 sx={{
                                   minWidth: 20,
                                   width: 20,
@@ -1119,7 +1120,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
               weekday: 'long'
             })}
           </Typography>
-          <IconButton onClick={() => setDayDetailsOpen(false)} size="small">
+          <IconButton onClick={() => setDayDetailsOpen(false)} size="small" aria-label="关闭">
             <CloseIcon />
           </IconButton>
         </DialogTitle>
@@ -1330,6 +1331,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
             <IconButton
               onClick={() => setPreviewNote(null)}
               size="small"
+              aria-label="关闭"
               sx={{
                 '&:hover': {
                   backgroundColor: theme.palette.action.hover

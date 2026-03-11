@@ -15,7 +15,7 @@ const {
   ai,
   notifications,
   logger
-} = require('@flashnote/sdk')
+} = require('@flota/sdk')
 
 // 预定义标签配置
 const PREDEFINED_TAGS = [

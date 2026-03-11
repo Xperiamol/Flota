@@ -75,6 +75,7 @@ const MultiSelectToolbar = ({
           <IconButton
             size="small"
             onClick={onClose}
+            aria-label="关闭多选"
             sx={{
               color: 'inherit',
               mr: 1

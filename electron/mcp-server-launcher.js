@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * FlashNote MCP Server Launcher
+ * Flota MCP Server Launcher
  * 
  * 最佳实践：MCP Server 完全独立打包到 resources/mcp-server/
  * - 不受 asar 限制

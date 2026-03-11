@@ -25,6 +25,7 @@ import {
 } from '@mui/icons-material'
 import { useStore } from './store/useStore'
 import { createAppTheme } from './styles/theme'
+import { generatePatternCSS } from './utils/patternStyles'
 import { initI18n } from './utils/i18n'
 import Toolbar from './components/Toolbar'
 import NoteList from './components/NoteList'
@@ -162,7 +163,7 @@ import themeManager from './utils/pluginThemeManager'
 import { PluginNotificationListener } from './utils/PluginNotificationListener'
 
 function App() {
-  const { theme, setTheme, primaryColor, loadNotes, currentView, initializeSettings, setCurrentView, createNote, batchDeleteNotes, batchDeleteTodos, batchCompleteTodos, batchRestoreNotes, batchPermanentDeleteNotes, getAllTags, batchSetTags, selectedNoteId, setSelectedNoteId, updateNoteInList, maskOpacity, christmasMode } = useStore()
+  const { theme, setTheme, primaryColor, loadNotes, currentView, initializeSettings, setCurrentView, createNote, batchDeleteNotes, batchDeleteTodos, batchCompleteTodos, batchRestoreNotes, batchPermanentDeleteNotes, getAllTags, batchSetTags, selectedNoteId, setSelectedNoteId, updateNoteInList, maskOpacity, christmasMode, backgroundPattern, patternOpacity, wallpaperPath } = useStore()
   const refreshPluginCommands = useStore((state) => state.refreshPluginCommands)
   const addPluginCommand = useStore((state) => state.addPluginCommand)
   const removePluginCommand = useStore((state) => state.removePluginCommand)
@@ -243,7 +244,16 @@ function App() {
   const [conflictDialogOpen, setConflictDialogOpen] = useState(false)
   const [currentConflict, setCurrentConflict] = useState(null)
 
-  const appTheme = createAppTheme(theme, primaryColor)
+  // 解析实际显示的主题（保持用户偏好 'system' 不变，仅用于渲染）
+  const resolveDisplayTheme = (pref) => {
+    if (pref === 'system') {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    }
+    return pref === 'dark' ? 'dark' : 'light'
+  }
+  const [resolvedTheme, setResolvedTheme] = useState(() => resolveDisplayTheme(theme))
+
+  const appTheme = createAppTheme(resolvedTheme, primaryColor)
 
   // 根据遮罩透明度设置获取对应的透明度值
   const getMaskOpacityValue = (isDark) => {
@@ -258,47 +268,60 @@ function App() {
   }
   const isMobile = useMediaQuery(appTheme.breakpoints.down('md'))
 
+  // 主题壁纸 - 注入/更新背景花纹CSS
+  useEffect(() => {
+    const styleId = 'flota-background-pattern'
+    let styleEl = document.getElementById(styleId)
+
+    if (backgroundPattern === 'none' || !backgroundPattern) {
+      if (styleEl) styleEl.remove()
+      return
+    }
+
+    const css = generatePatternCSS(backgroundPattern, primaryColor, patternOpacity, wallpaperPath)
+    if (!css) {
+      if (styleEl) styleEl.remove()
+      return
+    }
+
+    if (!styleEl) {
+      styleEl = document.createElement('style')
+      styleEl.id = styleId
+      document.head.appendChild(styleEl)
+    }
+    styleEl.textContent = css
+    return () => { styleEl?.remove() }
+  }, [backgroundPattern, primaryColor, patternOpacity, wallpaperPath])
+
   // 暴露插件API到全局对象（用于调试和测试）
   useEffect(() => {
-    if (!window.flashnotePlugin) {
-      window.flashnotePlugin = {
+    if (!window.FlotaPlugin) {
+      window.FlotaPlugin = {
         executeCommand: executePluginCommand
       }
     }
   }, [])
 
-  // 监听主题色变化，通知花纹主题插件
+  // 当用户手动切换主题偏好时，同步更新 resolvedTheme
   useEffect(() => {
-    if (primaryColor) {
-      // 通知花纹主题插件更新主题色
-      executePluginCommand('pattern-theme', 'pattern-theme.settings', {
-        primaryColor: primaryColor
-      }).catch(() => {
-        // 插件可能未安装或未启用，忽略错误
-      })
-    }
-  }, [primaryColor])
+    setResolvedTheme(resolveDisplayTheme(theme))
+  }, [theme])
 
-  // 监听系统主题变化事件
+  // 监听系统主题变化 - 只更新 resolvedTheme，不改变用户的偏好设置
   useEffect(() => {
     if (!window.electronAPI?.ipcRenderer) return
 
-    const handleSystemThemeChange = (event, data) => {
-      logger.log('收到系统主题变化事件:', data)
-      // 只有当当前主题设置为'system'时才自动切换
+    const handleSystemThemeChange = (_, data) => {
       if (theme === 'system') {
-        const newTheme = data.shouldUseDarkColors ? 'dark' : 'light'
-        logger.log('系统主题变化，自动切换到:', newTheme)
-        setTheme(newTheme)
+        setResolvedTheme(data.shouldUseDarkColors ? 'dark' : 'light')
       }
     }
 
     window.electronAPI.ipcRenderer.on('system-theme-changed', handleSystemThemeChange)
-
     return () => {
       window.electronAPI.ipcRenderer.removeAllListeners('system-theme-changed')
     }
-  }, [theme, setTheme])
+  }, [theme])
 
   // 处理初始todo数据变化
   useEffect(() => {

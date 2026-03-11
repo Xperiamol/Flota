@@ -170,7 +170,7 @@ const enUS = {
     shortcutDisabled: 'Shortcut settings are temporarily unavailable',
     clickToSetShortcut: 'Click the input and press a key combination',
     importLegacyData: 'Import Legacy Data',
-    importLegacyDataDesc: 'Import note data from FlashNote V1.x notes.json file',
+    importLegacyDataDesc: 'Import note data from Flota V1.x notes.json file',
     importData: 'Import Data',
     databaseLocation: 'Database Location',
     openFolder: 'Open Folder',
@@ -534,11 +534,11 @@ const enUS = {
     syncDirection: 'Sync Direction',
     syncInterval: 'Auto Sync Interval',
     directionBidirectionalTitle: 'Bidirectional',
-    directionBidirectionalDesc: 'FlashNote ↔ Google Calendar (recommended)',
+    directionBidirectionalDesc: 'Flota ↔ Google Calendar (recommended)',
     directionUploadTitle: 'Upload only',
-    directionUploadDesc: 'FlashNote → Google Calendar',
+    directionUploadDesc: 'Flota → Google Calendar',
     directionDownloadTitle: 'Download only',
-    directionDownloadDesc: 'Google Calendar → FlashNote',
+    directionDownloadDesc: 'Google Calendar → Flota',
     saveConfig: 'Save',
     saveSuccess: 'Configuration saved',
     syncNow: 'Sync Now',
@@ -576,7 +576,7 @@ const enUS = {
     usageInstructionsList: [
       'Enable proxy and fill in proxy address',
       'Click "Save Configuration" button',
-      'Restart FlashNote to apply configuration',
+      'Restart Flota to apply configuration',
       'Optional: Click "Test Proxy" to verify connection'
     ],
     importantNotes: 'Important Notes',
@@ -624,11 +624,13 @@ const enUS = {
     ]
   },
   about: {
-    appName: 'FlashNote',
+    appName: 'Flota',
     description: 'A simple and efficient note-taking app',
     version: 'Version 2.3.1',
     githubRepo: 'GitHub Repository',
-    copyright: '© 2026 FlashNote. All rights reserved.'
+    copyright: '© 2026 Flota. All rights reserved.',
+    openSourceLicenses: 'Open Source Licenses',
+    openSourceDesc: 'This app is built with the following open source projects. Thank you!'
   },
   dialog: {
     importData: 'Import Data',
@@ -645,7 +647,10 @@ const enUS = {
     urgentNotImportantDesc: 'Delegate if possible',
     neitherUrgentNorImportant: 'Neither Urgent nor Important',
     neitherUrgentNorImportantDesc: 'Do when you have time',
-    itemsCount: '{count} items'
+    itemsCount: '{count} items',
+    urgent: 'Urgent',
+    important: 'Important',
+    empty: 'No items'
   },
   profile: {
     title: 'Profile',

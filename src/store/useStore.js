@@ -23,9 +23,9 @@ const useStore = create(
         devtools(
             (set, get) => ({
                 // 主题相关状态
-                theme: 'light',
+                theme: 'system',
                 primaryColor: '#1976d2',
-                titleBarStyle: 'mac', // 标题栏样式：'mac' 或 'windows'
+                titleBarStyle: 'windows', // 标题栏样式：'mac' 或 'windows'
                 language: 'zh-CN', // 界面语言
 
                 // 笔记相关状态
@@ -46,6 +46,16 @@ const useStore = create(
                 defaultMinibarMode: false, // 独立窗口默认minibar模式
                 maskOpacity: 'medium', // 遮罩透明度：'none' | 'light' | 'medium' | 'heavy'
                 christmasMode: false, // 圣诞模式：true | false
+                backgroundPattern: 'none', // 背景花纹：'none' | 'dots' | 'grid' | ... | 'custom'
+                patternOpacity: 1.0, // 花纹透明度倍率 0-2
+                wallpaperPath: '', // 自定义壁纸路径
+
+                // AI 面板显示模式：'selection' 选中文本时 | 'always' 始终显示 | 'disabled' 禁用
+                aiPanelMode: 'selection',
+                // 工具栏按钮排序（null = 使用默认排序）
+                toolbarOrder: null,
+                // 浮动面板自定义格式项（null = 不显示额外格式项）
+                floatingPanelItems: null,
 
                 // 插件商店相关 UI 状态
                 pluginStoreFilters: {
@@ -81,6 +91,18 @@ const useStore = create(
                 setMaskOpacity: (opacity) => set({ maskOpacity: opacity }),
 
                 setChristmasMode: (enabled) => set({ christmasMode: enabled }),
+
+                setBackgroundPattern: (pattern) => set({ backgroundPattern: pattern }),
+
+                setPatternOpacity: (opacity) => set({ patternOpacity: opacity }),
+
+                setWallpaperPath: (path) => set({ wallpaperPath: path }),
+
+                setAiPanelMode: (mode) => set({ aiPanelMode: mode }),
+
+                setToolbarOrder: (order) => set({ toolbarOrder: order }),
+
+                setFloatingPanelItems: (items) => set({ floatingPanelItems: items }),
 
                 setLanguage: (language) => set({ language }),
 
@@ -550,6 +572,18 @@ const useStore = create(
                                 if (settings.christmasMode !== undefined) {
                                     set({ christmasMode: Boolean(settings.christmasMode) })
                                 }
+                                if (settings.maskOpacity) {
+                                    set({ maskOpacity: settings.maskOpacity })
+                                }
+                                if (settings.backgroundPattern) {
+                                    set({ backgroundPattern: settings.backgroundPattern })
+                                }
+                                if (settings.patternOpacity !== undefined) {
+                                    set({ patternOpacity: Number(settings.patternOpacity) })
+                                }
+                                if (settings.wallpaperPath) {
+                                    set({ wallpaperPath: settings.wallpaperPath })
+                                }
                             }
                         }
                     } catch (error) {
@@ -600,17 +634,24 @@ const useStore = create(
                 }
             }),
             {
-                name: 'flashnote-store'
+                name: 'Flota-store'
             }
         ),
         {
-            name: 'flashnote-theme-settings',
+            name: 'Flota-theme-settings',
             partialize: (state) => ({
                 theme: state.theme,
                 primaryColor: state.primaryColor,
                 titleBarStyle: state.titleBarStyle,
+                maskOpacity: state.maskOpacity,
                 christmasMode: state.christmasMode,
                 editorMode: state.editorMode,
+                aiPanelMode: state.aiPanelMode,
+                toolbarOrder: state.toolbarOrder,
+                floatingPanelItems: state.floatingPanelItems,
+                backgroundPattern: state.backgroundPattern,
+                patternOpacity: state.patternOpacity,
+                wallpaperPath: state.wallpaperPath,
             })
         }
     )

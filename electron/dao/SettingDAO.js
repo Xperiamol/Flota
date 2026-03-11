@@ -203,21 +203,17 @@ class SettingDAO {
     // 删除所有现有设置
     db.exec('DELETE FROM settings');
     
-    // 重新插入默认设置
+    // 重新插入默认设置（key 与前端 initializeSettings 一致）
     const defaultSettings = [
-      { key: 'theme_mode', value: 'light', type: 'string', description: '主题模式' },
-      { key: 'primary_color', value: '#1976d2', type: 'string', description: '主色调' },
-      { key: 'font_size', value: '14', type: 'number', description: '字体大小' },
-      { key: 'font_family', value: 'system-ui', type: 'string', description: '字体族' },
+      { key: 'theme', value: 'system', type: 'string', description: '主题模式' },
+      { key: 'customThemeColor', value: '#1976d2', type: 'string', description: '主色调' },
+      { key: 'titleBarStyle', value: 'windows', type: 'string', description: '标题栏样式' },
+      { key: 'language', value: 'zh-CN', type: 'string', description: '界面语言' },
+      { key: 'maskOpacity', value: 'medium', type: 'string', description: '遮罩强度' },
+      { key: 'backgroundPattern', value: 'none', type: 'string', description: '背景花纹' },
+      { key: 'patternOpacity', value: '1', type: 'number', description: '花纹强度' },
       { key: 'auto_save', value: 'true', type: 'boolean', description: '自动保存' },
       { key: 'auto_save_interval', value: '3000', type: 'number', description: '自动保存间隔(ms)' },
-      { key: 'window_width', value: '1200', type: 'number', description: '窗口宽度' },
-      { key: 'window_height', value: '800', type: 'number', description: '窗口高度' },
-      { key: 'window_x', value: 'center', type: 'string', description: '窗口X位置' },
-      { key: 'window_y', value: 'center', type: 'string', description: '窗口Y位置' },
-      { key: 'show_line_numbers', value: 'true', type: 'boolean', description: '显示行号' },
-      { key: 'word_wrap', value: 'true', type: 'boolean', description: '自动换行' },
-      { key: 'spell_check', value: 'false', type: 'boolean', description: '拼写检查' }
     ];
 
     const stmt = db.prepare(`
@@ -384,10 +380,8 @@ class SettingDAO {
    */
   getThemeSettings() {
     return this.getMultiple([
-      'theme_mode',
-      'primary_color',
-      'font_size',
-      'font_family'
+      'theme',
+      'customThemeColor'
     ]);
   }
 
@@ -397,10 +391,7 @@ class SettingDAO {
   getEditorSettings() {
     return this.getMultiple([
       'auto_save',
-      'auto_save_interval',
-      'show_line_numbers',
-      'word_wrap',
-      'spell_check'
+      'auto_save_interval'
     ]);
   }
 }

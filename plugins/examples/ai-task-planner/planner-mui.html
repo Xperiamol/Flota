@@ -90,7 +90,7 @@
 					clearInterval(check)
 					console.error('[Planner] ❌ 依赖加载超时')
 					document.getElementById('root').innerHTML =
-						'<div class="loading" style="color: red;">❌ 依赖加载失败<br/>请确保插件在 FlashNote 中打开</div>'
+						'<div class="loading" style="color: red;">❌ 依赖加载失败<br/>请确保插件在 Flota 中打开</div>'
 				}
 			}, 100)
 		}
@@ -172,7 +172,7 @@
 
 					try {
 						console.log('[Planner UI] 开始生成任务...')
-						const result = await window.flashnotePlugin.executeCommand(
+						const result = await window.FlotaPlugin.executeCommand(
 							'ai-task-planner',
 							'ai-task-planner.generate',
 							{ taskDescription }
@@ -255,7 +255,7 @@
 
 					setLoading(true)
 					try {
-						const result = await window.flashnotePlugin.executeCommand(
+						const result = await window.FlotaPlugin.executeCommand(
 							'ai-task-planner',
 							'ai-task-planner.create-todos',
 							{ tasks: normalizedTasks, taskDescription }

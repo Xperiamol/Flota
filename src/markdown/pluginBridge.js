@@ -1,6 +1,6 @@
 /**
  * Markdown 插件桥接
- * 将 Markdown 扩展功能暴露给 FlashNote 插件系统
+ * 将 Markdown 扩展功能暴露给 Flota 插件系统
  */
 
 import { createMarkdownRenderer, registerPlugin } from './index.js'

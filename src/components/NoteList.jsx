@@ -410,21 +410,39 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
     if (noteType === 'whiteboard') {
       try {
         const whiteboardData = JSON.parse(content)
-        return t('notes.whiteboardElements', { count: whiteboardData.elements?.length || 0 })
+        const texts = whiteboardData.elements
+          ?.filter(e => e.type === 'text' && !e.isDeleted && e.text?.trim())
+          .map(e => e.text.trim()) || []
+        if (texts.length > 0) return texts.join(' ').substring(0, 100)
+        const count = whiteboardData.elements?.filter(e => !e.isDeleted)?.length || 0
+        return count > 0 ? `白板笔记 · ${count} 个元素` : '白板笔记'
       } catch (error) {
-        return t('notes.whiteboardNote')
+        return '白板笔记'
       }
     }
 
-    // Handle markdown notes normally
-    const cleanContent = content.replace(/[#*`\n]/g, '')
-    // 如果需要跳过前面的字符（用于标题已显示的部分）
+    // Handle markdown notes — strip all markup, keep readable text
+    let clean = content
+      .replace(/!\[[^\]]*\]\([^)]+\)/g, '【图片】')   // ![alt](path) → 【图片】
+      .replace(/\{color:[^}]+\}(.+?)\{\/color\}/g, '$1') // {color:x}text{/color} → text
+      .replace(/==(?:\{[^}]+\})?(.+?)==/g, '$1')       // =={c}text== → text
+      .replace(/\+\+(.+?)\+\+/g, '$1')                 // ++text++ → text
+      .replace(/<[^>]+>/g, '')                          // strip any HTML tags
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')          // [text](url) → text
+      .replace(/^#{1,6}\s+/gm, '')                      // heading markers
+      .replace(/^[-*]\s+/gm, '')                        // unordered list markers
+      .replace(/^\d+[.)]\s+/gm, '')                     // ordered list markers
+      .replace(/^>\s+/gm, '')                           // blockquote markers
+      .replace(/```[\s\S]*?```/g, '【代码】')            // code blocks
+      .replace(/[*_~`]/g, '')                           // remaining inline markers
+      .replace(/\n{2,}/g, '\n').trim()                  // collapse blank lines
+      .replace(/\n/g, ' ')                              // single line
+
     if (skipChars > 0) {
-      const remainingContent = cleanContent.substring(skipChars).trim()
-      // 如果跳过后没有内容，返回null（不显示预览）
-      return remainingContent.substring(0, 100) || null
+      const remaining = clean.substring(skipChars).trim()
+      return remaining.substring(0, 100) || null
     }
-    return cleanContent.substring(0, 100) || null
+    return clean.substring(0, 100) || null
   }
 
   // 获取笔记显示标题：如果有标题则显示标题，否则显示内容前9个字
@@ -432,15 +450,14 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
     if (note.title && note.title !== '无标题' && note.title !== 'Untitled') {
       return note.title
     }
-    // 没有标题时，显示内容前9个字
     if (note.content) {
-      // 白板笔记特殊处理
       if (note.note_type === 'whiteboard') {
-        return t('notes.whiteboardNote')
+        return '白板笔记'
       }
-      const cleanContent = note.content.replace(/[#*`\n]/g, '').trim()
-      if (cleanContent) {
-        return cleanContent.substring(0, 9) + (cleanContent.length > 9 ? '...' : '')
+      // Reuse the same preview cleaning for title fallback
+      const preview = getPreviewText(note.content, note.note_type, 0)
+      if (preview) {
+        return preview.substring(0, 9) + (preview.length > 9 ? '...' : '')
       }
     }
     return t('notes.untitled')
@@ -523,6 +540,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
           placeholder={showDeleted ? placeholder.searchNotesDeleted : placeholder.searchNotes}
           value={localSearchQuery}
           onChange={(e) => setLocalSearchQuery(e.target.value)}
+          aria-label="搜索笔记"
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
@@ -533,7 +551,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
               <>
                 {localSearchQuery && (
                   <InputAdornment position="end">
-                    <IconButton size="small" onClick={handleClearSearch}>
+                    <IconButton size="small" onClick={handleClearSearch} aria-label="清除搜索">
                       <ClearIcon />
                     </IconButton>
                   </InputAdornment>
@@ -781,6 +799,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                               e.stopPropagation();
                               handleMenuClick(e, note);
                             }}
+                            aria-label="更多操作"
                             onMouseDown={(e) => {
                               e.preventDefault();
                               e.stopPropagation();

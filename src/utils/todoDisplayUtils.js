@@ -57,7 +57,7 @@ export function isTodoCompleted(todo) {
  * @param {string|Array} completions
  * @returns {string[]}
  */
-function parseCompletions(completions) {
+export function parseCompletions(completions) {
   if (Array.isArray(completions)) return completions;
   if (!completions || completions === '[]') return [];
   try {

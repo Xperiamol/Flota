@@ -13,37 +13,15 @@
  */
 
 import markdownItContainer from 'markdown-it-container'
+import { CALLOUT_TYPES } from '../calloutConfig.js'
 
 /**
- * 自定义容器插件
- * @param {MarkdownIt} md - Markdown-it 实例
- * @param {Object} options - 插件选项
+ * 自定义容器插件（:::type 语法）
+ * 样式复用 markdown-callout CSS 类
  */
 export default function customContainerPlugin(md, options = {}) {
-  const {
-    className = 'markdown-container',
-    types = {
-      tip: { icon: '💡', label: '提示', color: '#22c55e' },
-      info: { icon: 'ℹ️', label: '信息', color: '#3b82f6' },
-      warning: { icon: '⚠️', label: '警告', color: '#f59e0b' },
-      danger: { icon: '🚫', label: '危险', color: '#ef4444' },
-      details: { icon: '📋', label: '详情', color: '#6b7280' },
-      note: { icon: '📝', label: '笔记', color: '#8b5cf6' },
-      abstract: { icon: '📄', label: '摘要', color: '#06b6d4' },
-      summary: { icon: '📊', label: '总结', color: '#06b6d4' },
-      tldr: { icon: '⚡', label: 'TL;DR', color: '#f59e0b' },
-      success: { icon: '✅', label: '成功', color: '#22c55e' },
-      question: { icon: '❓', label: '问题', color: '#8b5cf6' },
-      failure: { icon: '❌', label: '失败', color: '#ef4444' },
-      bug: { icon: '🐛', label: 'Bug', color: '#ef4444' },
-      example: { icon: '📝', label: '示例', color: '#06b6d4' },
-      quote: { icon: '💬', label: '引用', color: '#6b7280' }
-    },
-    ...customOptions
-  } = options
-
-  // 合并自定义类型
-  const allTypes = { ...types, ...customOptions.customTypes }
+  const { className = 'markdown-callout', customTypes, ...rest } = options
+  const allTypes = { ...CALLOUT_TYPES, ...customTypes }
 
   // 为每种类型注册容器
   Object.keys(allTypes).forEach(type => {
@@ -60,19 +38,15 @@ export default function customContainerPlugin(md, options = {}) {
         const match = info.match(new RegExp(`^${type}\\s*(.*)$`))
         
         if (token.nesting === 1) {
-          // 开始标签
           const title = match && match[1] ? match[1] : typeConfig.label
-          
-          return `<div class="${className} ${className}-${type}" style="border-left: 4px solid ${typeConfig.color}; padding: 1rem; margin: 1rem 0; background-color: ${typeConfig.color}15; border-radius: 4px;">
-  <div class="${className}-header" style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; margin-bottom: 0.5rem; color: ${typeConfig.color};">
+          return `<div class="${className} ${className}-${type}">
+  <div class="${className}-header">
     <span class="${className}-icon">${typeConfig.icon}</span>
     <span class="${className}-title">${md.utils.escapeHtml(title)}</span>
   </div>
   <div class="${className}-content">\n`
         } else {
-          // 结束标签
-          return `  </div>
-</div>\n`
+          return `  </div>\n</div>\n`
         }
       }
     })
@@ -92,13 +66,12 @@ export default function customContainerPlugin(md, options = {}) {
       if (token.nesting === 1) {
         const title = match && match[1] ? match[1] : '详情'
         const typeConfig = allTypes.details || { icon: '📋', color: '#6b7280' }
-        
-        return `<details class="${className} ${className}-details" style="border-left: 4px solid ${typeConfig.color}; padding: 1rem; margin: 1rem 0; background-color: ${typeConfig.color}15; border-radius: 4px;">
-  <summary class="${className}-summary" style="cursor: pointer; font-weight: 600; color: ${typeConfig.color}; display: flex; align-items: center; gap: 0.5rem;">
+        return `<details class="${className} ${className}-details">
+  <summary class="${className}-header">
     <span class="${className}-icon">${typeConfig.icon}</span>
     <span>${md.utils.escapeHtml(title)}</span>
   </summary>
-  <div class="${className}-content" style="margin-top: 0.5rem;">\n`
+  <div class="${className}-content">\n`
       } else {
         return `  </div>
 </details>\n`
@@ -114,8 +87,8 @@ export default function customContainerPlugin(md, options = {}) {
 
     render: function(tokens, idx) {
       if (tokens[idx].nesting === 1) {
-        return `<div class="${className} ${className}-code-group" style="margin: 1rem 0;">
-  <div class="${className}-code-tabs" style="display: flex; gap: 0.5rem; border-bottom: 2px solid var(--divider-color, #e5e7eb); margin-bottom: 0;">
+        return `<div class="${className} ${className}-code-group">
+  <div class="${className}-code-tabs">
   </div>
   <div class="${className}-code-content">\n`
       } else {

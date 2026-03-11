@@ -20,11 +20,11 @@ const getUserDataPath = () => {
   const homeDir = process.env.HOME || process.env.USERPROFILE;
   
   if (platform === 'win32') {
-    return path.join(process.env.APPDATA || homeDir, 'flashnote');
+    return path.join(process.env.APPDATA || homeDir, 'Flota');
   } else if (platform === 'darwin') {
-    return path.join(homeDir, 'Library', 'Application Support', 'flashnote');
+    return path.join(homeDir, 'Library', 'Application Support', 'Flota');
   } else {
-    return path.join(homeDir, '.config', 'flashnote');
+    return path.join(homeDir, '.config', 'Flota');
   }
 }
 
@@ -481,7 +481,7 @@ class PluginManager extends EventEmitter {
 
 				if (!this.pluginStates.has(manifest.id)) {
 					this.pluginStates.set(manifest.id, {
-						enabled: false,
+						enabled: true,
 						installedVersion: manifest.version,
 						installedAt: new Date().toISOString(),
 						permissions: this.normalizePermissions(manifest.permissions),

@@ -271,6 +271,7 @@ const TagManager = ({ open, onClose }) => {
             placeholder="搜索标签..."
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
+            aria-label="搜索标签"
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
@@ -353,6 +354,7 @@ const TagManager = ({ open, onClose }) => {
                         setDeleteDialogOpen(true);
                       }}
                       size="small"
+                      aria-label="删除标签"
                     >
                       <DeleteIcon />
                     </IconButton>

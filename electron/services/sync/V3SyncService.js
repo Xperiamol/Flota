@@ -1,5 +1,5 @@
 /**
- * FlashNote v3.0 原子化同步系统 - 服务管理类
+ * Flota v3.0 原子化同步系统 - 服务管理类
  *
  * 集成到现有 CloudSyncManager 系统中
  */
@@ -23,11 +23,11 @@ const getUserDataPath = () => {
   const homeDir = process.env.HOME || process.env.USERPROFILE;
   
   if (platform === 'win32') {
-    return path.join(process.env.APPDATA || homeDir, 'flashnote');
+    return path.join(process.env.APPDATA || homeDir, 'Flota');
   } else if (platform === 'darwin') {
-    return path.join(homeDir, 'Library', 'Application Support', 'flashnote');
+    return path.join(homeDir, 'Library', 'Application Support', 'Flota');
   } else {
-    return path.join(homeDir, '.config', 'flashnote');
+    return path.join(homeDir, '.config', 'Flota');
   }
 };
 
@@ -40,8 +40,8 @@ class V3SyncService extends EventEmitter {
   constructor() {
     super();
 
-    this.serviceName = 'flashnote-v3';
-    this.displayName = 'FlashNote V3 原子化同步';
+    this.serviceName = 'Flota-v3';
+    this.displayName = 'Flota V3 原子化同步';
     this.engine = null;
     this.config = null;
     this.isEnabled = false;
@@ -110,7 +110,7 @@ class V3SyncService extends EventEmitter {
       baseUrl: this.config.baseUrl || 'https://dav.jianguoyun.com/dav',
       username: this.config.credentials.username,
       password: this.config.credentials.password,
-      rootPath: this.config.rootPath || '/FlashNote/',
+      rootPath: this.config.rootPath || '/Flota/',
       enableDebugLog: this.config.enableDebugLog || false,
       syncIPCHandler: this.syncIPCHandler, // 传递冲突解决处理器
       syncCategories: this.config.syncCategories || ['notes', 'images', 'settings', 'todos'], // 传递启用的类别
@@ -448,7 +448,7 @@ class V3SyncService extends EventEmitter {
       autoSync: false,
       autoSyncInterval: 5 * 60 * 1000, // 5 分钟
       baseUrl: 'https://dav.jianguoyun.com/dav',
-      rootPath: '/FlashNote/',
+      rootPath: '/Flota/',
       enableDebugLog: false,
       credentials: null,
       syncCategories: ['notes', 'images', 'settings', 'todos'], // 默认同步所有类别
@@ -536,10 +536,10 @@ class V3SyncService extends EventEmitter {
 
     // 需要创建的目录（按层级顺序）
     const directories = [
-      this.config.rootPath,                           // /FlashNote/
-      this.config.rootPath + 'images/',               // /FlashNote/images/
-      this.config.rootPath + 'images/whiteboard/',    // /FlashNote/images/whiteboard/
-      this.config.rootPath + 'images/whiteboard-preview/',  // /FlashNote/images/whiteboard-preview/
+      this.config.rootPath,                           // /Flota/
+      this.config.rootPath + 'images/',               // /Flota/images/
+      this.config.rootPath + 'images/whiteboard/',    // /Flota/images/whiteboard/
+      this.config.rootPath + 'images/whiteboard-preview/',  // /Flota/images/whiteboard-preview/
     ];
 
     for (const dir of directories) {

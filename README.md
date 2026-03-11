@@ -58,15 +58,15 @@
 ### 安装方式
 
 #### 方式一：下载安装包（推荐）
-1. 前往 [Releases](https://github.com/Xperiamol/FlashNote/releases) 页面
-2. 下载最新版本的 `FlashNote 2.x.x. Setup 2.x.x.exe`
+1. 前往 [Releases](https://github.com/Xperiamol/Flota/releases) 页面
+2. 下载最新版本的 `Flota 2.x.x. Setup 2.x.x.exe`
 3. 运行安装程序，按照提示完成安装
 4. 安装完成后，应用会自动启动
 
 #### 方式二：便携版(暂时弃用)
 1. 下载 `win-unpacked` 文件夹
 2. 解压到任意目录
-3. 运行 `FlashNote 2.0.exe` 即可使用
+3. 运行 `Flota 2.0.exe` 即可使用
 
 ### 首次使用
 1. **启动应用**：双击桌面图标或从开始菜单启动
@@ -88,8 +88,8 @@
 
 ```bash
 # 克隆项目
-git clone https://github.com/Xperiamol/FlashNote.git
-cd FlashNote
+git clone https://github.com/Xperiamol/Flota.git
+cd Flota
 
 # 安装依赖
 npm install
@@ -113,7 +113,7 @@ npm run electron-build
 
 ### 🔌 插件开发
 
-FlashNote 2+ 支持强大的插件系统，你可以创建自己的插件来扩展功能！
+Flota 2+ 支持强大的插件系统，你可以创建自己的插件来扩展功能！
 
 #### 快速开始
 
@@ -126,7 +126,7 @@ runtime.onActivate(async () => {
   }, async () => {
     await runtime.notifications.show({
       title: '你好！',
-      body: '欢迎使用 FlashNote 插件系统',
+      body: '欢迎使用 Flota 插件系统',
       type: 'success'
     })
   })
@@ -155,7 +155,7 @@ runtime.onActivate(async () => {
 ### 项目结构
 
 ```
-FlashNote/
+Flota/
 ├── src/                    # 前端源码
 │   ├── components/         # React组件
 │   ├── utils/             # 工具函数
@@ -188,6 +188,6 @@ FlashNote/
 
 ---
 
-**FlashNote 2** - 让笔记记录变得更加高效和愉悦！
+**Flota 2** - 让笔记记录变得更加高效和愉悦！
 
 如果这个项目对你有帮助，请给我们一个 ⭐️！

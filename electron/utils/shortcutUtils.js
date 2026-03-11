@@ -23,7 +23,7 @@ const DEFAULT_SHORTCUTS = {
   'global.quit': {
     id: 'global.quit',
     name: '退出应用',
-    description: '退出FlashNote应用',
+    description: '退出Flota应用',
     defaultKey: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q',
     currentKey: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q',
     category: 'global',

@@ -483,33 +483,17 @@ class ShortcutService {
     }
   }
 
-  /**
-   * 处理新建笔记动作
-   */
-  handleNewNote() {
-    if (this.mainWindow) {
-      this.mainWindow.webContents.send('create-new-note');
-      if (this.mainWindow.isMinimized()) {
-        this.mainWindow.restore();
-      }
-      this.mainWindow.show();
-      this.mainWindow.focus();
-    }
+  /** 发送消息到主窗口并聚焦 */
+  _sendToWindow(channel) {
+    if (!this.mainWindow) return
+    this.mainWindow.webContents.send(channel)
+    if (this.mainWindow.isMinimized()) this.mainWindow.restore()
+    this.mainWindow.show()
+    this.mainWindow.focus()
   }
 
-  /**
-   * 处理新建待办动作
-   */
-  handleNewTodo() {
-    if (this.mainWindow) {
-      this.mainWindow.webContents.send('create-new-todo');
-      if (this.mainWindow.isMinimized()) {
-        this.mainWindow.restore();
-      }
-      this.mainWindow.show();
-      this.mainWindow.focus();
-    }
-  }
+  handleNewNote()     { this._sendToWindow('create-new-note') }
+  handleNewTodo()     { this._sendToWindow('create-new-todo') }
 
   /**
    * 处理快速输入动作
@@ -572,16 +556,7 @@ class ShortcutService {
   /**
    * 处理打开设置动作
    */
-  handleOpenSettings() {
-    if (this.mainWindow) {
-      this.mainWindow.webContents.send('open-settings');
-      if (this.mainWindow.isMinimized()) {
-        this.mainWindow.restore();
-      }
-      this.mainWindow.show();
-      this.mainWindow.focus();
-    }
-  }
+  handleOpenSettings() { this._sendToWindow('open-settings') }
 
   /**
    * 验证快捷键字符串格式

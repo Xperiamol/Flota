@@ -222,7 +222,7 @@ class GoogleCalendarService {
               res.end(`
               <!DOCTYPE html>
               <html>
-              <head><meta charset="utf-8"><title>FlashNote</title></head>
+              <head><meta charset="utf-8"><title>Flota</title></head>
               <body><p>此窗口可以关闭</p></body>
               </html>
             `);
@@ -249,7 +249,7 @@ class GoogleCalendarService {
             <body>
               <div class="success">✓ 授权成功！</div>
               <div class="info">已获得 Google Calendar 访问权限</div>
-              <div class="info" style="margin-top: 20px;">请返回 FlashNote 继续配置</div>
+              <div class="info" style="margin-top: 20px;">请返回 Flota 继续配置</div>
               <script>setTimeout(() => window.close(), 3000);</script>
             </body>
             </html>

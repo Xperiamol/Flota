@@ -1,6 +1,6 @@
 // 插件入口文件
 // 插件运行时会在隔离的 Worker 线程中加载此文件
-// 你可以通过 `@flashnote/sdk` 获取到受限的 API
+// 你可以通过 `@flota/sdk` 获取到受限的 API
 
 const {
 	onActivate,
@@ -8,7 +8,7 @@ const {
 	notes,
 	ui,
 	logger
-} = require('@flashnote/sdk')
+} = require('@flota/sdk')
 
 onActivate(() => {
 	logger.info('[Random Note] 插件已激活')

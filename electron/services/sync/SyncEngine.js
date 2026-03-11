@@ -1,5 +1,5 @@
 /**
- * FlashNote v3.0 原子化同步系统 - 同步引擎
+ * Flota v3.0 原子化同步系统 - 同步引擎
  *
  * 核心同步逻辑，实现 manifest-driven 的原子化增量同步
  */
@@ -21,9 +21,9 @@ const getUserDataPath = () => {
   if (app) return app.getPath('userData');
   const platform = process.platform;
   const homeDir = process.env.HOME || process.env.USERPROFILE;
-  if (platform === 'win32') return path.join(process.env.APPDATA || homeDir, 'flashnote');
-  if (platform === 'darwin') return path.join(homeDir, 'Library', 'Application Support', 'flashnote');
-  return path.join(homeDir, '.config', 'flashnote');
+  if (platform === 'win32') return path.join(process.env.APPDATA || homeDir, 'Flota');
+  if (platform === 'darwin') return path.join(homeDir, 'Library', 'Application Support', 'Flota');
+  return path.join(homeDir, '.config', 'Flota');
 };
 
 const WebDAVClient = require('./webdavClient');
@@ -47,7 +47,7 @@ class SyncEngine extends EventEmitter {
       baseUrl: config.baseUrl || 'https://dav.jianguoyun.com/dav',
       username: config.username,
       password: config.password,
-      rootPath: config.rootPath || '/FlashNote/',
+      rootPath: config.rootPath || '/Flota/',
       maxConcurrency: config.maxConcurrency || 3,
       requestDelay: config.requestDelay || 200,
       retryAttempts: config.retryAttempts || 3,
@@ -1616,7 +1616,7 @@ class SyncEngine extends EventEmitter {
       try {
         fs.writeFileSync(
           this.logFile,
-          `=== FlashNote v3.0 Sync Engine Debug Log ===\n启动时间: ${new Date().toISOString()}\n\n`
+          `=== Flota v3.0 Sync Engine Debug Log ===\n启动时间: ${new Date().toISOString()}\n\n`
         );
       } catch (error) {
         // Ignore

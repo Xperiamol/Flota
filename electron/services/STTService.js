@@ -210,10 +210,11 @@ class STTService extends EventEmitter {
       const cluster = config.volcResourceId || 'volcengine_short_sentence';
 
       // 准备音频: 不支持的格式用 ffmpeg 转 wav
+      // 注意: webm 容器虽然也用 Opus 编码，但火山引擎不支持 webm 容器，必须转 wav
       let audioBuffer, fmt, sampleRate = 16000;
       if (typeof audioFile === 'string') {
         const ext = audioFile.split('.').pop()?.toLowerCase() || '';
-        const supported = { wav: 'wav', mp3: 'mp3', ogg: 'ogg', opus: 'ogg', webm: 'ogg' };
+        const supported = { wav: 'wav', mp3: 'mp3', ogg: 'ogg', opus: 'ogg' };
         if (supported[ext]) {
           audioBuffer = fs.readFileSync(audioFile);
           fmt = supported[ext];
@@ -341,7 +342,7 @@ class STTService extends EventEmitter {
     const { execFileSync } = require('child_process');
     const path = require('path');
     const os = require('os');
-    const tmpFile = path.join(os.tmpdir(), `flashnote_stt_${Date.now()}.wav`);
+    const tmpFile = path.join(os.tmpdir(), `Flota_stt_${Date.now()}.wav`);
     try {
       execFileSync('ffmpeg', [
         '-y', '-i', inputPath,

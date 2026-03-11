@@ -15,7 +15,7 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
   const getViewTitle = () => {
     switch (currentView) {
       case 'notes':
-        return 'FlashNote';
+        return 'Flota';
       case 'todo':
         return '待办事项';
       case 'calendar':
@@ -27,7 +27,7 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
       case 'profile':
         return '个人中心';
       default:
-        return 'FlashNote';
+        return 'Flota';
     }
   };
 

@@ -1,5 +1,5 @@
 /**
- * FlashNote v3.0 原子化同步系统 - WebDAV 客户端
+ * Flota v3.0 原子化同步系统 - WebDAV 客户端
  *
  * 提供简洁的 WebDAV 操作接口，内置限流和重试机制
  */

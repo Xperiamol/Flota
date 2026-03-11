@@ -352,6 +352,7 @@ const TagInput = ({
           disabled={disabled}
           error={error}
           helperText={helperText}
+          aria-label="输入标签"
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
@@ -435,6 +436,7 @@ const TagInput = ({
                       onClick={clearAllTags}
                       disabled={disabled}
                       sx={{ p: 0.5 }}
+                      aria-label="清空标签"
                     >
                       <ClearIcon fontSize="small" />
                     </IconButton>

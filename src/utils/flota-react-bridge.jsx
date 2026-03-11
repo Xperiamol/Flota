@@ -1,5 +1,5 @@
 /**
- * FlashNote React Bridge
+ * Flota React Bridge
  * 为支持 React 的插件提供主应用 React 组件访问
  * 
  * ⚠️ 注意：
@@ -39,7 +39,7 @@ import {
 /**
  * 导出的 React 组件集合
  */
-export const FlashNoteComponents = {
+export const FlotaComponents = {
   // 基础组件
   Button,
   IconButton,
@@ -95,24 +95,24 @@ export function createReactRoot(container, component) {
 }
 
 /**
- * React Hook: 使用 FlashNote 主题
- * 从 window.flashnoteUI 获取主题信息并转换为 React state
+ * React Hook: 使用 Flota 主题
+ * 从 window.FlotaUI 获取主题信息并转换为 React state
  */
-export function useFlashNoteTheme() {
+export function useFlotaTheme() {
   const [theme, setTheme] = React.useState(() => {
-    if (window.flashnoteUI) {
-      return window.flashnoteUI.getTheme()
+    if (window.FlotaUI) {
+      return window.FlotaUI.getTheme()
     }
     return { mode: 'light', colors: {}, isDark: false }
   })
 
   React.useEffect(() => {
-    if (!window.flashnoteUI) {
-      console.warn('[React Bridge] flashnoteUI 未找到')
+    if (!window.FlotaUI) {
+      console.warn('[React Bridge] FlotaUI 未找到')
       return
     }
 
-    const unsubscribe = window.flashnoteUI.onThemeChange((newTheme) => {
+    const unsubscribe = window.FlotaUI.onThemeChange((newTheme) => {
       setTheme(newTheme)
     })
 
@@ -123,10 +123,10 @@ export function useFlashNoteTheme() {
 }
 
 /**
- * React Hook: 使用 FlashNote Runtime API
+ * React Hook: 使用 Flota Runtime API
  * 提供对插件 Runtime API 的访问
  */
-export function useFlashNoteRuntime() {
+export function useFlotaRuntime() {
   if (typeof runtime === 'undefined') {
     console.warn('[React Bridge] runtime 未找到')
     return null
@@ -138,8 +138,8 @@ export function useFlashNoteRuntime() {
 /**
  * React Hook: 显示通知
  */
-export function useFlashNoteNotifications() {
-  const runtime = useFlashNoteRuntime()
+export function useFlotaNotifications() {
+  const runtime = useFlotaRuntime()
   
   const showNotification = React.useCallback(async (options) => {
     if (!runtime) {
@@ -160,8 +160,8 @@ export function useFlashNoteNotifications() {
 /**
  * React Hook: 访问笔记数据
  */
-export function useFlashNoteNotes() {
-  const runtime = useFlashNoteRuntime()
+export function useFlotaNotes() {
+  const runtime = useFlotaRuntime()
   const [notes, setNotes] = React.useState([])
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState(null)
@@ -245,8 +245,8 @@ export function useFlashNoteNotes() {
 /**
  * React Hook: 访问待办数据
  */
-export function useFlashNoteTodos() {
-  const runtime = useFlashNoteRuntime()
+export function useFlotaTodos() {
+  const runtime = useFlotaRuntime()
   const [todos, setTodos] = React.useState([])
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState(null)
@@ -347,8 +347,8 @@ export function useFlashNoteTodos() {
 /**
  * React Hook: 访问标签数据
  */
-export function useFlashNoteTags() {
-  const runtime = useFlashNoteRuntime()
+export function useFlotaTags() {
+  const runtime = useFlotaRuntime()
   const [tags, setTags] = React.useState([])
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState(null)
@@ -399,44 +399,44 @@ export function useFlashNoteTags() {
 }
 
 /**
- * React Context: FlashNote Plugin Context
+ * React Context: Flota Plugin Context
  * 提供插件全局状态和 API 访问
  */
-export const FlashNoteContext = React.createContext({
+export const FlotaContext = React.createContext({
   runtime: null,
   theme: null,
-  components: FlashNoteComponents
+  components: FlotaComponents
 })
 
 /**
- * React Provider: FlashNote Plugin Provider
+ * React Provider: Flota Plugin Provider
  * 包裹插件根组件，提供全局访问
  */
-export function FlashNoteProvider({ children }) {
-  const theme = useFlashNoteTheme()
-  const runtime = useFlashNoteRuntime()
+export function FlotaProvider({ children }) {
+  const theme = useFlotaTheme()
+  const runtime = useFlotaRuntime()
 
   const value = React.useMemo(() => ({
     runtime,
     theme,
-    components: FlashNoteComponents
+    components: FlotaComponents
   }), [runtime, theme])
 
   return (
-    <FlashNoteContext.Provider value={value}>
+    <FlotaContext.Provider value={value}>
       {children}
-    </FlashNoteContext.Provider>
+    </FlotaContext.Provider>
   )
 }
 
 /**
- * React Hook: 使用 FlashNote Context
+ * React Hook: 使用 Flota Context
  */
-export function useFlashNote() {
-  const context = React.useContext(FlashNoteContext)
+export function useFlota() {
+  const context = React.useContext(FlotaContext)
   
   if (!context) {
-    throw new Error('useFlashNote 必须在 FlashNoteProvider 内部使用')
+    throw new Error('useFlota 必须在 FlotaProvider 内部使用')
   }
   
   return context
@@ -453,26 +453,26 @@ export function injectReactBridge(iframeWindow) {
   }
 
   // 注入 React Bridge API
-  iframeWindow.FlashNoteReact = {
+  iframeWindow.FlotaReact = {
     // React 和 ReactDOM
     React,
     ReactDOM,
     
     // Material-UI 组件
-    Components: FlashNoteComponents,
+    Components: FlotaComponents,
     
     // Hooks
-    useFlashNoteTheme,
-    useFlashNoteRuntime,
-    useFlashNoteNotifications,
-    useFlashNoteNotes,
-    useFlashNoteTodos,
-    useFlashNoteTags,
-    useFlashNote,
+    useFlotaTheme,
+    useFlotaRuntime,
+    useFlotaNotifications,
+    useFlotaNotes,
+    useFlotaTodos,
+    useFlotaTags,
+    useFlota,
     
     // Context 和 Provider
-    FlashNoteContext,
-    FlashNoteProvider,
+    FlotaContext,
+    FlotaProvider,
     
     // 工具函数
     createReactRoot,

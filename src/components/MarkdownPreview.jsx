@@ -7,6 +7,7 @@ import { scrollbar } from '../styles/commonStyles'
 import { imageAPI } from '../api/imageAPI'
 import { getImageResolver } from '../utils/ImageProtocolResolver'
 import { createMarkdownRenderer } from '../markdown/index.js'
+import { urlToWav } from '../utils/audioCodec'
 import { useError } from './ErrorProvider'
 import '../markdown/markdown.css'
 import 'highlight.js/styles/github.css'
@@ -250,7 +251,7 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
             }
 
             const audio = document.createElement('audio')
-            audio.preload = 'none'
+            audio.preload = 'metadata'
             audio.src = appSrc
 
             const playerRow = document.createElement('div')
@@ -282,7 +283,18 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
             }
             let _pl = false
             audio.addEventListener('timeupdate', _applyProg)
-            audio.addEventListener('loadedmetadata', _applyProg)
+            audio.addEventListener('loadedmetadata', () => {
+              if (isFinite(audio.duration) && audio.duration > 0) {
+                _applyProg()
+              } else {
+                audio.currentTime = 1e10
+                audio.addEventListener('seeked', function fix() {
+                  audio.removeEventListener('seeked', fix)
+                  _applyProg()
+                  audio.currentTime = 0
+                }, { once: true })
+              }
+            })
             audio.addEventListener('durationchange', _applyProg)
             audio.addEventListener('ended', () => { _pl = false; playBtn.textContent = '▶'; _applyProg() })
             playBtn.onclick = () => {
@@ -314,9 +326,9 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
               sttBtn.disabled = true
               sttBtn.textContent = '⏳ 转文字中…'
               try {
-                // 剥离 app:// 协议前缀，IPC 端需要相对路径
                 const sttSrc = originalSrc.replace(/^app:\/\//, '')
-                const result = await window.electronAPI.stt.transcribe(sttSrc)
+                const sttArg = /\.webm$/i.test(sttSrc) ? await urlToWav(appSrc) : sttSrc
+                const result = await window.electronAPI.stt.transcribe(sttArg)
                 if (result?.success && result?.data?.text) {
                   sttResult.textContent = result.data.text
                   sttResult.style.display = 'block'

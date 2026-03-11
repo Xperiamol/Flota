@@ -127,7 +127,7 @@ const zhCN = {
     general: '通用',
     appearance: '外观',
     shortcuts: '快捷键',
-    ai: 'AI功能',
+    ai: 'AI',
     stt: '语音转文字',
     memory: '记忆引擎',
     cloud: '云同步',
@@ -170,7 +170,7 @@ const zhCN = {
     shortcutDisabled: '快捷键设置暂时不可更改',
     clickToSetShortcut: '点击输入框并按下快捷键组合',
     importLegacyData: '导入旧版本数据',
-    importLegacyDataDesc: '从 FlashNote V1.x 的 notes.json 文件导入笔记数据',
+    importLegacyDataDesc: '从 Flota V1.x 的 notes.json 文件导入笔记数据',
     importData: '导入数据',
     databaseLocation: '数据库位置',
     openFolder: '打开文件夹',
@@ -361,7 +361,7 @@ const zhCN = {
   ai: {
     title: 'AI 设置',
     enableAI: '启用 AI',
-    enableAIDesc: '启用 AI 功能以增强功能',
+    enableAIDesc: '启用 AI 基础设施，供 AI 相关功能和插件使用',
     provider: 'AI 提供商',
     providerDesc: '选择您的首选 AI 服务提供商',
     apiKey: 'API 密钥',
@@ -546,11 +546,11 @@ const zhCN = {
     syncDirection: '同步方向',
     syncInterval: '自动同步间隔',
     directionBidirectionalTitle: '双向同步',
-    directionBidirectionalDesc: 'FlashNote ↔ Google Calendar（推荐）',
+    directionBidirectionalDesc: 'Flota ↔ Google Calendar（推荐）',
     directionUploadTitle: '仅上传',
-    directionUploadDesc: 'FlashNote → Google Calendar',
+    directionUploadDesc: 'Flota → Google Calendar',
     directionDownloadTitle: '仅下载',
-    directionDownloadDesc: 'Google Calendar → FlashNote',
+    directionDownloadDesc: 'Google Calendar → Flota',
     saveConfig: '保存配置',
     saveSuccess: '配置已保存',
     syncNow: '立即同步',
@@ -588,7 +588,7 @@ const zhCN = {
     usageInstructionsList: [
       '启用代理并填写代理地址',
       '点击"保存配置"按钮',
-      '重启 FlashNote 使配置生效',
+      '重启 Flota 使配置生效',
       '可选：点击"测试代理"验证连接'
     ],
     importantNotes: '重要提示',
@@ -636,11 +636,13 @@ const zhCN = {
     ]
   },
   about: {
-    appName: 'FlashNote',
+    appName: 'Flota',
     description: '一个简洁高效的记录应用',
-    version: '版本 2.3.1',
+    version: '版本',
     githubRepo: 'GitHub 仓库',
-    copyright: '© 2026 FlashNote. All rights reserved.'
+    copyright: '© 2026 Flota. All rights reserved.',
+    openSourceLicenses: '开源许可',
+    openSourceDesc: '本应用基于以下开源项目构建，在此表示感谢。'
   },
   dialog: {
     importData: '导入数据',
@@ -657,7 +659,10 @@ const zhCN = {
     urgentNotImportantDesc: '尽快完成',
     neitherUrgentNorImportant: '不紧急不重要',
     neitherUrgentNorImportantDesc: '有空再做',
-    itemsCount: '{count} 个元素'
+    itemsCount: '{count} 个元素',
+    urgent: '紧急',
+    important: '重要',
+    empty: '暂无待办'
   },
   profile: {
     title: '个人资料',

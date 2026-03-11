@@ -1,5 +1,5 @@
 /**
- * FlashNote Markdown 渲染引擎
+ * Flota Markdown 渲染引擎
  * 基于 markdown-it 构建，支持扩展插件系统
  */
 

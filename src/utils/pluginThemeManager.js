@@ -26,11 +26,11 @@ class PluginThemeManager {
    */
   initializeContainer() {
     // 创建或获取样式容器
-    let container = document.getElementById('flashnote-plugin-themes')
+    let container = document.getElementById('Flota-plugin-themes')
 
     if (!container) {
       container = document.createElement('div')
-      container.id = 'flashnote-plugin-themes'
+      container.id = 'Flota-plugin-themes'
       container.style.display = 'none'
       document.head.appendChild(container)
     }

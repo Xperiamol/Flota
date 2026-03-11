@@ -409,7 +409,7 @@ export function convertMarkdownToWhiteboard(markdownContent, imageDataMap = {}) 
       return JSON.stringify({
         type: 'excalidraw',
         version: 2,
-        source: 'flashnote-local',
+        source: 'Flota-local',
         elements: [],
         appState: {
           viewBackgroundColor: '#ffffff',
@@ -429,7 +429,7 @@ export function convertMarkdownToWhiteboard(markdownContent, imageDataMap = {}) 
     const whiteboardData = {
       type: 'excalidraw',
       version: 2,
-      source: 'flashnote-local',
+      source: 'Flota-local',
       elements: elements,
       appState: {
         viewBackgroundColor: '#ffffff',

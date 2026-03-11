@@ -17,11 +17,11 @@ class MCPDownloader extends EventEmitter {
     
     // MCP Server 存储路径
     this.mcpDir = path.join(app.getPath('userData'), 'mcp-server');
-    this.downloadUrl = 'https://github.com/Xperiamol/FlashNote/releases/download/v2.3.1/mcp-server.zip';
+    this.downloadUrl = 'https://github.com/Xperiamol/Flota/releases/download/v2.3.1/mcp-server.zip';
     
     // 备用 CDN 地址（可以配置为你的 CDN）
     this.cdnUrls = [
-      // 'https://cdn.example.com/flashnote/mcp-server.zip',
+      // 'https://cdn.example.com/Flota/mcp-server.zip',
     ];
     
     this.isDownloading = false;

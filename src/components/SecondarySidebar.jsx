@@ -18,12 +18,13 @@ import {
   GetApp as ImportIcon,
   Keyboard as KeyboardIcon,
   Cloud as CloudIcon,
-  Psychology as AIIcon,
+  AutoAwesome as AIIcon,
   Memory as MemoryIcon,
   Wifi as WifiIcon,
   Info as InfoIcon,
-  RecordVoiceOver as STTIcon,
-  Code as CodeIcon
+  Mic as STTIcon,
+  Code as CodeIcon,
+  EditNote as EditNoteIcon
 } from '@mui/icons-material';
 import { scrollbar } from '../styles/commonStyles';
 import { useStore } from '../store/useStore';
@@ -165,7 +166,8 @@ const SecondarySidebar = ({ open, onClose, width = 320, onTodoSelect, onViewMode
           { id: 7, name: t('settings.proxy'), icon: <WifiIcon /> },
           { id: 8, name: t('settings.data'), icon: <ImportIcon /> },
           { id: 9, name: 'MCP 服务', icon: <CodeIcon /> },
-          { id: 10, name: t('settings.about'), icon: <InfoIcon /> }
+          { id: 10, name: '编辑器', icon: <EditNoteIcon /> },
+          { id: 11, name: t('settings.about'), icon: <InfoIcon /> }
         ]
 
         return (

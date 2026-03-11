@@ -1,5 +1,5 @@
 /**
- * FlashNote 数据库修复工具
+ * Flota 数据库修复工具
  *
  * 用于检查和修复损坏的 SQLite 数据库
  */
@@ -11,10 +11,10 @@ const Database = require('better-sqlite3');
 // 数据库路径（默认）
 const USER_DATA = process.env.APPDATA ||
   (process.platform === 'darwin' ? process.env.HOME + '/Library/Application Support' : process.env.HOME + '/.config');
-const DB_PATH = path.join(USER_DATA, 'FlashNote', 'flashnote.db');
+const DB_PATH = path.join(USER_DATA, 'Flota', 'flota.db');
 
 console.log('='.repeat(60));
-console.log('FlashNote 数据库修复工具');
+console.log('Flota 数据库修复工具');
 console.log('='.repeat(60));
 console.log('数据库路径:', DB_PATH);
 console.log('');
@@ -344,7 +344,7 @@ async function main() {
     console.log('  - 损坏数据库:', DB_PATH + '.corrupted');
     console.log('  - 新数据库:', DB_PATH);
     console.log('');
-    console.log('✅ 现在可以重新启动 FlashNote 了');
+    console.log('✅ 现在可以重新启动 Flota 了');
   } else {
     console.log('');
     console.log('❌ 修复失败');

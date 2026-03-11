@@ -10,6 +10,7 @@ class WindowManager extends EventEmitter {
     this.settingsService = settingsService;
     this.windows = new Map(); // 存储所有窗口
     this.noteWindows = new Map(); // 存储笔记ID到窗口ID的映射
+    this.pendingWindowData = new Map(); // 待渲染进程拉取的初始化数据
     this.mainWindow = null;
     this.floatingWindow = null;
     this.quickInputWindow = null;
@@ -554,15 +555,15 @@ class WindowManager extends EventEmitter {
         }
       });
 
-      // 序列化Todo数据
-      const encodedTodoData = encodeURIComponent(JSON.stringify(todoData));
+      // 将 todoData 暂存在内存中，渲染进程通过 IPC 拉取，避免 URL 过长 (431)
+      this.pendingWindowData.set(windowId, todoData);
 
-      // 加载独立窗口页面并传递Todo数据
+      // 加载独立窗口页面，URL 只传 windowId（短 token），不传大 body
       if (isDev) {
-        await todoWindow.loadURL(`http://localhost:5174/standalone.html?type=todo&todoData=${encodedTodoData}&minibarMode=${defaultMinibarMode}`);
+        await todoWindow.loadURL(`http://localhost:5174/standalone.html?type=todo&windowId=${windowId}&minibarMode=${defaultMinibarMode}`);
       } else {
         await todoWindow.loadFile(path.join(__dirname, '../../dist/standalone.html'), {
-          query: { type: 'todo', todoData: encodedTodoData, minibarMode: defaultMinibarMode.toString() }
+          query: { type: 'todo', windowId, minibarMode: defaultMinibarMode.toString() }
         });
       }
 
@@ -727,8 +728,8 @@ class WindowManager extends EventEmitter {
    * 获取应用图标
    */
   getAppIcon() {
-    const iconPath = path.join(__dirname, '../../assets/icon.png');
-    return iconPath;
+    if (isDev) return path.join(__dirname, '../../build/logo.ico')
+    return path.join(process.resourcesPath, 'build/logo.ico')
   }
 
   /**

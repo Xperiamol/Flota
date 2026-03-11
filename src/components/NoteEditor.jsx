@@ -4,13 +4,12 @@ import {
   TextField,
   Typography,
   Paper,
+  Button,
   IconButton,
   Tooltip,
   Divider,
   Alert,
-  Snackbar,
-  ToggleButton,
-  ToggleButtonGroup
+  Snackbar
 } from '@mui/material'
 import {
   Save as SaveIcon,
@@ -42,9 +41,11 @@ import MarkdownToolbar from './MarkdownToolbar'
 import WhiteboardEditor from './WhiteboardEditor'
 import NoteTypeConversionDialog from './NoteTypeConversionDialog'
 import WYSIWYGEditor from './WYSIWYGEditor'
+import AIAssistPanel from './AIAssistPanel'
 import { useDebouncedSave } from '../hooks/useDebouncedSave'
 import { imageAPI } from '../api/imageAPI'
 import { convertMarkdownToWhiteboard, convertWhiteboardToMarkdown, extractImageUrls } from '../utils/markdownToWhiteboardConverter'
+import { aiConvertMarkdownToWhiteboard } from '../utils/aiExcalidrawGenerator'
 import { useError } from './ErrorProvider'
 import { useTranslation } from '../utils/i18n'
 import { saveQueue } from '../utils/SaveQueue'
@@ -156,8 +157,8 @@ const NoteEditor = () => {
     });
   }
 
-  // 使用防抖保存 Hook（减少延迟到1500ms）
-  const { debouncedSave, saveNow, cancelSave } = useDebouncedSave(performSave, 1500)
+  // 使用防抖保存 Hook（3秒延迟，避免频繁保存）
+  const { debouncedSave, saveNow, cancelSave } = useDebouncedSave(performSave, 3000)
 
   /**
    * 可撤销的文本插入辅助函数
@@ -579,28 +580,44 @@ const NoteEditor = () => {
     setConversionDialogOpen(true)
   }
 
-  // 处理转换确认
-  const handleConversionConfirm = async (confirmed) => {
-    setConversionDialogOpen(false)
+  // AI 转换 loading 状态（在 NoteTypeConversionDialog 中显示）
+  const [aiConvertLoading, setAiConvertLoading] = useState(false)
+  const [aiConvertStep, setAiConvertStep] = useState('')
 
+  // 处理转换确认 (confirmed: false=取消, true=普通转换, 'ai'=AI转换)
+  const handleConversionConfirm = async (confirmed) => {
     if (!confirmed || !pendingNoteType) {
       // 用户取消，重置
+      setConversionDialogOpen(false)
       setPendingNoteType(null)
       return
     }
 
     try {
       if (noteType === 'markdown' && pendingNoteType === 'whiteboard') {
-        // Markdown → 白板转换
-        await convertMarkdownToWhiteboardNote()
+        if (confirmed === 'ai') {
+          // 保持对话框开启，显示 loading
+          setAiConvertLoading(true)
+          setAiConvertStep('AI 正在分析并生成图表')
+          try {
+            await aiConvertMarkdownToWhiteboardNote()
+          } finally {
+            setAiConvertLoading(false)
+            setAiConvertStep('')
+            setConversionDialogOpen(false)
+          }
+          return
+        } else {
+          setConversionDialogOpen(false)
+          await convertMarkdownToWhiteboardNote()
+        }
       } else if (noteType === 'whiteboard' && pendingNoteType === 'markdown') {
-        // 白板 → Markdown 转换（清空内容）
+        setConversionDialogOpen(false)
         await convertWhiteboardToMarkdownNote()
       }
     } catch (error) {
       console.error('笔记类型转换失败:', error)
       showError(error, '笔记类型转换失败')
-      // 显示错误提示
       setShowSaveSuccess(false)
     } finally {
       setPendingNoteType(null)
@@ -639,7 +656,7 @@ const NoteEditor = () => {
       for (const url of imageUrls) {
         try {
           // 如果是本地图片路径，读取图片数据
-          if (url.startsWith('flashnote://') || url.startsWith('images/')) {
+          if (url.startsWith('Flota://') || url.startsWith('images/')) {
             const dataURL = await imageAPI.getBase64(url)
             if (dataURL) {
               // 从 dataURL 解析 mimeType
@@ -714,6 +731,54 @@ const NoteEditor = () => {
     } catch (error) {
       console.error('Markdown 转白板失败:', error)
       showError(error, 'Markdown 转白板失败')
+      throw error
+    }
+  }
+
+  // AI 智能 Markdown 转白板
+  const aiConvertMarkdownToWhiteboardNote = async () => {
+    if (!selectedNoteId) return
+
+    try {
+      // 先保存当前 MD 内容
+      if (hasUnsavedChangesRef.current) {
+        cancelSave()
+        saveNow()
+        await new Promise(resolve => setTimeout(resolve, 300))
+      }
+
+      const latestNote = notes.find(n => n.id === selectedNoteId)
+      const markdownContent = latestNote?.content || content || ''
+
+      logger.log('AI MD转白板: 内容长度:', markdownContent.length)
+
+      // 调用 AI 生成白板数据
+      const whiteboardContentStr = await aiConvertMarkdownToWhiteboard(markdownContent)
+
+      // 更新数据库
+      const updateResult = await updateNote(selectedNoteId, {
+        content: whiteboardContentStr,
+        note_type: 'whiteboard',
+        title: title.trim() || '无标题',
+        tags: formatTags(parseTags(tags))
+      })
+
+      if (!updateResult || !updateResult.success) {
+        throw new Error('保存失败: ' + (updateResult?.error || '未知错误'))
+      }
+
+      // 更新本地状态
+      setNoteType('whiteboard')
+      setContent('')
+      prevStateRef.current.noteType = 'whiteboard'
+      prevStateRef.current.content = ''
+      setHasUnsavedChanges(false)
+      hasUnsavedChangesRef.current = false
+
+      logger.log('AI Markdown 转白板成功')
+    } catch (error) {
+      console.error('AI Markdown 转白板失败:', error)
+      showError(error, 'AI 转换失败: ' + error.message)
       throw error
     }
   }
@@ -827,10 +892,17 @@ const NoteEditor = () => {
 
   // 处理Markdown工具栏插入文本（支持撤销）
   const handleMarkdownInsert = (before, after = '', placeholder = '') => {
-    if (!contentRef.current) return
-
-    const textarea = contentRef.current.querySelector('textarea')
-    if (!textarea) return
+    const textarea = contentRef.current?.querySelector('textarea')
+    if (!textarea) {
+      // 预览模式下没有 textarea，直接追加到 content 末尾
+      const insertedText = before + (placeholder || '') + after
+      const newContent = content + (content.endsWith('\n') ? '' : '\n') + insertedText
+      setContent(newContent)
+      setHasUnsavedChanges(true)
+      prevStateRef.current.content = newContent
+      debouncedSave()
+      return
+    }
 
     const start = textarea.selectionStart
     const end = textarea.selectionEnd
@@ -864,6 +936,64 @@ const NoteEditor = () => {
       const newCursorPos = start + before.length + textToInsert.length
       textarea.focus()
       textarea.setSelectionRange(newCursorPos, newCursorPos + (selectedText ? 0 : after.length))
+    }, 0)
+  }
+
+  // 处理块级格式切换（标题、列表、引用等行首前缀替换）
+  const handleBlockFormat = (prefix) => {
+    if (!contentRef.current) return
+    const textarea = contentRef.current.querySelector('textarea')
+    if (!textarea) return
+
+    const start = textarea.selectionStart
+    const text = textarea.value
+
+    // 找到当前行的起始和结束位置
+    const lineStart = text.lastIndexOf('\n', start - 1) + 1
+    const lineEnd = text.indexOf('\n', start)
+    const lineEndPos = lineEnd === -1 ? text.length : lineEnd
+    const line = text.substring(lineStart, lineEndPos)
+
+    // 匹配已有的块级前缀
+    const blockPrefixRegex = /^(#{1,6}\s|>\s|- \[[ x]\]\s|- |\* |\d+\.\s)/
+    const match = line.match(blockPrefixRegex)
+    const existingPrefix = match ? match[1] : ''
+
+    let newLine
+    if (existingPrefix === prefix) {
+      // 同一格式再次点击 → 取消格式（回到正文）
+      newLine = line.substring(existingPrefix.length)
+    } else if (existingPrefix) {
+      // 已有其他块级格式 → 替换
+      newLine = prefix + line.substring(existingPrefix.length)
+    } else {
+      // 无格式 → 添加
+      newLine = prefix + line
+    }
+
+    // 选中整行并替换
+    textarea.focus()
+    textarea.setSelectionRange(lineStart, lineEndPos)
+    let success = false
+    try {
+      success = document.execCommand('insertText', false, newLine)
+    } catch (e) {
+      success = false
+    }
+    if (!success) {
+      const newContent = text.substring(0, lineStart) + newLine + text.substring(lineEndPos)
+      setContent(newContent)
+    }
+
+    setHasUnsavedChanges(true)
+    prevStateRef.current.content = textarea.value
+    debouncedSave()
+
+    // 光标放到行内容末尾
+    setTimeout(() => {
+      const cursorPos = lineStart + newLine.length
+      textarea.focus()
+      textarea.setSelectionRange(cursorPos, cursorPos)
     }, 0)
   }
 
@@ -1351,21 +1481,56 @@ const NoteEditor = () => {
         </Box>
 
         {/* 笔记类型切换 - 移到工具栏 */}
-        <ToggleButtonGroup
-          value={noteType}
-          exclusive
-          onChange={handleNoteTypeChange}
-          size="small"
-        >
-          <ToggleButton value="markdown">
-            <ArticleIcon fontSize="small" sx={{ mr: 0.5 }} />
-            Markdown
-          </ToggleButton>
-          <ToggleButton value="whiteboard">
-            <WhiteboardIcon fontSize="small" sx={{ mr: 0.5 }} />
-            白板
-          </ToggleButton>
-        </ToggleButtonGroup>
+        <Box sx={{
+          display: 'flex', alignItems: 'center', gap: '3px',
+          bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)',
+          borderRadius: '12px', p: '3px',
+        }}>
+          {[{ value: 'markdown', icon: <ArticleIcon sx={{ fontSize: 15, mr: 0.5 }} />, label: 'Markdown' },
+            { value: 'whiteboard', icon: <WhiteboardIcon sx={{ fontSize: 15, mr: 0.5 }} />, label: '白板' }].map((item) => {
+            const isActive = noteType === item.value;
+            return (
+              <Button
+                key={item.value}
+                disableElevation
+                disableRipple
+                variant={isActive ? 'contained' : 'text'}
+                onClick={(e) => isActive ? null : handleNoteTypeChange(e, item.value)}
+                sx={{
+                  px: 1.5, py: 0.4, minWidth: 0, fontSize: '0.78rem', fontWeight: 600,
+                  borderRadius: '9px', textTransform: 'none', lineHeight: 1.5,
+                  letterSpacing: '0.01em',
+                  transition: 'all 0.25s cubic-bezier(.4,0,.2,1)',
+                  ...(isActive ? {
+                    bgcolor: (theme) => theme.palette.mode === 'dark'
+                      ? 'rgba(255,255,255,0.13)'
+                      : 'primary.main',
+                    color: (theme) => theme.palette.mode === 'dark'
+                      ? '#fff'
+                      : 'primary.contrastText',
+                    boxShadow: (theme) => theme.palette.mode === 'dark'
+                      ? '0 1px 4px rgba(0,0,0,0.3)'
+                      : `0 2px 8px ${theme.palette.primary.main}33`,
+                    '&:hover': {
+                      bgcolor: (theme) => theme.palette.mode === 'dark'
+                        ? 'rgba(255,255,255,0.18)'
+                        : 'primary.dark',
+                    },
+                  } : {
+                    color: 'text.secondary',
+                    bgcolor: 'transparent',
+                    '&:hover': {
+                      bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+                      color: 'text.primary',
+                    },
+                  }),
+                }}
+              >
+                {item.icon}{item.label}
+              </Button>
+            );
+          })}
+        </Box>
 
         <Tooltip title={t('notes.openInNewWindow')}>
           <IconButton onClick={handleOpenStandalone} size="small">
@@ -1461,6 +1626,7 @@ const NoteEditor = () => {
           value={title}
           onChange={handleTitleChange}
           onKeyDown={handleKeyDown}
+          aria-label={t('common.noteTitlePlaceholder')}
           sx={{
             flex: 1,  // 减小标题宽度占比
             '& .MuiInput-input': {
@@ -1537,6 +1703,7 @@ const NoteEditor = () => {
             >
               <MarkdownToolbar
                 onInsert={handleMarkdownInsert}
+                onBlockFormat={handleBlockFormat}
                 disabled={!selectedNoteId || (editorMode === 'markdown' && viewMode === 'preview')}
                 viewMode={editorMode === 'wysiwyg' ? null : viewMode}
                 onViewModeChange={editorMode === 'wysiwyg' ? null : setViewMode}
@@ -1618,6 +1785,7 @@ const NoteEditor = () => {
                     value={content}
                     onChange={handleContentChange}
                     onKeyDown={handleKeyDown}
+                    aria-label={t('common.startWritingMarkdown')}
                     InputProps={{
                       disableUnderline: true
                     }}
@@ -1668,6 +1836,11 @@ const NoteEditor = () => {
                 </Box>
               )}
             </Box>
+            )}
+
+            {/* 源码模式浮动面板 */}
+            {editorMode === 'markdown' && (viewMode === 'edit' || viewMode === 'split') && (
+              <AIAssistPanel textareaRef={contentRef} onInsert={handleMarkdownInsert} />
             )}
           </Box>
         )}
@@ -1733,6 +1906,8 @@ const NoteEditor = () => {
             : 'whiteboard-to-markdown'
         }
         noteTitle={title}
+        loading={aiConvertLoading}
+        loadingText={aiConvertStep}
       />
     </Box>
   )

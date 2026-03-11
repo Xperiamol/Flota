@@ -20,11 +20,11 @@ const getUserDataPath = () => {
   const platform = process.platform;
   const homeDir = process.env.HOME || process.env.USERPROFILE;
   if (platform === 'win32') {
-    return path.join(process.env.APPDATA || homeDir, 'flashnote');
+    return path.join(process.env.APPDATA || homeDir, 'Flota');
   } else if (platform === 'darwin') {
-    return path.join(homeDir, 'Library', 'Application Support', 'flashnote');
+    return path.join(homeDir, 'Library', 'Application Support', 'Flota');
   } else {
-    return path.join(homeDir, '.config', 'flashnote');
+    return path.join(homeDir, '.config', 'Flota');
   }
 };
 
@@ -60,10 +60,43 @@ class DatabaseManager {
         dbLog('创建数据库目录:', dbDir);
       }
       
-      this.dbPath = customDbPath || path.join(dbDir, 'flashnote.db');
+      this.dbPath = customDbPath || path.join(dbDir, 'flota.db');
       const dbExists = fs.existsSync(this.dbPath);
       dbLog('数据库路径:', this.dbPath, '是否存在:', dbExists);
-      
+
+      // ========== 旧版数据迁移（FlashNote → Flota）==========
+      // 如果新数据库不存在，尝试从旧的 FlashNote 路径迁移数据
+      if (!dbExists && !customDbPath) {
+        const oldDbCandidates = [
+          // Windows
+          path.join(process.env.APPDATA || '', 'FlashNote', 'database', 'flashnote.db'),
+          // macOS
+          path.join(process.env.HOME || '', 'Library', 'Application Support', 'FlashNote', 'database', 'flashnote.db'),
+          // Linux
+          path.join(process.env.HOME || '', '.config', 'FlashNote', 'database', 'flashnote.db'),
+        ];
+        for (const oldDbPath of oldDbCandidates) {
+          if (fs.existsSync(oldDbPath)) {
+            dbLog('发现旧版数据库，开始迁移:', oldDbPath, '->', this.dbPath);
+            try {
+              fs.copyFileSync(oldDbPath, this.dbPath);
+              // 同步迁移 WAL 和 SHM 文件（如果存在）
+              for (const ext of ['-wal', '-shm']) {
+                const oldExtra = oldDbPath + ext;
+                if (fs.existsSync(oldExtra)) {
+                  fs.copyFileSync(oldExtra, this.dbPath + ext);
+                }
+              }
+              dbLog('旧版数据库迁移成功');
+            } catch (migrateErr) {
+              dbLog('旧版数据库迁移失败:', migrateErr.message);
+            }
+            break;
+          }
+        }
+      }
+      // ========== 迁移结束 ==========
+
       // 创建数据库连接
       this.db = new Database(this.dbPath);
       dbLog('数据库连接已创建');
@@ -261,19 +294,19 @@ class DatabaseManager {
    */
   async insertDefaultSettings() {
     const defaultSettings = [
-      { key: 'theme_mode', value: 'light', type: 'string', description: '主题模式' },
-      { key: 'primary_color', value: '#1976d2', type: 'string', description: '主色调' },
-      { key: 'font_size', value: '14', type: 'number', description: '字体大小' },
-      { key: 'font_family', value: 'system-ui', type: 'string', description: '字体族' },
+      { key: 'theme', value: 'system', type: 'string', description: '主题模式' },
+      { key: 'customThemeColor', value: '#1976d2', type: 'string', description: '主色调' },
+      { key: 'titleBarStyle', value: 'windows', type: 'string', description: '标题栏样式' },
+      { key: 'language', value: 'zh-CN', type: 'string', description: '界面语言' },
+      { key: 'maskOpacity', value: 'medium', type: 'string', description: '遮罩强度' },
+      { key: 'backgroundPattern', value: 'none', type: 'string', description: '背景花纹' },
+      { key: 'patternOpacity', value: '1', type: 'number', description: '花纹强度' },
       { key: 'auto_save', value: 'true', type: 'boolean', description: '自动保存' },
       { key: 'auto_save_interval', value: '3000', type: 'number', description: '自动保存间隔(ms)' },
       { key: 'window_width', value: '1200', type: 'number', description: '窗口宽度' },
       { key: 'window_height', value: '800', type: 'number', description: '窗口高度' },
       { key: 'window_x', value: 'center', type: 'string', description: '窗口X位置' },
       { key: 'window_y', value: 'center', type: 'string', description: '窗口Y位置' },
-      { key: 'show_line_numbers', value: 'true', type: 'boolean', description: '显示行号' },
-      { key: 'word_wrap', value: 'true', type: 'boolean', description: '自动换行' },
-      { key: 'spell_check', value: 'false', type: 'boolean', description: '拼写检查' },
       { key: 'userAvatar', value: '', type: 'string', description: '用户头像' },
       { key: 'mcpEnabled', value: 'false', type: 'boolean', description: 'MCP服务开关' }
     ];

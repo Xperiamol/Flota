@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { Box, Alert, CircularProgress, IconButton, Tooltip } from '@mui/material'
-import { Save as SaveIcon, GetApp as ExportIcon } from '@mui/icons-material'
+import { Box, Alert, CircularProgress, IconButton, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField } from '@mui/material'
+import { Save as SaveIcon, GetApp as ExportIcon, AutoAwesome as AIIcon, Undo as UndoIcon } from '@mui/icons-material'
 import { Excalidraw, exportToBlob, exportToSvg, THEME } from '@excalidraw/excalidraw'
 import { useStore } from '../store/useStore'
 import { useStandaloneContext } from './StandaloneProvider'
 import { useDebouncedSave } from '../hooks/useDebouncedSave'
+import { aiGenerateExcalidrawElements } from '../utils/aiExcalidrawGenerator'
 import '@excalidraw/excalidraw/index.css'
 import logger from '../utils/logger'
 
@@ -25,7 +26,20 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
     actualIsStandaloneMode = false
   }
   
-  const { notes, updateNote, currentView } = store
+  const { notes, updateNote, currentView, theme: themePref } = store
+
+  // 解析实际主题（处理 'system'）
+  const [systemIsDark, setSystemIsDark] = useState(
+    () => window.matchMedia('(prefers-color-scheme: dark)').matches
+  )
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const handler = (e) => setSystemIsDark(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+  const isDark = themePref === 'dark' || (themePref === 'system' && systemIsDark)
+
   const [excalidrawAPI, setExcalidrawAPI] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -33,6 +47,19 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [excalidrawKey, setExcalidrawKey] = useState(() => `excalidraw-${noteId || 'unknown'}`)
   const [bridgeActive, setBridgeActive] = useState(false)
+  // AI 生成对话框状态
+  const [aiDialogOpen, setAiDialogOpen] = useState(false)
+  const [aiPrompt, setAiPrompt] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState('')
+  const [aiLoadingText, setAiLoadingText] = useState('')
+  // AI 撤销快照
+  const aiSnapshotRef = useRef(null)
+  const [aiUndoAvailable, setAiUndoAvailable] = useState(false)
+  // AI 按钮位置（null = 默认右下角）
+  const [aiBtnPos, setAiBtnPos] = useState(null)
+  const aiDragRef = useRef({ dragging: false, startMouseX: 0, startMouseY: 0, startBtnX: 0, startBtnY: 0, hasMoved: false })
+  const aiButtonRef = useRef(null)
   const hasUnsavedChangesRef = useRef(false)
   // 保存上一个noteId，用于检测noteId变化（初始为null，避免首次加载时触发保存）
   const prevNoteIdRef = useRef(null)
@@ -79,12 +106,12 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
     })
   }
 
-  // 定义空白板模板数据
+  // 定义空白板模板数据（跟随暗黑模式）
   const blankBoardData = useMemo(() => ({
     elements: [],
-    appState: { viewBackgroundColor: '#ffffff' },
+    appState: { viewBackgroundColor: isDark ? '#1e1e1e' : '#ffffff' },
     files: {}
-  }), [])
+  }), [isDark])
 
   const serializeScene = useCallback((elements = [], appState = {}, files = {}) => {
     const sanitizedAppState = {
@@ -426,7 +453,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
             const data = {
               type: 'excalidraw',
               version: 2,
-              source: 'flashnote-local',
+              source: 'Flota-local',
               elements,
               appState: {
                 viewBackgroundColor: appState.viewBackgroundColor,
@@ -544,7 +571,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
       const data = {
         type: 'excalidraw',
         version: 2,
-        source: 'flashnote-local',
+        source: 'Flota-local',
         elements,
         appState: persistedAppState,
         fileMap // 保存文件映射而非实际图片数据
@@ -698,6 +725,91 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
     prevViewRef.current = currentView
   }, [currentView, noteId, saveNow, cancelSave, actualIsStandaloneMode])
 
+  // AI 按钮拖动
+  const handleAIBtnPointerDown = useCallback((e) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    const btn = aiButtonRef.current
+    if (!btn) return
+    const containerEl = btn.parentElement
+    const containerRect = containerEl ? containerEl.getBoundingClientRect() : { left: 0, top: 0 }
+    const btnRect = btn.getBoundingClientRect()
+    aiDragRef.current = {
+      dragging: true,
+      startMouseX: e.clientX,
+      startMouseY: e.clientY,
+      startBtnX: aiBtnPos ? aiBtnPos.x : btnRect.left - containerRect.left,
+      startBtnY: aiBtnPos ? aiBtnPos.y : btnRect.top - containerRect.top,
+      hasMoved: false,
+    }
+    btn.setPointerCapture(e.pointerId)
+  }, [aiBtnPos])
+
+  const handleAIBtnPointerMove = useCallback((e) => {
+    if (!aiDragRef.current.dragging) return
+    const dx = e.clientX - aiDragRef.current.startMouseX
+    const dy = e.clientY - aiDragRef.current.startMouseY
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+      aiDragRef.current.hasMoved = true
+      setAiBtnPos({ x: aiDragRef.current.startBtnX + dx, y: aiDragRef.current.startBtnY + dy })
+    }
+  }, [])
+
+  const handleAIBtnPointerUp = useCallback((e) => {
+    if (!aiDragRef.current.dragging) return
+    aiDragRef.current.dragging = false
+    if (!aiDragRef.current.hasMoved) {
+      setAiDialogOpen(true)
+      setAiError('')
+    }
+  }, [])
+
+  // AI 生成白板元素
+  const handleAIGenerate = useCallback(async () => {
+    if (!aiPrompt.trim() || !excalidrawAPI) return
+
+    setAiLoading(true)
+    setAiError('')
+    setAiLoadingText('AI 正在理解语义…')
+
+    try {
+      const existingElements = excalidrawAPI.getSceneElements().filter(e => !e.isDeleted)
+
+      // 保存撤销快照
+      aiSnapshotRef.current = existingElements.map(e => ({ ...e }))
+
+      setAiLoadingText('AI 正在生成 Mermaid 图表…')
+      const newElements = await aiGenerateExcalidrawElements(aiPrompt.trim(), existingElements)
+
+      setAiLoadingText('布局渲染中…')
+      // 合并到现有画布
+      const allElements = [...existingElements, ...newElements]
+      excalidrawAPI.updateScene({ elements: allElements })
+      setAiUndoAvailable(true)
+
+      logger.log('[WhiteboardEditor] AI 生成了', newElements.length, '个元素')
+
+      setAiDialogOpen(false)
+      setAiPrompt('')
+    } catch (err) {
+      console.error('[WhiteboardEditor] AI 生成失败:', err)
+      setAiError(err.message || 'AI 生成失败')
+      aiSnapshotRef.current = null
+    } finally {
+      setAiLoading(false)
+      setAiLoadingText('')
+    }
+  }, [aiPrompt, excalidrawAPI])
+
+  // AI 撤销
+  const handleAIUndo = useCallback(() => {
+    if (!excalidrawAPI || !aiSnapshotRef.current) return
+    excalidrawAPI.updateScene({ elements: aiSnapshotRef.current })
+    aiSnapshotRef.current = null
+    setAiUndoAvailable(false)
+    logger.log('[WhiteboardEditor] 已撤销 AI 生成')
+  }, [excalidrawAPI])
+
   // 保存白板
   const saveWhiteboard = useCallback(async () => {
     await saveNow()
@@ -729,7 +841,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
     const data = {
       type: 'excalidraw',
       version: 2,
-      source: 'flashnote-local',
+      source: 'Flota-local',
       elements,
       appState: persistedAppState,
       fileMap
@@ -919,7 +1031,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
               debouncedSave()
             }
           }}
-          theme={THEME.LIGHT}
+          theme={isDark ? THEME.DARK : THEME.LIGHT}
           langCode="zh-CN"
           viewModeEnabled={false}
           zenModeEnabled={false}
@@ -933,6 +1045,134 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
           }}
         />
       </Box>
+
+      {/* AI 操作按钮组 */}
+      <Box sx={{
+        position: 'absolute',
+        ...(aiBtnPos
+          ? { top: aiBtnPos.y, left: aiBtnPos.x }
+          : { bottom: 20, right: 20 }
+        ),
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1,
+        zIndex: 10,
+      }}>
+        {/* 撤销按钮 */}
+        {aiUndoAvailable && (
+          <Box
+            onClick={handleAIUndo}
+            sx={{
+              display: 'flex', alignItems: 'center', gap: 0.5,
+              px: 1.5, py: 0.75,
+              bgcolor: 'warning.main', color: 'warning.contrastText',
+              borderRadius: 2, boxShadow: 3, cursor: 'pointer',
+              userSelect: 'none', fontSize: 13, fontWeight: 500,
+              whiteSpace: 'nowrap',
+              '&:hover': { bgcolor: 'warning.dark' },
+            }}
+          >
+            <UndoIcon sx={{ fontSize: 16 }} />
+            撤销
+          </Box>
+        )}
+        {/* AI 生成按钮（可拖动） */}
+        <Box
+          ref={aiButtonRef}
+          onPointerDown={handleAIBtnPointerDown}
+          onPointerMove={handleAIBtnPointerMove}
+          onPointerUp={handleAIBtnPointerUp}
+          sx={{
+            display: 'flex', alignItems: 'center', gap: 0.5,
+            px: 1.5, py: 0.75,
+            bgcolor: 'primary.main', color: 'primary.contrastText',
+            borderRadius: 2, boxShadow: 3,
+            cursor: 'grab', userSelect: 'none',
+            fontSize: 14, fontWeight: 500, fontFamily: 'inherit',
+            whiteSpace: 'nowrap',
+            '&:hover': { bgcolor: 'primary.dark' },
+            '&:active': { cursor: 'grabbing' },
+          }}
+        >
+          <AIIcon sx={{ fontSize: 18 }} />
+          AI 生成
+        </Box>
+      </Box>
+
+      {/* AI 生成对话框 */}
+      <Dialog
+        open={aiDialogOpen}
+        onClose={() => { if (!aiLoading) setAiDialogOpen(false) }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>AI 生成白板内容</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            fullWidth
+            multiline
+            minRows={3}
+            maxRows={8}
+            placeholder="描述你想生成的白板内容，例如：&#10;• 画一个项目开发流程图&#10;• 用思维导图整理 React 学习路线&#10;• 画一个用户注册的时序图"
+            value={aiPrompt}
+            onChange={(e) => setAiPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault()
+                handleAIGenerate()
+              }
+            }}
+            disabled={aiLoading}
+            sx={{ mt: 1 }}
+          />
+          {aiLoading && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 2 }}>
+              {/* 五彩圆圈 */}
+              <Box sx={{
+                flexShrink: 0,
+                width: 22, height: 22, borderRadius: '50%',
+                background: 'conic-gradient(#f44336, #ff9800, #ffeb3b, #4caf50, #2196f3, #9c27b0, #f44336)',
+                mask: 'radial-gradient(farthest-side, transparent 63%, black 63%)',
+                WebkitMask: 'radial-gradient(farthest-side, transparent 63%, black 63%)',
+                animation: 'ai-rainbow-spin 0.9s linear infinite',
+                '@keyframes ai-rainbow-spin': { '100%': { transform: 'rotate(360deg)' } },
+              }} />
+              {/* 文字 + 逐点动画 */}
+              <Box sx={{ fontSize: 14, color: 'text.secondary', display: 'flex', alignItems: 'baseline', gap: '1px' }}>
+                {aiLoadingText || 'AI 生成中'}
+                <Box component="span" sx={{
+                  display: 'inline-flex', ml: '1px',
+                  '& .aidot': { opacity: 0, animation: 'ai-dot-seq 1.5s infinite' },
+                  '& .aidot:nth-of-type(2)': { animationDelay: '0.5s' },
+                  '& .aidot:nth-of-type(3)': { animationDelay: '1s' },
+                  '@keyframes ai-dot-seq': { '0%,66%,100%': { opacity: 0 }, '33%': { opacity: 1 } },
+                }}>
+                  <span className="aidot">.</span>
+                  <span className="aidot">.</span>
+                  <span className="aidot">.</span>
+                </Box>
+              </Box>
+            </Box>
+          )}
+          {aiError && (
+            <Alert severity="error" sx={{ mt: 2 }}>{aiError}</Alert>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setAiDialogOpen(false)} disabled={aiLoading} color="inherit">
+            取消
+          </Button>
+          <Button
+            onClick={handleAIGenerate}
+            disabled={!aiPrompt.trim() || aiLoading}
+            variant="contained"
+            startIcon={aiLoading ? <CircularProgress size={18} color="inherit" /> : <AIIcon />}
+          >
+            {aiLoading ? '生成中…' : '生成'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }

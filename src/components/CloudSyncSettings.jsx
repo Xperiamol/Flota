@@ -22,7 +22,7 @@ const CloudSyncSettings = () => {
       {/* 返回按钮 */}
       {currentView !== 'registry' && (
         <Box sx={{ mb: 2 }}>
-          <IconButton onClick={handleBackToRegistry} size="small">
+          <IconButton onClick={handleBackToRegistry} size="small" aria-label="返回">
             <ArrowBackIcon />
           </IconButton>
         </Box>

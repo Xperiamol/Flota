@@ -110,7 +110,7 @@ const ImageUploadDialog = ({ open, onClose, onImageInsert }) => {
   )
 }
 
-const ImageUploadButton = ({ onImageInsert, disabled = false }) => {
+const ImageUploadButton = ({ onImageInsert, disabled = false, sx }) => {
   const [dialogOpen, setDialogOpen] = useState(false)
 
   return (
@@ -121,14 +121,7 @@ const ImageUploadButton = ({ onImageInsert, disabled = false }) => {
             size="small"
             onClick={() => setDialogOpen(true)}
             disabled={disabled}
-            sx={{
-              border: '1px solid',
-              borderColor: 'divider',
-              borderRadius: 1,
-              '&:hover': {
-                backgroundColor: 'action.hover'
-              }
-            }}
+            sx={sx}
           >
             <ImageIcon />
           </IconButton>

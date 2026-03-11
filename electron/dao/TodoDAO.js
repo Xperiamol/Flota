@@ -175,6 +175,16 @@ class TodoDAO {
   }
 
   /**
+   * 获取子任务列表
+   * @param {string} parentSyncId - 父待办的 sync_id
+   */
+  getSubtasks(parentSyncId) {
+    const db = this.getDB();
+    const stmt = db.prepare('SELECT * FROM todos WHERE parent_todo_id = ? AND is_deleted = 0 ORDER BY created_at ASC');
+    return stmt.all(parentSyncId);
+  }
+
+  /**
    * 根据ID查找待办事项(包括已删除)
    */
   findByIdIncludeDeleted(id) {
@@ -509,6 +519,9 @@ class TodoDAO {
     if (!includeCompleted) {
       whereConditions.push('is_completed = 0');
     }
+
+    // Exclude subtasks (subtask parent_todo_id is a sync_id UUID with dashes)
+    whereConditions.push("(parent_todo_id IS NULL OR parent_todo_id NOT LIKE '%-%-%-%-%')");
     
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
     
@@ -582,6 +595,7 @@ class TodoDAO {
       SELECT * FROM todos 
       WHERE is_deleted = 0 
         AND is_completed = 0 
+        AND (parent_todo_id IS NULL OR parent_todo_id NOT LIKE '%-%-%-%-%')
         AND due_date >= ? AND due_date <= ?
       ORDER BY due_date ASC
     `);
@@ -601,6 +615,7 @@ class TodoDAO {
       SELECT * FROM todos 
       WHERE is_deleted = 0 
         AND is_completed = 0 
+        AND (parent_todo_id IS NULL OR parent_todo_id NOT LIKE '%-%-%-%-%')
         AND due_date >= ? AND due_date <= ?
       ORDER BY due_date ASC
     `);
@@ -619,6 +634,7 @@ class TodoDAO {
       SELECT * FROM todos 
       WHERE is_deleted = 0 
         AND is_completed = 0 
+        AND (parent_todo_id IS NULL OR parent_todo_id NOT LIKE '%-%-%-%-%')
         AND due_date < ?
       ORDER BY due_date ASC
     `);
@@ -832,6 +848,7 @@ class TodoDAO {
         content as title
       FROM todos 
       WHERE is_deleted = 0 AND (content LIKE ? OR description LIKE ?)
+        AND (parent_todo_id IS NULL OR parent_todo_id NOT LIKE '%-%-%-%-%')
       ORDER BY created_at DESC
     `);
     return stmt.all(`%${query}%`, `%${query}%`);
@@ -853,6 +870,7 @@ class TodoDAO {
         content as title
       FROM todos 
       WHERE is_deleted = 0
+        AND (parent_todo_id IS NULL OR parent_todo_id NOT LIKE '%-%-%-%-%')
       ORDER BY 
         CASE 
           WHEN is_important = 1 AND is_urgent = 1 THEN 1
@@ -881,6 +899,7 @@ class TodoDAO {
         content as title
       FROM todos 
       WHERE is_deleted = 0
+        AND (parent_todo_id IS NULL OR parent_todo_id NOT LIKE '%-%-%-%-%')
       ORDER BY 
         CASE WHEN due_date IS NULL THEN 1 ELSE 0 END,
         due_date ASC,
@@ -905,6 +924,7 @@ class TodoDAO {
         content as title
       FROM todos 
       WHERE is_deleted = 0
+        AND (parent_todo_id IS NULL OR parent_todo_id NOT LIKE '%-%-%-%-%')
       ORDER BY created_at DESC
     `);
     return stmt.all();

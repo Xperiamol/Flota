@@ -2,71 +2,66 @@
 
 // 默认快捷键配置
 export const DEFAULT_SHORTCUTS = {
-  // 全局快捷键
+  // ── 全局快捷键 ──
   'global.newNote': {
-    id: 'global.newNote',
-    name: '新建笔记',
-    description: '创建一个新的笔记',
-    category: 'global',
-    defaultKey: 'CmdOrCtrl+N',
-    currentKey: 'CmdOrCtrl+N',
-    type: 'global', // global 表示全局快捷键，需要在主进程注册
-    action: 'new-note'
+    id: 'global.newNote', name: '新建笔记', description: '创建一个新的笔记',
+    category: 'global', defaultKey: 'CmdOrCtrl+N', currentKey: 'CmdOrCtrl+N',
+    type: 'global', action: 'new-note',
   },
   'global.quickInput': {
-    id: 'global.quickInput',
-    name: '快速输入',
-    description: '打开快速输入窗口',
-    category: 'global',
-    defaultKey: 'CmdOrCtrl+Shift+N',
-    currentKey: 'CmdOrCtrl+Shift+N',
-    type: 'global',
-    action: 'quick-input'
-  },
-  'global.quit': {
-    id: 'global.quit',
-    name: '退出应用',
-    description: '退出FlashNote应用',
-    category: 'global',
-    defaultKey: 'Ctrl+Q', // 在前端统一使用Ctrl+Q，主进程会根据平台调整
-    currentKey: 'Ctrl+Q',
-    type: 'global',
-    action: 'quit-app'
+    id: 'global.quickInput', name: '快速输入', description: '打开快速输入窗口',
+    category: 'global', defaultKey: 'CmdOrCtrl+Shift+N', currentKey: 'CmdOrCtrl+Shift+N',
+    type: 'global', action: 'quick-input',
   },
   'global.newTodo': {
-    id: 'global.newTodo',
-    name: '新建待办',
-    description: '创建一个新的待办事项',
-    category: 'global',
-    defaultKey: 'CmdOrCtrl+T',
-    currentKey: 'CmdOrCtrl+T',
-    type: 'global',
-    action: 'new-todo'
+    id: 'global.newTodo', name: '新建待办', description: '创建一个新的待办事项',
+    category: 'global', defaultKey: 'CmdOrCtrl+T', currentKey: 'CmdOrCtrl+T',
+    type: 'global', action: 'new-todo',
   },
-  
-  // 编辑器快捷键
-  'editor.save': {
-    id: 'editor.save',
-    name: '保存笔记',
-    description: '保存当前编辑的笔记',
-    category: 'editor',
-    defaultKey: 'Ctrl+S',
-    currentKey: 'Ctrl+S',
-    type: 'local' // local 表示本地快捷键，在渲染进程处理
+  'global.quit': {
+    id: 'global.quit', name: '退出应用', description: '退出 Flota 应用',
+    category: 'global', defaultKey: 'Ctrl+Q', currentKey: 'Ctrl+Q',
+    type: 'global', action: 'quit-app',
   },
 
+  // ── 基础操作 ──
+  'basics.undo':      { id: 'basics.undo',      name: '撤销',   category: 'basics', defaultKey: 'Ctrl+Z',       currentKey: 'Ctrl+Z',       type: 'local' },
+  'basics.redo':      { id: 'basics.redo',      name: '重做',   category: 'basics', defaultKey: 'Ctrl+Shift+Z', currentKey: 'Ctrl+Shift+Z', type: 'local' },
+  'basics.selectAll': { id: 'basics.selectAll', name: '全选',   category: 'basics', defaultKey: 'Ctrl+A',       currentKey: 'Ctrl+A',       type: 'local' },
+  'basics.copy':      { id: 'basics.copy',      name: '复制',   category: 'basics', defaultKey: 'Ctrl+C',       currentKey: 'Ctrl+C',       type: 'local' },
+  'basics.cut':       { id: 'basics.cut',       name: '剪切',   category: 'basics', defaultKey: 'Ctrl+X',       currentKey: 'Ctrl+X',       type: 'local' },
+  'basics.paste':     { id: 'basics.paste',     name: '粘贴',   category: 'basics', defaultKey: 'Ctrl+V',       currentKey: 'Ctrl+V',       type: 'local' },
+  'basics.save':      { id: 'basics.save',      name: '保存笔记', category: 'basics', defaultKey: 'Ctrl+S',     currentKey: 'Ctrl+S',       type: 'local' },
+
+  // ── 文本格式 ──
+  'format.bold':      { id: 'format.bold',      name: '粗体',   category: 'format', defaultKey: 'Ctrl+B', currentKey: 'Ctrl+B', type: 'local' },
+  'format.italic':    { id: 'format.italic',    name: '斜体',   category: 'format', defaultKey: 'Ctrl+I', currentKey: 'Ctrl+I', type: 'local' },
+  'format.underline': { id: 'format.underline', name: '下划线', category: 'format', defaultKey: 'Ctrl+U', currentKey: 'Ctrl+U', type: 'local' },
+  // 以下格式默认无快捷键，用户可自行设定
+  'format.strike':       { id: 'format.strike',       name: '删除线',   category: 'format', defaultKey: '', currentKey: '', type: 'local' },
+  'format.inlineCode':   { id: 'format.inlineCode',   name: '行内代码', category: 'format', defaultKey: '', currentKey: '', type: 'local' },
+  'format.highlight':    { id: 'format.highlight',    name: '高亮',     category: 'format', defaultKey: '', currentKey: '', type: 'local' },
+  'format.codeBlock':    { id: 'format.codeBlock',    name: '代码块',   category: 'format', defaultKey: '', currentKey: '', type: 'local' },
+  'format.bulletList':   { id: 'format.bulletList',   name: '无序列表', category: 'format', defaultKey: '', currentKey: '', type: 'local' },
+  'format.orderedList':  { id: 'format.orderedList',  name: '有序列表', category: 'format', defaultKey: '', currentKey: '', type: 'local' },
+  'format.blockquote':   { id: 'format.blockquote',   name: '引用',     category: 'format', defaultKey: '', currentKey: '', type: 'local' },
+  'format.horizontalRule':{ id: 'format.horizontalRule', name: '分割线', category: 'format', defaultKey: '', currentKey: '', type: 'local' },
 };
 
 // 快捷键分类
 export const SHORTCUT_CATEGORIES = {
   global: {
-    name: '全局快捷键',
-    description: '在应用的任何地方都可以使用的快捷键'
+    name: '全局',
+    description: '在应用的任何地方都可以使用',
   },
-  editor: {
-    name: '编辑器快捷键',
-    description: '在笔记编辑器中使用的快捷键'
-  }
+  basics: {
+    name: '基础操作',
+    description: '撤销、复制、粘贴等基础操作',
+  },
+  format: {
+    name: '文本格式',
+    description: '编辑器中的格式化快捷键',
+  },
 };
 
 // 解析快捷键字符串

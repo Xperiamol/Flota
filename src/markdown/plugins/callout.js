@@ -10,34 +10,16 @@
  * > 这是警告内容
  */
 
+import { CALLOUT_TYPES } from '../calloutConfig.js'
+
 /**
  * Callout 插件
  * @param {MarkdownIt} md - Markdown-it 实例
  * @param {Object} options - 插件选项
  */
 export default function calloutPlugin(md, options = {}) {
-  const {
-    className = 'markdown-callout',
-    types = {
-      note: { icon: 'ℹ️', color: '#3b82f6', label: '笔记' },
-      tip: { icon: '💡', color: '#22c55e', label: '提示' },
-      info: { icon: 'ℹ️', color: '#3b82f6', label: '信息' },
-      warning: { icon: '⚠️', color: '#f59e0b', label: '警告' },
-      danger: { icon: '🚫', color: '#ef4444', label: '危险' },
-      error: { icon: '❌', color: '#ef4444', label: '错误' },
-      success: { icon: '✅', color: '#22c55e', label: '成功' },
-      question: { icon: '❓', color: '#8b5cf6', label: '问题' },
-      quote: { icon: '💬', color: '#6b7280', label: '引用' },
-      example: { icon: '📝', color: '#06b6d4', label: '示例' },
-      abstract: { icon: '📋', color: '#06b6d4', label: '摘要' },
-      todo: { icon: '☑️', color: '#3b82f6', label: '待办' },
-      bug: { icon: '🐛', color: '#ef4444', label: 'Bug' }
-    },
-    ...customOptions
-  } = options
-
-  // 合并自定义类型
-  const allTypes = { ...types, ...customOptions.customTypes }
+  const { className = 'markdown-callout', customTypes, ...rest } = options
+  const allTypes = { ...CALLOUT_TYPES, ...customTypes }
 
   // 覆盖 blockquote 的渲染规则
   const defaultBlockquoteOpen = md.renderer.rules.blockquote_open || function(tokens, idx, options, env, self) {
@@ -62,8 +44,15 @@ export default function calloutPlugin(md, options = {}) {
           const title = match[2] || ''
           const typeConfig = allTypes[type] || allTypes.note
 
-          // 移除 callout 标记，只保留内容
-          contentToken.content = contentToken.content.replace(/^\[!\w+\](?:\s+.+)?/, '').trim()
+          // 移除 callout 标记（只移除 [!type] 和可选的标题，保留同行剩余内容）
+          contentToken.content = contentToken.content.replace(/^\[!\w+\](?:\s+\S[^\n]*)?/, '').trim()
+
+          // 如果第一段被清空，将空 paragraph 标记为隐藏（不能 splice，会破坏渲染器索引）
+          if (!contentToken.content) {
+            tokens[idx + 1].hidden = true  // paragraph_open
+            tokens[idx + 2].hidden = true  // inline (empty)
+            tokens[idx + 3].hidden = true  // paragraph_close
+          }
 
           // 标记这是一个 callout
           token.attrSet('data-callout-type', type)
@@ -71,9 +60,9 @@ export default function calloutPlugin(md, options = {}) {
           token.attrSet('class', `${className} ${className}-${type}`)
           token.attrSet('style', `border-left-color: ${typeConfig.color}`)
 
-          // 生成 callout HTML
-          return `<div class="${className} ${className}-${type}" style="border-left: 4px solid ${typeConfig.color}; padding: 1rem; margin: 1rem 0; background-color: ${typeConfig.color}15; border-radius: 4px;">
-  <div class="${className}-header" style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; margin-bottom: ${contentToken.content ? '0.5rem' : '0'}; color: ${typeConfig.color};">
+          // 生成 callout HTML（样式由 CSS 类控制，不用 inline style）
+          return `<div class="${className} ${className}-${type}">
+  <div class="${className}-header"${contentToken.content ? '' : ' style="margin-bottom:0"'}>
     <span class="${className}-icon">${typeConfig.icon}</span>
     <span class="${className}-title">${title || typeConfig.label}</span>
   </div>
@@ -101,38 +90,4 @@ export default function calloutPlugin(md, options = {}) {
 
     return defaultBlockquoteClose(tokens, idx, options, env, self)
   }
-
-  // 处理多行 callout 内容
-  md.core.ruler.after('block', 'callout_processor', function(state) {
-    const tokens = state.tokens
-    let i = 0
-
-    while (i < tokens.length) {
-      if (tokens[i].type === 'blockquote_open') {
-        // 检查是否是 callout
-        let j = i + 1
-        let isCallout = false
-
-        while (j < tokens.length && tokens[j].type !== 'blockquote_close') {
-          if (tokens[j].type === 'inline' && tokens[j].content.match(/^\[!\w+\]/)) {
-            isCallout = true
-            break
-          }
-          j++
-        }
-
-        if (isCallout) {
-          // 标记所有相关的 tokens
-          for (let k = i; k <= j && k < tokens.length; k++) {
-            if (tokens[k].type === 'blockquote_close') {
-              break
-            }
-          }
-        }
-      }
-      i++
-    }
-
-    return false
-  })
 }

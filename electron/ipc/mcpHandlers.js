@@ -1,28 +1,19 @@
 const { ipcMain } = require('electron');
 
+/** 简单 IPC handler 工厂 */
+function wrap(ch, fn) {
+  ipcMain.handle(ch, async () => {
+    try { return { success: true, data: await fn() } }
+    catch (e) { return { success: false, error: e.message } }
+  })
+}
+
 /**
  * MCP 相关 IPC 处理器
  */
 function setupMCPHandlers(mcpDownloader, mainWindow) {
-  // 检查 MCP Server 是否已安装
-  ipcMain.handle('mcp:isInstalled', async () => {
-    try {
-      const installed = await mcpDownloader.isInstalled();
-      return { success: true, data: installed };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  });
-
-  // 获取 MCP Server 安装信息
-  ipcMain.handle('mcp:getInstallInfo', async () => {
-    try {
-      const info = await mcpDownloader.getInstallInfo();
-      return { success: true, data: info };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  });
+  wrap('mcp:isInstalled', () => mcpDownloader.isInstalled());
+  wrap('mcp:getInstallInfo', () => mcpDownloader.getInstallInfo());
 
   // 下载并安装 MCP Server
   ipcMain.handle('mcp:install', async () => {
@@ -79,14 +70,7 @@ function setupMCPHandlers(mcpDownloader, mainWindow) {
   });
 
   // 卸载 MCP Server
-  ipcMain.handle('mcp:uninstall', async () => {
-    try {
-      await mcpDownloader.uninstall();
-      return { success: true, data: { message: 'MCP Server 已卸载' } };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  });
+  wrap('mcp:uninstall', () => mcpDownloader.uninstall().then(() => ({ message: 'MCP Server 已卸载' })));
 
   // 获取 MCP Server 配置路径
   ipcMain.handle('mcp:getConfigPath', async () => {
@@ -104,14 +88,7 @@ function setupMCPHandlers(mcpDownloader, mainWindow) {
   });
 
   // 清理临时文件
-  ipcMain.handle('mcp:cleanTemp', async () => {
-    try {
-      await mcpDownloader.cleanTempFiles();
-      return { success: true, data: { message: '临时文件已清理' } };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  });
+  wrap('mcp:cleanTemp', () => mcpDownloader.cleanTempFiles().then(() => ({ message: '临时文件已清理' })));
 }
 
 module.exports = { setupMCPHandlers };

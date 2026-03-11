@@ -139,6 +139,7 @@ const TagFilter = ({
               <IconButton
                 size="small"
                 onClick={() => toggleGroupExpand(root)}
+                aria-label="展开收起标签组"
                 sx={{
                   p: 0, width: 20, height: 20,
                   transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',

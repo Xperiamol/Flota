@@ -48,7 +48,7 @@ export default function MCPSettings({ enabled, onEnabledChange }) {
         
         return {
             mcpServers: {
-                flashnote: {
+                Flota: {
                     command: 'node',
                     args: [launcherPath]
                 }
@@ -193,7 +193,14 @@ export default function MCPSettings({ enabled, onEnabledChange }) {
     return (
         <Box>
             {/* 状态卡片 */}
-            <Card variant="outlined" sx={{ mb: 2 }}>
+            <Card variant="outlined" sx={(theme) => ({
+                mb: 2,
+                borderRadius: 1,
+                borderColor: theme.palette.divider,
+                bgcolor: theme.palette.mode === 'dark'
+                    ? 'rgba(255,255,255,0.02)'
+                    : 'rgba(0,0,0,0.01)',
+            })}>
                 <CardContent>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
                         <CodeIcon color="primary" fontSize="large" />
@@ -202,7 +209,7 @@ export default function MCPSettings({ enabled, onEnabledChange }) {
                                 Model Context Protocol Server
                             </Typography>
                             <Typography variant="body2" color="text.secondary">
-                                允许其他 AI 应用（如 Claude Desktop）调用 FlashNote 功能
+                                允许其他 AI 应用（如 Claude Desktop）调用 Flota 功能
                             </Typography>
                         </Box>
                         <Chip
@@ -299,7 +306,7 @@ export default function MCPSettings({ enabled, onEnabledChange }) {
                     </Typography>
                     
                     {installInfo && (
-                        <Box sx={{ mt: 2, p: 1.5, bgcolor: 'background.paper', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+                        <Box sx={{ mt: 2, p: 1.5, bgcolor: 'background.paper', borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
                             <Typography variant="caption" component="div" sx={{ fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
                                 {JSON.stringify(generateClaudeConfig(), null, 2)}
                             </Typography>

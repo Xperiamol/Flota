@@ -398,125 +398,117 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
     });
   }, [todos, filterBy]);
 
-  // 渲染四象限视图 - 重新设计为2x2布局
+  // 渲染四象限视图 - 精致 2×2 布局
   const renderQuadrantView = () => {
     if (quadrants.length === 0) return null;
+    const dark = theme.palette.mode === 'dark';
 
     return (
       <Box sx={{ width: '100%', maxWidth: '1200px', mx: 'auto' }}>
         <Box
           sx={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 3,
-            '& > *': {
-              width: 'calc(50% - 12px)',
-              minWidth: 'calc(50% - 12px)',
-              maxWidth: 'calc(50% - 12px)',
-              flexBasis: 'calc(50% - 12px)'
-            }
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gridTemplateRows: '1fr 1fr',
+            gap: 2,
+            minHeight: '680px',
           }}
         >
-          {quadrants.map((quadrant) => (
-            <Box
-              key={quadrant.key}
-              onDragOver={(e) => handleDragOver(e, quadrant.key)}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDropQuadrant(e, {
-                isImportant: quadrant.isImportant,
-                isUrgent: quadrant.isUrgent
-              })}
-            >
-              <Card
-                elevation={0}
-                sx={{
-                  height: '400px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  borderRadius: '8px',
-                  background: 'transparent',
-                  backdropFilter: 'blur(10px)',
-                  backgroundColor: theme.palette.mode === 'dark'
-                    ? 'rgba(255, 255, 255, 0.05)'
-                    : 'rgba(255, 255, 255, 0.4)',
-                  border: `1px solid ${quadrant.color}30`,
-                  transition: createTransitionString(ANIMATIONS.hover),
-                  '&:hover': {
-                    boxShadow: `0 12px 40px ${quadrant.color}30`,
-                    backgroundColor: theme.palette.mode === 'dark'
-                      ? 'rgba(255, 255, 255, 0.08)'
-                      : 'rgba(255, 255, 255, 0.6)',
-                    borderColor: `${quadrant.color}50`
-                  },
-                  ...(isDragOver(quadrant.key) && {
-                    border: `2px solid ${quadrant.color}`,
-                    boxShadow: `0 12px 40px ${quadrant.color}50`
-                  })
-                }}
+            {quadrants.map((quadrant) => (
+              <Box
+                key={quadrant.key}
+                onDragOver={(e) => handleDragOver(e, quadrant.key)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDropQuadrant(e, {
+                  isImportant: quadrant.isImportant,
+                  isUrgent: quadrant.isUrgent
+                })}
               >
-                <CardHeader
-                  avatar={
-                    <Avatar
-                      sx={{
-                        bgcolor: quadrant.color,
-                        width: 40,
-                        height: 40
-                      }}
-                    >
-                      {quadrant.icon}
-                    </Avatar>
-                  }
-                  title={
-                    <Typography variant="h6" sx={{ fontWeight: 600, color: quadrant.color }}>
-                      {quadrant.title}
-                    </Typography>
-                  }
-                  subheader={
-                    <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                      {quadrant.subtitle} • {t('quadrant.itemsCount', { count: quadrant.todos.length })}
-                    </Typography>
-                  }
+                <Card
+                  elevation={0}
                   sx={{
-                    pb: 1,
-                    '& .MuiCardHeader-content': {
-                      overflow: 'hidden'
-                    }
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    borderRadius: '14px',
+                    backdropFilter: 'blur(12px) saturate(140%)',
+                    WebkitBackdropFilter: 'blur(12px) saturate(140%)',
+                    background: dark
+                      ? `linear-gradient(135deg, ${quadrant.color}08 0%, rgba(255,255,255,0.03) 100%)`
+                      : `linear-gradient(135deg, ${quadrant.color}06 0%, rgba(255,255,255,0.65) 100%)`,
+                    border: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
+                    transition: createTransitionString(ANIMATIONS.hover),
+                    overflow: 'hidden',
+                    '&:hover': {
+                      boxShadow: dark
+                        ? `0 8px 32px ${quadrant.color}20`
+                        : `0 8px 32px ${quadrant.color}18`,
+                      border: `1px solid ${quadrant.color}35`,
+                    },
+                    ...(isDragOver(quadrant.key) && {
+                      border: `2px dashed ${quadrant.color}`,
+                      boxShadow: `0 0 0 4px ${quadrant.color}15, 0 8px 32px ${quadrant.color}30`,
+                      background: dark
+                        ? `linear-gradient(135deg, ${quadrant.color}15 0%, rgba(255,255,255,0.05) 100%)`
+                        : `linear-gradient(135deg, ${quadrant.color}12 0%, rgba(255,255,255,0.8) 100%)`,
+                    })
                   }}
-                />
-
-                <CardContent sx={{ flex: 1, pt: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                  {quadrant.todos.length === 0 ? (
-                    <Box
+                >
+                  {/* 简洁头部 */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1.5 }}>
+                    <Box sx={{
+                      width: 32, height: 32, borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: `${quadrant.color}15`,
+                      color: quadrant.color,
+                      '& .MuiSvgIcon-root': { fontSize: 18 },
+                    }}>
+                      {quadrant.icon}
+                    </Box>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 700, color: quadrant.color, lineHeight: 1.3 }}>
+                        {quadrant.title}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.2, fontSize: '0.68rem' }}>
+                        {quadrant.subtitle}
+                      </Typography>
+                    </Box>
+                    <Chip
+                      label={quadrant.todos.length}
+                      size="small"
                       sx={{
-                        flex: 1,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        textAlign: 'center',
-                        color: 'text.secondary'
+                        height: 22, minWidth: 22,
+                        fontWeight: 700, fontSize: '0.7rem',
+                        bgcolor: `${quadrant.color}15`,
+                        color: quadrant.color,
+                        '& .MuiChip-label': { px: 0.8 },
                       }}
-                    >
-                      <Box>
-                        <Typography variant="body2" sx={{ mb: 1 }}>
-                          暂无待办事项
-                        </Typography>
-                        <Typography variant="caption">
-                          点击上方按钮添加新任务
-                        </Typography>
+                    />
+                  </Box>
+
+                  <CardContent sx={{ flex: 1, pt: 0, pb: '12px !important', px: 1.5, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                    {quadrant.todos.length === 0 ? (
+                      <Box
+                        sx={{
+                          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          textAlign: 'center', opacity: 0.4,
+                        }}
+                      >
+                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                            {t('quadrant.empty')}
+                          </Typography>
                       </Box>
-                    </Box>
-                  ) : (
-                    <Box sx={{ flex: 1, overflow: 'auto', pr: 1, ...scrollbar.auto }}>
-                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                        {quadrant.todos.map(renderTodoItem)}
+                    ) : (
+                      <Box sx={{ flex: 1, overflow: 'auto', ...scrollbar.auto }}>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                          {quadrant.todos.map(renderTodoItem)}
+                        </Box>
                       </Box>
-                    </Box>
-                  )}
-                </CardContent>
-              </Card>
-            </Box>
-          ))}
-        </Box>
+                    )}
+                  </CardContent>
+                </Card>
+              </Box>
+            ))}
+          </Box>
       </Box>
     );
   };

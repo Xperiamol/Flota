@@ -1,6 +1,6 @@
-# FlashNote 插件开发指南
+# Flota 插件开发指南
 
-> 精简且准确的 FlashNote 2.0 插件开发文档
+> 精简且准确的 Flota 2.0 插件开发文档
 
 ## 快速开始
 
@@ -35,7 +35,7 @@ runtime.onActivate((context) => {
     async () => {
       await runtime.notifications.show({
         title: '你好！',
-        body: '欢迎使用 FlashNote 插件',
+        body: '欢迎使用 Flota 插件',
         type: 'success'
       })
       return { success: true }
@@ -391,7 +391,7 @@ try {
 
 ```javascript
 // ❌ 不要使用 require
-const { onActivate } = require('@flashnote/sdk')
+const { onActivate } = require('@flota/sdk')
 
 // ❌ 不存在的方法
 await runtime.todos.getAll()      // 用 list()
@@ -811,11 +811,11 @@ window.appTheme       // 主应用主题（自动适配明暗模式）
 
 ### 重要说明：命令返回值结构
 
-在插件窗口中通过 `window.flashnotePlugin.executeCommand()` 调用命令时，返回值结构为：
+在插件窗口中通过 `window.FlotaPlugin.executeCommand()` 调用命令时，返回值结构为：
 
 ```javascript
 // 调用命令
-const result = await window.flashnotePlugin.executeCommand(
+const result = await window.FlotaPlugin.executeCommand(
   'plugin-id',
   'command-id',
   { payload: 'data' }
@@ -916,4 +916,4 @@ result.forEach(...)  // result 不是数组
 **状态**: ✅ 已与 PluginManager 实现完全同步
 
 **示例插件**: `plugins/examples/`  
-**GitHub**: https://github.com/Xperiamol/FlashNote
+**GitHub**: https://github.com/Xperiamol/Flota

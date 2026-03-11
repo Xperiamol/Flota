@@ -1,7 +1,7 @@
 {
-  "name": "flashnote",
+  "name": "flota",
   "version": "2.3.1",
-  "description": "FlashNote 2.3.1 - 简洁高效的记录应用",
+  "description": "Flota - 简洁高效的记录应用",
   "main": "electron/main.js",
   "homepage": "./",
   "scripts": {
@@ -18,7 +18,10 @@
     "mcp:server": "node scripts/manage-sqlite.js node && node electron/mcp-server.js",
     "sqlite:electron": "node scripts/manage-sqlite.js electron",
     "sqlite:node": "node scripts/manage-sqlite.js node",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "release:patch": "npm version patch -m \"chore: release v%s\"",
+    "release:minor": "npm version minor -m \"chore: release v%s\"",
+    "release:major": "npm version major -m \"chore: release v%s\""
   },
   "keywords": [
     "electron",
@@ -92,8 +95,8 @@
     "wait-on": "^8.0.4"
   },
   "build": {
-    "appId": "com.flashnote.app",
-    "productName": "FlashNote",
+    "appId": "com.flota.app",
+    "productName": "Flota",
     "directories": {
       "output": "dist-electron"
     },

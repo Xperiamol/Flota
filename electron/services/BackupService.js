@@ -14,7 +14,7 @@ class BackupService {
   async createBackup() {
     try {
       const userDataPath = getUserDataPath();
-      const dbPath = path.join(userDataPath, 'flashnote.db');
+      const dbPath = path.join(userDataPath, 'flota.db');
       const imagesDir = path.join(userDataPath, 'images');
       const audioDir = path.join(userDataPath, 'audio');
 
@@ -23,7 +23,7 @@ class BackupService {
       }
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const defaultName = `FlashNote-backup-${timestamp}.zip`;
+      const defaultName = `Flota-backup-${timestamp}.zip`;
 
       const result = await dialog.showSaveDialog({
         title: '选择备份保存位置',
@@ -40,13 +40,13 @@ class BackupService {
       const zip = new AdmZip();
 
       // Add database
-      zip.addLocalFile(dbPath, '', 'flashnote.db');
+      zip.addLocalFile(dbPath, '', 'flota.db');
 
       // Add WAL/SHM if exist (for consistency)
       const walPath = dbPath + '-wal';
       const shmPath = dbPath + '-shm';
-      if (fs.existsSync(walPath)) zip.addLocalFile(walPath, '', 'flashnote.db-wal');
-      if (fs.existsSync(shmPath)) zip.addLocalFile(shmPath, '', 'flashnote.db-shm');
+      if (fs.existsSync(walPath)) zip.addLocalFile(walPath, '', 'flota.db-wal');
+      if (fs.existsSync(shmPath)) zip.addLocalFile(shmPath, '', 'flota.db-shm');
 
       // Add images directory
       if (fs.existsSync(imagesDir)) {
@@ -104,8 +104,8 @@ class BackupService {
       const zip = new AdmZip(zipPath);
       const entries = zip.getEntries();
 
-      // Validate: must contain flashnote.db
-      const hasDb = entries.some(e => e.entryName === 'flashnote.db');
+      // Validate: must contain flota.db
+      const hasDb = entries.some(e => e.entryName === 'flota.db');
       if (!hasDb) {
         return { success: false, error: '无效的备份文件：缺少数据库' };
       }
@@ -114,14 +114,14 @@ class BackupService {
       const restoredItems = [];
 
       // Extract database
-      zip.extractEntryTo('flashnote.db', userDataPath, false, true);
+      zip.extractEntryTo('flota.db', userDataPath, false, true);
       restoredItems.push('数据库');
 
       // Extract WAL/SHM if present
-      const walEntry = entries.find(e => e.entryName === 'flashnote.db-wal');
-      if (walEntry) zip.extractEntryTo('flashnote.db-wal', userDataPath, false, true);
-      const shmEntry = entries.find(e => e.entryName === 'flashnote.db-shm');
-      if (shmEntry) zip.extractEntryTo('flashnote.db-shm', userDataPath, false, true);
+      const walEntry = entries.find(e => e.entryName === 'flota.db-wal');
+      if (walEntry) zip.extractEntryTo('flota.db-wal', userDataPath, false, true);
+      const shmEntry = entries.find(e => e.entryName === 'flota.db-shm');
+      if (shmEntry) zip.extractEntryTo('flota.db-shm', userDataPath, false, true);
 
       // Extract images
       const imageEntries = entries.filter(e => e.entryName.startsWith('images/') && !e.isDirectory);

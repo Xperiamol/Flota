@@ -150,6 +150,7 @@ const ObsidianImportExport = () => {
           <IconButton 
             size="small" 
             onClick={() => setShowImportConfig(!showImportConfig)}
+            aria-label="展开导入配置"
           >
             {showImportConfig ? <ExpandLessIcon /> : <ExpandMoreIcon />}
           </IconButton>
@@ -239,6 +240,7 @@ const ObsidianImportExport = () => {
           <IconButton 
             size="small" 
             onClick={() => setShowExportConfig(!showExportConfig)}
+            aria-label="展开导出配置"
           >
             {showExportConfig ? <ExpandLessIcon /> : <ExpandMoreIcon />}
           </IconButton>

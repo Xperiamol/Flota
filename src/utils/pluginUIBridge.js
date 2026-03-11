@@ -10,9 +10,9 @@
  */
 
 // 导入 CSS 类库（将在打包时内联）
-import flashnoteUICSS from './flashnote-ui.css?inline'
-import { registerFlashNoteComponents } from './flashnote-components'
-import { injectReactBridge } from './flashnote-react-bridge'
+import FlotaUICSS from './flota-ui.css?inline'
+import { registerFlotaComponents } from './flota-components'
+import { injectReactBridge } from './flota-react-bridge'
 import logger from './logger'
 
 /**
@@ -115,7 +115,7 @@ export function injectUIBridge(iframeWindow, theme, manifestOrOptions = null) {
   })
 
   /**
-   * FlashNote UI Bridge API
+   * Flota UI Bridge API
    */
   const bridge = {
     version: '2.3.1',
@@ -188,11 +188,11 @@ export function injectUIBridge(iframeWindow, theme, manifestOrOptions = null) {
         this.applyCSSVariables()
       }
       
-      window.addEventListener('flashnote-theme-changed', handler)
+      window.addEventListener('Flota-theme-changed', handler)
       
       // 返回取消监听函数
       return () => {
-        window.removeEventListener('flashnote-theme-changed', handler)
+        window.removeEventListener('Flota-theme-changed', handler)
       }
     },
     
@@ -238,7 +238,7 @@ export function injectUIBridge(iframeWindow, theme, manifestOrOptions = null) {
   }
 
   // 注入到 iframe 的 window 对象
-  iframeWindow.flashnoteUI = Object.freeze(bridge)
+  iframeWindow.FlotaUI = Object.freeze(bridge)
 
   const pluginRuntimeBridge = {
     version: '1.0.0',
@@ -292,47 +292,47 @@ export function injectUIBridge(iframeWindow, theme, manifestOrOptions = null) {
     }
   }
 
-  iframeWindow.flashnotePlugin = Object.freeze(pluginRuntimeBridge)
+  iframeWindow.FlotaPlugin = Object.freeze(pluginRuntimeBridge)
   
   // 注入 CSS 类库到 iframe
   try {
     const styleElement = iframeWindow.document.createElement('style')
-    styleElement.id = 'flashnote-ui-styles'
-    styleElement.textContent = flashnoteUICSS
+    styleElement.id = 'Flota-ui-styles'
+    styleElement.textContent = FlotaUICSS
     iframeWindow.document.head.appendChild(styleElement)
-    logger.log('[FlashNote UI Bridge] CSS 类库已注入')
+    logger.log('[Flota UI Bridge] CSS 类库已注入')
   } catch (error) {
-    console.error('[FlashNote UI Bridge] 注入 CSS 类库失败:', error)
+    console.error('[Flota UI Bridge] 注入 CSS 类库失败:', error)
   }
   
   // 注册 Web Components 到 iframe
   try {
-    registerFlashNoteComponents(iframeWindow)
-    logger.log('[FlashNote UI Bridge] Web Components 已注册')
+    registerFlotaComponents(iframeWindow)
+    logger.log('[Flota UI Bridge] Web Components 已注册')
   } catch (error) {
-    console.error('[FlashNote UI Bridge] 注册 Web Components 失败:', error)
+    console.error('[Flota UI Bridge] 注册 Web Components 失败:', error)
   }
   
   // 如果插件声明使用 React，注入 React Bridge
   if (pluginManifest && pluginManifest.framework === 'react') {
     try {
       injectReactBridge(iframeWindow)
-      logger.log('[FlashNote UI Bridge] React Bridge 已注入')
+      logger.log('[Flota UI Bridge] React Bridge 已注入')
     } catch (error) {
-      console.error('[FlashNote UI Bridge] 注入 React Bridge 失败:', error)
+      console.error('[Flota UI Bridge] 注入 React Bridge 失败:', error)
     }
   }
   
   // 自动应用 CSS 变量
   try {
     bridge.applyCSSVariables()
-    logger.log('[FlashNote UI Bridge] 已注入，版本:', bridge.version)
+    logger.log('[Flota UI Bridge] 已注入，版本:', bridge.version)
   } catch (error) {
-    console.error('[FlashNote UI Bridge] 应用 CSS 变量失败:', error)
+    console.error('[Flota UI Bridge] 应用 CSS 变量失败:', error)
   }
   
   try {
-    const readyEvent = new iframeWindow.CustomEvent('flashnote-plugin-ready', {
+    const readyEvent = new iframeWindow.CustomEvent('Flota-plugin-ready', {
       detail: {
         pluginId,
         hasRuntime: typeof commandExecutor === 'function'
@@ -340,7 +340,7 @@ export function injectUIBridge(iframeWindow, theme, manifestOrOptions = null) {
     })
     iframeWindow.dispatchEvent(readyEvent)
   } catch (error) {
-    console.error('[FlashNote UI Bridge] 触发插件就绪事件失败:', error)
+    console.error('[Flota UI Bridge] 触发插件就绪事件失败:', error)
   }
 
   return bridge
@@ -351,7 +351,7 @@ export function injectUIBridge(iframeWindow, theme, manifestOrOptions = null) {
  * @param {Object} newTheme - 新主题对象
  */
 export function notifyThemeChange(newTheme) {
-  const event = new CustomEvent('flashnote-theme-changed', {
+  const event = new CustomEvent('Flota-theme-changed', {
     detail: newTheme
   })
   window.dispatchEvent(event)

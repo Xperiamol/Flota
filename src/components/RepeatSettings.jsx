@@ -224,6 +224,7 @@ const RepeatSettings = ({ value = {}, onChange }) => {
                   onChange={(e) => handleIntervalChange(parseInt(e.target.value) || 1)}
                   inputProps={{ min: 1, max: 365, inputMode: 'numeric' }}
                   sx={{ width: 96 }}
+                  aria-label="重复间隔"
                 />
                 <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
                   {repeatType === 'daily' && '天'}

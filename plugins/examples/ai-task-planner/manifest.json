@@ -3,7 +3,7 @@
   "name": "AI Task Planner (Built-in)",
   "version": "2.1.3",
   "description": "使用 AI 智能拆解任务并生成待办事项，支持学习用户偏好和搜索历史笔记",
-  "author": "FlashNote Team",
+  "author": "Flota Team",
   "entry": "index.js",
   "permissions": [
     "ai:inference",

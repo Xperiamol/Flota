@@ -348,76 +348,61 @@ const TodoItem = ({
   }
 
   if (variant === 'quadrant') {
-    // 四象限视图的Paper版本
+    // 四象限视图的精致卡片
     const isOverdue = isTodoOverdue(todo);
     const isDueToday = isTodoDueToday(todo);
+    const dark = theme.palette.mode === 'dark';
 
     return (
       <Paper
         draggable
         onDragStart={(e) => onDragStart && onDragStart(e, todo)}
         onDragEnd={(e) => onDragEnd && onDragEnd(e)}
-        elevation={1}
+        elevation={0}
         sx={{
-          p: 2,
-          borderRadius: 2,
-          backgroundColor: isCompleted ? 'grey.50' : 'background.paper',
-          border: isOverdue ? '1px solid' : 'none',
-          borderColor: isOverdue ? 'error.main' : 'transparent',
+          px: 1.5, py: 1,
+          borderRadius: '10px',
+          bgcolor: dark
+            ? (isCompleted ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.04)')
+            : (isCompleted ? 'rgba(0,0,0,0.015)' : 'rgba(255,255,255,0.7)'),
+          border: isOverdue
+            ? '1px solid rgba(244,67,54,0.4)'
+            : `1px solid ${dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'}`,
           transition: createTransitionString(ANIMATIONS.hover),
           cursor: 'grab',
-          '&:active': {
-            cursor: 'grabbing'
-          },
+          '&:active': { cursor: 'grabbing', transform: 'scale(0.98)' },
           '&:hover': {
-            elevation: 2,
-            boxShadow: `0 4px 12px ${getTodoPriorityColor(todo)}30`
+            bgcolor: dark ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.9)',
+            boxShadow: dark ? '0 2px 8px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.06)',
           },
           ...getItemStyles()
         }}
         onClick={(e) => onClick && onClick(e, todo)}
       >
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {renderTodoListIcon()}
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography
-              variant="body1"
+              variant="body2"
               sx={{
                 textDecoration: isCompleted ? 'line-through' : 'none',
-                color: isCompleted ? 'text.secondary' : 'text.primary',
+                color: isCompleted ? 'text.disabled' : 'text.primary',
                 wordBreak: 'break-word',
-                mb: showSecondaryInfo ? 0.5 : 0
+                lineHeight: 1.4,
+                fontSize: '0.82rem',
               }}
             >
               {todo.content}
             </Typography>
-
-            {showSecondaryInfo && (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                <Chip
-                  size="small"
-                  label={priority.label}
-                  sx={{
-                    backgroundColor: `${priority.color}20`,
-                    color: priority.color,
-                    fontSize: '0.7rem',
-                    height: 20
-                  }}
-                />
-                {dueTime && (
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      color: theme.palette.text.secondary,
-                      fontSize: '0.7rem'
-                    }}
-                  >
-                    {dueTime}
-                  </Typography>
-                )}
-              </Box>
-            )}
           </Box>
+          {showSecondaryInfo && dueTime && (
+            <Typography variant="caption" sx={{
+              color: isOverdue ? 'error.main' : (isDueToday ? 'warning.main' : 'text.secondary'),
+              fontSize: '0.65rem', whiteSpace: 'nowrap', flexShrink: 0,
+            }}>
+              {dueTime}
+            </Typography>
+          )}
         </Box>
       </Paper>
     );

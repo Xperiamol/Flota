@@ -1,53 +1,16 @@
 [
   {
-    "id": "pattern-theme",
-    "name": "Pattern Theme (Built-in)",
-    "description": "为 FlashNote 添加炫酷的几何花纹背景主题,支持多种花纹样式切换。8种精美样式：圆点、网格、斜纹、蜂窝、波浪、电路、之字形、菱形，花纹颜色自动跟随应用主题色。",
-    "version": "1.0.0",
-    "author": {
-      "name": "FlashNote 团队",
-      "url": "https://github.com/Xperiamol"
-    },
-    "license": "MIT",
-    "homepage": "https://github.com/Xperiamol",
-    "repository": "https://github.com/Xperiamol/flashnote",
-    "source": {
-      "type": "directory",
-      "path": "plugins/examples/pattern-theme"
-    },
-    "tags": [
-      "theme",
-      "visual",
-      "customization",
-      "ui"
-    ],
-    "categories": [
-      "效率",
-      "外观"
-    ],
-    "featured": true,
-    "permissions": [
-      "ui:theme",
-      "storage:read",
-      "storage:write",
-      "notifications:show"
-    ],
-    "minAppVersion": "2.1.0",
-    "shortDescription": "炒酷几何花纹背景主题",
-    "icon": "icon.svg"
-  },
-  {
     "id": "random-note",
     "name": "Random Note (Built-in)",
     "description": "每天抽一篇随机笔记自动打开回顾，唤醒遗忘的灵感，打造轻量复习习惯。",
     "version": "1.0.0",
     "author": {
-      "name": "FlashNote 团队",
+      "name": "Flota 团队",
       "url": "https://github.com/Xperiamol"
     },
     "license": "MIT",
     "homepage": "https://github.com/Xperiamol",
-    "repository": "https://github.com/Xperiamol/flashnote",
+    "repository": "https://github.com/Xperiamol/Flota",
     "source": {
       "type": "directory",
       "path": "plugins/examples/random-note"
@@ -74,12 +37,12 @@
     "description": "为新笔记智能创建标签，基于笔记内容自动提取关键词并生成相应标签，提升笔记管理效率。支持自定义规则和关键词白名单。",
     "version": "1.0.0",
     "author": {
-      "name": "FlashNote 团队",
+      "name": "Flota 团队",
       "url": "https://github.com/Xperiamol"
     },
     "license": "MIT",
     "homepage": "https://github.com/Xperiamol",
-    "repository": "https://github.com/Xperiamol/flashnote",
+    "repository": "https://github.com/Xperiamol/Flota",
     "source": {
       "type": "directory",
       "path": "plugins/examples/auto-tag-creator"
@@ -112,12 +75,12 @@
     "description": "使用 AI 智能拆解任务为可执行的待办事项，并提供可视化编辑界面。支持优先级设置、截止日期规划和批量创建待办。",
     "version": "1.0.0",
     "author": {
-      "name": "FlashNote 团队",
+      "name": "Flota 团队",
       "url": "https://github.com/Xperiamol"
     },
     "license": "MIT",
     "homepage": "https://github.com/Xperiamol",
-    "repository": "https://github.com/Xperiamol/flashnote",
+    "repository": "https://github.com/Xperiamol/Flota",
     "source": {
       "type": "directory",
       "path": "plugins/examples/ai-task-planner"

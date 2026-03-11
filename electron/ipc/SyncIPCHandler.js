@@ -1,5 +1,5 @@
 /**
- * FlashNote 云同步 IPC 处理器（V3专用）
+ * Flota 云同步 IPC 处理器（V3专用）
  *
  * 处理所有云同步相关的 IPC 通信
  */
@@ -23,11 +23,11 @@ const getUserDataPath = () => {
   const homeDir = process.env.HOME || process.env.USERPROFILE;
   
   if (platform === 'win32') {
-    return path.join(process.env.APPDATA || homeDir, 'flashnote');
+    return path.join(process.env.APPDATA || homeDir, 'Flota');
   } else if (platform === 'darwin') {
-    return path.join(homeDir, 'Library', 'Application Support', 'flashnote');
+    return path.join(homeDir, 'Library', 'Application Support', 'Flota');
   } else {
-    return path.join(homeDir, '.config', 'flashnote');
+    return path.join(homeDir, '.config', 'Flota');
   }
 }
 
@@ -146,8 +146,15 @@ class SyncIPCHandler {
       return { success: true };
     });
 
-    // 手动同步
+    // 手动同步（离线时进入队列）
     this.safeHandle('sync:manual-sync', async () => {
+      const { getInstance: getNetworkService } = require('../services/NetworkService')
+      const network = getNetworkService()
+      if (!network.isOnline) {
+        const { getInstance: getOfflineSyncQueue } = require('../services/OfflineSyncQueue')
+        getOfflineSyncQueue().enqueue({ type: 'manual-sync' })
+        return { success: false, offline: true, error: '当前离线，已加入同步队列' }
+      }
       const result = await this.v3SyncService.sync();
       return result;
     });

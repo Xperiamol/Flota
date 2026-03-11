@@ -8,8 +8,7 @@ import {
   Tooltip,
   Badge,
   FormControlLabel,
-  Checkbox,
-  ButtonGroup
+  Checkbox
 } from '@mui/material'
 import {
   Add as AddIcon,
@@ -172,6 +171,44 @@ const Toolbar = ({
     }
   };
 
+  /** 日历导航按钮组 */
+  const CalendarNavButtons = ({ button }) => (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+      <Tooltip title={t('common.previous')}>
+        <IconButton onClick={goToPreviousMonth} size="small"
+          sx={{ backgroundColor: 'background.paper', border: 1, borderColor: 'divider',
+            '&:hover': { backgroundColor: 'primary.main', color: 'primary.contrastText', transform: 'scale(1.05)' },
+            transition: createTransitionString(ANIMATIONS.button) }}>
+          <ChevronLeft />
+        </IconButton>
+      </Tooltip>
+      <Box sx={{ minWidth: '140px', textAlign: 'center', px: 2, py: 0.5, borderRadius: 1,
+        backgroundColor: 'primary.main', color: 'primary.contrastText' }}>
+        <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.875rem' }}>
+          {button.currentDate
+            ? `${button.currentDate.getFullYear()}年${button.currentDate.getMonth() + 1}月`
+            : t('sidebar.calendar')}
+        </Typography>
+      </Box>
+      <Tooltip title={t('common.next')}>
+        <IconButton onClick={goToNextMonth} size="small"
+          sx={{ backgroundColor: 'background.paper', border: 1, borderColor: 'divider',
+            '&:hover': { backgroundColor: 'primary.main', color: 'primary.contrastText', transform: 'scale(1.05)' },
+            transition: createTransitionString(ANIMATIONS.button) }}>
+          <ChevronRight />
+        </IconButton>
+      </Tooltip>
+      <Tooltip title={t('common.today')}>
+        <IconButton onClick={goToToday} size="small" color="primary"
+          sx={{ backgroundColor: 'primary.main', color: 'primary.contrastText',
+            '&:hover': { backgroundColor: 'primary.dark', transform: 'scale(1.1)' },
+            transition: createTransitionString(ANIMATIONS.button), ml: 1 }}>
+          <Today />
+        </IconButton>
+      </Tooltip>
+    </Box>
+  );
+
   const handlePluginCommandExecute = async (command) => {
     if (!command) return
     const commandKey = `${command.pluginId}:${command.commandId}`
@@ -193,7 +230,7 @@ const Toolbar = ({
     switch (currentView) {
       case 'notes':
         return {
-          title: 'FlashNote',
+          title: 'Flota',
           createButtonText: showDeleted ? null : t('common.new'),
           createAction: handleCreateNote,
           showDeletedButton: true,
@@ -280,7 +317,7 @@ const Toolbar = ({
         };
       default:
         return {
-          title: 'FlashNote',
+          title: 'Flota',
           createButtonText: t('common.new'),
           createAction: handleCreateNote,
           showDeletedButton: false,
@@ -397,147 +434,116 @@ const Toolbar = ({
             .map((button, index) => {
               if (button.type === 'calendarViewMode') {
                 return (
-                  <ButtonGroup key={index} size="small" variant="outlined">
-                    {button.options.map((option) => (
-                      <Button
-                        key={option.value}
-                        variant={(calendarViewMode || 'todos') === option.value ? 'contained' : 'outlined'}
-                        onClick={() => {
-                          logger.log('Calendar view mode clicked:', option.value);
-                          if (onCalendarViewModeChange) {
-                            onCalendarViewModeChange(option.value);
-                          }
-                        }}
-                        sx={{
-                          px: 2,
-                          ...((calendarViewMode || 'todos') === option.value && {
-                            backgroundColor: 'primary.main',
-                            color: 'primary.contrastText',
-                            '&:hover': {
-                              backgroundColor: 'primary.dark'
+                  <Box key={index} sx={{
+                    display: 'flex', alignItems: 'center', gap: '3px',
+                    bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)',
+                    borderRadius: '12px', p: '3px',
+                  }}>
+                    {button.options.map((option) => {
+                      const isActive = (calendarViewMode || 'todos') === option.value;
+                      return (
+                        <Button
+                          key={option.value}
+                          disableElevation
+                          disableRipple
+                          variant={isActive ? 'contained' : 'text'}
+                          onClick={() => {
+                            logger.log('Calendar view mode clicked:', option.value);
+                            if (onCalendarViewModeChange) {
+                              onCalendarViewModeChange(option.value);
                             }
-                          })
-                        }}
-                      >
-                        {option.label}
-                      </Button>
-                    ))}
-                  </ButtonGroup>
+                          }}
+                          sx={{
+                            px: 1.5, py: 0.4, minWidth: 0, fontSize: '0.78rem', fontWeight: 600,
+                            borderRadius: '9px', textTransform: 'none', lineHeight: 1.5,
+                            letterSpacing: '0.01em',
+                            transition: 'all 0.25s cubic-bezier(.4,0,.2,1)',
+                            ...(isActive ? {
+                              bgcolor: (theme) => theme.palette.mode === 'dark'
+                                ? 'rgba(255,255,255,0.13)'
+                                : 'primary.main',
+                              color: (theme) => theme.palette.mode === 'dark'
+                                ? '#fff'
+                                : 'primary.contrastText',
+                              boxShadow: (theme) => theme.palette.mode === 'dark'
+                                ? '0 1px 4px rgba(0,0,0,0.3)'
+                                : `0 2px 8px ${theme.palette.primary.main}33`,
+                              '&:hover': {
+                                bgcolor: (theme) => theme.palette.mode === 'dark'
+                                  ? 'rgba(255,255,255,0.18)'
+                                  : 'primary.dark',
+                              },
+                            } : {
+                              color: 'text.secondary',
+                              bgcolor: 'transparent',
+                              '&:hover': {
+                                bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+                                color: 'text.primary',
+                              },
+                            }),
+                          }}
+                        >
+                          {option.label}
+                        </Button>
+                      );
+                    })}
+                  </Box>
                 );
               }
               if (button.type === 'viewToggle') {
                 return (
-                  <ButtonGroup key={index} size="small" variant="outlined">
-                    {button.options.map((option) => (
-                      <Button
-                        key={option.value}
-                        variant={todoViewMode === option.value ? 'contained' : 'outlined'}
-                        onClick={() => onTodoViewModeChange && onTodoViewModeChange(option.value)}
-                        sx={{
-                          px: 2,
-                          ...(todoViewMode === option.value && {
-                            backgroundColor: 'primary.main',
-                            color: 'primary.contrastText',
-                            '&:hover': {
-                              backgroundColor: 'primary.dark'
-                            }
-                          })
-                        }}
-                      >
-                        {option.label}
-                      </Button>
-                    ))}
-                  </ButtonGroup>
-                );
-              } else if (button.type === 'calendarNavigation') {
-                return (
-                  <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Tooltip title={t('common.previous')}>
-                      <IconButton
-                        onClick={goToPreviousMonth}
-                        size="small"
-                        sx={{
-                          backgroundColor: 'background.paper',
-                          border: 1,
-                          borderColor: 'divider',
-                          '&:hover': {
-                            backgroundColor: 'primary.main',
-                            color: 'primary.contrastText',
-                            transform: 'scale(1.05)'
-                          },
-                          transition: createTransitionString(ANIMATIONS.button)
-                        }}
-                      >
-                        <ChevronLeft />
-                      </IconButton>
-                    </Tooltip>
-
-                    <Box
-                      sx={{
-                        minWidth: '140px',
-                        textAlign: 'center',
-                        px: 2,
-                        py: 0.5,
-                        borderRadius: 1,
-                        backgroundColor: 'primary.main',
-                        color: 'primary.contrastText'
-                      }}
-                    >
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          fontWeight: 600,
-                          fontSize: '0.875rem'
-                        }}
-                      >
-                        {button.currentDate ?
-                          `${button.currentDate.getFullYear()}年${button.currentDate.getMonth() + 1}月` :
-                          t('sidebar.calendar')
-                        }
-                      </Typography>
-                    </Box>
-
-                    <Tooltip title={t('common.next')}>
-                      <IconButton
-                        onClick={goToNextMonth}
-                        size="small"
-                        sx={{
-                          backgroundColor: 'background.paper',
-                          border: 1,
-                          borderColor: 'divider',
-                          '&:hover': {
-                            backgroundColor: 'primary.main',
-                            color: 'primary.contrastText',
-                            transform: 'scale(1.05)'
-                          },
-                          transition: createTransitionString(ANIMATIONS.button)
-                        }}
-                      >
-                        <ChevronRight />
-                      </IconButton>
-                    </Tooltip>
-
-                    <Tooltip title={t('common.today')}>
-                      <IconButton
-                        onClick={goToToday}
-                        size="small"
-                        color="primary"
-                        sx={{
-                          backgroundColor: 'primary.main',
-                          color: 'primary.contrastText',
-                          '&:hover': {
-                            backgroundColor: 'primary.dark',
-                            transform: 'scale(1.1)'
-                          },
-                          transition: createTransitionString(ANIMATIONS.button),
-                          ml: 1
-                        }}
-                      >
-                        <Today />
-                      </IconButton>
-                    </Tooltip>
+                  <Box key={index} sx={{
+                    display: 'flex', alignItems: 'center', gap: '3px',
+                    bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)',
+                    borderRadius: '12px', p: '3px',
+                  }}>
+                    {button.options.map((option) => {
+                      const isActive = todoViewMode === option.value;
+                      return (
+                        <Button
+                          key={option.value}
+                          disableElevation
+                          disableRipple
+                          variant={isActive ? 'contained' : 'text'}
+                          onClick={() => onTodoViewModeChange && onTodoViewModeChange(option.value)}
+                          sx={{
+                            px: 1.5, py: 0.4, minWidth: 0, fontSize: '0.78rem', fontWeight: 600,
+                            borderRadius: '9px', textTransform: 'none', lineHeight: 1.5,
+                            letterSpacing: '0.01em',
+                            transition: 'all 0.25s cubic-bezier(.4,0,.2,1)',
+                            ...(isActive ? {
+                              bgcolor: (theme) => theme.palette.mode === 'dark'
+                                ? 'rgba(255,255,255,0.13)'
+                                : 'primary.main',
+                              color: (theme) => theme.palette.mode === 'dark'
+                                ? '#fff'
+                                : 'primary.contrastText',
+                              boxShadow: (theme) => theme.palette.mode === 'dark'
+                                ? '0 1px 4px rgba(0,0,0,0.3)'
+                                : `0 2px 8px ${theme.palette.primary.main}33`,
+                              '&:hover': {
+                                bgcolor: (theme) => theme.palette.mode === 'dark'
+                                  ? 'rgba(255,255,255,0.18)'
+                                  : 'primary.dark',
+                              },
+                            } : {
+                              color: 'text.secondary',
+                              bgcolor: 'transparent',
+                              '&:hover': {
+                                bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+                                color: 'text.primary',
+                              },
+                            }),
+                          }}
+                        >
+                          {option.label}
+                        </Button>
+                      );
+                    })}
                   </Box>
                 );
+              } else if (button.type === 'calendarNavigation') {
+                return <CalendarNavButtons key={index} button={button} />;
               }
               return null;
             })}
@@ -549,94 +555,7 @@ const Toolbar = ({
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, ml: 'auto' }}>
           {viewConfig.customButtons
             .filter(button => button.type === 'calendarNavigation')
-            .map((button, index) => (
-              <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Tooltip title={t('common.previous')}>
-                  <IconButton
-                    onClick={goToPreviousMonth}
-                    size="small"
-                    sx={{
-                      backgroundColor: 'background.paper',
-                      border: 1,
-                      borderColor: 'divider',
-                      '&:hover': {
-                        backgroundColor: 'primary.main',
-                        color: 'primary.contrastText',
-                        transform: 'scale(1.05)'
-                      },
-                      transition: createTransitionString(ANIMATIONS.button)
-                    }}
-                  >
-                    <ChevronLeft />
-                  </IconButton>
-                </Tooltip>
-
-                <Box
-                  sx={{
-                    minWidth: '140px',
-                    textAlign: 'center',
-                    px: 2,
-                    py: 0.5,
-                    borderRadius: 1,
-                    backgroundColor: 'primary.main',
-                    color: 'primary.contrastText'
-                  }}
-                >
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      fontWeight: 600,
-                      fontSize: '0.875rem'
-                    }}
-                  >
-                    {button.currentDate ?
-                      `${button.currentDate.getFullYear()}年${button.currentDate.getMonth() + 1}月` :
-                      t('sidebar.calendar')
-                    }
-                  </Typography>
-                </Box>
-
-                <Tooltip title={t('common.next')}>
-                  <IconButton
-                    onClick={goToNextMonth}
-                    size="small"
-                    sx={{
-                      backgroundColor: 'background.paper',
-                      border: 1,
-                      borderColor: 'divider',
-                      '&:hover': {
-                        backgroundColor: 'primary.main',
-                        color: 'primary.contrastText',
-                        transform: 'scale(1.05)'
-                      },
-                      transition: createTransitionString(ANIMATIONS.button)
-                    }}
-                  >
-                    <ChevronRight />
-                  </IconButton>
-                </Tooltip>
-
-                <Tooltip title={t('common.today')}>
-                  <IconButton
-                    onClick={goToToday}
-                    size="small"
-                    color="primary"
-                    sx={{
-                      backgroundColor: 'primary.main',
-                      color: 'primary.contrastText',
-                      '&:hover': {
-                        backgroundColor: 'primary.dark',
-                        transform: 'scale(1.1)'
-                      },
-                      transition: createTransitionString(ANIMATIONS.button),
-                      ml: 1
-                    }}
-                  >
-                    <Today />
-                  </IconButton>
-                </Tooltip>
-              </Box>
-            ))}
+            .map((button, index) => <CalendarNavButtons key={index} button={button} />)}
         </Box>
       )}
 
@@ -644,88 +563,42 @@ const Toolbar = ({
 
       {/* 右侧按钮组 */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: currentView === 'calendar' ? 0 : 'auto' }}>
-        {currentView === 'notes' && noteToolbarCommands.length > 0 && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mr: 0.5 }}>
-            {noteToolbarCommands.map((command) => {
-              const commandKey = `${command.pluginId}:${command.commandId}`
-              const baseLabel = command.description || command.title || command.commandId
-              const shortcutHint =
-                command?.shortcutBinding?.currentKey ||
-                command?.shortcutBinding?.defaultKey ||
-                (typeof command?.shortcut === 'string'
-                  ? command.shortcut
-                  : command?.shortcut?.default || '')
-
-              const tooltipText = shortcutHint ? `${baseLabel} (${shortcutHint})` : baseLabel
-
-              return (
-                <Tooltip
-                  key={commandKey}
-                  title={tooltipText}
-                  placement="bottom"
-                >
-                  <span>
-                    <IconButton
-                      size="small"
-                      color="primary"
-                      onClick={() => handlePluginCommandExecute(command)}
-                      disabled={pluginCommandPending === commandKey}
-                      aria-label={command.title}
-                      sx={{
-                        '&.Mui-disabled': {
-                          opacity: 0.35
-                        }
-                      }}
-                    >
-                      {renderPluginCommandIcon(command)}
-                    </IconButton>
-                  </span>
-                </Tooltip>
-              )
-            })}
-          </Box>
-        )}
-
-        {currentView === 'todo' && todoToolbarCommands.length > 0 && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mr: 0.5 }}>
-            {todoToolbarCommands.map((command) => {
-              const commandKey = `${command.pluginId}:${command.commandId}`
-              const baseLabel = command.description || command.title || command.commandId
-              const shortcutHint =
-                command?.shortcutBinding?.currentKey ||
-                command?.shortcutBinding?.defaultKey ||
-                (typeof command?.shortcut === 'string'
-                  ? command.shortcut
-                  : command?.shortcut?.default || '')
-
-              const tooltipText = shortcutHint ? `${baseLabel} (${shortcutHint})` : baseLabel
-
-              return (
-                <Tooltip
-                  key={commandKey}
-                  title={tooltipText}
-                  placement="bottom"
-                >
-                  <span>
-                    <IconButton
-                      size="small"
-                      color="primary"
-                      onClick={() => handlePluginCommandExecute(command)}
-                      disabled={pluginCommandPending === commandKey}
-                      aria-label={command.title}
-                      sx={{
-                        '&.Mui-disabled': {
-                          opacity: 0.35
-                        }
-                      }}
-                    >
-                      {renderPluginCommandIcon(command)}
-                    </IconButton>
-                  </span>
-                </Tooltip>
-              )
-            })}
-          </Box>
+        {/* 插件命令按钮 */}
+        {[
+          { view: 'notes', commands: noteToolbarCommands },
+          { view: 'todo', commands: todoToolbarCommands },
+        ].map(({ view, commands }) =>
+          currentView === view && commands.length > 0 && (
+            <Box key={view} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mr: 0.5 }}>
+              {commands.map((command) => {
+                const commandKey = `${command.pluginId}:${command.commandId}`
+                const baseLabel = command.description || command.title || command.commandId
+                const shortcutHint =
+                  command?.shortcutBinding?.currentKey ||
+                  command?.shortcutBinding?.defaultKey ||
+                  (typeof command?.shortcut === 'string'
+                    ? command.shortcut
+                    : command?.shortcut?.default || '')
+                const tooltipText = shortcutHint ? `${baseLabel} (${shortcutHint})` : baseLabel
+                return (
+                  <Tooltip key={commandKey} title={tooltipText} placement="bottom">
+                    <span>
+                      <IconButton
+                        size="small"
+                        color="primary"
+                        onClick={() => handlePluginCommandExecute(command)}
+                        disabled={pluginCommandPending === commandKey}
+                        aria-label={command.title}
+                        sx={{ '&.Mui-disabled': { opacity: 0.35 } }}
+                      >
+                        {renderPluginCommandIcon(command)}
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                )
+              })}
+            </Box>
+          )
         )}
 
         {/* 视图特定的右侧按钮 */}

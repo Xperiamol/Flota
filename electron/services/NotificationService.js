@@ -138,7 +138,7 @@ class NotificationService extends EventEmitter {
       const iconPath = this.getNotificationIcon(todo);
       const fs = require('fs');
       const notification = new Notification({
-        title: 'FlashNote - 待办提醒',
+        title: 'Flota - 待办提醒',
         body: this.formatNotificationBody(todo),
         icon: (iconPath && fs.existsSync(iconPath)) ? nativeImage.createFromPath(iconPath) : undefined,
         urgency: this.getNotificationUrgency(todo),

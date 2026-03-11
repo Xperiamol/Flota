@@ -146,9 +146,9 @@ class Mem0Service extends EventEmitter {
         // 独立 Node.js 环境
         // 检查是否是用户下载的独立 MCP Server（在用户数据目录）
         isStandaloneMCP = __dirname.includes('mcp-server') && (
-          __dirname.includes(path.join('AppData', 'Roaming', 'flashnote')) ||
-          __dirname.includes(path.join('Application Support', 'flashnote')) ||
-          __dirname.includes(path.join('.config', 'flashnote'))
+          __dirname.includes(path.join('AppData', 'Roaming', 'Flota')) ||
+          __dirname.includes(path.join('Application Support', 'Flota')) ||
+          __dirname.includes(path.join('.config', 'Flota'))
         );
         isPackaged = __dirname.includes('app.asar') && !isStandaloneMCP;
       }
@@ -173,10 +173,18 @@ class Mem0Service extends EventEmitter {
         console.log('[Mem0] Using user data directory for models (standalone MCP)');
         console.log('[Mem0] Models will be downloaded on first use (~22MB)');
       } else {
-        // 开发环境
-        modelsPath = path.join(this.appDataPath, 'models');
-        localFilesOnly = false;
-        console.log('[Mem0] Using cache directory (development mode)');
+        // 开发环境：优先使用项目内已有的 models 目录（避免网络下载）
+        const projectModelsPath = path.join(__dirname, '..', '..', 'models');
+        const appDataModelsPath = path.join(this.appDataPath, 'models');
+        if (fs.existsSync(path.join(projectModelsPath, 'Xenova', 'all-MiniLM-L6-v2'))) {
+          modelsPath = projectModelsPath;
+          localFilesOnly = true;
+          console.log('[Mem0] Using project models directory (development mode)');
+        } else {
+          modelsPath = appDataModelsPath;
+          localFilesOnly = false;
+          console.log('[Mem0] Using cache directory (development mode, will download if needed)');
+        }
       }
 
       env.cacheDir = modelsPath;

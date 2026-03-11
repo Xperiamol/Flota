@@ -23,6 +23,10 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'assets',
     cssCodeSplit: false,
+    minify: 'esbuild',
+    esbuildOptions: {
+      drop: ['console', 'debugger'],
+    },
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),

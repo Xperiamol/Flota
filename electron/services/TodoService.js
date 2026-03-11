@@ -47,63 +47,28 @@ class TodoService extends EventEmitter {
     }
   }
 
+  /** 注册一个标准 IPC handler（自动 try/catch + {success,data} 包装）*/
+  _ipc(ch, fn) {
+    ipcMain.handle(ch, async (_e, ...a) => {
+      try { return { success: true, data: await fn(...a) } }
+      catch (e) { console.error(`${ch} 失败:`, e); return { success: false, error: e.message } }
+    })
+  }
+
   /**
    * 设置IPC处理器
    */
   setupIpcHandlers() {
-    // 创建待办事项
-    ipcMain.handle('todo:create', async (event, todoData) => {
-      try {
-        const todo = this.createTodo(todoData);
-        this.emit('todo-created', todo);
-        return { success: true, data: todo };
-      } catch (error) {
-        console.error('创建待办事项失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
+    this._ipc('todo:create', (d) => { const t = this.createTodo(d); this.emit('todo-created', t); return t })
+    this._ipc('todo:getAll', (o) => this.getAllTodos(o))
+    this._ipc('todo:getByQuadrant', (c) => this.getTodosByQuadrant(c))
+    this._ipc('todo:update', (id, d) => { const t = this.updateTodo(id, d); this.emit('todo-updated', t); return t })
 
-    // 获取所有待办事项
-    ipcMain.handle('todo:getAll', async (event, options) => {
-      try {
-        const todos = this.getAllTodos(options);
-        return { success: true, data: todos };
-      } catch (error) {
-        console.error('获取待办事项失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    // 按四象限获取待办事项
-    ipcMain.handle('todo:getByQuadrant', async (event, includeCompleted) => {
-      try {
-        const quadrants = this.getTodosByQuadrant(includeCompleted);
-        return { success: true, data: quadrants };
-      } catch (error) {
-        console.error('按四象限获取待办事项失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    // 更新待办事项
-    ipcMain.handle('todo:update', async (event, id, todoData) => {
-      try {
-        const todo = this.updateTodo(id, todoData);
-        this.emit('todo-updated', todo);
-        return { success: true, data: todo };
-      } catch (error) {
-        console.error('更新待办事项失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    // 删除待办事项
+    // 删除 — 特殊返回值
     ipcMain.handle('todo:delete', async (event, id) => {
       try {
         const success = this.deleteTodo(id);
-        if (success) {
-          this.emit('todo-deleted', id);
-        }
+        if (success) this.emit('todo-deleted', id);
         return { success, data: success };
       } catch (error) {
         console.error('删除待办事项失败:', error);
@@ -111,228 +76,27 @@ class TodoService extends EventEmitter {
       }
     });
 
-    // 切换完成状态
-    ipcMain.handle('todo:toggleComplete', async (event, id) => {
-      try {
-        const todo = this.toggleTodoComplete(id);
-        this.emit('todo-updated', todo);
-        return { success: true, data: todo };
-      } catch (error) {
-        console.error('切换待办事项状态失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    // 累加专注时长
-    ipcMain.handle('todo:addFocusTime', async (event, id, durationSeconds) => {
-      try {
-        const todo = this.addFocusTime(id, durationSeconds);
-        this.emit('todo-updated', todo);
-        return { success: true, data: todo };
-      } catch (error) {
-        console.error('更新待办事项专注时长失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    // 获取统计信息
-    ipcMain.handle('todo:getStats', async (event) => {
-      try {
-        const stats = this.getTodoStats();
-        return { success: true, data: stats };
-      } catch (error) {
-        console.error('获取待办事项统计失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    // 获取今日到期
-    ipcMain.handle('todo:getDueToday', async (event) => {
-      try {
-        const todos = this.getTodosDueToday();
-        return { success: true, data: todos };
-      } catch (error) {
-        console.error('获取今日到期待办事项失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    // 获取指定日期的待办事项
-    ipcMain.handle('todo:getByDate', async (event, dateString) => {
-      try {
-        const todos = this.getTodosByDate(dateString);
-        return { success: true, data: todos };
-      } catch (error) {
-        console.error('获取指定日期待办事项失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    // 获取逾期待办事项
-    ipcMain.handle('todo:getOverdue', async (event) => {
-      try {
-        const todos = this.getOverdueTodos();
-        return { success: true, data: todos };
-      } catch (error) {
-        console.error('获取逾期待办事项失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    // 搜索待办事项
-    ipcMain.handle('todo:search', async (event, query) => {
-      try {
-        const todos = this.searchTodos(query);
-        return { success: true, data: todos };
-      } catch (error) {
-        console.error('搜索待办事项失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    // 按优先级排序获取待办事项
-    ipcMain.handle('todo:getByPriority', async (event) => {
-      try {
-        const todos = this.getTodosByPriority();
-        return { success: true, data: todos };
-      } catch (error) {
-        console.error('按优先级获取待办事项失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    // 按截止时间排序获取待办事项
-    ipcMain.handle('todo:getByDueDate', async (event) => {
-      try {
-        const todos = this.getTodosByDueDate();
-        return { success: true, data: todos };
-      } catch (error) {
-        console.error('按截止时间获取待办事项失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    // 按创建时间排序获取待办事项
-    ipcMain.handle('todo:getByCreatedAt', async (event) => {
-      try {
-        const todos = this.getTodosByCreatedAt();
-        return { success: true, data: todos };
-      } catch (error) {
-        console.error('按创建时间获取待办事项失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    // 批量操作
-    ipcMain.handle('todo:batchUpdate', async (event, updates) => {
-      try {
-        this.batchUpdateTodos(updates);
-        this.emit('todos-batch-updated', updates);
-        return { success: true };
-      } catch (error) {
-        console.error('批量更新待办事项失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    ipcMain.handle('todo:batchDelete', async (event, ids) => {
-      try {
-        const count = this.batchDeleteTodos(ids);
-        this.emit('todos-batch-deleted', ids);
-        return { success: true, data: count };
-      } catch (error) {
-        console.error('批量删除待办事项失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    ipcMain.handle('todo:batchComplete', async (event, ids) => {
-      try {
-        const count = this.batchCompleteTodos(ids);
-        this.emit('todos-batch-completed', ids);
-        return { success: true, data: count };
-      } catch (error) {
-        console.error('批量完成待办事项失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    // 获取优先级统计
-    ipcMain.handle('todo:getPriorityStats', async (event) => {
-      try {
-        const stats = this.getPriorityStats();
-        return { success: true, data: stats };
-      } catch (error) {
-        console.error('获取优先级统计失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    // 获取标签建议
-    ipcMain.handle('todo:getTagSuggestions', async (event, query) => {
-      try {
-        const suggestions = this.tagService.getTagSuggestions(query);
-        return { success: true, data: suggestions };
-      } catch (error) {
-        console.error('获取标签建议失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    // 搜索标签
-    ipcMain.handle('todo:searchTags', async (event, query) => {
-      try {
-        const tags = this.tagService.searchTags(query);
-        return { success: true, data: tags };
-      } catch (error) {
-        console.error('搜索标签失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    // 获取待办事项标签统计
-    ipcMain.handle('todo:getTodoTagStats', async (event) => {
-      try {
-        const stats = this.getTodoTagStats();
-        return { success: true, data: stats };
-      } catch (error) {
-        console.error('获取待办事项标签统计失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    // 导出待办事项
-    ipcMain.handle('todo:export', async (event, options) => {
-      try {
-        const data = this.exportTodos(options);
-        return { success: true, data };
-      } catch (error) {
-        console.error('导出待办事项失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    // 获取重复事项
-    ipcMain.handle('todo:getRecurring', async (event) => {
-      try {
-        const todos = this.getRecurringTodos();
-        return { success: true, data: todos };
-      } catch (error) {
-        console.error('获取重复事项失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
-
-    // 处理到期的重复事项
-    ipcMain.handle('todo:processRecurring', async (event) => {
-      try {
-        const result = this.processRecurringTodos();
-        return { success: true, data: result };
-      } catch (error) {
-        console.error('处理重复事项失败:', error);
-        return { success: false, error: error.message };
-      }
-    });
+    this._ipc('todo:toggleComplete', (id) => { const t = this.toggleTodoComplete(id); this.emit('todo-updated', t); return t })
+    this._ipc('todo:addFocusTime', (id, s) => { const t = this.addFocusTime(id, s); this.emit('todo-updated', t); return t })
+    this._ipc('todo:getStats', () => this.getTodoStats())
+    this._ipc('todo:getDueToday', () => this.getTodosDueToday())
+    this._ipc('todo:getByDate', (d) => this.getTodosByDate(d))
+    this._ipc('todo:getOverdue', () => this.getOverdueTodos())
+    this._ipc('todo:search', (q) => this.searchTodos(q))
+    this._ipc('todo:getByPriority', () => this.getTodosByPriority())
+    this._ipc('todo:getByDueDate', () => this.getTodosByDueDate())
+    this._ipc('todo:getByCreatedAt', () => this.getTodosByCreatedAt())
+    this._ipc('todo:batchUpdate', (u) => { this.batchUpdateTodos(u); this.emit('todos-batch-updated', u) })
+    this._ipc('todo:batchDelete', (ids) => { const c = this.batchDeleteTodos(ids); this.emit('todos-batch-deleted', ids); return c })
+    this._ipc('todo:batchComplete', (ids) => { const c = this.batchCompleteTodos(ids); this.emit('todos-batch-completed', ids); return c })
+    this._ipc('todo:getPriorityStats', () => this.getPriorityStats())
+    this._ipc('todo:getTagSuggestions', (q) => this.tagService.getTagSuggestions(q))
+    this._ipc('todo:searchTags', (q) => this.tagService.searchTags(q))
+    this._ipc('todo:getTodoTagStats', () => this.getTodoTagStats())
+    this._ipc('todo:export', (o) => this.exportTodos(o))
+    this._ipc('todo:getRecurring', () => this.getRecurringTodos())
+    this._ipc('todo:processRecurring', () => this.processRecurringTodos())
+    this._ipc('todo:getSubtasks', (parentSyncId) => this.getSubtasks(parentSyncId))
   }
 
   /**
@@ -364,7 +128,8 @@ class TodoService extends EventEmitter {
       due_date: todoData.due_date || null,
       repeat_type: todoData.repeat_type || 'none',
       repeat_interval: todoData.repeat_interval || 1,
-      repeat_days: todoData.repeat_days || ''
+      repeat_days: todoData.repeat_days || '',
+      parent_todo_id: todoData.parent_todo_id || null
     });
 
     // 更新标签使用次数
@@ -380,6 +145,13 @@ class TodoService extends EventEmitter {
    */
   getAllTodos(options = {}) {
     return this.todoDAO.findAll(options);
+  }
+
+  /**
+   * 获取子任务列表
+   */
+  getSubtasks(parentSyncId) {
+    return this.todoDAO.getSubtasks(parentSyncId);
   }
 
   /**

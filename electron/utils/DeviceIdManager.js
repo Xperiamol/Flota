@@ -15,9 +15,9 @@ const getUserDataPath = () => {
   if (app) return app.getPath('userData');
   const platform = process.platform;
   const homeDir = process.env.HOME || process.env.USERPROFILE;
-  if (platform === 'win32') return path.join(process.env.APPDATA || homeDir, 'flashnote');
-  if (platform === 'darwin') return path.join(homeDir, 'Library', 'Application Support', 'flashnote');
-  return path.join(homeDir, '.config', 'flashnote');
+  if (platform === 'win32') return path.join(process.env.APPDATA || homeDir, 'Flota');
+  if (platform === 'darwin') return path.join(homeDir, 'Library', 'Application Support', 'Flota');
+  return path.join(homeDir, '.config', 'Flota');
 };
 
 /**

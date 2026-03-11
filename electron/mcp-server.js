@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * FlashNote MCP Server 启动脚本
+ * Flota MCP Server 启动脚本
  * 这个脚本可以被其他 AI 应用（如 Claude Desktop）调用
  */
 
@@ -83,11 +83,11 @@ const getUserDataPath = () => {
 
   let userDataPath;
   if (platform === 'win32') {
-    userDataPath = path.join(process.env.APPDATA || homeDir, 'flashnote');
+    userDataPath = path.join(process.env.APPDATA || homeDir, 'Flota');
   } else if (platform === 'darwin') {
-    userDataPath = path.join(homeDir, 'Library', 'Application Support', 'flashnote');
+    userDataPath = path.join(homeDir, 'Library', 'Application Support', 'Flota');
   } else {
-    userDataPath = path.join(homeDir, '.config', 'flashnote');
+    userDataPath = path.join(homeDir, '.config', 'Flota');
   }
 
   // 确保目录存在
@@ -100,11 +100,11 @@ const getUserDataPath = () => {
 
 async function startMCPServer() {
   try {
-    console.error('[MCP Startup] 正在初始化 FlashNote MCP Server...');
+    console.error('[MCP Startup] 正在初始化 Flota MCP Server...');
 
     // 初始化数据库
     const userDataPath = getUserDataPath();
-    const dbPath = path.join(userDataPath, 'database', 'flashnote.db');
+    const dbPath = path.join(userDataPath, 'database', 'flota.db');
     console.error(`[MCP Startup] 用户数据路径: ${userDataPath}`);
     console.error(`[MCP Startup] 数据库路径: ${dbPath}`);
 
@@ -123,9 +123,9 @@ async function startMCPServer() {
     const mcpEnabled = mcpEnabledSetting ? mcpEnabledSetting.value === 'true' || mcpEnabledSetting.value === true : false;
     
     if (!mcpEnabled) {
-      console.error('[MCP Startup] ⚠️  MCP 服务未在 FlashNote 中启用');
+      console.error('[MCP Startup] ⚠️  MCP 服务未在 Flota 中启用');
       console.error('[MCP Startup] 但独立 MCP Server 可以继续运行');
-      console.error('[MCP Startup] 提示：在 FlashNote 设置中启用 MCP 可以获得更好的集成体验');
+      console.error('[MCP Startup] 提示：在 Flota 设置中启用 MCP 可以获得更好的集成体验');
       // 不退出，允许独立运行
     } else {
       console.error('[MCP Startup] ✓ MCP 服务已启用');
@@ -185,7 +185,7 @@ async function startMCPServer() {
     const mcpServer = new MCPServer(services);
     await mcpServer.start();
 
-    console.error('[MCP Startup] FlashNote MCP Server 已就绪！');
+    console.error('[MCP Startup] Flota MCP Server 已就绪！');
 
     // 处理退出信号
     const cleanup = async () => {

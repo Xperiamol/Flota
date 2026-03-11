@@ -4,12 +4,46 @@
  */
 
 const { EventEmitter } = require('events');
+const { getInstance: getLogger } = require('./LoggerService');
 
 class AIService extends EventEmitter {
   constructor(settingDAO) {
     super();
     this.settingDAO = settingDAO;
     this.initialized = false;
+    this.logger = getLogger();
+    // 速率限制：滑动窗口
+    this._requestTimestamps = [];
+    this._maxRequestsPerMinute = 20;
+    this._requestTimeoutMs = 60000; // 60s
+  }
+
+  /**
+   * 检查速率限制，超限则拒绝
+   */
+  _checkRateLimit() {
+    const now = Date.now();
+    this._requestTimestamps = this._requestTimestamps.filter(t => now - t < 60000);
+    if (this._requestTimestamps.length >= this._maxRequestsPerMinute) {
+      throw new Error('AI请求过于频繁，请稍后再试');
+    }
+    this._requestTimestamps.push(now);
+  }
+
+  /**
+   * 带超时的 fetch 请求
+   */
+  async _fetchWithTimeout(url, options) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this._requestTimeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } catch (e) {
+      if (e.name === 'AbortError') throw new Error('AI请求超时（60秒），请检查网络或API服务状态');
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /**
@@ -56,10 +90,10 @@ class AIService extends EventEmitter {
       // 确保必要的设置键存在
       this.ensureDefaultSettings();
       this.initialized = true;
-      console.log('AI Service initialized');
+      this.logger.info('AI', 'Service initialized');
       return { success: true };
     } catch (error) {
-      console.error('Failed to initialize AI Service:', error);
+      this.logger.error('AI', 'Failed to initialize', error);
       return { success: false, error: error.message };
     }
   }
@@ -116,7 +150,7 @@ class AIService extends EventEmitter {
         data: config
       };
     } catch (error) {
-      console.error('Failed to get AI config:', error);
+      this.logger.error('AI', 'Failed to get config', error);
       return {
         success: false,
         error: error.message
@@ -148,11 +182,33 @@ class AIService extends EventEmitter {
         message: '配置已保存'
       };
     } catch (error) {
-      console.error('Failed to save AI config:', error);
+      this.logger.error('AI', 'Failed to save config', error);
       return {
         success: false,
         error: error.message
       };
+    }
+  }
+
+  /**
+   * 通用 API 测试（内部方法）
+   */
+  async _testAPI(url, apiKey, body, label, errorExtractor = json => json.error?.message) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify(body)
+      });
+      if (response.ok) return { success: true, message: `${label}连接测试成功` };
+      let errorMessage = `连接失败 (${response.status})`;
+      try {
+        const text = await response.text();
+        if (text) errorMessage = errorExtractor(JSON.parse(text)) || errorMessage;
+      } catch (_) {}
+      return { success: false, error: errorMessage };
+    } catch (error) {
+      return { success: false, error: error.message };
     }
   }
 
@@ -162,245 +218,33 @@ class AIService extends EventEmitter {
   async testConnection(config) {
     try {
       const { provider, apiKey, apiUrl, model } = config;
+      if (!apiKey) return { success: false, error: '请先配置API密钥' };
 
-      if (!apiKey) {
-        return {
-          success: false,
-          error: '请先配置API密钥'
-        };
-      }
+      const stdBody = (m) => ({ model: m, messages: [{ role: 'user', content: 'Hello' }], max_tokens: 10 });
+      const qwenBody = (m) => ({ model: m, input: { messages: [{ role: 'user', content: 'Hello' }] }, parameters: { max_tokens: 10 } });
 
-      // 根据不同的提供商测试连接
-      let testResult;
       switch (provider) {
         case 'openai':
-          testResult = await this.testOpenAI(apiKey, model);
-          break;
+          return await this._testAPI('https://api.openai.com/v1/chat/completions', apiKey, stdBody(model || 'gpt-3.5-turbo'), 'OpenAI');
         case 'deepseek':
-          testResult = await this.testDeepSeek(apiKey, model);
-          break;
+          return await this._testAPI('https://api.deepseek.com/v1/chat/completions', apiKey, stdBody(model || 'deepseek-chat'), 'DeepSeek');
         case 'qwen':
-          testResult = await this.testQwen(apiKey, model);
-          break;
+          return await this._testAPI(
+            'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
+            apiKey, qwenBody(model || 'qwen-turbo'), '通义千问', json => json.message
+          );
         case 'custom':
-          testResult = await this.testCustom(apiUrl, apiKey, model);
-          break;
+          if (!apiUrl) return { success: false, error: '请先配置自定义API地址' };
+          return await this._testAPI(
+            this.normalizeApiUrl(apiUrl), apiKey, stdBody(model || 'gpt-3.5-turbo'),
+            '自定义API', json => json.error?.message || json.message
+          );
         default:
-          return {
-            success: false,
-            error: '不支持的AI提供商'
-          };
-      }
-
-      return testResult;
-    } catch (error) {
-      console.error('Failed to test AI connection:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-
-  /**
-   * 测试OpenAI连接
-   */
-  async testOpenAI(apiKey, model) {
-    try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: model || 'gpt-3.5-turbo',
-          messages: [{ role: 'user', content: 'Hello' }],
-          max_tokens: 10
-        })
-      });
-
-      if (response.ok) {
-        return {
-          success: true,
-          message: 'OpenAI连接测试成功'
-        };
-      } else {
-        let errorMessage = `连接失败 (${response.status})`;
-        try {
-          const text = await response.text();
-          if (text) {
-            const error = JSON.parse(text);
-            errorMessage = error.error?.message || errorMessage;
-          }
-        } catch (e) {
-          // JSON parse failed
-        }
-        return {
-          success: false,
-          error: errorMessage
-        };
+          return { success: false, error: '不支持的AI提供商' };
       }
     } catch (error) {
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-
-  /**
-   * 测试DeepSeek连接
-   */
-  async testDeepSeek(apiKey, model) {
-    try {
-      const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: model || 'deepseek-chat',
-          messages: [{ role: 'user', content: 'Hello' }],
-          max_tokens: 10
-        })
-      });
-
-      if (response.ok) {
-        return {
-          success: true,
-          message: 'DeepSeek连接测试成功'
-        };
-      } else {
-        let errorMessage = `连接失败 (${response.status})`;
-        try {
-          const text = await response.text();
-          if (text) {
-            const error = JSON.parse(text);
-            errorMessage = error.error?.message || errorMessage;
-          }
-        } catch (e) {
-          // JSON parse failed
-        }
-        return {
-          success: false,
-          error: errorMessage
-        };
-      }
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-
-  /**
-   * 测试通义千问连接
-   */
-  async testQwen(apiKey, model) {
-    try {
-      const response = await fetch('https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: model || 'qwen-turbo',
-          input: {
-            messages: [{ role: 'user', content: 'Hello' }]
-          },
-          parameters: {
-            max_tokens: 10
-          }
-        })
-      });
-
-      if (response.ok) {
-        return {
-          success: true,
-          message: '通义千问连接测试成功'
-        };
-      } else {
-        let errorMessage = `连接失败 (${response.status})`;
-        try {
-          const text = await response.text();
-          if (text) {
-            const error = JSON.parse(text);
-            errorMessage = error.message || errorMessage;
-          }
-        } catch (e) {
-          // JSON parse failed
-        }
-        return {
-          success: false,
-          error: errorMessage
-        };
-      }
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-
-  /**
-   * 测试自定义API连接
-   */
-  async testCustom(apiUrl, apiKey, model) {
-    try {
-      if (!apiUrl) {
-        return {
-          success: false,
-          error: '请先配置自定义API地址'
-        };
-      }
-
-      // 确保 URL 以 /chat/completions 结尾
-      const fullUrl = this.normalizeApiUrl(apiUrl);
-
-      const response = await fetch(fullUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: model || 'gpt-3.5-turbo',
-          messages: [{ role: 'user', content: 'Hello' }],
-          max_tokens: 10
-        })
-      });
-
-      if (response.ok) {
-        return {
-          success: true,
-          message: '自定义API连接测试成功'
-        };
-      } else {
-        let errorMessage = `连接失败 (${response.status})`;
-        try {
-          const text = await response.text();
-          if (text) {
-            const error = JSON.parse(text);
-            errorMessage = error.error?.message || error.message || errorMessage;
-          }
-        } catch (e) {
-          // JSON parse failed
-        }
-        return {
-          success: false,
-          error: errorMessage
-        };
-      }
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message
-      };
+      this.logger.error('AI', 'Failed to test connection', error);
+      return { success: false, error: error.message };
     }
   }
 
@@ -448,310 +292,77 @@ class AIService extends EventEmitter {
   }
 
   /**
+   * 通用 API 聊天（内部方法）
+   */
+  async _chatAPI(url, apiKey, body, responseExtractor) {
+    const response = await this._fetchWithTimeout(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      let errorMessage = `请求失败 (${response.status})`;
+      try {
+        const text = await response.text();
+        if (text) { const e = JSON.parse(text); errorMessage = e.error?.message || e.message || errorMessage; }
+      } catch (_) {}
+      throw new Error(errorMessage);
+    }
+
+    const text = await response.text();
+    if (!text) throw new Error('API 返回空响应');
+    let data;
+    try { data = JSON.parse(text); } catch (e) { throw new Error('解析 API 响应失败: ' + e.message); }
+    return { success: true, data: responseExtractor(data) };
+  }
+
+  /**
    * 调用AI完成任务（供后续功能使用）
    */
   async chat(messages, options = {}) {
     try {
       const configResult = await this.getConfig();
-      if (!configResult.success) {
-        return configResult;
-      }
-
+      if (!configResult.success) return configResult;
       const config = configResult.data;
-      
-      if (!config.enabled) {
-        return {
-          success: false,
-          error: 'AI功能未启用'
-        };
-      }
+      if (!config.enabled) return { success: false, error: 'AI功能未启用' };
+      if (!config.apiKey) return { success: false, error: '请先配置API密钥' };
 
-      if (!config.apiKey) {
-        return {
-          success: false,
-          error: '请先配置API密钥'
-        };
-      }
+      this._checkRateLimit();
 
-      // 根据提供商调用相应的API
-      let result;
+      const temp = Math.min(Math.max(options.temperature || config.temperature, 0), 2);
+      const maxTk = options.maxTokens || config.maxTokens;
+      const stdBody = { model: config.model, messages, temperature: temp, max_tokens: maxTk };
+      const qwenBody = { model: config.model, input: { messages }, parameters: { temperature: temp, max_tokens: maxTk } };
+
+      const openAIExtract = (data) => {
+        if (!data.choices?.[0]?.message) throw new Error('API 响应格式不正确');
+        return { content: data.choices[0].message.content, usage: data.usage };
+      };
+      const qwenExtract = (data) => {
+        if (!data.output?.text) throw new Error('API 响应格式不正确');
+        return { content: data.output.text, usage: data.usage };
+      };
+
       switch (config.provider) {
         case 'openai':
-          result = await this.chatOpenAI(config, messages, options);
-          break;
+          return await this._chatAPI('https://api.openai.com/v1/chat/completions', config.apiKey, stdBody, openAIExtract);
         case 'deepseek':
-          result = await this.chatDeepSeek(config, messages, options);
-          break;
+          return await this._chatAPI('https://api.deepseek.com/v1/chat/completions', config.apiKey, stdBody, openAIExtract);
         case 'qwen':
-          result = await this.chatQwen(config, messages, options);
-          break;
+          return await this._chatAPI(
+            'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
+            config.apiKey, qwenBody, qwenExtract
+          );
         case 'custom':
-          result = await this.chatCustom(config, messages, options);
-          break;
+          return await this._chatAPI(this.normalizeApiUrl(config.apiUrl), config.apiKey, stdBody, openAIExtract);
         default:
-          return {
-            success: false,
-            error: '不支持的AI提供商'
-          };
+          return { success: false, error: '不支持的AI提供商' };
       }
-
-      return result;
     } catch (error) {
-      console.error('AI chat failed:', error);
-      return {
-        success: false,
-        error: error.message
-      };
+      this.logger.error('AI', 'Chat failed', error);
+      return { success: false, error: error.message };
     }
-  }
-
-  /**
-   * OpenAI聊天
-   */
-  async chatOpenAI(config, messages, options = {}) {
-    // OpenAI 温度范围是 [0, 2]
-    const temperature = options.temperature || config.temperature
-    const validTemperature = Math.min(Math.max(temperature, 0), 2)
-    
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.apiKey}`
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages: messages,
-        temperature: validTemperature,
-        max_tokens: options.maxTokens || config.maxTokens
-      })
-    });
-
-    if (!response.ok) {
-      let errorMessage = `请求失败 (${response.status})`;
-      try {
-        const text = await response.text();
-        if (text) {
-          const error = JSON.parse(text);
-          errorMessage = error.error?.message || errorMessage;
-        }
-      } catch (e) {
-        // JSON parse failed, use default error message
-      }
-      throw new Error(errorMessage);
-    }
-
-    const text = await response.text();
-    if (!text) {
-      throw new Error('API 返回空响应');
-    }
-    
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      throw new Error('解析 API 响应失败: ' + e.message);
-    }
-    
-    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-      throw new Error('API 响应格式不正确');
-    }
-    
-    return {
-      success: true,
-      data: {
-        content: data.choices[0].message.content,
-        usage: data.usage
-      }
-    };
-  }
-
-  /**
-   * DeepSeek聊天
-   */
-  async chatDeepSeek(config, messages, options = {}) {
-    // DeepSeek 温度范围是 [0, 2]，需要限制
-    const temperature = options.temperature || config.temperature
-    const validTemperature = Math.min(Math.max(temperature, 0), 2)
-    
-    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.apiKey}`
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages: messages,
-        temperature: validTemperature,
-        max_tokens: options.maxTokens || config.maxTokens
-      })
-    });
-
-    if (!response.ok) {
-      let errorMessage = `请求失败 (${response.status})`;
-      try {
-        const text = await response.text();
-        if (text) {
-          const error = JSON.parse(text);
-          errorMessage = error.error?.message || errorMessage;
-        }
-      } catch (e) {
-        // JSON parse failed, use default error message
-      }
-      throw new Error(errorMessage);
-    }
-
-    const text = await response.text();
-    if (!text) {
-      throw new Error('API 返回空响应');
-    }
-    
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      throw new Error('解析 API 响应失败: ' + e.message);
-    }
-    
-    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-      throw new Error('API 响应格式不正确');
-    }
-    
-    return {
-      success: true,
-      data: {
-        content: data.choices[0].message.content,
-        usage: data.usage
-      }
-    };
-  }
-
-  /**
-   * 通义千问聊天
-   */
-  async chatQwen(config, messages, options = {}) {
-    // 通义千问温度范围是 [0, 2]
-    const temperature = options.temperature || config.temperature
-    const validTemperature = Math.min(Math.max(temperature, 0), 2)
-    
-    const response = await fetch('https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.apiKey}`
-      },
-      body: JSON.stringify({
-        model: config.model,
-        input: { messages },
-        parameters: {
-          temperature: validTemperature,
-          max_tokens: options.maxTokens || config.maxTokens
-        }
-      })
-    });
-
-    if (!response.ok) {
-      let errorMessage = `请求失败 (${response.status})`;
-      try {
-        const text = await response.text();
-        if (text) {
-          const error = JSON.parse(text);
-          errorMessage = error.message || errorMessage;
-        }
-      } catch (e) {
-        // JSON parse failed, use default error message
-      }
-      throw new Error(errorMessage);
-    }
-
-    const text = await response.text();
-    if (!text) {
-      throw new Error('API 返回空响应');
-    }
-    
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      throw new Error('解析 API 响应失败: ' + e.message);
-    }
-    
-    if (!data.output || !data.output.text) {
-      throw new Error('API 响应格式不正确');
-    }
-    
-    return {
-      success: true,
-      data: {
-        content: data.output.text,
-        usage: data.usage
-      }
-    };
-  }
-
-  /**
-   * 自定义API聊天
-   */
-  async chatCustom(config, messages, options = {}) {
-    // 自定义 API 也限制在 [0, 2] 范围内以保证兼容性
-    const temperature = options.temperature || config.temperature
-    const validTemperature = Math.min(Math.max(temperature, 0), 2)
-    
-    // 规范化 API URL
-    const fullUrl = this.normalizeApiUrl(config.apiUrl);
-    
-    const response = await fetch(fullUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.apiKey}`
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages: messages,
-        temperature: validTemperature,
-        max_tokens: options.maxTokens || config.maxTokens
-      })
-    });
-
-    if (!response.ok) {
-      let errorMessage = `请求失败 (${response.status})`;
-      try {
-        const text = await response.text();
-        if (text) {
-          const error = JSON.parse(text);
-          errorMessage = error.error?.message || error.message || errorMessage;
-        }
-      } catch (e) {
-        // JSON parse failed, use default error message
-      }
-      throw new Error(errorMessage);
-    }
-
-    const text = await response.text();
-    if (!text) {
-      throw new Error('API 返回空响应');
-    }
-    
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      throw new Error('解析 API 响应失败: ' + e.message);
-    }
-    
-    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-      throw new Error('API 响应格式不正确');
-    }
-    
-    return {
-      success: true,
-      data: {
-        content: data.choices[0].message.content,
-        usage: data.usage
-      }
-    };
   }
 }
 

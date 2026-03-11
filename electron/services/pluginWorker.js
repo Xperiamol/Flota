@@ -258,12 +258,12 @@ function createSandboxRequire(entryPath) {
   const pluginDir = path.dirname(entryPath)
 
   const sandboxRequire = (request) => {
-    if (request === '@flashnote/sdk') {
+    if (request === '@flota/sdk') {
       return sdkFacade
     }
 
     if (request.startsWith('node:') || builtinModules.includes(request)) {
-      throw new Error(`禁止在 FlashNote 插件中直接 require Node 内置模块: ${request}`)
+      throw new Error(`禁止在 Flota 插件中直接 require Node 内置模块: ${request}`)
     }
 
     const resolvedPath = nativeRequire.resolve(request)
@@ -433,7 +433,7 @@ function bootstrap() {
     sandbox.globalThis = sandbox
 
     const script = new vm.Script(code, { filename: entryPath, displayErrors: true })
-    const context = vm.createContext(sandbox, { name: `flashnote-plugin-${pluginId}` })
+    const context = vm.createContext(sandbox, { name: `Flota-plugin-${pluginId}` })
     script.runInContext(context, { timeout: rpcTimeout })
 
     const exported = sandbox.module.exports || sandbox.exports

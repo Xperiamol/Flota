@@ -15,8 +15,8 @@
 
 ### 1. 安装插件
 
-1. 确保 FlashNote 版本 >= 2.1.0
-2. 进入 FlashNote → 插件商店 → 本地开发
+1. 确保 Flota 版本 >= 2.1.0
+2. 进入 Flota → 插件商店 → 本地开发
 3. 点击"刷新本地插件"
 4. 找到"自动标签创建器"并安装
 
@@ -277,5 +277,5 @@ MIT License - 自由使用和修改
 
 ---
 
-**作者**: FlashNote Team  
-**GitHub**: https://github.com/Xperiamol/FlashNote
+**作者**: Flota Team  
+**GitHub**: https://github.com/Xperiamol/Flota

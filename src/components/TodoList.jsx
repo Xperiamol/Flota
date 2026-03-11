@@ -595,6 +595,7 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
           placeholder={placeholder.searchTodos}
           value={localSearchQuery}
           onChange={(e) => setLocalSearchQuery(e.target.value)}
+          aria-label="搜索待办"
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
@@ -608,6 +609,7 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
                     <IconButton
                       size="small"
                       onClick={handleClearSearch}
+                      aria-label="清除搜索"
                       sx={{ color: 'text.secondary' }}
                     >
                       <ClearIcon />
@@ -773,6 +775,7 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
                           e.stopPropagation();
                           handleToggleComplete(todo);
                         }}
+                        aria-label="切换完成状态"
                         sx={{
                           position: 'relative',
                           transition: createTransitionString(ANIMATIONS.stateChange),
@@ -878,6 +881,7 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
                           e.stopPropagation();
                           handleMenuClick(e, todo);
                         }}
+                        aria-label="更多操作"
                         onMouseDown={(e) => {
                           e.preventDefault();
                           e.stopPropagation();

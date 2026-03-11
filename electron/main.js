@@ -16,9 +16,60 @@ if (isEnvPackaged) {
 const fs = require('fs')
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
+// ── 文件日志系统 ────────────────────────────────────────────────────────────────
+// 生产环境将 error/warn 写入文件，让用户可以把日志文件发给开发者排查
+const _pendingLogs = []
+let _logFilePath = null
+
+function _fileLog(level, args) {
+  const line = `[${new Date().toISOString()}] [${level}] ${args.map(a => {
+    if (a instanceof Error) return `${a.message}\n${a.stack}`
+    if (typeof a === 'object' && a !== null) { try { return JSON.stringify(a) } catch { return String(a) } }
+    return String(a)
+  }).join(' ')}\n`
+  if (_logFilePath) {
+    try { fs.appendFileSync(_logFilePath, line, 'utf8') } catch {}
+  } else {
+    _pendingLogs.push(line)
+  }
+}
+
+function setupFileLogging() {
+  try {
+    const logDir = app.getPath('userData')
+    _logFilePath = path.join(logDir, 'flota.log')
+    // 超过 5MB 自动轮转
+    if (fs.existsSync(_logFilePath) && fs.statSync(_logFilePath).size > 5 * 1024 * 1024) {
+      const oldPath = _logFilePath + '.old'
+      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath)
+      fs.renameSync(_logFilePath, oldPath)
+    }
+    fs.appendFileSync(_logFilePath, `\n=== Flota 启动 ${new Date().toISOString()} (isDev=${isDev}) ===\n`, 'utf8')
+    _pendingLogs.forEach(line => { try { fs.appendFileSync(_logFilePath, line, 'utf8') } catch {} })
+    _pendingLogs.length = 0
+  } catch {}
+}
+
+// 将 console.error / console.warn 同时写入文件（仅生产环境）
+if (!isDev) {
+  const _origError = console.error.bind(console)
+  const _origWarn = console.warn.bind(console)
+  console.error = (...args) => { _origError(...args); _fileLog('ERROR', args) }
+  console.warn = (...args) => { _origWarn(...args); _fileLog('WARN', args) }
+}
+// ────────────────────────────────────────────────────────────────────────────────
+
+// 生产环境：禁用 console.log/info/debug，减少 I/O 开销
+if (!isDev) {
+  const noop = () => {}
+  console.log = noop
+  console.info = noop
+  console.debug = noop
+}
+
 // 设置 Windows 通知的应用标识符（必须在 app.whenReady 之前）
 if (process.platform === 'win32') {
-  app.setAppUserModelId('com.flashnote.app')
+  app.setAppUserModelId('com.flota.app')
 }
 
 // 注册自定义协议（必须在 app.whenReady 之前）
@@ -59,6 +110,9 @@ const CalDAVSyncService = require('./services/CalDAVSyncService')
 const GoogleCalendarService = require('./services/GoogleCalendarService')
 const ProxyService = require('./services/ProxyService')
 const { getInstance: getSyncIPCHandler } = require('./ipc/SyncIPCHandler')
+const { getInstance: getNetworkService } = require('./services/NetworkService')
+const { getInstance: getOfflineSyncQueue } = require('./services/OfflineSyncQueue')
+const { getInstance: getLogger } = require('./services/LoggerService')
 
 // 保持对窗口对象的全局引用，如果不这样做，当JavaScript对象被垃圾回收时，窗口将自动关闭
 let mainWindow
@@ -261,7 +315,7 @@ function createWindow() {
           : path.join(process.resourcesPath, 'logo.png')
 
         new Notification({
-          title: 'FlashNote',
+          title: 'Flota',
           body: '应用已最小化到系统托盘，双击托盘图标可重新打开窗口',
           icon: fs.existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : undefined
         }).show()
@@ -281,70 +335,35 @@ function createWindow() {
 // 创建系统托盘
 function createTray() {
   try {
-    // 创建托盘图标 - 根据是否打包使用不同路径
-    let iconPath
-    let pngIconPath
+    // 根据是否打包选择路径
+    const icoPath = isDev
+      ? path.join(__dirname, '../build/logo.ico')
+      : path.join(process.resourcesPath, 'build/logo.ico')
+    const pngPath = isDev
+      ? path.join(__dirname, '../logo.png')
+      : path.join(process.resourcesPath, 'logo.png')
 
-    if (isDev) {
-      // 开发环境路径
-      iconPath = path.join(__dirname, '../build/logo.ico')
-      pngIconPath = path.join(__dirname, '../logo.png')
-    } else {
-      // 打包后路径 - 图标文件会被复制到resources目录
-      iconPath = path.join(process.resourcesPath, 'build/logo.ico')
-      pngIconPath = path.join(process.resourcesPath, 'logo.png')
+    let trayIcon = null
+
+    // 优先使用多尺寸 ICO（含 16/32/48 等标准 Windows 尺寸）
+    if (fs.existsSync(icoPath)) {
+      trayIcon = nativeImage.createFromPath(icoPath)
     }
-
-    let trayIcon
-
-    console.log('尝试创建托盘图标，开发环境:', isDev)
-    console.log('ICO图标路径:', iconPath)
-    console.log('PNG图标路径:', pngIconPath)
-
-    // 优先使用 ICO 文件
-    if (fs.existsSync(iconPath)) {
-      console.log('找到 logo.ico 文件')
-      trayIcon = nativeImage.createFromPath(iconPath)
-      console.log('ICO 图标创建结果:', !trayIcon.isEmpty())
-    } else if (fs.existsSync(pngIconPath)) {
-      console.log('ICO 不存在，使用 logo.png 文件')
-      trayIcon = nativeImage.createFromPath(pngIconPath)
-      // 调整图标大小适应托盘 - Windows推荐16x16
-      if (!trayIcon.isEmpty()) {
-        trayIcon = trayIcon.resize({ width: 16, height: 16 })
-        console.log('PNG 图标已调整为16x16')
-      }
-    } else {
-      console.log('所有图标文件都不存在')
-      trayIcon = nativeImage.createEmpty()
-    }
-
-    // 确保图标不为空
-    if (trayIcon.isEmpty()) {
-      console.log('所有图标都创建失败，尝试创建默认图标')
-      // 创建一个简单的默认图标 - 使用Electron内置方法
-      try {
-        // 创建一个16x16的简单图标数据
-        const iconData = Buffer.from([
-          // 这是一个简单的16x16 ICO格式图标数据
-          0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x10, 0x00, 0x00, 0x01, 0x00, 0x20, 0x00, 0x68, 0x04,
-          0x00, 0x00, 0x16, 0x00, 0x00, 0x00, 0x28, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x20, 0x00,
-          0x00, 0x00, 0x01, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00,
-          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-        ])
-        trayIcon = nativeImage.createFromBuffer(iconData)
-      } catch (error) {
-        console.log('创建默认图标失败，使用空图标:', error.message)
-        // 如果还是失败，就使用空图标
-        trayIcon = nativeImage.createEmpty()
+    // ICO 加载失败则用 PNG 缩放到 32x32
+    if (!trayIcon || trayIcon.isEmpty()) {
+      if (fs.existsSync(pngPath)) {
+        const raw = nativeImage.createFromPath(pngPath)
+        if (!raw.isEmpty()) trayIcon = raw.resize({ width: 32, height: 32 })
       }
     }
+    // 两者都失败 → 不创建托盘，避免透明空图标
+    if (!trayIcon || trayIcon.isEmpty()) {
+      console.error('[Tray] 图标文件无法加载，系统托盘不可用')
+      return
+    }
 
-    console.log('创建托盘对象')
     tray = new Tray(trayIcon)
-
-    // 设置托盘提示文本
-    tray.setToolTip('FlashNote')
+    tray.setToolTip('Flota')
 
     // 创建托盘菜单
     const contextMenu = Menu.buildFromTemplate([
@@ -495,25 +514,26 @@ async function initializeServices() {
     services.aiService = new AIService(settingDAO)
     services.sttService = new STTService(settingDAO)
     
-    const dbPath = path.join(app.getPath('userData'), 'database', 'flashnote.db')
+    const dbPath = path.join(app.getPath('userData'), 'database', 'flota.db')
     const appDataPath = app.getPath('userData')
     services.mem0Service = new Mem0Service(dbPath, appDataPath)
     services.migrationService = new HistoricalDataMigrationService(services.mem0Service)
 
     // 并行初始化所有AI服务
+    const logger = getLogger()
     Promise.all([
-      services.aiService.initialize().catch(e => console.error('[Main] AI service init failed:', e)),
-      services.sttService.initialize().catch(e => console.error('[Main] STT service init failed:', e)),
+      services.aiService.initialize().catch(e => logger.error('Main', 'AI service init failed', e)),
+      services.sttService.initialize().catch(e => logger.error('Main', 'STT service init failed', e)),
       services.mem0Service.initialize().then(result => {
         if (result.success) {
-          console.log('[Main] Mem0 service initialized')
+          logger.info('Main', 'Mem0 service initialized')
           services.migrationService.startAutoMigration('current_user')
         } else {
-          console.warn('[Main] Mem0 service initialization failed:', result.error)
+          logger.warn('Main', 'Mem0 service initialization failed: ' + result.error)
         }
-      }).catch(e => console.error('[Main] Mem0 service error:', e))
+      }).catch(e => logger.error('Main', 'Mem0 service error', e))
     ]).then(() => {
-      console.log('[Main] 所有AI服务初始化完成')
+      logger.info('Main', '所有AI服务初始化完成')
     })
 
     // 初始化通知服务
@@ -523,6 +543,11 @@ async function initializeServices() {
     const syncIPCHandler = getSyncIPCHandler()
     await syncIPCHandler.initialize()
     services.syncIPCHandler = syncIPCHandler
+
+    // 绑定离线同步队列到 V3 同步
+    const offlineQueue = getOfflineSyncQueue()
+    const v3Sync = require('./services/sync/V3SyncService').getInstance()
+    offlineQueue.setSyncFunction(() => v3Sync.sync())
 
     // 初始化 CalDAV 日历同步服务
     services.calDAVSyncService = new CalDAVSyncService()
@@ -537,6 +562,13 @@ async function initializeServices() {
     // 初始化代理服务
     services.proxyService = new ProxyService()
     console.log('[Main] Proxy service initialized')
+
+    // 初始化网络状态检测 & 离线同步队列
+    services.networkService = getNetworkService()
+    services.networkService.start()
+    services.offlineSyncQueue = getOfflineSyncQueue()
+    services.offlineSyncQueue.startAutoFlush()
+    console.log('[Main] Network & OfflineSyncQueue initialized')
 
     // 初始化 MCP 下载服务
     services.mcpDownloader = new MCPDownloader()
@@ -589,6 +621,13 @@ async function initializeServices() {
       })
       services.noteService.on('note-deleted', (payload) => {
         broadcastToAll('note:deleted', payload)
+      })
+    }
+
+    // 转发 SettingsService 的设置变更事件到所有渲染进程
+    if (services && services.settingsService) {
+      services.settingsService.on('setting-changed', (data) => {
+        broadcastToAll('setting:changed', data)
       })
     }
 
@@ -653,10 +692,10 @@ async function initializeServices() {
       if (notesResult.success && notesResult.data && notesResult.data.notes && notesResult.data.notes.length === 0) {
         console.log('检测到首次启动，创建示例笔记')
         const welcomeNote = {
-          title: '欢迎使用 FlashNote 2.3！',
-          content: `# 欢迎使用 FlashNote 2.3！ 🎉
+          title: '欢迎使用 Flota 2.3！',
+          content: `# 欢迎使用 Flota 2.3！ 🎉
 
-恭喜你成功安装了 FlashNote，这是一个现代化的本地笔记应用。
+恭喜你成功安装了 Flota，这是一个现代化的本地笔记应用。
 
 ## 版本新功能
 
@@ -710,11 +749,11 @@ async function initializeServices() {
 - 添加代码块：
 
 \`\`\`javascript
-console.log('Hello, FlashNote!');
+console.log('Hello, Flota!');
 \`\`\`
 
 - 制作任务列表：
-  - [x] 安装 FlashNote
+  - [x] 安装 Flota
   - [x] 阅读欢迎笔记
   - [ ] 创建第一个白板笔记
   - [ ] 尝试插件系统
@@ -787,20 +826,35 @@ if (!gotTheLock) {
 
   // Electron初始化完成，创建窗口
   app.whenReady().then(async () => {
+    // 初始化文件日志（仅生产环境）
+    if (!isDev) setupFileLogging()
+
     // 注册 app:// 协议处理器
     protocol.handle('app', async (request) => {
       try {
         const url = request.url
         // app://images/abc.png -> images/abc.png
         // app://audio/abc.m4a -> audio/abc.m4a
-        const relativePath = url.replace('app://', '')
+        // app://wallpaper/current.jpg?t=123 -> wallpaper/current.jpg
+        let relativePath = url.replace('app://', '')
+        // 去除查询参数
+        const qIdx = relativePath.indexOf('?')
+        if (qIdx !== -1) relativePath = relativePath.slice(0, qIdx)
+
+        // 安全校验：禁止路径遍历
+        const normalized = path.normalize(relativePath)
+        if (normalized.startsWith('..') || path.isAbsolute(normalized)) {
+          return new Response('Forbidden', { status: 403 })
+        }
 
         console.log('[Protocol] 处理 app:// 请求:', relativePath)
 
         // 获取完整路径
-        // 音频文件存储在 userData/audio/，图片存储在 userData/images/
+        // 音频文件存储在 userData/audio/，壁纸在 userData/wallpaper/，图片在 userData/images/
         let fullPath
         if (relativePath.startsWith('audio/')) {
+          fullPath = path.join(app.getPath('userData'), relativePath)
+        } else if (relativePath.startsWith('wallpaper/')) {
           fullPath = path.join(app.getPath('userData'), relativePath)
         } else {
           fullPath = services.imageService.getImagePath(relativePath)
@@ -843,12 +897,13 @@ if (!gotTheLock) {
         // 使用流式读取，提升大文件性能
         const data = fs.readFileSync(fullPath)
         
+        const isWallpaper = relativePath.startsWith('wallpaper/')
         console.log('[Protocol] 返回文件，MIME:', mimeType)
         return new Response(data, {
           headers: { 
             'Content-Type': mimeType,
             'Accept-Ranges': 'bytes',
-            'Cache-Control': 'public, max-age=31536000'
+            'Cache-Control': isWallpaper ? 'no-cache' : 'public, max-age=31536000'
           }
         })
       } catch (error) {
@@ -975,23 +1030,7 @@ app.on('window-all-closed', () => {
   }
 })
 
-// 应用即将退出时的清理工作
-app.on('before-quit', () => {
-  app.isQuiting = true
-
-  // 触发记忆迁移（不等待，避免阻塞退出）
-  if (services.migrationService) {
-    services.migrationService.triggerMigrationOnQuit().catch(err => {
-      console.error('[App] 退出前迁移失败:', err);
-    });
-  }
-
-  // 清理托盘
-  if (tray) {
-    tray.destroy()
-    tray = null
-  }
-})
+// before-quit 由文件末尾统一处理（含 tray 清理、窗口保存、DB 关闭）
 
 app.on('activate', () => {
   // 在macOS上，当单击dock图标并且没有其他窗口打开时，
@@ -1005,6 +1044,8 @@ app.on('activate', () => {
 // 你也可以将它们放在单独的文件中并在这里引入
 
 // ============= IPC 处理程序 =============
+
+const { validatePath, validateRelativePath, validateString, validateId, validateUrl, validateArray, validateObject } = require('./utils/ipcValidator')
 
 const registerIpcHandlers = (handlers) => {
   for (const { channel, handler } of handlers) {
@@ -1038,122 +1079,50 @@ const ensurePluginManager = () => {
   return pluginManager
 }
 
-ipcMain.handle('plugin-store:list-available', async () => {
-  try {
-    const manager = ensurePluginManager()
-    return await manager.listAvailablePlugins()
-  } catch (error) {
-    console.error('获取插件列表失败:', error)
-    return []
-  }
-})
+// 简单委托的插件 handler（表驱动）
+const pluginSimpleHandlers = {
+  'plugin-store:list-available':  { method: 'listAvailablePlugins',  fallback: [] },
+  'plugin-store:list-installed':  { method: 'listInstalledPlugins',  fallback: [] },
+  'plugin-store:scan-local':      { method: 'scanLocalPlugins',      fallback: [] },
+  'plugin-store:get-details':     { method: 'getPluginDetails',      fallback: null },
+  'plugin-store:install':         { method: 'installPlugin',         wrap: true },
+  'plugin-store:uninstall':       { method: 'uninstallPlugin',       wrap: true, noData: true },
+  'plugin-store:enable':          { method: 'enablePlugin',          wrap: true },
+  'plugin-store:disable':         { method: 'disablePlugin',         wrap: true },
+  'plugin-store:execute-command': { method: 'executeCommand',        wrap: true },
+}
 
-ipcMain.handle('plugin-store:list-installed', async () => {
-  try {
-    const manager = ensurePluginManager()
-    return await manager.listInstalledPlugins()
-  } catch (error) {
-    console.error('获取已安装插件列表失败:', error)
-    return []
-  }
-})
+for (const [channel, cfg] of Object.entries(pluginSimpleHandlers)) {
+  ipcMain.handle(channel, async (event, ...args) => {
+    try {
+      const manager = ensurePluginManager()
+      const result = await manager[cfg.method](...args)
+      return cfg.wrap ? { success: true, ...(cfg.noData ? {} : { data: result }) } : result
+    } catch (error) {
+      console.error(`${channel} 失败:`, error)
+      return cfg.wrap ? { success: false, error: error.message } : cfg.fallback
+    }
+  })
+}
 
-ipcMain.handle('plugin-store:scan-local', async () => {
-  try {
-    const manager = ensurePluginManager()
-    return await manager.scanLocalPlugins()
-  } catch (error) {
-    console.error('扫描本地插件失败:', error)
-    return []
-  }
-})
-
-ipcMain.handle('plugin-store:get-details', async (event, pluginId) => {
-  try {
-    const manager = ensurePluginManager()
-    return await manager.getPluginDetails(pluginId)
-  } catch (error) {
-    console.error(`获取插件详情失败: ${pluginId}`, error)
-    return null
-  }
-})
-
-ipcMain.handle('plugin-store:install', async (event, pluginId) => {
-  try {
-    const manager = ensurePluginManager()
-    const data = await manager.installPlugin(pluginId)
-    return { success: true, data }
-  } catch (error) {
-    console.error(`安装插件失败: ${pluginId}`, error)
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('plugin-store:uninstall', async (event, pluginId) => {
-  try {
-    const manager = ensurePluginManager()
-    await manager.uninstallPlugin(pluginId)
-    return { success: true }
-  } catch (error) {
-    console.error(`卸载插件失败: ${pluginId}`, error)
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('plugin-store:enable', async (event, pluginId) => {
-  try {
-    const manager = ensurePluginManager()
-    const data = await manager.enablePlugin(pluginId)
-    return { success: true, data }
-  } catch (error) {
-    console.error(`启用插件失败: ${pluginId}`, error)
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('plugin-store:disable', async (event, pluginId) => {
-  try {
-    const manager = ensurePluginManager()
-    const data = await manager.disablePlugin(pluginId)
-    return { success: true, data }
-  } catch (error) {
-    console.error(`禁用插件失败: ${pluginId}`, error)
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('plugin-store:execute-command', async (event, pluginId, commandId, payload) => {
-  try {
-    const manager = ensurePluginManager()
-    const data = await manager.executeCommand(pluginId, commandId, payload)
-    return { success: true, data }
-  } catch (error) {
-    console.error(`执行插件命令失败: ${pluginId} -> ${commandId}`, error)
-    return { success: false, error: error.message }
-  }
-})
-
+// 需要额外逻辑的插件 handler（保留手写）
 ipcMain.handle('plugin-store:open-plugin-folder', async (event, pluginId) => {
   try {
     const manager = ensurePluginManager()
     const pluginPath = manager.getPluginPath(pluginId)
-    if (!pluginPath) {
-      return { success: false, error: '插件未安装' }
-    }
+    if (!pluginPath) return { success: false, error: '插件未安装' }
     const { shell } = require('electron')
     await shell.openPath(pluginPath)
     return { success: true }
   } catch (error) {
-    console.error(`打开插件目录失败: ${pluginId}`, error)
+    console.error('打开插件目录失败:', error)
     return { success: false, error: error.message }
   }
 })
 
 ipcMain.handle('plugin-store:open-plugins-directory', async () => {
   try {
-    const manager = ensurePluginManager()
     const { shell } = require('electron')
-    // 打开插件目录
     const isDev = process.env.NODE_ENV === 'development'
     const localPluginsPath = isDev
       ? path.join(app.getAppPath(), 'plugins', 'examples')
@@ -1170,14 +1139,14 @@ ipcMain.handle('plugin-store:load-plugin-file', async (event, pluginId, filePath
   try {
     const manager = ensurePluginManager()
     const pluginPath = manager.getPluginPath(pluginId)
-    if (!pluginPath) {
-      return { success: false, error: '插件未安装' }
-    }
+    if (!pluginPath) return { success: false, error: '插件未安装' }
 
-    const fullPath = path.join(pluginPath, filePath.replace(/^\//, ''))
-    if (!fs.existsSync(fullPath)) {
-      return { success: false, error: '文件不存在' }
+    const safeSub = validateRelativePath(filePath.replace(/^\//, ''))
+    const fullPath = path.join(pluginPath, safeSub)
+    if (!fullPath.startsWith(path.resolve(pluginPath))) {
+      return { success: false, error: '路径不合法' }
     }
+    if (!fs.existsSync(fullPath)) return { success: false, error: '文件不存在' }
 
     const content = fs.readFileSync(fullPath, 'utf8')
     return { success: true, content, baseUrl: `file://${pluginPath}/` }
@@ -1206,9 +1175,17 @@ ipcMain.handle('db:repair', async () => {
     const dbManager = DatabaseManager.getInstance()
     return await dbManager.repairDatabase()
   } catch (err) {
-    console.error('数据库修复失败:', err)
+    getLogger().error('Main', '数据库修复失败', err)
     return { success: false, error: err?.message || 'unknown error' }
   }
+})
+
+// 打开日志目录
+ipcMain.handle('log:open-dir', async () => {
+  const { shell } = require('electron')
+  const logPath = getLogger().getLogPath()
+  await shell.openPath(logPath)
+  return { success: true, path: logPath }
 })
 
 // ===== 表驱动 IPC（收益最大：大量透传/模板化） =====
@@ -1249,19 +1226,18 @@ registerIpcHandlers([
   // 设置相关 IPC
   ...Object.entries({
     'setting:get': 'getSetting',
-    'setting:get-multiple': 'getMultipleSettings',
+    'setting:get-multiple': 'getSettings',
     'setting:get-all': 'getAllSettings',
     'setting:get-by-type': 'getSettingsByType',
     'setting:get-theme': 'getThemeSettings',
     'setting:get-window': 'getWindowSettings',
     'setting:get-editor': 'getEditorSettings',
-    'setting:set-multiple': 'setMultipleSettings',
+    'setting:set-multiple': 'setSettings',
     'setting:delete': 'deleteSetting',
     'setting:delete-multiple': 'deleteMultipleSettings',
-    'setting:reset': 'resetSetting',
-    'setting:reset-all': 'resetAllSettings',
+    'setting:reset-all': 'resetToDefaults',
     'setting:search': 'searchSettings',
-    'setting:get-stats': 'getStats',
+    'setting:get-stats': 'getSettingsStats',
     'setting:export': 'exportSettings',
     'setting:import': 'importSettings',
     'setting:select-wallpaper': 'selectWallpaper'
@@ -1469,9 +1445,12 @@ registerIpcHandlers([
     channel: 'stt:transcribe',
     handler: async (event, { audioFile, options }) => {
       try {
-        // 相对路径（如 audio/xxx.m4a）→ 绝对路径
         let resolvedFile = audioFile
-        if (audioFile && !path.isAbsolute(audioFile)) {
+        // 渲染进程传来的 WAV buffer（用于 WebM 等需客户端解码的格式）
+        if (Array.isArray(audioFile)) {
+          resolvedFile = Buffer.from(audioFile)
+        } else if (audioFile && typeof audioFile === 'string' && !path.isAbsolute(audioFile)) {
+          // 相对路径（如 audio/xxx.m4a）→ 绝对路径
           resolvedFile = path.join(app.getPath('userData'), audioFile)
         }
         return await services.sttService.transcribe(resolvedFile, options)
@@ -1598,6 +1577,26 @@ registerIpcHandlers([
       // 页面已准备就绪的通知（由 dom-ready 事件自动处理显示，此处仅作确认）
       console.log('收到窗口准备就绪通知')
       return true
+    }
+  },
+  {
+    // 渲染进程启动后拉取大体积初始化数据（避免 URL 超长 431 错误）
+    channel: 'window:get-init-data',
+    handler: async (event) => {
+      try {
+        const win = require('electron').BrowserWindow.fromWebContents(event.sender)
+        if (!win) return { success: false, error: 'window not found' }
+        for (const [id, w] of windowManager.windows) {
+          if (w === win) {
+            const data = windowManager.pendingWindowData.get(id)
+            windowManager.pendingWindowData.delete(id)
+            return { success: true, data }
+          }
+        }
+        return { success: false, error: 'no pending data' }
+      } catch (e) {
+        return { success: false, error: e.message }
+      }
     }
   },
   {
@@ -1801,6 +1800,15 @@ ipcMain.handle('window:toggle-dev-tools', async (event) => {
   }
 })
 
+// 网络状态 IPC
+ipcMain.handle('network:is-online', () => {
+  return services.networkService ? services.networkService.isOnline : true
+})
+
+ipcMain.handle('network:get-offline-queue-length', () => {
+  return services.offlineSyncQueue ? services.offlineSyncQueue.length : 0
+})
+
 // 系统相关IPC处理
 registerIpcHandlers([
   // 系统相关 IPC
@@ -1875,6 +1883,7 @@ ipcMain.handle('system:open-data-folder', async (event) => {
 // 打开外部链接
 ipcMain.handle('system:open-external', async (event, url) => {
   try {
+    validateUrl(url)
     await shell.openExternal(url)
     return { success: true }
   } catch (error) {
@@ -1921,6 +1930,7 @@ ipcMain.handle('floating-ball:show', async (event) => {
 // 读取图片文件并转换为base64
 ipcMain.handle('system:read-image-as-base64', async (event, filePath) => {
   try {
+    validatePath(filePath)
     const imageData = fs.readFileSync(filePath)
     const ext = path.extname(filePath).toLowerCase().substring(1)
     const mimeType = {
@@ -2035,9 +2045,11 @@ registerIpcHandlers([
 // ── 音频文件保存 ──
 ipcMain.handle('audio:save-from-buffer', async (event, buffer, fileName) => {
   try {
+    validateString(fileName, 'fileName')
     const audioDir = path.join(app.getPath('userData'), 'audio')
     if (!fs.existsSync(audioDir)) fs.mkdirSync(audioDir, { recursive: true })
     const safeName = path.basename(fileName)
+    if (safeName !== fileName && fileName.includes('..')) throw new Error('文件名不合法')
     const filePath = path.join(audioDir, safeName)
     fs.writeFileSync(filePath, Buffer.from(buffer))
     return { success: true, data: `audio/${safeName}` }
@@ -2145,50 +2157,26 @@ ipcMain.handle('whiteboard:save-images', async (event, files) => {
   }
 })
 
-ipcMain.handle('whiteboard:load-images', async (event, fileMap) => {
-  try {
-    const imageStorage = getImageStorageInstance()
-    const files = await imageStorage.loadWhiteboardImages(fileMap)
-    return { success: true, data: files }
-  } catch (error) {
-    console.error('加载白板图片失败:', error)
-    return { success: false, error: error.message }
-  }
-})
+// 简单委托的白板 handler（表驱动）
+const whiteboardSimpleHandlers = {
+  'whiteboard:load-images':      { method: 'loadWhiteboardImages' },
+  'whiteboard:load-image':       { method: 'loadWhiteboardImage' },
+  'whiteboard:delete-images':    { method: 'deleteWhiteboardImages', noData: true },
+  'whiteboard:get-storage-stats':{ method: 'getStorageStats' },
+}
 
-// 加载单个白板图片（用于类型转换）
-ipcMain.handle('whiteboard:load-image', async (event, fileName) => {
-  try {
-    const imageStorage = getImageStorageInstance()
-    const dataURL = await imageStorage.loadWhiteboardImage(fileName)
-    return { success: true, data: dataURL }
-  } catch (error) {
-    console.error('加载单个白板图片失败:', fileName, error)
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('whiteboard:delete-images', async (event, fileMap) => {
-  try {
-    const imageStorage = getImageStorageInstance()
-    await imageStorage.deleteWhiteboardImages(fileMap)
-    return { success: true }
-  } catch (error) {
-    console.error('删除白板图片失败:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('whiteboard:get-storage-stats', async () => {
-  try {
-    const imageStorage = getImageStorageInstance()
-    const stats = await imageStorage.getStorageStats()
-    return { success: true, data: stats }
-  } catch (error) {
-    console.error('获取存储统计失败:', error)
-    return { success: false, error: error.message }
-  }
-})
+for (const [channel, cfg] of Object.entries(whiteboardSimpleHandlers)) {
+  ipcMain.handle(channel, async (event, ...args) => {
+    try {
+      const imageStorage = getImageStorageInstance()
+      const result = await imageStorage[cfg.method](...args)
+      return cfg.noData ? { success: true } : { success: true, data: result }
+    } catch (error) {
+      console.error(`${channel} 失败:`, error)
+      return { success: false, error: error.message }
+    }
+  })
+}
 
 // 保存白板预览图（PNG），供移动端只读查看
 ipcMain.handle('whiteboard:save-preview', async (event, { syncId, pngBase64 }) => {
@@ -2262,41 +2250,42 @@ ipcMain.handle('sync:upload-image', async (event, localPath, relativePath) => {
 // sync:sync-images - V3 自动同步图片，无需手动批量同步
 
 // 图片清理功能 - V3 同步集成版本
-ipcMain.handle('sync:get-unused-images-stats', async (event, retentionDays = 30) => {
-  try {
-    console.log('[IPC] 收到 sync:get-unused-images-stats 请求, retentionDays:', retentionDays);
-    const v3Service = require('./services/sync/V3SyncService').getInstance();
-    const result = await v3Service.getUnusedImagesStats(retentionDays);
-    console.log('[IPC] getUnusedImagesStats 返回结果:', result);
-    return result;
-  } catch (error) {
-    console.error('[IPC] 获取图片统计失败:', error);
-    return { success: false, error: error.message };
-  }
-});
+const syncCleanupHandlers = {
+  'sync:get-unused-images-stats': 'getUnusedImagesStats',
+  'sync:cleanup-unused-images':   'cleanupUnusedImages',
+}
 
-ipcMain.handle('sync:cleanup-unused-images', async (event, retentionDays = 30) => {
-  try {
-    console.log('[IPC] 收到 sync:cleanup-unused-images 请求, retentionDays:', retentionDays);
-    const v3Service = require('./services/sync/V3SyncService').getInstance();
-    const result = await v3Service.cleanupUnusedImages(retentionDays);
-    console.log('[IPC] cleanupUnusedImages 返回结果:', result);
-    return result;
-  } catch (error) {
-    console.error('[IPC] 清理图片失败:', error);
-    return { success: false, error: error.message };
-  }
-});
+for (const [channel, method] of Object.entries(syncCleanupHandlers)) {
+  ipcMain.handle(channel, async (event, retentionDays = 30) => {
+    try {
+      const v3Service = require('./services/sync/V3SyncService').getInstance()
+      return await v3Service[method](retentionDays)
+    } catch (error) {
+      console.error(`${channel} 失败:`, error)
+      return { success: false, error: error.message }
+    }
+  })
+}
 
 // 应用退出时清理资源
 let isQuittingApp = false;
 app.on('before-quit', async (event) => {
+  app.isQuiting = true;
+
   if (!isQuittingApp) {
     event.preventDefault();
     isQuittingApp = true;
 
     try {
       console.log('[App] 开始应用退出流程...');
+
+      // 0. 清理托盘 + 触发记忆迁移
+      if (tray) { tray.destroy(); tray = null; }
+      if (services.migrationService) {
+        services.migrationService.triggerMigrationOnQuit().catch(err => {
+          console.error('[App] 退出前迁移失败:', err);
+        });
+      }
 
       // 1. 通知所有窗口保存数据
       const allWindows = BrowserWindow.getAllWindows();

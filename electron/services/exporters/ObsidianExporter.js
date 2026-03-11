@@ -17,11 +17,11 @@ const getUserDataPath = () => {
   const homeDir = process.env.HOME || process.env.USERPROFILE;
   
   if (platform === 'win32') {
-    return path.join(process.env.APPDATA || homeDir, 'flashnote');
+    return path.join(process.env.APPDATA || homeDir, 'Flota');
   } else if (platform === 'darwin') {
-    return path.join(homeDir, 'Library', 'Application Support', 'flashnote');
+    return path.join(homeDir, 'Library', 'Application Support', 'Flota');
   } else {
-    return path.join(homeDir, '.config', 'flashnote');
+    return path.join(homeDir, '.config', 'Flota');
   }
 }
 
@@ -228,7 +228,7 @@ class ObsidianExporter extends BaseExporter {
       const excalidrawContent = {
         type: 'excalidraw',
         version: 2,
-        source: 'flashnote',
+        source: 'Flota',
         elements: whiteboardData.elements || [],
         appState: whiteboardData.appState || {},
         files: whiteboardData.files || {}
@@ -592,7 +592,7 @@ class ObsidianExporter extends BaseExporter {
       
       // 创建基本配置文件
       const config = {
-        vaultName: 'FlashNote Export',
+        vaultName: 'Flota Export',
         theme: 'moonstone',
         attachmentFolderPath: this.config.attachmentFolder
       };

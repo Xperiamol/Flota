@@ -90,7 +90,7 @@ const NutcloudSyncSettings = () => {
     setMessage(null);
 
     try {
-      const result = await window.electronAPI.sync.testConnection('flashnote-v3', config);
+      const result = await window.electronAPI.sync.testConnection('Flota-v3', config);
       if (result) {
         setMessage({ type: 'success', text: 'WebDAV 连接测试成功！' });
       }
@@ -111,7 +111,7 @@ const NutcloudSyncSettings = () => {
     setMessage(null);
 
     try {
-      await window.electronAPI.sync.switchService('flashnote-v3', config);
+      await window.electronAPI.sync.switchService('Flota-v3', config);
       setMessage({ type: 'success', text: '坚果云同步已启用！' });
       await loadStatus();
     } catch (error) {

@@ -4,12 +4,12 @@
 	"version": "1.0.0",
 	"description": "一键抽取一篇早已遗忘的笔记，并自动在主编辑器中打开，适合做周期复盘或灵感唤醒。可结合番茄工作法、复习计划使用，及时捕捉旧笔记里的宝藏。",
 	"author": {
-		"name": "FlashNote 团队",
-		"email": "team@flashnote.app",
+		"name": "Flota 团队",
+		"email": "team@Flota.app",
 		"url": "https://github.com/Xperiamol"
 	},
 	"homepage": "https://github.com/Xperiamol",
-	"repository": "https://github.com/Xperiamol/flashnote",
+	"repository": "https://github.com/Xperiamol/Flota",
 	"license": "MIT",
 	"categories": [
 		"效率",

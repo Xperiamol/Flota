@@ -1,8 +1,8 @@
-# FlashNote 插件开发文档# FlashNote 插件开发文档
+# Flota 插件开发文档# Flota 插件开发文档
 
 
 
-欢迎来到 FlashNote 插件开发!欢迎来到 FlashNote 插件开发文档！这里包含了开发高质量插件所需的所有资源。
+欢迎来到 Flota 插件开发!欢迎来到 Flota 插件开发文档！这里包含了开发高质量插件所需的所有资源。
 
 
 
@@ -116,7 +116,7 @@
 
 ## 🤝 贡献      title: '你好',
 
-      body: '欢迎使用 FlashNote',
+      body: '欢迎使用 Flota',
 
 欢迎提交 Issue 和 Pull Request!      type: 'success'
 
@@ -325,7 +325,7 @@ await runtime.ui.openWindow({
 
 **解决**: 
 - 确保插件在 Worker 中运行
-- 不要使用 `require('@flashnote/sdk')`
+- 不要使用 `require('@flota/sdk')`
 - 直接使用全局 `runtime` 对象
 
 ### 权限被拒绝
@@ -423,9 +423,9 @@ if (emotionCache && CacheProvider) {
 
 ## 🔗 相关链接
 
-- [GitHub 仓库](https://github.com/Xperiamol/FlashNote)
-- [官方网站](https://flashnote.app)
-- [社区论坛](https://community.flashnote.app)
+- [GitHub 仓库](https://github.com/Xperiamol/Flota)
+- [官方网站](https://Flota.app)
+- [社区论坛](https://community.Flota.app)
 
 ## 📝 更新日志
 
@@ -445,4 +445,4 @@ if (emotionCache && CacheProvider) {
 
 ---
 
-**让我们一起构建强大的 FlashNote 插件生态！** 🎉
+**让我们一起构建强大的 Flota 插件生态！** 🎉

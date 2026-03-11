@@ -77,15 +77,79 @@ function StandaloneWindow() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
   const [themeMode, setThemeMode] = useState('light')
+  const [primaryColor, setPrimaryColor] = useState('#1976d2')
   const store = useStandaloneStore()
 
   // 创建主题
-  const appTheme = createAppTheme(themeMode)
+  const appTheme = createAppTheme(themeMode, primaryColor)
 
   // 检查是否在Electron环境中运行
   const isElectronEnvironment = useMemo(() => {
     return window.electronAPI !== undefined
   }, [])
+
+  // 将主题设置应用到 CSS 变量（与主窗口保持同步）
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', themeMode)
+  }, [themeMode])
+
+  // 从主应用读取全部设置，并监听变化
+  useEffect(() => {
+    if (!isElectronEnvironment) return
+
+    // 解析主题 mode，处理 system
+    const resolveTheme = (mode) => {
+      if (mode === 'system') {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+      }
+      return mode || 'light'
+    }
+
+    // 初始读取设置
+    const loadSettings = async () => {
+      try {
+        const result = await window.electronAPI.settings.getAll()
+        if (result?.success && result.data) {
+          const s = result.data
+          if (s.theme) setThemeMode(resolveTheme(s.theme))
+          if (s.customThemeColor) setPrimaryColor(s.customThemeColor)
+        }
+      } catch {}
+    }
+    loadSettings()
+
+    // 监听设置变更（用户在主窗口修改时实时同步）
+    const unsubSetting = window.electronAPI.settings.onSettingChanged((data) => {
+      if (!data?.key) return
+      if (data.key === 'theme') setThemeMode(resolveTheme(data.value))
+      if (data.key === 'customThemeColor') setPrimaryColor(data.value)
+    })
+
+    // 监听系统主题变化（仅 theme=system 时响应）
+    // 复用初始 loadSettings 拿到的 themePref，无需二次 getAll
+    let currentThemePref = null
+    window.electronAPI.settings.get('theme').then(r => {
+      if (r?.success) currentThemePref = r.data
+    }).catch(() => {})
+
+    const handleSystemTheme = (_, payload) => {
+      if (currentThemePref === 'system') {
+        setThemeMode(payload?.shouldUseDarkColors ? 'dark' : 'light')
+      }
+    }
+    window.electronAPI.ipcRenderer.on('system-theme-changed', handleSystemTheme)
+
+    // 跟踪 theme preference 变化以便响应系统主题
+    const unsubTrackTheme = window.electronAPI.settings.onSettingChanged((data) => {
+      if (data?.key === 'theme') currentThemePref = data.value
+    })
+
+    return () => {
+      if (typeof unsubSetting === 'function') unsubSetting()
+      if (typeof unsubTrackTheme === 'function') unsubTrackTheme()
+      window.electronAPI.ipcRenderer.removeAllListeners('system-theme-changed')
+    }
+  }, [isElectronEnvironment])
 
   useEffect(() => {
     const initializeWindow = async () => {
@@ -103,10 +167,9 @@ function StandaloneWindow() {
         const urlParams = new URLSearchParams(window.location.search)
         const type = urlParams.get('type')
         const noteIdParam = urlParams.get('noteId')
-        const todoData = urlParams.get('todoData')
         const minibarModeParam = urlParams.get('minibarMode')
 
-        logger.log('独立窗口参数:', { type, noteId: noteIdParam, todoData, minibarMode: minibarModeParam })
+        logger.log('独立窗口参数:', { type, noteId: noteIdParam, minibarMode: minibarModeParam })
 
         // 将 minibarMode 参数传递给 StandaloneProvider 通过 windowData
         const minibarFlag = minibarModeParam === 'true'
@@ -123,22 +186,26 @@ function StandaloneWindow() {
           setWindowType('note')
           setWindowData({ noteId: parsedNoteId, minibarMode: minibarFlag })
 
-        } else if (type === 'todo' && todoData) {
-          // Todo独立窗口
-          logger.log('设置Todo窗口类型')
-          setWindowType('todo')
+        } else if (type === 'todo') {
+          // Todo独立窗口 - 通过 IPC 拉取数据，避免 URL 过长导致 431 错误
+          logger.log('设置Todo窗口类型，通过IPC拉取数据...')
           try {
-            const parsedTodoData = JSON.parse(decodeURIComponent(todoData))
-            // 将 minibarFlag 添加到 todoData 传递给 Provider
-            setWindowData({ ...parsedTodoData, minibarMode: minibarFlag })
-          } catch (parseError) {
-            console.error('解析Todo数据失败:', parseError)
-            setError('无效的Todo数据')
+            const result = await window.electronAPI.window.getInitData()
+            if (!result?.success || !result.data) {
+              console.error('获取Todo初始化数据失败:', result?.error)
+              setError('无法加载Todo数据')
+              return
+            }
+            setWindowType('todo')
+            setWindowData({ ...result.data, minibarMode: minibarFlag })
+          } catch (e) {
+            console.error('IPC拉取Todo数据失败:', e)
+            setError('加载Todo数据时出错')
             return
           }
 
         } else {
-          console.error('无效的窗口参数:', { type, noteId: noteIdParam, todoData })
+          console.error('无效的窗口参数:', { type, noteId: noteIdParam })
           setError('无效的窗口参数')
           return
         }
@@ -249,7 +316,7 @@ function StandaloneWindow() {
           p: 3
         }}>
           <Typography color="error" variant="h6">环境错误</Typography>
-          <Typography sx={{ textAlign: 'center' }}>独立窗口只能在FlashNote桌面应用中运行</Typography>
+          <Typography sx={{ textAlign: 'center' }}>独立窗口只能在Flota桌面应用中运行</Typography>
           <Typography sx={{ textAlign: 'center' }} color="text.secondary">
             请通过拖拽笔记或Todo列表到窗口中来创建独立窗口
           </Typography>

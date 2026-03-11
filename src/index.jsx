@@ -7,7 +7,7 @@ import './styles/index.css'
 
 // 创建主应用的emotion cache
 const emotionCache = createCache({
-  key: 'flashnote-app',
+  key: 'flota-app',
   prepend: true,
   speedy: false  // 禁用speedy模式，提高兼容性
 })
