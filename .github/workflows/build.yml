@@ -1,0 +1,82 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            artifact: dist-electron/*.exe
+          - os: macos-latest
+            platform: mac
+            artifact: dist-electron/*.dmg
+          - os: ubuntu-latest
+            platform: linux
+            artifact: dist-electron/*.AppImage
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Linux 需要额外依赖来打包 AppImage
+      - name: Install Linux build deps
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get install -y libarchive-tools rpm
+
+      # 为 Electron 重新编译 better-sqlite3
+      - name: Rebuild better-sqlite3 for Electron
+        run: node scripts/manage-sqlite.js electron
+
+      # 预检查模型（模型已在 git 里，会跳过下载）
+      - name: Pre-build (models check)
+        run: npm run pre-build
+
+      # Vite 打包前端
+      - name: Build frontend
+        run: npm run build
+
+      # electron-builder 打包
+      - name: Package (Windows)
+        if: matrix.os == 'windows-latest'
+        run: npx electron-builder --win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Package (macOS)
+        if: matrix.os == 'macos-latest'
+        run: npx electron-builder --mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Package (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: npx electron-builder --linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 上传构建产物
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Flota-${{ matrix.platform }}-${{ github.ref_name }}
+          path: dist-electron/
+          if-no-files-found: warn
