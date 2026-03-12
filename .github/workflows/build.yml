@@ -6,6 +6,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
@@ -14,13 +17,10 @@ jobs:
         include:
           - os: windows-latest
             platform: win
-            artifact: dist-electron/*.exe
           - os: macos-latest
             platform: mac
-            artifact: dist-electron/*.dmg
           - os: ubuntu-latest
             platform: linux
-            artifact: dist-electron/*.AppImage
 
     runs-on: ${{ matrix.os }}
 
@@ -37,14 +37,14 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
-      # Linux 需要额外依赖来打包 AppImage
+      # Linux 打包 AppImage 需要额外工具
       - name: Install Linux build deps
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get install -y libarchive-tools rpm
 
-      # 为 Electron 重新编译 better-sqlite3
+      # 为 Electron 重新编译 better-sqlite3（使用 electron-rebuild）
       - name: Rebuild better-sqlite3 for Electron
-        run: node scripts/manage-sqlite.js electron
+        run: npx electron-rebuild -f -w better-sqlite3
 
       # 预检查模型（模型已在 git 里，会跳过下载）
       - name: Pre-build (models check)
@@ -54,7 +54,7 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      # electron-builder 打包
+      # electron-builder 打包（--publish never 禁止它自己上传，由下面统一发布）
       - name: Package (Windows)
         if: matrix.os == 'windows-latest'
         run: npx electron-builder --win --publish never
@@ -67,7 +67,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: npx electron-builder --linux --publish never
 
-      # 上传构建产物（手动触发时保存为 Artifacts）
+      # 上传构建产物（手动触发时保存为 Artifacts，90天过期）
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
