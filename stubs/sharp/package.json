@@ -1,0 +1,6 @@
+{
+  "name": "sharp",
+  "version": "0.32.6",
+  "description": "Stub — image processing disabled in Electron build",
+  "main": "lib/index.js"
+}

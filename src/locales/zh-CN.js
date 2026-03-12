@@ -237,7 +237,8 @@ const zhCN = {
     pluginsTooltip: '插件商店',
     profile: '个人',
     profileTooltip: '个人中心',
-    settingsTooltip: '应用设置'
+    settingsTooltip: '应用设置',
+    aiTooltip: 'FlotaAI'
   },
   notes: {
     newNote: '随记',

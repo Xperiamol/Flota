@@ -35,6 +35,7 @@
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@excalidraw/excalidraw": "^0.18.0",
+    "@googleapis/calendar": "^14.2.0",
     "@modelcontextprotocol/sdk": "^1.25.2",
     "@mui/icons-material": "^7.3.1",
     "@mui/material": "^7.3.1",
@@ -62,7 +63,7 @@
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",
     "form-data": "^4.0.0",
-    "googleapis": "^165.0.0",
+    "google-auth-library": "^10.6.1",
     "https-proxy-agent": "^7.0.6",
     "i18next": "^25.6.3",
     "ical.js": "^2.2.1",
@@ -92,6 +93,7 @@
     "cross-env": "^10.1.0",
     "electron": "^39.2.7",
     "electron-builder": "^26.4.0",
+    "sharp": "^0.32.6",
     "wait-on": "^8.0.4"
   },
   "build": {
@@ -106,11 +108,55 @@
       "models/**/*",
       "package.json",
       "node_modules/**/*",
-      "!node_modules/.cache"
+      "!node_modules/.cache",
+      "!node_modules/.vite",
+      "!node_modules/@esbuild",
+      "!node_modules/esbuild",
+      "!node_modules/@rollup",
+      "!node_modules/rollup",
+      "!node_modules/@excalidraw",
+      "!node_modules/lucide-react",
+      "!node_modules/@mui",
+      "!node_modules/react",
+      "!node_modules/react-dom",
+      "!node_modules/zustand",
+      "!node_modules/i18next",
+      "!node_modules/react-i18next",
+      "!node_modules/i18next-browser-languagedetector",
+      "!node_modules/yup",
+      "!node_modules/markdown-it",
+      "!node_modules/react-markdown",
+      "!node_modules/react-window",
+      "!node_modules/rehype-highlight",
+      "!node_modules/rehype-raw",
+      "!node_modules/remark-gfm",
+      "!node_modules/tiptap-markdown",
+      "!node_modules/@tiptap",
+      "!node_modules/@emotion",
+      "!node_modules/@vitejs",
+      "!node_modules/vite",
+      "!node_modules/concurrently",
+      "!node_modules/cross-env",
+      "!node_modules/electron",
+      "!node_modules/electron-builder",
+      "!node_modules/wait-on",
+      "!node_modules/app-builder-bin",
+      "!node_modules/app-builder-lib",
+      "!node_modules/onnxruntime-web/**/*.wasm",
+      "!node_modules/onnxruntime-web/**/*.map",
+      "!node_modules/@xenova/transformers/dist/*.wasm",
+      "!node_modules/date-fns/**/*.map",
+      "!node_modules/mermaid",
+      "!node_modules/cytoscape",
+      "!node_modules/elkjs",
+      "!node_modules/@babel",
+      "!node_modules/7zip-bin",
+      "!node_modules/rxjs",
+      "!node_modules/zod",
+      "!node_modules/sass"
     ],
     "asarUnpack": [
       "node_modules/better-sqlite3/**/*",
-      "node_modules/sharp/**/*",
       "models/**/*"
     ],
     "extraResources": [
@@ -134,6 +180,8 @@
         "to": ".env"
       }
     ],
+    "beforePack": "./scripts/before-pack.js",
+    "afterPack": "./scripts/after-pack.js",
     "npmRebuild": false,
     "buildDependenciesFromSource": false,
     "nodeGypRebuild": false,
@@ -147,6 +195,20 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "icon": "build/logo.icns",
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] }
+      ],
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "icon": "build/logo.png",
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] }
+      ],
+      "category": "Office"
     }
   }
 }

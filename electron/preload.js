@@ -240,6 +240,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     testConnection: inv('ai:test-connection'),
     getProviders: inv('ai:get-providers'),
     chat: inv('ai:chat'),
+    chatStream: (messages, options) => ipcRenderer.invoke('ai:chat-stream', { messages, options }),
+    onChatChunk: listen('ai:chat-chunk'),
   },
 
   // STT (Speech-to-Text) 相关 API

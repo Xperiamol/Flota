@@ -237,7 +237,8 @@ const enUS = {
     pluginsTooltip: 'Plugin Store',
     profile: 'Profile',
     profileTooltip: 'Profile Center',
-    settingsTooltip: 'App Settings'
+    settingsTooltip: 'App Settings',
+    aiTooltip: 'FlotaAI'
   },
   notes: {
     newNote: 'Jot',

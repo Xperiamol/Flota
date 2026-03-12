@@ -315,6 +315,14 @@ const Toolbar = ({
           showDeletedButton: false,
           showSidebarToggle: false
         };
+      case 'ai':
+        return {
+          title: 'FlotaAI',
+          createButtonText: '新对话',
+          createAction: () => useStore.getState().aiNewChat(),
+          showDeletedButton: false,
+          showSidebarToggle: true
+        };
       default:
         return {
           title: 'Flota',

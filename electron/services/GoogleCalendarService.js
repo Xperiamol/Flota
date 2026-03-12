@@ -1,4 +1,5 @@
-const { google } = require('googleapis');
+const { calendar } = require('@googleapis/calendar');
+const { OAuth2Client } = require('google-auth-library');
 const { ipcMain, BrowserWindow, shell, app } = require('electron');
 const http = require('http');
 const url = require('url');
@@ -180,7 +181,7 @@ class GoogleCalendarService {
         console.log(`[GoogleCalendar] Redirect URI 将设置为: ${redirectUri}`);
 
         // 创建 OAuth2 客户端
-        this.oauth2Client = new google.auth.OAuth2(
+        this.oauth2Client = new OAuth2Client(
           this.CLIENT_ID,
           this.CLIENT_SECRET,
           redirectUri
@@ -313,7 +314,7 @@ class GoogleCalendarService {
 
               // 初始化 Calendar API
               console.log('[GoogleCalendar] 初始化 Calendar API...');
-              this.calendar = google.calendar({ version: 'v3', auth: this.oauth2Client });
+              this.calendar = calendar({ version: 'v3', auth: this.oauth2Client });
 
               // 获取日历列表
               console.log('[GoogleCalendar] 正在获取日历列表...');
@@ -411,7 +412,7 @@ class GoogleCalendarService {
     const redirectUri = `http://localhost:${this.REDIRECT_PORTS[0]}/oauth2callback`;
 
     // 创建 OAuth2 客户端
-    this.oauth2Client = new google.auth.OAuth2(
+    this.oauth2Client = new OAuth2Client(
       this.CLIENT_ID,
       this.CLIENT_SECRET,
       redirectUri
@@ -458,7 +459,7 @@ class GoogleCalendarService {
       console.log('[GoogleCalendar] Tokens 已保存');
 
       // 初始化 Calendar API
-      this.calendar = google.calendar({ version: 'v3', auth: this.oauth2Client });
+      this.calendar = calendar({ version: 'v3', auth: this.oauth2Client });
 
       // 获取日历列表
       const calendars = await this.listCalendars();
@@ -502,7 +503,7 @@ class GoogleCalendarService {
       const redirectUri = `http://localhost:${this.REDIRECT_PORTS[0]}/oauth2callback`;
 
       // 创建 OAuth 客户端并设置 credentials
-      this.oauth2Client = new google.auth.OAuth2(
+      this.oauth2Client = new OAuth2Client(
         this.CLIENT_ID,
         this.CLIENT_SECRET,
         redirectUri
@@ -515,7 +516,7 @@ class GoogleCalendarService {
       });
 
       // 初始化 Calendar API
-      this.calendar = google.calendar({ version: 'v3', auth: this.oauth2Client });
+      this.calendar = calendar({ version: 'v3', auth: this.oauth2Client });
 
       console.log('[GoogleCalendar] 授权初始化成功');
       return true;

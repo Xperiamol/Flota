@@ -1459,7 +1459,7 @@ const Settings = () => {
                                 ]},
                                 { title: 'Apache License 2.0', libs: [
                                     ['Transformers.js', 'Copyright (c) 2022 The HuggingFace Inc. team'],
-                                    ['googleapis', 'Copyright (c) 2012 Google LLC'],
+                                    ['@googleapis/calendar', 'Copyright (c) 2012 Google LLC'],
                                 ]},
                                 { title: 'ISC License', libs: [
                                     ['lucide-react', 'Copyright (c) 2022 Lucide Contributors'],

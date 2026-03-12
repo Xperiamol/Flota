@@ -117,12 +117,12 @@ const BaseFilter = ({
       {/* 内容区域 */}
       {expandable ? (
         <Collapse in={isExpanded}>
-          <Box sx={{ p: 2 }}>
+          <Box sx={{ p: 2, maxHeight: 220, overflowY: 'auto' }}>
             {children}
           </Box>
         </Collapse>
       ) : (
-        <Box sx={{ p: 2 }}>
+        <Box sx={{ p: 2, maxHeight: 220, overflowY: 'auto' }}>
           {children}
         </Box>
       )}

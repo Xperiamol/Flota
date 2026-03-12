@@ -11,7 +11,8 @@ import {
   Store,
   MenuBook,
   WavingHand,
-  Code
+  Code,
+  AutoAwesome
 } from '@mui/icons-material';
 import { useTheme } from '@mui/material/styles';
 import { useStore } from '../store/useStore';
@@ -73,6 +74,12 @@ const Sidebar = ({ open = true, onClose }) => {
       icon: <Store />,
       label: t('common.plugins'),
       tooltip: t('sidebar.pluginsTooltip')
+    },
+    {
+      id: 'ai',
+      icon: <AutoAwesome />,
+      label: 'AI',
+      tooltip: t('sidebar.aiTooltip') || 'FlotaAI'
     },
     {
       id: 'profile',

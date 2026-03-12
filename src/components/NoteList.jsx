@@ -702,15 +702,19 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                           position: 'relative',
                           borderRadius: '12px',
                           border: '1px solid',
-                          borderColor: 'transparent',
-                          backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.6)',
+                          borderColor: note.is_pinned
+                            ? theme.palette.primary.main + '80'
+                            : 'transparent',
+                          backgroundColor: note.is_pinned
+                            ? (theme.palette.mode === 'dark' ? theme.palette.primary.main + '14' : theme.palette.primary.main + '0A')
+                            : (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.6)'),
                           transition: 'background-color 0.2s cubic-bezier(0.4,0,0.2,1), box-shadow 0.2s cubic-bezier(0.4,0,0.2,1), border-color 0.2s cubic-bezier(0.4,0,0.2,1)',
                           py: 1,
                           pr: multiSelect.isMultiSelectMode ? 2 : 6,
                           '&:hover': {
                             backgroundColor: theme.palette.action.hover,
                             boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-                            borderColor: theme.palette.divider,
+                            borderColor: note.is_pinned ? theme.palette.primary.main : theme.palette.divider,
                             zIndex: 1,
                           },
                           '&.Mui-selected': {
@@ -738,18 +742,12 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                             />
                           </ListItemIcon>
                         )}
-                        <ListItemIcon sx={{ minWidth: 36 }}>
-                          {note.is_pinned ? (
-                            <PinIcon color="primary" fontSize="small" />
-                          ) : note.note_type === 'whiteboard' ? (
-                            <WhiteboardIcon color="action" fontSize="small" />
-                          ) : (
-                            <NoteIcon color="action" fontSize="small" />
-                          )}
-                        </ListItemIcon>
                         <ListItemText
                           primary={
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              {!!note.note_type && note.note_type === 'whiteboard' && (
+                                <WhiteboardIcon sx={{ fontSize: 13, color: 'text.disabled', flexShrink: 0 }} />
+                              )}
                               <Typography
                                 variant="subtitle2"
                                 sx={{

@@ -125,15 +125,9 @@ export default function MCPSettings({ enabled, onEnabledChange }) {
                 }
             });
 
-            // 监听重试事件（如果API支持）
-            const removeRetryListener = window.electronAPI.on?.('mcp:download-retry', (event, data) => {
-                setStatusMessage(`下载失败，正在重试 (${data.attempt}/${data.maxRetries})...`);
-            });
-
             const result = await mcpAPI.installMCPServer();
             
             if (removeProgressListener) removeProgressListener();
-            if (removeRetryListener) removeRetryListener();
 
             if (result.success) {
                 setStatusMessage('安装成功！');

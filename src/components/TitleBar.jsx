@@ -26,6 +26,8 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
         return '插件';
       case 'profile':
         return '个人中心';
+      case 'ai':
+        return 'FlotaAI';
       default:
         return 'Flota';
     }

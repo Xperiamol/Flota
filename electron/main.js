@@ -100,6 +100,7 @@ const ImageService = require('./services/ImageService')
 const { getInstance: getImageStorageInstance } = require('./services/ImageStorageService')
 const PluginManager = require('./services/PluginManager')
 const AIService = require('./services/AIService')
+const AIChatService = require('./services/AIChatService')
 const MCPDownloader = require('./services/MCPDownloader')
 const { setupMCPHandlers } = require('./ipc/mcpHandlers')
 const STTService = require('./services/STTService')
@@ -424,16 +425,6 @@ function createTray() {
           }
         }
       },
-      {
-        label: '显示悬浮球',
-        click: async () => {
-          try {
-            await windowManager.createFloatingBall()
-          } catch (error) {
-            console.error('创建悬浮球失败:', error)
-          }
-        }
-      },
       { type: 'separator' },
       {
         label: '设置',
@@ -513,6 +504,8 @@ async function initializeServices() {
     
     services.aiService = new AIService(settingDAO)
     services.sttService = new STTService(settingDAO)
+    // AI Chat 助手服务（需在 mem0Service 初始化后设置）
+    services.aiChatService = null // 延迟到后面初始化
     
     const dbPath = path.join(app.getPath('userData'), 'database', 'flota.db')
     const appDataPath = app.getPath('userData')
@@ -534,6 +527,22 @@ async function initializeServices() {
       }).catch(e => logger.error('Main', 'Mem0 service error', e))
     ]).then(() => {
       logger.info('Main', '所有AI服务初始化完成')
+      // 初始化 AI Chat 助手服务
+      services.aiChatService = new AIChatService(
+        services.aiService, services.noteDAO, services.todoDAO, services.mem0Service
+      )
+      services.aiChatService.setCurrentNoteGetter(async () => {
+        // 通过 IPC 向渲染进程请求当前笔记ID，再从DAO获取
+        try {
+          const win = BrowserWindow.getAllWindows()[0]
+          if (!win) return null
+          const noteId = await win.webContents.executeJavaScript(
+            'window.__currentSelectedNoteId || null'
+          )
+          if (!noteId) return null
+          return services.noteDAO.findById(noteId)
+        } catch (_) { return null }
+      })
     })
 
     // 初始化通知服务
@@ -1436,6 +1445,29 @@ registerIpcHandlers([
   { channel: 'ai:chat', handler: createTryCatchHandler('aiService', 'chat', 'AI聊天失败') }
 ])
 
+// AI Chat 助手流式聊天
+ipcMain.handle('ai:chat-stream', async (event, { messages, options }) => {
+  try {
+    if (!services.aiChatService) {
+      return { success: false, error: 'AI助手服务尚未初始化，请稍后重试' }
+    }
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const result = await services.aiChatService.chatStream(
+      messages,
+      (chunk) => {
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('ai:chat-chunk', chunk)
+        }
+      },
+      options
+    )
+    return result
+  } catch (error) {
+    console.error('AI流式聊天失败:', error)
+    return { success: false, error: error.message }
+  }
+})
+
 // STT (Speech-to-Text) 相关 IPC 处理
 registerIpcHandlers([
   { channel: 'stt:get-config', handler: createTryCatchHandler('sttService', 'getConfig', '获取STT配置失败') },
@@ -1727,12 +1759,6 @@ registerIpcHandlers([
     }
   },
   {
-    channel: 'window:create-floating-ball',
-    handler: async () => {
-      return await windowManager.createFloatingBall()
-    }
-  },
-  {
     channel: 'window:create-note-window',
     handler: async (event, noteId, options) => {
       return await windowManager.createNoteWindow(noteId, options)
@@ -1888,41 +1914,6 @@ ipcMain.handle('system:open-external', async (event, url) => {
     return { success: true }
   } catch (error) {
     console.error('打开外部链接失败:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-// 悬浮球相关IPC处理
-ipcMain.handle('floating-ball:create', async (event) => {
-  try {
-    await windowManager.createFloatingBall()
-    return { success: true }
-  } catch (error) {
-    console.error('创建悬浮球失败:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('floating-ball:hide', async (event) => {
-  try {
-    if (windowManager.floatingBall) {
-      windowManager.floatingBall.hide()
-    }
-    return { success: true }
-  } catch (error) {
-    console.error('隐藏悬浮球失败:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('floating-ball:show', async (event) => {
-  try {
-    if (windowManager.floatingBall) {
-      windowManager.floatingBall.show()
-    }
-    return { success: true }
-  } catch (error) {
-    console.error('显示悬浮球失败:', error)
     return { success: false, error: error.message }
   }
 })

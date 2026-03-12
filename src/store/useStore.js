@@ -52,6 +52,10 @@ const useStore = create(
 
                 // AI 面板显示模式：'selection' 选中文本时 | 'always' 始终显示 | 'disabled' 禁用
                 aiPanelMode: 'selection',
+
+                // AI 聊天对话状态
+                aiConversations: [], // [{id, title, messages, createdAt, updatedAt}]
+                aiActiveConvId: null,
                 // 工具栏按钮排序（null = 使用默认排序）
                 toolbarOrder: null,
                 // 浮动面板自定义格式项（null = 不显示额外格式项）
@@ -99,6 +103,32 @@ const useStore = create(
                 setWallpaperPath: (path) => set({ wallpaperPath: path }),
 
                 setAiPanelMode: (mode) => set({ aiPanelMode: mode }),
+
+                // AI 聊天对话管理
+                aiNewChat: () => {
+                    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+                    const newConv = { id, title: '新对话', messages: [], createdAt: Date.now(), updatedAt: Date.now() }
+                    set(state => ({
+                        aiConversations: [newConv, ...state.aiConversations].slice(0, 50),
+                        aiActiveConvId: id
+                    }))
+                    return id
+                },
+                aiDeleteConv: (id) => set(state => {
+                    const updated = state.aiConversations.filter(c => c.id !== id)
+                    return {
+                        aiConversations: updated,
+                        aiActiveConvId: state.aiActiveConvId === id
+                            ? (updated[0]?.id || null)
+                            : state.aiActiveConvId
+                    }
+                }),
+                aiSwitchConv: (id) => set({ aiActiveConvId: id }),
+                aiUpdateConv: (id, data) => set(state => ({
+                    aiConversations: state.aiConversations.map(c =>
+                        c.id === id ? { ...c, ...data, updatedAt: Date.now() } : c
+                    )
+                })),
 
                 setToolbarOrder: (order) => set({ toolbarOrder: order }),
 
@@ -647,6 +677,8 @@ const useStore = create(
                 christmasMode: state.christmasMode,
                 editorMode: state.editorMode,
                 aiPanelMode: state.aiPanelMode,
+                aiConversations: (state.aiConversations || []).slice(0, 50),
+                aiActiveConvId: state.aiActiveConvId,
                 toolbarOrder: state.toolbarOrder,
                 floatingPanelItems: state.floatingPanelItems,
                 backgroundPattern: state.backgroundPattern,

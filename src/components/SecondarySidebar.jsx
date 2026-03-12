@@ -10,7 +10,8 @@ import {
   ListItemText,
   Stack,
   Chip,
-  ListItemIcon
+  ListItemIcon,
+  IconButton
 } from '@mui/material';
 import {
   Settings as SettingsIcon,
@@ -24,7 +25,8 @@ import {
   Info as InfoIcon,
   Mic as STTIcon,
   Code as CodeIcon,
-  EditNote as EditNoteIcon
+  EditNote as EditNoteIcon,
+  DeleteOutline as DeleteIcon
 } from '@mui/icons-material';
 import { scrollbar } from '../styles/commonStyles';
 import { useStore } from '../store/useStore';
@@ -44,6 +46,10 @@ const SecondarySidebar = ({ open, onClose, width = 320, onTodoSelect, onViewMode
   const setPluginStoreTab = useStore((state) => state.setPluginStoreTab);
   const settingsTabValue = useStore((state) => state.settingsTabValue);
   const setSettingsTabValue = useStore((state) => state.setSettingsTabValue);
+  const aiConversations = useStore((state) => state.aiConversations);
+  const aiActiveConvId = useStore((state) => state.aiActiveConvId);
+  const aiSwitchConv = useStore((state) => state.aiSwitchConv);
+  const aiDeleteConv = useStore((state) => state.aiDeleteConv);
 
   // 根据遮罩透明度设置获取对应的透明度值
   const getMaskOpacityValue = (isDark) => {
@@ -209,6 +215,75 @@ const SecondarySidebar = ({ open, onClose, width = 320, onTodoSelect, onViewMode
                   />
                 </ListItemButton>
               ))}
+            </List>
+          </Box>
+        )
+      }
+      case 'ai': {
+        const formatTime = (ts) => {
+          const d = new Date(ts)
+          const now = new Date()
+          const diffDays = Math.floor((now - d) / 86400000)
+          if (diffDays === 0) return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+          if (diffDays === 1) return '昨天'
+          if (diffDays < 7) return `${diffDays}天前`
+          return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+        }
+
+        return (
+          <Box sx={(theme) => ({
+            p: 2,
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            backgroundColor: theme.palette.mode === 'dark'
+              ? 'rgba(30, 41, 59, 0.85)'
+              : 'rgba(255, 255, 255, 0.85)',
+            backdropFilter: 'blur(12px) saturate(150%)',
+            WebkitBackdropFilter: 'blur(12px) saturate(150%)'
+          })}>
+            <Typography variant="h6" sx={{ mb: 2 }}>
+              对话历史
+            </Typography>
+
+            <List dense disablePadding sx={{ overflowY: 'auto', flex: 1, ...scrollbar.auto }}>
+              {aiConversations.map((conv) => (
+                <ListItemButton
+                  key={conv.id}
+                  selected={conv.id === aiActiveConvId}
+                  onClick={() => aiSwitchConv(conv.id)}
+                  sx={{
+                    borderRadius: 1,
+                    mb: 0.5,
+                    '&:hover .del-btn': { opacity: 1 },
+                  }}
+                >
+                  <ListItemText
+                    primary={conv.title || '新对话'}
+                    secondary={formatTime(conv.updatedAt)}
+                    primaryTypographyProps={{
+                      fontSize: 14,
+                      noWrap: true,
+                      fontWeight: conv.id === aiActiveConvId ? 600 : 400
+                    }}
+                    secondaryTypographyProps={{ fontSize: '0.72rem' }}
+                  />
+                  <IconButton
+                    className="del-btn"
+                    size="small"
+                    onClick={(e) => { e.stopPropagation(); aiDeleteConv(conv.id) }}
+                    sx={{ opacity: 0, transition: 'opacity 0.15s', ml: 0.5 }}
+                  >
+                    <DeleteIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </ListItemButton>
+              ))}
+              {aiConversations.length === 0 && (
+                <Typography variant="caption" color="text.secondary"
+                  sx={{ px: 2, py: 3, display: 'block', textAlign: 'center' }}>
+                  暂无历史对话
+                </Typography>
+              )}
             </List>
           </Box>
         )

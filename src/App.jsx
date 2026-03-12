@@ -48,6 +48,7 @@ const Settings = lazy(() => import('./components/Settings'))
 const PluginStore = lazy(() => import('./components/PluginStore'))
 const SecondarySidebar = lazy(() => import('./components/SecondarySidebar'))
 const Profile = lazy(() => import('./components/Profile'))
+const AIChatView = lazy(() => import('./components/AIChatView'))
 const ConflictResolutionDialog = lazy(() => import('./components/ConflictResolutionDialog'))
 const ChristmasDecorations = lazy(() => import('./components/ChristmasSnow'))
 
@@ -198,6 +199,9 @@ function App() {
 
   // 日历视图相关状态
   const [calendarCurrentDate, setCalendarCurrentDate] = useState(new Date())
+
+  // 暴露当前选中笔记ID给主进程（AI助手用）
+  useEffect(() => { window.__currentSelectedNoteId = selectedNoteId }, [selectedNoteId])
   const [selectedDate, setSelectedDate] = useState(null)
   const [calendarShowCompleted, setCalendarShowCompleted] = useState(false)
   const [calendarViewMode, setCalendarViewMode] = useState('todos') // 'todos', 'notes', 'focus'
@@ -892,7 +896,7 @@ function App() {
                   onToggleDeleted={() => {
                     const newShowDeleted = !showDeleted;
                     setShowDeleted(newShowDeleted);
-                    // 根据新的状态重新加载笔记
+                    setSelectedNoteId(null);
                     loadNotes(newShowDeleted ? { deleted: true } : {});
                   }}
                   currentView={currentView}
@@ -1121,6 +1125,7 @@ function App() {
                       </Box>
                     )}
                     {currentView === 'profile' && <Profile />}
+                    {currentView === 'ai' && <AIChatView />}
                   </Suspense>
                 </Box>
               </Box>

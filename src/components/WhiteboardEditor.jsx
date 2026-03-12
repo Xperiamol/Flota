@@ -731,15 +731,17 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
     e.preventDefault()
     const btn = aiButtonRef.current
     if (!btn) return
-    const containerEl = btn.parentElement
-    const containerRect = containerEl ? containerEl.getBoundingClientRect() : { left: 0, top: 0 }
-    const btnRect = btn.getBoundingClientRect()
+    const groupEl = btn.parentElement          // 按钮组容器（position:absolute）
+    const whiteboardEl = groupEl?.parentElement // 白板容器（position:relative）
+    const whiteboardRect = whiteboardEl ? whiteboardEl.getBoundingClientRect() : { left: 0, top: 0 }
+    const groupRect = groupEl ? groupEl.getBoundingClientRect() : { left: 0, top: 0 }
     aiDragRef.current = {
       dragging: true,
       startMouseX: e.clientX,
       startMouseY: e.clientY,
-      startBtnX: aiBtnPos ? aiBtnPos.x : btnRect.left - containerRect.left,
-      startBtnY: aiBtnPos ? aiBtnPos.y : btnRect.top - containerRect.top,
+      // 首次拖动时，取按钮组相对于白板容器的实际位置，而非按钮在组内的偏移
+      startBtnX: aiBtnPos ? aiBtnPos.x : groupRect.left - whiteboardRect.left,
+      startBtnY: aiBtnPos ? aiBtnPos.y : groupRect.top - whiteboardRect.top,
       hasMoved: false,
     }
     btn.setPointerCapture(e.pointerId)
