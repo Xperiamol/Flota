@@ -7,8 +7,12 @@ yarn-error.log*
 # Build outputs
 dist/
 dist-electron/
-build/
 build-output/
+# build/ 目录保留图标文件，但忽略构建产物
+build/*.nsh
+!build/logo.ico
+!build/logo.icns
+!build/logo.png
 mcp-build/
 
 # Environment variables

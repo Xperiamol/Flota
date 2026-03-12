@@ -149,6 +149,10 @@ function createWindow() {
   }
 
   // 创建浏览器窗口
+  const winIconPath = isDev
+    ? path.join(__dirname, '../build/logo.ico')
+    : path.join(process.resourcesPath, 'build/logo.ico')
+
   mainWindow = new BrowserWindow({
     width: windowState.width,
     height: windowState.height,
@@ -156,6 +160,7 @@ function createWindow() {
     y: windowState.y,
     minWidth: 800,
     minHeight: 600,
+    icon: fs.existsSync(winIconPath) ? winIconPath : undefined,
     webPreferences: {
       nodeIntegration: false, // 安全考虑，禁用node集成
       contextIsolation: true, // 启用上下文隔离

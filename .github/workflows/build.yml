@@ -42,6 +42,24 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get install -y libarchive-tools rpm
 
+      # macOS：用 logo.png 生成 logo.icns（electron-builder 需要）
+      - name: Generate logo.icns (macOS only)
+        if: matrix.os == 'macos-latest'
+        run: |
+          mkdir -p build
+          mkdir -p /tmp/logo.iconset
+          sips -z 16 16   logo.png --out /tmp/logo.iconset/icon_16x16.png
+          sips -z 32 32   logo.png --out /tmp/logo.iconset/icon_16x16@2x.png
+          sips -z 32 32   logo.png --out /tmp/logo.iconset/icon_32x32.png
+          sips -z 64 64   logo.png --out /tmp/logo.iconset/icon_32x32@2x.png
+          sips -z 128 128 logo.png --out /tmp/logo.iconset/icon_128x128.png
+          sips -z 256 256 logo.png --out /tmp/logo.iconset/icon_128x128@2x.png
+          sips -z 256 256 logo.png --out /tmp/logo.iconset/icon_256x256.png
+          sips -z 512 512 logo.png --out /tmp/logo.iconset/icon_256x256@2x.png
+          sips -z 512 512 logo.png --out /tmp/logo.iconset/icon_512x512.png
+          cp logo.png /tmp/logo.iconset/icon_512x512@2x.png
+          iconutil -c icns /tmp/logo.iconset -o build/logo.icns
+
       # 为 Electron 重新编译 better-sqlite3（使用 electron-rebuild）
       - name: Rebuild better-sqlite3 for Electron
         run: npx electron-rebuild -f -w better-sqlite3
