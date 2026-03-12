@@ -73,10 +73,27 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 上传构建产物
+      # 上传构建产物（手动触发时保存为 Artifacts）
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Flota-${{ matrix.platform }}-${{ github.ref_name }}
           path: dist-electron/
           if-no-files-found: warn
+
+      # 推 tag 时自动发布到 GitHub Releases
+      - name: Release to GitHub
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            dist-electron/*.exe
+            dist-electron/*.dmg
+            dist-electron/*.AppImage
+            dist-electron/*.blockmap
+            dist-electron/latest*.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
