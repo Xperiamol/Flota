@@ -879,14 +879,14 @@ const Settings = () => {
     ];
 
     const themeColorPresets = [
-        { name: '经典蓝', color: '#0F4C81' },
-        { name: '珊瑚橙', color: '#FF6F61' },
-        { name: '紫外光', color: '#5F4B8B' },
-        { name: '草木绿', color: '#88B04B' },
-        { name: '水晶粉', color: '#F7CAC9' },
-        { name: '宁静蓝', color: '#91A8D0' },
-        { name: '活力橙', color: '#DD4124' },
-        { name: '辐射兰', color: '#9B1B30' },
+        { name: '浅黛蓝', color: '#3B82F6' },
+        { name: '薄荷绿', color: '#10B981' },
+        { name: '丁香紫', color: '#8B5CF6' },
+        { name: '珊瑚红', color: '#F43F5E' },
+        { name: '秋叶黄', color: '#F59E0B' },
+        { name: '樱花粉', color: '#EC4899' },
+        { name: '松石蓝', color: '#14B8A6' },
+        { name: '极简灰', color: '#64748B' },
     ];
     const maskOpacityOptions = [
         { value: 'none', label: '无遮罩' },
@@ -1039,7 +1039,8 @@ const Settings = () => {
                             <TextField
                                 type="color"
                                 value={primaryColor}
-                                onChange={(e) => handleSettingChange('customThemeColor', e.target.value)}
+                                onChange={(e) => setPrimaryColor(e.target.value)}
+                                onBlur={(e) => handleSettingChange('customThemeColor', e.target.value)}
                                 size="small"
                                 sx={{ width: 44, height: 36, p: 0, '& input': { cursor: 'pointer' } }}
                                 aria-label="自定义主题颜色"
