@@ -50,7 +50,8 @@ import {
     Code as CodeIcon,
     Visibility as VisibilityIcon,
     Language as LanguageIcon,
-    Image as ImageIcon
+    Image as ImageIcon,
+    ContentCopy as ContentCopyIcon
 } from '@mui/icons-material';
 import { useStore } from '../store/useStore';
 import ShortcutInput from './ShortcutInput';
@@ -474,6 +475,7 @@ const Settings = () => {
     const [importStatus, setImportStatus] = useState('');
     const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
     const [appVersion, setAppVersion] = useState('');
+    const [appPlatform, setAppPlatform] = useState('unknown');
 
     useEffect(() => {
         // 加载设置
@@ -481,7 +483,37 @@ const Settings = () => {
         loadShortcuts();
         // 动态获取应用版本号
         window.electronAPI?.getVersion?.().then(v => setAppVersion(v)).catch(() => {});
+        window.electronAPI?.system?.getPlatform?.().then(p => setAppPlatform(p || 'unknown')).catch(() => {});
     }, []);
+
+    const handleCopyDebugInfo = async () => {
+        const debugInfo = [
+            '# Flota Debug Info',
+            `time: ${new Date().toISOString()}`,
+            `version: ${appVersion || 'unknown'}`,
+            `platform: ${appPlatform}`,
+            `language: ${language || settings.language || 'unknown'}`,
+            `theme: ${theme || 'unknown'}`,
+            `editorMode: ${editorMode || 'unknown'}`,
+            `titleBarStyle: ${titleBarStyle || 'unknown'}`,
+            `mcpEnabled: ${settings?.mcpEnabled ? 'true' : 'false'}`,
+            `defaultMinibarMode: ${settings?.defaultMinibarMode ? 'true' : 'false'}`,
+            `userAgent: ${navigator.userAgent}`,
+        ].join('\n');
+
+        try {
+            if (window.electronAPI?.system?.writeText) {
+                await window.electronAPI.system.writeText(debugInfo);
+            } else if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(debugInfo);
+            } else {
+                throw new Error('Clipboard API not available');
+            }
+            setSnackbar({ open: true, message: t('about.copyDebugInfoSuccess') || '调试信息已复制', severity: 'success' });
+        } catch (error) {
+            setSnackbar({ open: true, message: t('about.copyDebugInfoFailed') || '复制失败', severity: 'error' });
+        }
+    };
 
     const loadSettings = async () => {
         try {
@@ -1410,7 +1442,22 @@ const Settings = () => {
                             {t('about.version')}{appVersion ? ` ${appVersion}` : ''}
                         </Typography>
 
-                        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                            <Button
+                                variant="contained"
+                                size="small"
+                                startIcon={<ContentCopyIcon />}
+                                onClick={handleCopyDebugInfo}
+                                sx={{
+                                    borderRadius: 2,
+                                    textTransform: 'none',
+                                    px: 1.8,
+                                    background: 'linear-gradient(135deg, rgba(25,118,210,0.95), rgba(66,165,245,0.9))',
+                                    boxShadow: '0 6px 16px rgba(25,118,210,0.25)'
+                                }}
+                            >
+                                {t('about.copyDebugInfo') || '复制调试信息'}
+                            </Button>
                             <Button
                                 variant="outlined"
                                 size="small"

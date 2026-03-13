@@ -629,6 +629,9 @@ const enUS = {
     description: 'A simple and efficient note-taking app',
     version: 'Version 2.3.1',
     githubRepo: 'GitHub Repository',
+    copyDebugInfo: 'Copy Debug Info',
+    copyDebugInfoSuccess: 'Debug info copied',
+    copyDebugInfoFailed: 'Failed to copy debug info',
     copyright: '© 2026 Flota. All rights reserved.',
     openSourceLicenses: 'Open Source Licenses',
     openSourceDesc: 'This app is built with the following open source projects. Thank you!'

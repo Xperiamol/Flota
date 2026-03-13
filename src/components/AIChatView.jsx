@@ -278,15 +278,9 @@ export default function AIChatView() {
 
       const result = await window.electronAPI.ai.chatStream(apiMessages, {})
 
-      // 清理监听器
-      if (chunkListenerRef.current) {
-        chunkListenerRef.current()
-        chunkListenerRef.current = null
-      }
-
       // 将流式结果添加为完整助手消息
       const assistantContent = result.success
-        ? result.fullContent
+        ? (currentContent || result.fullContent || '')
         : (currentContent || `❌ ${result.error}`)
 
       const finalMessages = [...newMessages, {
@@ -310,6 +304,10 @@ export default function AIChatView() {
       setToolCalls([])
       aiUpdateConv(currentId, { messages: errMessages })
     } finally {
+      if (chunkListenerRef.current) {
+        chunkListenerRef.current()
+        chunkListenerRef.current = null
+      }
       setLoading(false)
       inputRef.current?.focus()
     }

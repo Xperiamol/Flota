@@ -641,6 +641,9 @@ const zhCN = {
     description: '一个简洁高效的记录应用',
     version: '版本',
     githubRepo: 'GitHub 仓库',
+    copyDebugInfo: '复制调试信息',
+    copyDebugInfoSuccess: '调试信息已复制',
+    copyDebugInfoFailed: '复制调试信息失败',
     copyright: '© 2026 Flota. All rights reserved.',
     openSourceLicenses: '开源许可',
     openSourceDesc: '本应用基于以下开源项目构建，在此表示感谢。'
