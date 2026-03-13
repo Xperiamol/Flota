@@ -19,6 +19,7 @@
     "sqlite:electron": "node scripts/manage-sqlite.js electron",
     "sqlite:node": "node scripts/manage-sqlite.js node",
     "test": "echo \"Error: no test specified\" && exit 1",
+    "release:notes": "node scripts/extract-release-notes.js",
     "release:patch": "npm version patch -m \"chore: release v%s\"",
     "release:minor": "npm version minor -m \"chore: release v%s\"",
     "release:major": "npm version major -m \"chore: release v%s\""

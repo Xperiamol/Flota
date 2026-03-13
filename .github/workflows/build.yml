@@ -72,6 +72,11 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      # 仅在 Linux 构建 MCP 独立分发包（跨平台无关，构建一次即可）
+      - name: Package MCP Server (Linux only)
+        if: matrix.os == 'ubuntu-latest'
+        run: npm run package-mcp
+
       # electron-builder 打包（--publish never 禁止它自己上传，由下面统一发布）
       - name: Package (Windows)
         if: matrix.os == 'windows-latest'
@@ -94,18 +99,26 @@ jobs:
           if-no-files-found: warn
 
       # 推 tag 时自动发布到 GitHub Releases
+      - name: Generate release notes from CHANGELOG
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          npm run release:notes -- --version="$VERSION" --out=release-notes.md
+
       - name: Release to GitHub
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           draft: false
           prerelease: false
-          generate_release_notes: true
+          body_path: release-notes.md
           files: |
             dist-electron/*.exe
             dist-electron/*.dmg
             dist-electron/*.AppImage
             dist-electron/*.blockmap
             dist-electron/latest*.yml
+            dist-electron/mcp-server.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
