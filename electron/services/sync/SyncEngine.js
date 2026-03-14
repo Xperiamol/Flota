@@ -1079,7 +1079,8 @@ class SyncEngine extends EventEmitter {
         id: task.fileId,
         content,
         note_type: noteType,
-        title: meta.title || this.extractTitle(content),
+        // 同步层应保持源数据，不在这里自动从正文推断标题
+        title: typeof meta.title === 'string' ? meta.title : '',
         tags: meta.tags || '',
         category: meta.category || '',
         is_pinned: meta.is_pinned || 0,
@@ -1388,24 +1389,6 @@ class SyncEngine extends EventEmitter {
     for (const todo of remoteTodos) {
       await this.storage.upsertTodo(todo, true);
     }
-  }
-
-  /**
-   * 从内容中提取标题
-   * @private
-   */
-  extractTitle(content) {
-    if (!content) return '无标题';
-    const lines = content.split('\n');
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith('#')) {
-        return trimmed.substring(0, 50);
-      } else if (trimmed.startsWith('#')) {
-        return trimmed.replace(/^#+\s*/, '').substring(0, 50);
-      }
-    }
-    return '无标题';
   }
 
   // ==================== 阶段 4: 提交 (Commit) ====================

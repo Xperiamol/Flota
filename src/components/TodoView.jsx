@@ -411,7 +411,8 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
             gridTemplateColumns: '1fr 1fr',
             gridTemplateRows: '1fr 1fr',
             gap: 2,
-            minHeight: '680px',
+            height: { xs: '560px', md: '680px' },
+            maxHeight: { xs: '560px', md: '680px' },
           }}
         >
             {quadrants.map((quadrant) => (
@@ -423,11 +424,13 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
                   isImportant: quadrant.isImportant,
                   isUrgent: quadrant.isUrgent
                 })}
+                sx={{ minHeight: 0 }}
               >
                 <Card
                   elevation={0}
                   sx={{
                     height: '100%',
+                    minHeight: 0,
                     display: 'flex',
                     flexDirection: 'column',
                     borderRadius: '14px',
@@ -485,7 +488,7 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
                     />
                   </Box>
 
-                  <CardContent sx={{ flex: 1, pt: 0, pb: '12px !important', px: 1.5, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                  <CardContent sx={{ flex: 1, minHeight: 0, pt: 0, pb: '12px !important', px: 1.5, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                     {quadrant.todos.length === 0 ? (
                       <Box
                         sx={{
@@ -498,7 +501,9 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
                           </Typography>
                       </Box>
                     ) : (
-                      <Box sx={{ flex: 1, overflow: 'auto', ...scrollbar.auto }}>
+                      <Box
+                        sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', ...scrollbar.auto }}
+                      >
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
                           {quadrant.todos.map(renderTodoItem)}
                         </Box>
