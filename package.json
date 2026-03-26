@@ -1,6 +1,6 @@
 {
   "name": "flota",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Flota - 简洁高效的记录应用",
   "main": "electron/main.js",
   "homepage": "./",
@@ -203,14 +203,25 @@
     "mac": {
       "icon": "build/logo.icns",
       "target": [
-        { "target": "dmg", "arch": ["arm64", "x64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "category": "public.app-category.productivity"
     },
     "linux": {
       "icon": "build/logo.png",
       "target": [
-        { "target": "AppImage", "arch": ["x64"] }
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "category": "Office"
     }
