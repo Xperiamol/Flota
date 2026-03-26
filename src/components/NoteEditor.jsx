@@ -12,7 +12,6 @@ import {
   Snackbar
 } from '@mui/material'
 import {
-  Save as SaveIcon,
   AutoMode as AutoSaveIcon,
   PushPin as PinIcon,
   PushPinOutlined as PinOutlinedIcon,
@@ -22,7 +21,7 @@ import {
   ViewColumn as SplitViewIcon,
   Article as ArticleIcon,
   Brush as WhiteboardIcon,
-  OpenInNew as OpenInNewIcon,
+  WebAsset as WindowIcon,
   Code as CodeIcon,
   GetApp as GetAppIcon,
   CheckCircle as CheckCircleIcon,
@@ -30,7 +29,6 @@ import {
 } from '@mui/icons-material'
 import { useStore } from '../store/useStore'
 import { useStandaloneContext } from './StandaloneProvider'
-import { formatDistanceToNow } from 'date-fns'
 import { zhCN } from 'date-fns/locale/zh-CN'
 import { parseTags, formatTags } from '../utils/tagUtils'
 import { DEFAULT_SHORTCUTS } from '../utils/shortcutUtils'
@@ -51,6 +49,7 @@ import { useTranslation } from '../utils/i18n'
 import { saveQueue } from '../utils/SaveQueue'
 import { scrollbar } from '../styles/commonStyles'
 import logger from '../utils/logger'
+import { formatRelativeNoteTime } from '../utils/noteDateUtils'
 
 const NoteEditor = () => {
   // 检测是否在独立窗口模式下运行
@@ -97,7 +96,6 @@ const NoteEditor = () => {
   const [isDragging, setIsDragging] = useState(false)
   const [conversionDialogOpen, setConversionDialogOpen] = useState(false)
   const [pendingNoteType, setPendingNoteType] = useState(null)
-  const [whiteboardSaveFunc, setWhiteboardSaveFunc] = useState(null)
   const [whiteboardGetContentFunc, setWhiteboardGetContentFunc] = useState(null)
   const [whiteboardExportFunc, setWhiteboardExportFunc] = useState(null)
   const [showToolbar, setShowToolbar] = useState(!isStandaloneMode && !minibarMode) // 独立窗口或minibar模式默认隐藏工具栏
@@ -113,6 +111,19 @@ const NoteEditor = () => {
   const prevStateRef = useRef({ title: '', content: '', tags: '', noteType: 'markdown' })
   const hasUnsavedChangesRef = useRef(false)
 
+  const getSavedAtFromUpdateResult = (result) => {
+    if (result?.data?.updated_at) return result.data.updated_at
+    if (result?.data?.created_at) return result.data.created_at
+    return null
+  }
+
+  const ensureUpdateSucceeded = (result) => {
+    if (!result?.success) {
+      throw new Error(result?.error || '保存失败，请重试')
+    }
+    return result
+  }
+
   // 保存函数（稳定引用，带重试机制和队列管理）
   const performSave = async (retries = 3) => {
     if (!selectedNoteId) return
@@ -124,13 +135,14 @@ const NoteEditor = () => {
       for (let attempt = 0; attempt < retries; attempt++) {
         try {
           const tagsArray = parseTags(prevStateRef.current.tags)
-          await updateNote(selectedNoteId, {
+          const result = ensureUpdateSucceeded(await updateNote(selectedNoteId, {
             title: prevStateRef.current.title.trim() || '无标题',
             content: prevStateRef.current.content,
             tags: formatTags(tagsArray),
             note_type: prevStateRef.current.noteType
-          })
-          setLastSaved(new Date().toISOString())
+          }))
+          const persistedSavedAt = getSavedAtFromUpdateResult(result)
+          setLastSaved(persistedSavedAt || currentNote?.updated_at || currentNote?.created_at || null)
           setHasUnsavedChanges(false)
           hasUnsavedChangesRef.current = false
           setShowSaveError(false)
@@ -493,13 +505,15 @@ const NoteEditor = () => {
 
     try {
       const tagsArray = parseTags(tags)
-      await updateNote(selectedNoteId, {
+      const result = ensureUpdateSucceeded(await updateNote(selectedNoteId, {
         title: title.trim() || '无标题',
         content,
         tags: formatTags(tagsArray)
-      })
-      setLastSaved(new Date().toISOString())
+      }))
+      const persistedSavedAt = getSavedAtFromUpdateResult(result)
+      setLastSaved(persistedSavedAt || currentNote?.updated_at || currentNote?.created_at || null)
       setHasUnsavedChanges(false)
+      setShowSaveError(false)
       setShowSaveSuccess(true)
     } catch (error) {
       console.error('保存失败:', error)
@@ -998,31 +1012,7 @@ const NoteEditor = () => {
   }
 
   const formatLastSaved = (dateString) => {
-    if (!dateString) return ''
-    try {
-      // 尝试多种时间格式解析
-      let date
-      if (dateString.includes('T') || dateString.includes('Z')) {
-        // ISO格式时间
-        date = new Date(dateString)
-      } else {
-        // SQLite的CURRENT_TIMESTAMP格式，假设为UTC时间
-        date = new Date(dateString + 'Z')
-      }
-
-      // 检查日期是否有效
-      if (isNaN(date.getTime())) {
-        // 如果解析失败，尝试直接解析
-        date = new Date(dateString)
-      }
-
-      return formatDistanceToNow(date, {
-        addSuffix: true,
-        locale: zhCN
-      })
-    } catch {
-      return ''
-    }
+    return formatRelativeNoteTime(dateString, { locale: zhCN, unknownText: '' })
   }
 
   // 处理键盘事件
@@ -1415,18 +1405,19 @@ const NoteEditor = () => {
       <Paper
         elevation={0}
         sx={{
-          p: 1,
-          height: '48px',
+          px: 1,
+          py: 0.75,
+          minHeight: '52px',
           borderBottom: 1,
           borderColor: 'divider',
           borderRadius: 0,
           display: 'flex',
           alignItems: 'center',
-          gap: 1,
+          gap: 0.75,
           overflow: 'hidden',
           backgroundColor: (theme) => theme.palette.mode === 'dark'
-            ? 'rgba(30, 41, 59, 0.6)'
-            : 'rgba(255, 255, 255, 0.6)',
+            ? 'rgba(15, 23, 42, 0.58)'
+            : 'rgba(255, 255, 255, 0.74)',
           backdropFilter: 'blur(30px) saturate(180%)',
           WebkitBackdropFilter: 'blur(30px) saturate(180%)',
           // 独立窗口模式下的特殊样式
@@ -1444,37 +1435,58 @@ const NoteEditor = () => {
           })
         }}
       >
-        <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 1 }}>
           {isAutoSaving ? (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <AutoSaveIcon fontSize="small" color="primary" sx={{ animation: 'pulse 1.5s infinite' }} />
-              <Typography variant="body2" color="primary">
+            <Box sx={{
+              display: 'inline-flex', alignItems: 'center', gap: 0.5,
+              px: 1, py: 0.35, borderRadius: '999px',
+              bgcolor: 'primary.main', color: 'primary.contrastText',
+              maxWidth: '100%'
+            }}>
+              <AutoSaveIcon fontSize="small" sx={{ fontSize: 15, animation: 'pulse 1.5s infinite' }} />
+              <Typography variant="caption" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
                 {t('common.autoSaving')}
               </Typography>
             </Box>
           ) : showSaveError ? (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <ErrorIcon sx={{ fontSize: 16, color: 'error.main' }} />
-              <Typography variant="body2" color="error">
+            <Box sx={{
+              display: 'inline-flex', alignItems: 'center', gap: 0.5,
+              px: 1, py: 0.35, borderRadius: '999px',
+              bgcolor: 'error.main', color: 'error.contrastText',
+              maxWidth: '100%'
+            }}>
+              <ErrorIcon sx={{ fontSize: 16 }} />
+              <Typography variant="caption" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
                 保存失败
               </Typography>
             </Box>
           ) : hasUnsavedChanges ? (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Box sx={{
+              display: 'inline-flex', alignItems: 'center', gap: 0.5,
+              px: 1, py: 0.35, borderRadius: '999px',
+              bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(245, 158, 11, 0.14)',
+              color: 'warning.main',
+              maxWidth: '100%'
+            }}>
               <EditIcon sx={{ fontSize: 16, color: 'warning.main' }} />
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="caption" sx={{ fontWeight: 600, color: 'warning.main', whiteSpace: 'nowrap' }}>
                 {t('common.unsavedChanges')}
               </Typography>
             </Box>
           ) : lastSaved ? (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <CheckCircleIcon sx={{ fontSize: 16, color: 'success.main' }} />
-              <Typography variant="body2" color="text.secondary">
+            <Box sx={{
+              display: 'inline-flex', alignItems: 'center', gap: 0.5,
+              px: 1, py: 0.35, borderRadius: '999px',
+              bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.12)',
+              maxWidth: '100%'
+            }}>
+              <CheckCircleIcon sx={{ fontSize: 15, color: 'success.main' }} />
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {t('common.lastSaved', { time: formatLastSaved(lastSaved) })}
               </Typography>
             </Box>
           ) : (
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="caption" color="text.secondary" sx={{ px: 1 }}>
               {t('common.newNote')}
             </Typography>
           )}
@@ -1532,57 +1544,48 @@ const NoteEditor = () => {
           })}
         </Box>
 
-        <Tooltip title={t('notes.openInNewWindow')}>
-          <IconButton onClick={handleOpenStandalone} size="small">
-            <OpenInNewIcon />
-          </IconButton>
-        </Tooltip>
-
-        <Tooltip title={currentNote?.is_pinned ? t('notes.unpinNote') : t('notes.pinNote')}>
-          <IconButton onClick={handleTogglePin} size="small">
-            {currentNote?.is_pinned ? (
-              <PinIcon color="primary" />
-            ) : (
-              <PinOutlinedIcon />
-            )}
-          </IconButton>
-        </Tooltip>
-
-        {/* Markdown 模式：保存按钮 */}
-        {noteType === 'markdown' && (
-          <Tooltip title={t('common.saveTooltip')}>
+        <Box sx={{
+          display: 'flex', alignItems: 'center', gap: 0.5,
+          p: 0.25, borderRadius: '10px',
+          bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(15, 23, 42, 0.06)'
+        }}>
+          <Tooltip title={t('notes.openInNewWindow')}>
             <IconButton
-              onClick={handleManualSave}
+              onClick={handleOpenStandalone}
               size="small"
-              disabled={!hasUnsavedChanges}
+              sx={{ borderRadius: '8px' }}
             >
-              <SaveIcon />
+              <WindowIcon sx={{ fontSize: 18 }} />
             </IconButton>
           </Tooltip>
-        )}
 
-        {/* 白板模式：保存白板和导出PNG */}
-        {noteType === 'whiteboard' && (
-          <>
-            <Tooltip title={t('common.saveWhiteboardTooltip')}>
-              <IconButton
-                onClick={() => whiteboardSaveFunc?.()}
-                size="small"
-              >
-                <SaveIcon />
-              </IconButton>
-            </Tooltip>
+          <Tooltip title={currentNote?.is_pinned ? t('notes.unpinNote') : t('notes.pinNote')}>
+            <IconButton
+              onClick={handleTogglePin}
+              size="small"
+              sx={{ borderRadius: '8px' }}
+            >
+              {currentNote?.is_pinned ? (
+                <PinIcon color="primary" sx={{ fontSize: 18 }} />
+              ) : (
+                <PinOutlinedIcon sx={{ fontSize: 18 }} />
+              )}
+            </IconButton>
+          </Tooltip>
 
+          {/* 白板模式：导出PNG */}
+          {noteType === 'whiteboard' && (
             <Tooltip title={t('common.exportPngTooltip')}>
               <IconButton
                 onClick={() => whiteboardExportFunc?.()}
                 size="small"
+                sx={{ borderRadius: '8px' }}
               >
-                <GetAppIcon />
+                <GetAppIcon sx={{ fontSize: 18 }} />
               </IconButton>
             </Tooltip>
-          </>
-        )}
+          )}
+        </Box>
       </Paper>
 
       {/* 标签和标题栏 - 调整高度 */}
@@ -1852,7 +1855,6 @@ const NoteEditor = () => {
               noteId={selectedNoteId}
               showToolbar={showToolbar}
               isStandaloneMode={isStandaloneMode}
-              onSaveWhiteboard={(func) => setWhiteboardSaveFunc(() => func)}
               onGetContent={(func) => setWhiteboardGetContentFunc(() => func)}
               onExportPNG={(func) => setWhiteboardExportFunc(() => func)}
             />

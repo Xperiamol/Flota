@@ -150,7 +150,7 @@ class SyncEngine extends EventEmitter {
 
       // 阶段 4: 提交 — 即使有非致命错误（如图片上传失败）也提交已成功部分
       this.emit('syncProgress', { stage: 'commit', progress: 0.9 });
-      await this.commit(localManifest, remoteManifest, tasks);
+      await this.commit(localManifest, remoteManifest, tasks, result);
       this.log('同步提交成功');
       if (result.errors > 0) {
         this.logError(`同步完成但有 ${result.errors} 个非致命错误`);
@@ -856,43 +856,74 @@ class SyncEngine extends EventEmitter {
       skipped: 0,
       errors: 0,
       errorDetails: [],
+      successfulTaskKeys: [],
+      danglingFileIds: [],
+    };
+
+    const markTaskSuccess = (task) => {
+      result.successfulTaskKeys.push(`${task.fileId}:${task.operation}`);
+    };
+
+    const addCounters = (delta = {}) => {
+      result.uploaded += delta.uploaded || 0;
+      result.downloaded += delta.downloaded || 0;
+      result.deleted += delta.deleted || 0;
+      result.skipped += delta.skipped || 0;
+    };
+
+    const operationHandlers = {
+      upload: async (task) => {
+        await this.executeUpload(task);
+        return { uploaded: 1 };
+      },
+      download: async (task) => {
+        await this.executeDownload(task);
+        return { downloaded: 1 };
+      },
+      delete: async (task) => {
+        await this.executeDelete(task);
+        return { deleted: 1 };
+      },
+      'delete-local': async (task) => {
+        await this.executeDeleteLocal(task);
+        return { deleted: 1 };
+      },
+      'upload-delete': async (task) => {
+        await this.executeUploadDelete(task);
+        return { deleted: 1 };
+      },
+      'merge-todos': async (task) => {
+        await this.executeMergeTodos(task);
+        return { downloaded: 1, uploaded: 1 };
+      },
+      skip: async () => ({ skipped: 1 }),
     };
 
     for (const task of tasks) {
       try {
-        if (task.operation === 'upload') {
-          await this.executeUpload(task);
-          result.uploaded++;
-        } else if (task.operation === 'download') {
-          await this.executeDownload(task);
-          result.downloaded++;
-        } else if (task.operation === 'delete') {
-          await this.executeDelete(task);
-          result.deleted++;
-        } else if (task.operation === 'delete-local') {
-          // 远程删除同步到本地
-          await this.executeDeleteLocal(task);
-          result.deleted++;
-        } else if (task.operation === 'upload-delete') {
-          // 本地删除同步到远程（删除云端文件）
-          await this.executeUploadDelete(task);
-          result.deleted++;
-        } else if (task.operation === 'merge-todos') {
-          // todos 双端冲突：逐条 updated_at 仲裁后上传合并结果
-          await this.executeMergeTodos(task);
-          result.downloaded++;
-          result.uploaded++;
-        } else {
-          result.skipped++;
-        }
+        const handler = operationHandlers[task.operation] || operationHandlers.skip;
+        const delta = await handler(task);
+        addCounters(delta);
+        markTaskSuccess(task);
       } catch (error) {
+        if (error?.code === 'MANIFEST_DANGLING_ENTRY' && task.fileId) {
+          // 这是预期的自愈路径：记录待清理条目，不按失败计数。
+          result.danglingFileIds.push(task.fileId);
+          result.skipped++;
+          this.log(`[Execution] 检测到悬挂条目，待 commit 清理: ${task.fileId}`);
+          continue;
+        }
+
         this.logError(`任务执行失败: ${task.fileId}`, error);
+        // 任务级失败按非致命告警处理，不中断整次同步提交。
         result.errors++;
         result.errorDetails.push({ fileId: task.fileId, error: error.message });
       }
     }
 
-    result.success = result.errors === 0;
+    // 阶段级（scan/commit）异常会抛出并触发 syncError；
+    // 到达这里说明本次同步可提交，任务失败仅作为告警。
+    result.success = true;
     return result;
   }
 
@@ -1061,8 +1092,15 @@ class SyncEngine extends EventEmitter {
             actualExt = alternativeExt;
             this.log(`[Download] 使用另一扩展名下载成功`);
           } catch (altError) {
-            // 两个扩展名都失败，抛出原始错误
-            throw error;
+            // 两个扩展名都不存在，标记为 manifest 悬挂条目，后续在 commit 阶段自愈清理。
+            if (altError?.message && altError.message.includes('不存在')) {
+              const danglingError = new Error(`manifest 悬挂条目: ${task.fileId}`);
+              danglingError.code = 'MANIFEST_DANGLING_ENTRY';
+              throw danglingError;
+            }
+
+            // 另一个扩展名是其他错误（如 503），抛出该错误用于重试/告警。
+            throw altError;
           }
         } else {
           throw error;
@@ -1397,8 +1435,51 @@ class SyncEngine extends EventEmitter {
    * 提交同步结果
    * @private
    */
-  async commit(localManifest, remoteManifest, tasks) {
+  async commit(localManifest, remoteManifest, tasks, executeResult = null) {
     this.log('[Commit] 生成新 manifest...');
+
+    const successfulTaskKeys = new Set(executeResult?.successfulTaskKeys || []);
+    const danglingFileIds = new Set(executeResult?.danglingFileIds || []);
+    const isSuccessfulTask = (task) => successfulTaskKeys.has(`${task.fileId}:${task.operation}`);
+    const setUploadedFileEntry = (task) => {
+      if (localManifest.files[task.fileId]) {
+        newFiles[task.fileId] = localManifest.files[task.fileId];
+      }
+    };
+
+    const setMergedTodosEntry = async (task) => {
+      try {
+        const allTodos = await this.storage.getAllTodos(true);
+        const todosArray = Object.values(allTodos);
+        let t = 0;
+        for (const todo of todosArray) {
+          const ts = this.storage.parseTimestamp(todo.updated_at);
+          if (ts > t) t = ts;
+        }
+        if (t === 0) t = 1000000000000;
+        newFiles[task.fileId] = {
+          v: 1,
+          t,
+          h: this.storage.calculateTodosHash(todosArray),
+          d: 0,
+          ext: '.json',
+        };
+      } catch (e) {
+        this.logError('[Commit] 重新计算 global_todos hash 失败', e);
+        // 回退：保持 remoteManifest 中的条目
+      }
+    };
+
+    const deleteFileEntry = (task) => {
+      delete newFiles[task.fileId];
+    };
+
+    const commitHandlers = {
+      upload: setUploadedFileEntry,
+      'upload-delete': setUploadedFileEntry,
+      'merge-todos': setMergedTodosEntry,
+      delete: deleteFileEntry,
+    };
 
     // 基于远程 manifest（服务器状态）构建新 manifest
     // 初始状态为同步前的服务器状态
@@ -1406,44 +1487,23 @@ class SyncEngine extends EventEmitter {
 
     // 根据执行的任务更新文件状态
     if (tasks && tasks.length > 0) {
+      // 清理确认不存在的悬挂条目（manifest 有记录，但 .md/.wb 均已不存在）。
+      for (const fileId of danglingFileIds) {
+        if (newFiles[fileId]) {
+          delete newFiles[fileId];
+          this.log(`[Commit] 已清理悬挂条目: ${fileId}`);
+        }
+      }
+
       for (const task of tasks) {
-        // 对于上传操作，服务器状态已更新为本地状态
-        if (task.operation === 'upload' || task.operation === 'upload-delete') {
-          if (localManifest.files[task.fileId]) {
-            newFiles[task.fileId] = localManifest.files[task.fileId];
-          }
+        // 仅基于“成功执行”的任务更新 manifest，避免失败任务污染索引。
+        if (!isSuccessfulTask(task)) {
+          continue;
         }
 
-        // merge-todos：远端已被更新为合并后的本地状态，重新计算 manifest 条目
-        if (task.operation === 'merge-todos') {
-          try {
-            const allTodos = await this.storage.getAllTodos(true);
-            const todosArray = Object.values(allTodos);
-            let t = 0;
-            for (const todo of todosArray) {
-              const ts = this.storage.parseTimestamp(todo.updated_at);
-              if (ts > t) t = ts;
-            }
-            if (t === 0) t = 1000000000000;
-            newFiles[task.fileId] = {
-              v: 1,
-              t,
-              h: this.storage.calculateTodosHash(todosArray),
-              d: 0,
-              ext: '.json',
-            };
-          } catch (e) {
-            this.logError('[Commit] 重新计算 global_todos hash 失败', e);
-            // 回退：使用 remoteManifest 的条目（已含下载内容）
-          }
-        }
-
-        // 对于下载操作，本地状态已更新为服务器状态
-        // newFiles 中已包含 remoteManifest 的条目，无需更改
-
-        // 对于删除操作 (delete)，通常是清理操作，如果需要从 manifest 移除
-        if (task.operation === 'delete') {
-          delete newFiles[task.fileId];
+        const handler = commitHandlers[task.operation];
+        if (handler) {
+          await handler(task);
         }
       }
     } else {

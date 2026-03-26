@@ -138,7 +138,11 @@ class V3SyncService extends EventEmitter {
 
       if (result.success) {
         this.status = 'success';
+        // 任务级失败在引擎中按非致命告警处理，不再污染错误状态。
         this.lastError = null;
+        if (result.errors > 0) {
+          console.warn(`[V3SyncService] 同步完成，包含 ${result.errors} 个非致命告警`);
+        }
       } else {
         this.status = 'error';
         this.lastError = `同步完成但有 ${result.errors} 个错误`;
@@ -208,10 +212,20 @@ class V3SyncService extends EventEmitter {
   /**
    * 设置凭据
    */
-  async setCredentials(username, password, baseUrl = 'https://dav.jianguoyun.com/dav') {
+  async setCredentials(username, password, baseUrl = 'https://dav.jianguoyun.com/dav', rootPath = undefined) {
     this.config = this.config || {};
     this.config.credentials = { username, password };
     this.config.baseUrl = baseUrl;
+
+    if (typeof rootPath === 'string' && rootPath.trim()) {
+      const normalized = rootPath.trim();
+      this.config.rootPath = normalized.startsWith('/')
+        ? (normalized.endsWith('/') ? normalized : `${normalized}/`)
+        : `/${normalized.endsWith('/') ? normalized : `${normalized}/`}`;
+    } else if (!this.config.rootPath) {
+      this.config.rootPath = '/Flota/';
+    }
+
     this.saveConfig();
 
     console.log('[V3SyncService] 凭据已设置');

@@ -122,6 +122,7 @@ let windowManager
 let shortcutService
 let tray = null
 let pluginManager
+const activeAIStreams = new Map()
 
 function createWindow() {
   // 加载保存的窗口状态
@@ -288,20 +289,9 @@ function createWindow() {
         }
       })
 
-      // 阻止右键菜单中的开发者工具选项
+      // 正式版应用内禁用 Electron 原生右键菜单（统一由前端自定义菜单处理）
       mainWindow.webContents.on('context-menu', (event, params) => {
         event.preventDefault()
-        const { Menu } = require('electron')
-        const menu = Menu.buildFromTemplate([
-          { role: 'undo' },
-          { role: 'redo' },
-          { type: 'separator' },
-          { role: 'cut' },
-          { role: 'copy' },
-          { role: 'paste' },
-          { role: 'selectall' }
-        ])
-        menu.popup()
       })
     }
 
@@ -1452,23 +1442,52 @@ registerIpcHandlers([
 
 // AI Chat 助手流式聊天
 ipcMain.handle('ai:chat-stream', async (event, { messages, options }) => {
+  const requestId = options?.requestId || `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+  const abortController = new AbortController()
+  activeAIStreams.set(requestId, abortController)
+
   try {
     if (!services.aiChatService) {
       return { success: false, error: 'AI助手服务尚未初始化，请稍后重试' }
     }
+
     const win = BrowserWindow.fromWebContents(event.sender)
     const result = await services.aiChatService.chatStream(
       messages,
       (chunk) => {
         if (win && !win.isDestroyed()) {
-          win.webContents.send('ai:chat-chunk', chunk)
+          win.webContents.send('ai:chat-chunk', { ...chunk, requestId })
         }
       },
-      options
+      { ...options, abortSignal: abortController.signal }
     )
-    return result
+
+    if (abortController.signal.aborted && !result?.success) {
+      return { success: false, cancelled: true, requestId, error: '已取消生成' }
+    }
+
+    return { ...result, requestId }
   } catch (error) {
+    if (abortController.signal.aborted) {
+      return { success: false, cancelled: true, requestId, error: '已取消生成' }
+    }
     console.error('AI流式聊天失败:', error)
+    return { success: false, requestId, error: error.message }
+  } finally {
+    activeAIStreams.delete(requestId)
+  }
+})
+
+// 取消指定 AI 流式请求
+ipcMain.handle('ai:cancel-stream', async (event, requestId) => {
+  try {
+    const controller = activeAIStreams.get(requestId)
+    if (!controller) {
+      return { success: false, error: '请求不存在或已结束' }
+    }
+    controller.abort()
+    return { success: true, requestId }
+  } catch (error) {
     return { success: false, error: error.message }
   }
 })

@@ -37,7 +37,7 @@ import MarkdownPreview from './MarkdownPreview';
 import { Excalidraw } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import { useError } from './ErrorProvider';
-import { isTodoCompleted, isFutureRecurringTodo } from '../utils/todoDisplayUtils';
+import { isTodoCompleted, isFutureRecurringTodo, isTodoInDateInstance, isTodoCompletedOnDate } from '../utils/todoDisplayUtils';
 
 // 白板预览组件 - 只读模式
 const WhiteboardPreview = ({ content, theme }) => {
@@ -397,12 +397,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
   const getTodosForDate = (date) => {
     if (!todos.length) return [];
 
-    return todos.filter(todo => {
-      if (!todo.due_date) return false;
-
-      const todoDate = new Date(todo.due_date);
-      return todoDate.toDateString() === date.toDateString();
-    });
+    return todos.filter(todo => isTodoInDateInstance(todo, date));
   };
 
   // 获取指定日期的笔记（根据 updated_at 或 created_at）
@@ -556,9 +551,17 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
               // 根据 viewMode 获取不同的数据
               const items = getItemsForDate(dayInfo.date);
               const dayTodos = (viewMode === 'todos' || viewMode === 'focus') ? (viewMode === 'todos' ? items : getTodosForDate(dayInfo.date)) : getTodosForDate(dayInfo.date);
-              const incompleteTodos = Array.isArray(dayTodos) ? dayTodos.filter(todo => !todo.completed) : [];
+              const dayTodosWithState = Array.isArray(dayTodos)
+                ? dayTodos.map(todo => ({
+                    ...todo,
+                    _completedOnDate: isTodoCompletedOnDate(todo, dayInfo.date)
+                  }))
+                : [];
+              const incompleteTodos = Array.isArray(dayTodosWithState) ? dayTodosWithState.filter(todo => !todo._completedOnDate) : [];
+              const totalTodosCount = dayTodosWithState.length;
+              const pendingTodosCount = incompleteTodos.length;
               const itemsToDisplay = viewMode === 'todos'
-                ? (showCompleted ? dayTodos : incompleteTodos)
+                ? (showCompleted ? dayTodosWithState : incompleteTodos)
                 : items;
 
               return (
@@ -662,7 +665,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                       </Box>
 
                       {/* 显示数量指示器 */}
-                      {((viewMode === 'todos' && incompleteTodos.length > 0) ||
+                      {((viewMode === 'todos' && itemsToDisplay.length > 0) ||
                         (viewMode === 'notes' && itemsToDisplay.length > 0) ||
                         (viewMode === 'focus' && itemsToDisplay?.type === 'focus' &&
                           (itemsToDisplay.notesCount > 0 || itemsToDisplay.todosTotal > 0))) && (
@@ -681,7 +684,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                             }}
                           >
                             {viewMode === 'todos'
-                              ? incompleteTodos.length
+                              ? (showCompleted ? `${pendingTodosCount}/${totalTodosCount}` : pendingTodosCount)
                               : viewMode === 'notes'
                                 ? itemsToDisplay.length
                                 : (itemsToDisplay.notesCount + itemsToDisplay.todosTotal)}
@@ -749,7 +752,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                               }}
                             >
                               {/* 完成状态按钮 */}
-                              {isFutureRecurringTodo(todo) ? (
+                              {(isFutureRecurringTodo(todo) && !todo._completedOnDate) ? (
                                 <ScheduleIcon sx={{ color: 'text.disabled', fontSize: 16, mr: 0.5, opacity: 0.35 }} />
                               ) : (
                               <IconButton
@@ -776,7 +779,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                                   })
                                 }}
                               >
-                                {todo.completed ? (
+                                {(todo._completedOnDate ?? todo.completed) ? (
                                   <CheckCircleIcon sx={{ color: 'success.main', fontSize: 16 }} />
                                 ) : pendingComplete.has(todo.id) ? (
                                   <RadioButtonUncheckedIcon
@@ -822,8 +825,8 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                                     textOverflow: 'ellipsis',
                                     fontSize: '0.65rem', // 更小的字体
                                     lineHeight: 1.1,
-                                    textDecoration: todo.completed ? 'line-through' : 'none',
-                                    opacity: todo.completed ? 0.6 : 1,
+                                    textDecoration: (todo._completedOnDate ?? todo.completed) ? 'line-through' : 'none',
+                                    opacity: (todo._completedOnDate ?? todo.completed) ? 0.6 : 1,
                                     color: theme.palette.text.primary
                                   }}
                                 >

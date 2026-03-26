@@ -32,6 +32,8 @@ import {
   PushPin as PinIcon,
   PushPinOutlined as PinOutlinedIcon,
   Delete as DeleteIcon,
+  ContentCopy as CopyIcon,
+  SelectAll as SelectAllIcon,
   MoreVert as MoreVertIcon,
   Search as SearchIcon,
   Clear as ClearIcon,
@@ -40,10 +42,9 @@ import {
   Restore as RestoreIcon,
   DeleteForever as DeleteForeverIcon,
   CheckCircle as TodoIcon,
-  OpenInNew as OpenInNewIcon
+  WebAsset as WindowIcon
 } from '@mui/icons-material'
 import { useStore } from '../store/useStore'
-import { formatDistanceToNow } from 'date-fns'
 import { zhCN as dateFnsZhCN } from 'date-fns/locale/zh-CN'
 import { createTodo } from '../api/todoAPI'
 import { useMultiSelect } from '../hooks/useMultiSelect'
@@ -65,6 +66,7 @@ import { useDragAnimation } from './DragAnimationProvider'
 import { ANIMATIONS, createTransitionString } from '../utils/animationConfig'
 import { useError } from './ErrorProvider'
 import logger from '../utils/logger'
+import { formatRelativeNoteTime } from '../utils/noteDateUtils'
 
 const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefChange }) => {
   const { t } = useTranslation()
@@ -79,6 +81,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
     setSearchQuery,
     loadNotes,
     deleteNote,
+    createNote,
     restoreNote,
     togglePinNote,
     batchDeleteNotes,
@@ -256,12 +259,73 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
     }
   }, [selectedNote, deleteNote, handleMenuClose])
 
+  const handleDuplicateNote = useCallback(async () => {
+    if (!selectedNote) return
+
+    try {
+      const sourceTitle = selectedNote.title && selectedNote.title !== '无标题' && selectedNote.title !== 'Untitled'
+        ? selectedNote.title
+        : t('notes.untitled')
+
+      const duplicated = await createNote({
+        title: `${sourceTitle} ${t('notes.copySuffix')}`,
+        content: selectedNote.content || '',
+        tags: Array.isArray(selectedNote.tags) ? selectedNote.tags.join(',') : (selectedNote.tags || ''),
+        note_type: selectedNote.note_type || 'markdown',
+        category: selectedNote.category || '',
+      })
+
+      if (!duplicated?.success) {
+        throw new Error(duplicated?.error || t('notes.duplicateFailed'))
+      }
+
+      showSuccess(t('notes.duplicateSuccess'))
+      handleMenuClose()
+    } catch (error) {
+      showError(error, t('notes.duplicateFailed'))
+    }
+  }, [selectedNote, createNote, handleMenuClose, showError, showSuccess, t])
+
   const handleRestore = useCallback(async () => {
     if (selectedNote) {
       await restoreNote(selectedNote.id)
       handleMenuClose()
     }
   }, [selectedNote, restoreNote, handleMenuClose])
+
+  const ensureDeleteSynced = useCallback(async () => {
+    try {
+      const syncAPI = window.electronAPI?.sync
+      if (!syncAPI?.getStatus || !syncAPI?.manualSync) {
+        return true
+      }
+
+      const statusResult = await syncAPI.getStatus()
+      const v3Status = statusResult?.v3
+      const notesSyncEnabled = Boolean(
+        v3Status?.enabled && (v3Status?.config?.syncCategories || []).includes('notes')
+      )
+
+      // 未启用笔记云同步时，不阻塞本地永久删除
+      if (!notesSyncEnabled) {
+        return true
+      }
+
+      const syncResult = await syncAPI.manualSync()
+      if (syncResult?.success === false) {
+        const errorMessage = syncResult?.offline
+          ? '当前离线，删除已加入同步队列。为避免条目被云端回灌，暂不执行永久删除。'
+          : (syncResult?.error || '同步失败')
+        showError(new Error(errorMessage), '永久删除前同步失败')
+        return false
+      }
+
+      return true
+    } catch (error) {
+      showError(error, '永久删除前同步失败')
+      return false
+    }
+  }, [showError])
 
   const handlePermanentDelete = useCallback(async () => {
     if (selectedNote) {
@@ -274,13 +338,19 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
         }, 3000)
       } else {
         // 第二次点击，执行删除
+        const canDelete = await ensureDeleteSynced()
+        if (!canDelete) {
+          setPermanentDeleteConfirm(false)
+          return
+        }
+
         const { permanentDeleteNote } = useStore.getState()
         await permanentDeleteNote(selectedNote.id)
         setPermanentDeleteConfirm(false)
         handleMenuClose()
       }
     }
-  }, [selectedNote, permanentDeleteConfirm, handleMenuClose])
+  }, [selectedNote, permanentDeleteConfirm, handleMenuClose, ensureDeleteSynced])
 
   // 在独立窗口打开笔记
   const handleOpenStandalone = useCallback(async () => {
@@ -373,34 +443,27 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
       setBatchPermanentDeleteConfirm(true)
       setTimeout(() => setBatchPermanentDeleteConfirm(false), 3000)
     } else {
+      const canDelete = await ensureDeleteSynced()
+      if (!canDelete) {
+        setBatchPermanentDeleteConfirm(false)
+        return
+      }
+
       const result = await batchPermanentDeleteNotes(selectedIds)
       if (result.success) multiSelect.clearSelection()
       setBatchPermanentDeleteConfirm(false)
     }
-  }, [batchPermanentDeleteNotes, batchPermanentDeleteConfirm, multiSelect])
+  }, [batchPermanentDeleteNotes, batchPermanentDeleteConfirm, multiSelect, ensureDeleteSynced])
 
   const handleClearSearch = useCallback(() => {
     setLocalSearchQuery('')
   }, [setLocalSearchQuery])
 
   const formatDate = (value) => {
-    if (!value) return t('notes.unknownTime')
-
-    try {
-      const str = String(value)
-      // 尝试解析：纯数字 → 时间戳，包含 T/Z → ISO，否则 → SQLite 格式
-      const date = /^\d+$/.test(str) 
-        ? new Date(Number(str))
-        : (str.includes('T') || str.includes('Z'))
-          ? new Date(str)
-          : new Date(str.replace(' ', 'T') + 'Z')
-
-      return isNaN(date.getTime()) 
-        ? t('notes.unknownTime')
-        : formatDistanceToNow(date, { addSuffix: true, locale: dateFnsZhCN })
-    } catch {
-      return t('notes.unknownTime')
-    }
+    return formatRelativeNoteTime(value, {
+      locale: dateFnsZhCN,
+      unknownText: t('notes.unknownTime')
+    })
   }
 
   const getPreviewText = (content, noteType, skipChars = 0) => {
@@ -533,7 +596,15 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
       WebkitBackdropFilter: 'blur(12px) saturate(150%)'
     })}>
       {/* 搜索框 */}
-      <Box sx={{ p: 2, pb: 1, flexShrink: 0 }}>
+      <Box
+        sx={{
+          pl: '25px',
+          pr: '30px', // 16px content gutter + 4px list scrollbar gutter（兼容更窄滚动条）
+          pt: 2,
+          pb: 1,
+          flexShrink: 0
+        }}
+      >
         <TextField
           fullWidth
           size="small"
@@ -627,7 +698,8 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
         flex: 1,
         overflow: 'auto',
         position: 'relative',
-        minHeight: 0
+        minHeight: 0,
+        scrollbarGutter: 'stable'
       }}>
         {/* 过渡加载状态 */}
         {isTransitioning && (
@@ -661,7 +733,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                 </Typography>
               </Box>
             ) : (
-              <List sx={{ py: 0 }}>
+              <List sx={{ py: 0, px: 2 }}>
                 {filteredNotes.map((note, index) => (
                   <React.Fragment key={note.id}>
                     <ListItem
@@ -685,7 +757,12 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                           }
                           multiSelect.handleClick(e, note.id, handleNoteClick)
                         }}
-                        onContextMenu={(e) => multiSelect.handleContextMenu(e, note.id, multiSelect.isMultiSelectMode)}
+                        onContextMenu={(e) => multiSelect.handleContextMenu(
+                          e,
+                          note.id,
+                          multiSelect.isMultiSelectMode,
+                          () => handleMenuClick(e, note)
+                        )}
                         onMouseDown={(e) => {
                           // 检查是否点击了菜单按钮
                           if (e.target.closest('.note-menu-button')) {
@@ -782,7 +859,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                                 </Typography>
                               )}
                               <Typography component="span" variant="caption" color="text.secondary" sx={{ display: 'block', opacity: 0.8 }}>
-                                {formatDate(note.updated_at)}
+                                {formatDate(note.updated_at || note.created_at)}
                               </Typography>
                             </Box>
                           }
@@ -850,6 +927,22 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
         {
           showDeleted ? (
             [
+              <MenuItem
+                key="enter-multi-select"
+                onClick={() => {
+                  if (selectedNote?.id) {
+                    multiSelect.enterMultiSelectMode(selectedNote.id)
+                  }
+                  handleMenuClose()
+                }}
+                disabled={multiSelect.isMultiSelectMode || !selectedNote?.id}
+              >
+                <ListItemIcon>
+                  <SelectAllIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{t('common.enterMultiSelect')}</ListItemText>
+              </MenuItem>,
+              <Divider key="divider-enter-multi-select" />,
               <MenuItem key="restore" onClick={handleRestore} >
                 <ListItemIcon>
                   <RestoreIcon fontSize="small" />
@@ -875,6 +968,22 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
             ]
           ) : (
             [
+              <MenuItem
+                key="enter-multi-select"
+                onClick={() => {
+                  if (selectedNote?.id) {
+                    multiSelect.enterMultiSelectMode(selectedNote.id)
+                  }
+                  handleMenuClose()
+                }}
+                disabled={multiSelect.isMultiSelectMode || !selectedNote?.id}
+              >
+                <ListItemIcon>
+                  <SelectAllIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{t('common.enterMultiSelect')}</ListItemText>
+              </MenuItem>,
+              <Divider key="divider-enter-multi-select" />,
               <MenuItem key="pin" onClick={handleTogglePin}>
                 <ListItemIcon>
                   {selectedNote?.is_pinned ? (
@@ -889,7 +998,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
               </MenuItem>,
               <MenuItem key="standalone" onClick={handleOpenStandalone}>
                 <ListItemIcon>
-                  <OpenInNewIcon fontSize="small" />
+                  <WindowIcon fontSize="small" />
                 </ListItemIcon>
                 <ListItemText>{t('notes.openInNewWindow')}</ListItemText>
               </MenuItem>,
@@ -898,6 +1007,12 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                   <TodoIcon fontSize="small" />
                 </ListItemIcon>
                 <ListItemText>{t('notes.convertToTodo')}</ListItemText>
+              </MenuItem>,
+              <MenuItem key="duplicate" onClick={handleDuplicateNote}>
+                <ListItemIcon>
+                  <CopyIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{t('notes.duplicateNote')}</ListItemText>
               </MenuItem>,
               <Divider key="divider" />,
               <MenuItem key="delete" onClick={handleDelete}>

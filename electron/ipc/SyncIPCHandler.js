@@ -95,7 +95,8 @@ class SyncIPCHandler {
       await this.v3SyncService.setCredentials(
         config.username,
         config.password,
-        config.baseUrl
+        config.baseUrl,
+        config.rootPath
       );
       return await this.v3SyncService.testConnection();
     });
@@ -112,7 +113,8 @@ class SyncIPCHandler {
       await this.v3SyncService.setCredentials(
         config.username,
         password,
-        config.baseUrl
+        config.baseUrl,
+        config.rootPath
       );
       await this.v3SyncService.enable();
       return { success: true };

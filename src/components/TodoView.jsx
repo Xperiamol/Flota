@@ -23,6 +23,9 @@ import {
   FormControl,
   InputLabel,
   Select,
+  Menu,
+  ListItemIcon,
+  ListItemText,
   MenuItem
 } from '@mui/material';
 import { scrollbar } from '../styles/commonStyles';
@@ -31,11 +34,14 @@ import {
   Add as AddIcon,
   CheckCircle as CheckCircleIcon,
   RadioButtonUnchecked as RadioButtonUncheckedIcon,
+  SelectAll as SelectAllIcon,
   Schedule as ScheduleIcon,
   Warning as WarningIcon,
   Flag as FlagIcon,
   FlashOn as FlashOnIcon,
-  Circle as CircleIcon
+  Circle as CircleIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon
 } from '@mui/icons-material';
 import { format, isToday, isPast, parseISO } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -63,7 +69,7 @@ const {
   todo: { dialog: todoDialog }
 } = appLocale;
 
-const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedChange, onRefresh, onTodoSelect }) => {
+const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedChange, onRefresh, onTodoSelect, refreshTrigger = 0 }) => {
   const { t } = useTranslation();
   const { showError, showSuccess } = useError();
   const theme = useTheme();
@@ -81,6 +87,7 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
   // 多选相关状态
   const [multiSelectMode, setMultiSelectMode] = useState(false);
   const [selectedTodos, setSelectedTodos] = useState([]);
+  const [contextMenuState, setContextMenuState] = useState(null);
 
   // 使用拖放 hook
   const {
@@ -106,9 +113,12 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
     return { total, completed, pending, overdue };
   };
 
-  const loadTodos = useCallback(async () => {
+  const loadTodos = useCallback(async (options = {}) => {
+    const { silent = true } = options;
     try {
-      setLoading(true);
+      if (!silent) {
+        setLoading(true);
+      }
       let statsSource = [];
       let nextTodos;
       if (sortBy === 'quadrant') {
@@ -139,13 +149,22 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
       setTodos([]);
       setStats({ total: 0, completed: 0, pending: 0, overdue: 0 });
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
-  }, [sortBy, showCompleted]);
+  }, [sortBy, showCompleted, showError]);
 
   useEffect(() => {
-    loadTodos();
+    loadTodos({ silent: false });
   }, [loadTodos]);
+
+  // 外部刷新触发器：确保侧栏/日历等位置更新后，主视图（四象限/专注）同步刷新。
+  useEffect(() => {
+    if (refreshTrigger > 0) {
+      loadTodos({ silent: true });
+    }
+  }, [refreshTrigger, loadTodos]);
 
   // 切换待办事项完成状态 - 支持双击完成
   const handleToggleTodo = async (todo) => {
@@ -258,7 +277,11 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
 
       return prev;
     });
-  }, []);
+
+    if (onRefresh) {
+      onRefresh();
+    }
+  }, [onRefresh]);
 
   // 删除待办事项
   const handleDeleteTodo = async (id) => {
@@ -312,25 +335,20 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
             }
           }
         }}
-        onContextMenu={(e, todo) => {
-          if (multiSelectMode) {
-            // 多选模式下的右键处理
-            e.preventDefault();
-            if (selectedTodos.includes(todo.id)) {
-              setSelectedTodos(selectedTodos.filter(id => id !== todo.id));
-            } else {
-              setSelectedTodos([...selectedTodos, todo.id]);
-            }
-          } else {
-            // 正常模式下的右键处理
-            e.preventDefault();
-            // 进入多选模式
-            setMultiSelectMode(true);
-            setSelectedTodos([todo.id]);
-          }
+        onContextMenu={(e, targetTodo) => {
+          e.preventDefault();
+          setContextMenuState({
+            mouseX: e.clientX + 2,
+            mouseY: e.clientY - 6,
+            todo: targetTodo
+          });
         }}
       />
     );
+  };
+
+  const handleCloseContextMenu = () => {
+    setContextMenuState(null);
   };
 
   // 四象限配置 - 缓存避免每次渲染重新创建
@@ -628,6 +646,56 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
       <Box sx={{ flex: 1, p: 3, overflow: 'auto' }}>
         {effectiveViewMode === 'quadrant' ? renderQuadrantView() : renderFocusView()}
       </Box>
+
+      <Menu
+        open={Boolean(contextMenuState)}
+        onClose={handleCloseContextMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={contextMenuState ? { top: contextMenuState.mouseY, left: contextMenuState.mouseX } : undefined}
+      >
+        <MenuItem
+          onClick={() => {
+            if (contextMenuState?.todo?.id) {
+              setMultiSelectMode(true);
+              setSelectedTodos([contextMenuState.todo.id]);
+            }
+            handleCloseContextMenu();
+          }}
+          disabled={multiSelectMode || !contextMenuState?.todo?.id}
+        >
+          <ListItemIcon>
+            <SelectAllIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>{t('common.enterMultiSelect')}</ListItemText>
+        </MenuItem>
+        <Divider />
+        <MenuItem
+          onClick={() => {
+            if (contextMenuState?.todo && onTodoSelect) {
+              onTodoSelect(contextMenuState.todo);
+            }
+            handleCloseContextMenu();
+          }}
+        >
+          <ListItemIcon>
+            <EditIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>{t('common.edit')}</ListItemText>
+        </MenuItem>
+        <MenuItem
+          onClick={async () => {
+            if (contextMenuState?.todo?.id) {
+              await handleDeleteTodo(contextMenuState.todo.id);
+            }
+            handleCloseContextMenu();
+          }}
+        >
+          <ListItemIcon>
+            <DeleteIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>{t('common.delete')}</ListItemText>
+        </MenuItem>
+      </Menu>
     </Box>
   );
 };

@@ -15,9 +15,17 @@ import { format, isToday } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import TodoList from './TodoList';
 import { fetchTodos } from '../api/todoAPI';
-import { isTodoCompleted } from '../utils/todoDisplayUtils';
+import { isTodoCompletedOnDate, isTodoInDateInstance } from '../utils/todoDisplayUtils';
 
-const MyDayPanel = ({ selectedDate, onTodoSelect, refreshToken = 0, onTodoUpdated }) => {
+const MyDayPanel = ({
+  selectedDate,
+  onTodoSelect,
+  refreshToken = 0,
+  onTodoUpdated,
+  showCompleted = false,
+  onMultiSelectChange,
+  onMultiSelectRefChange
+}) => {
   const [todayTodos, setTodayTodos] = useState([]);
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState({
@@ -34,11 +42,15 @@ const MyDayPanel = ({ selectedDate, onTodoSelect, refreshToken = 0, onTodoUpdate
       const allTodos = await fetchTodos({ includeCompleted: true });
       // 过滤出指定日期或今日的任务，使用与CalendarView相同的过滤逻辑
       const targetDate = date || new Date();
+
       const filteredTodos = allTodos.filter(todo => {
-        if (!todo.due_date) return false;
-        
-        const todoDate = new Date(todo.due_date);
-        return todoDate.toDateString() === targetDate.toDateString();
+        const inDateInstance = isTodoInDateInstance(todo, targetDate);
+
+        if (!showCompleted) {
+          return inDateInstance && !isTodoCompletedOnDate(todo, targetDate);
+        }
+
+        return inDateInstance;
       });
       
       // 按优先级排序：重要且紧急 > 重要不紧急 > 不重要紧急 > 不重要不紧急
@@ -54,9 +66,9 @@ const MyDayPanel = ({ selectedDate, onTodoSelect, refreshToken = 0, onTodoUpdate
       
       // 计算统计信息
       const total = sortedTodos.length;
-      const completed = sortedTodos.filter(todo => isTodoCompleted(todo)).length;
+      const completed = sortedTodos.filter(todo => isTodoCompletedOnDate(todo, targetDate)).length;
       const pending = total - completed;
-      const urgent = sortedTodos.filter(todo => todo.is_urgent && !isTodoCompleted(todo)).length;
+      const urgent = sortedTodos.filter(todo => todo.is_urgent && !isTodoCompletedOnDate(todo, targetDate)).length;
       
       setTodayTodos(sortedTodos);
       setStats({ total, completed, pending, urgent });
@@ -74,7 +86,7 @@ const MyDayPanel = ({ selectedDate, onTodoSelect, refreshToken = 0, onTodoUpdate
     const interval = setInterval(() => loadTodos(selectedDate), 60000);
     
     return () => clearInterval(interval);
-  }, [selectedDate, refreshToken]);
+  }, [selectedDate, refreshToken, showCompleted]);
 
   const targetDate = selectedDate || new Date();
   const formattedDate = format(targetDate, 'MM月dd日', { locale: zhCN });
@@ -145,11 +157,13 @@ const MyDayPanel = ({ selectedDate, onTodoSelect, refreshToken = 0, onTodoUpdate
         <TodoList
           externalTodos={todayTodos}
           isExternalData={true}
-          showCompleted={false}
+          showCompleted={showCompleted}
           onTodoSelect={onTodoSelect}
           viewMode="list"
           sortBy="createdAt"
           onTodoUpdated={onTodoUpdated}
+          onMultiSelectChange={onMultiSelectChange}
+          onMultiSelectRefChange={onMultiSelectRefChange}
         />
       </Box>
     </Box>

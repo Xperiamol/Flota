@@ -164,7 +164,7 @@ import themeManager from './utils/pluginThemeManager'
 import { PluginNotificationListener } from './utils/PluginNotificationListener'
 
 function App() {
-  const { theme, setTheme, primaryColor, loadNotes, currentView, initializeSettings, setCurrentView, createNote, batchDeleteNotes, batchDeleteTodos, batchCompleteTodos, batchRestoreNotes, batchPermanentDeleteNotes, getAllTags, batchSetTags, selectedNoteId, setSelectedNoteId, updateNoteInList, maskOpacity, christmasMode, backgroundPattern, patternOpacity, wallpaperPath } = useStore()
+  const { theme, setTheme, primaryColor, loadNotes, currentView, initializeSettings, setCurrentView, createNote, batchDeleteNotes, batchDeleteTodos, batchCompleteTodos, batchRestoreNotes, batchPermanentDeleteNotes, getAllTags, batchSetTags, selectedNoteId, setSelectedNoteId, updateNoteInList, aiDeleteConv, maskOpacity, christmasMode, backgroundPattern, patternOpacity, wallpaperPath } = useStore()
   const refreshPluginCommands = useStore((state) => state.refreshPluginCommands)
   const addPluginCommand = useStore((state) => state.addPluginCommand)
   const removePluginCommand = useStore((state) => state.removePluginCommand)
@@ -230,11 +230,18 @@ function App() {
   // 待办事项刷新触发器
   const [todoRefreshTrigger, setTodoRefreshTrigger] = useState(0)
   const [calendarRefreshTrigger, setCalendarRefreshTrigger] = useState(0)
+  const [hasOpenedAI, setHasOpenedAI] = useState(false)
   const handleTodoDialogClose = () => setSelectedTodo(null)
   const handleTodoUpdated = () => {
     setTodoRefreshTrigger(prev => prev + 1)
     setCalendarRefreshTrigger(prev => prev + 1)
   }
+
+  useEffect(() => {
+    if (currentView === 'ai') {
+      setHasOpenedAI(true)
+    }
+  }, [currentView])
 
   // 永久删除确认状态
   const [permanentDeleteConfirm, setPermanentDeleteConfirm] = useState(false)
@@ -955,6 +962,9 @@ function App() {
                         } else {
                           console.error('批量删除待办事项失败:', result.error);
                         }
+                      } else if (multiSelectState.itemType === 'AI对话') {
+                        multiSelectState.selectedIds.forEach((id) => aiDeleteConv(id));
+                        logger.log(`成功删除 ${multiSelectState.selectedIds.length} 个AI对话`);
                       }
                     } catch (error) {
                       console.error('批量删除失败:', error);
@@ -1115,6 +1125,7 @@ function App() {
                         onShowCompletedChange={setTodoShowCompleted}
                         onRefresh={() => setTodoRefreshTrigger(prev => prev + 1)}
                         onTodoSelect={setSelectedTodo}
+                        refreshTrigger={todoRefreshTrigger}
                       />
                     )}
                     {currentView === 'calendar' && <CalendarView currentDate={calendarCurrentDate} onDateChange={setCalendarCurrentDate} onTodoSelect={setSelectedTodo} selectedDate={selectedDate} onSelectedDateChange={setSelectedDate} refreshToken={calendarRefreshTrigger} showCompleted={calendarShowCompleted} onShowCompletedChange={setCalendarShowCompleted} onTodoUpdated={handleTodoUpdated} viewMode={calendarViewMode} />}
@@ -1125,7 +1136,16 @@ function App() {
                       </Box>
                     )}
                     {currentView === 'profile' && <Profile />}
-                    {currentView === 'ai' && <AIChatView />}
+                    {hasOpenedAI && (
+                      <Box
+                        sx={{
+                          display: currentView === 'ai' ? 'block' : 'none',
+                          height: '100%'
+                        }}
+                      >
+                        <AIChatView />
+                      </Box>
+                    )}
                   </Suspense>
                 </Box>
               </Box>

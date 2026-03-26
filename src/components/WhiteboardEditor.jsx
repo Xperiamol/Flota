@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Box, Alert, CircularProgress, IconButton, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField } from '@mui/material'
-import { Save as SaveIcon, GetApp as ExportIcon, AutoAwesome as AIIcon, Undo as UndoIcon } from '@mui/icons-material'
+import { GetApp as ExportIcon, AutoAwesome as AIIcon, Undo as UndoIcon } from '@mui/icons-material'
 import { Excalidraw, exportToBlob, exportToSvg, THEME } from '@excalidraw/excalidraw'
 import { useStore } from '../store/useStore'
 import { useStandaloneContext } from './StandaloneProvider'
@@ -13,7 +13,7 @@ import logger from '../utils/logger'
  * 白板编辑器组件
  * 直接使用 @excalidraw/excalidraw React 组件
  */
-const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false, onSaveWhiteboard, onGetContent, onExportPNG }) => {
+const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false, onGetContent, onExportPNG }) => {
   // Get context from either main store or standalone context
   let store
   let actualIsStandaloneMode = isStandaloneMode
@@ -525,12 +525,13 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
     }
 
     // 优先使用 latestSceneRef 中的数据（即使组件卸载也能获取）
+    // 注意：elements 可能为空数组（用户清空画布），也必须允许保存。
     let elements, appState, files
     
-    if (latestSceneRef.current && latestSceneRef.current.elements && latestSceneRef.current.elements.length > 0) {
+    if (latestSceneRef.current && Array.isArray(latestSceneRef.current.elements)) {
       elements = latestSceneRef.current.elements
-      appState = latestSceneRef.current.appState
-      files = latestSceneRef.current.files
+      appState = latestSceneRef.current.appState || { viewBackgroundColor: '#ffffff' }
+      files = latestSceneRef.current.files || {}
     } else if (excalidrawAPI) {
       elements = excalidrawAPI.getSceneElements()
       appState = excalidrawAPI.getAppState()
@@ -634,7 +635,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
       console.error('[WhiteboardEditor] 保存失败', error)
       setError('保存失败: ' + error.message)
     }
-  }, [excalidrawAPI, noteId, updateNote, serializeScene])
+  }, [excalidrawAPI, noteId, updateNote, serializeScene, notes])
 
   // 保存开始日志
   const performSaveWithLog = useCallback(async () => {
@@ -902,13 +903,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
     }
   }, [excalidrawAPI, noteId])
 
-  // 将保存、获取内容和导出函数暴露给父组件
-  useEffect(() => {
-    if (onSaveWhiteboard) {
-      onSaveWhiteboard(saveWhiteboard)
-    }
-  }, [saveWhiteboard, onSaveWhiteboard])
-
+  // 将获取内容和导出函数暴露给父组件
   useEffect(() => {
     if (onGetContent) {
       onGetContent(getCurrentContent)

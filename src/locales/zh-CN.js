@@ -78,6 +78,7 @@ const zhCN = {
     create: '创建',
     add: '添加',
     remove: '移除',
+    enterMultiSelect: '进入多选模式',
     close: '关闭',
     open: '打开',
     back: '返回',
@@ -276,6 +277,10 @@ const zhCN = {
     exitFullscreen: '退出全屏',
     convertToTodo: '转换为待办事项',
     openInNewWindow: '在独立窗口打开',
+    duplicateNote: '复制笔记',
+    duplicateSuccess: '笔记已复制',
+    duplicateFailed: '复制笔记失败',
+    copySuffix: '副本',
     batchRestore: '批量恢复',
     confirmDelete: '确认删除',
     unknownTime: '未知时间'

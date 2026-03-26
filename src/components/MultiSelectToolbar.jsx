@@ -14,8 +14,7 @@ import {
   Clear as ClearIcon,
   Delete as DeleteIcon,
   Label as LabelIcon,
-  Close as CloseIcon,
-  MoreVert as MoreVertIcon
+  Close as CloseIcon
 } from '@mui/icons-material';
 
 /**
@@ -46,6 +45,35 @@ const MultiSelectToolbar = ({
   customActions = []
 }) => {
   const isAllSelected = selectedCount === totalCount && totalCount > 0;
+
+  const actionButtonSx = {
+    color: 'inherit',
+    textTransform: 'none',
+    minWidth: 'auto',
+    px: 1.25,
+    borderRadius: 1.5,
+    border: '1px solid',
+    borderColor: 'rgba(255,255,255,0.35)',
+    fontWeight: 500,
+    '&:hover': {
+      borderColor: 'rgba(255,255,255,0.55)',
+      backgroundColor: 'rgba(255,255,255,0.12)'
+    },
+    '&.Mui-disabled': {
+      color: 'rgba(255,255,255,0.55)',
+      borderColor: 'rgba(255,255,255,0.2)'
+    }
+  };
+
+  const dangerButtonSx = {
+    ...actionButtonSx,
+    borderColor: 'rgba(255,255,255,0.45)',
+    '&:hover': {
+      borderColor: 'error.main',
+      backgroundColor: 'error.main',
+      color: 'error.contrastText'
+    }
+  };
   
   if (!visible) {
     return null;
@@ -73,12 +101,12 @@ const MultiSelectToolbar = ({
         >
           {/* 关闭按钮 */}
           <IconButton
-            size="small"
+            size="medium"
             onClick={onClose}
             aria-label="关闭多选"
             sx={{
               color: 'inherit',
-              mr: 1
+              ml: '-7px'
             }}
           >
             <CloseIcon />
@@ -96,11 +124,7 @@ const MultiSelectToolbar = ({
              size="small"
              startIcon={isAllSelected ? <ClearIcon /> : <SelectAllIcon />}
              onClick={isAllSelected ? onSelectNone : onSelectAll}
-             sx={{
-               color: 'inherit',
-               textTransform: 'none',
-               minWidth: 'auto'
-             }}
+             sx={actionButtonSx}
            >
              {isAllSelected ? '取消全选' : '全选'}
            </Button>
@@ -117,15 +141,7 @@ const MultiSelectToolbar = ({
               startIcon={<DeleteIcon />}
               onClick={onDelete}
               disabled={selectedCount === 0}
-              sx={{
-                color: 'inherit',
-                textTransform: 'none',
-                minWidth: 'auto',
-                '&:hover': {
-                  backgroundColor: 'error.main',
-                  color: 'error.contrastText'
-                }
-              }}
+              sx={dangerButtonSx}
             >
               删除
             </Button>
@@ -138,11 +154,7 @@ const MultiSelectToolbar = ({
               startIcon={<LabelIcon />}
               onClick={onSetTags}
               disabled={selectedCount === 0}
-              sx={{
-                color: 'inherit',
-                textTransform: 'none',
-                minWidth: 'auto'
-              }}
+              sx={actionButtonSx}
             >
               设置标签
             </Button>
@@ -157,9 +169,7 @@ const MultiSelectToolbar = ({
               onClick={action.onClick}
               disabled={action.disabled || selectedCount === 0}
               sx={{
-                color: 'inherit',
-                textTransform: 'none',
-                minWidth: 'auto',
+                ...actionButtonSx,
                 ...action.sx
               }}
             >

@@ -45,6 +45,19 @@ git push origin main
 git push origin --tags
 ```
 
+也可以直接使用一键命令（推荐）：
+
+```bash
+npm run release:patch:push
+```
+
+可选：
+
+```bash
+npm run release:minor:push
+npm run release:major:push
+```
+
 推送 `v*` tag 后，会自动触发工作流：
 - 文件：`.github/workflows/build.yml`
 - 动作：三平台构建（Win/macOS/Linux）

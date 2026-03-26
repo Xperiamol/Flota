@@ -56,6 +56,7 @@ const useStore = create(
                 // AI 聊天对话状态
                 aiConversations: [], // [{id, title, messages, createdAt, updatedAt}]
                 aiActiveConvId: null,
+                aiMessageMultiSelectRequest: null,
                 // 工具栏按钮排序（null = 使用默认排序）
                 toolbarOrder: null,
                 // 浮动面板自定义格式项（null = 不显示额外格式项）
@@ -129,6 +130,15 @@ const useStore = create(
                         c.id === id ? { ...c, ...data, updatedAt: Date.now() } : c
                     )
                 })),
+                aiTriggerMessageMultiSelect: (convId, initialIndexes = []) => set((state) => ({
+                    aiActiveConvId: convId || state.aiActiveConvId,
+                    aiMessageMultiSelectRequest: {
+                        requestId: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                        convId: convId || state.aiActiveConvId,
+                        initialIndexes: Array.isArray(initialIndexes) ? initialIndexes : []
+                    }
+                })),
+                aiClearMessageMultiSelectRequest: () => set({ aiMessageMultiSelectRequest: null }),
 
                 setToolbarOrder: (order) => set({ toolbarOrder: order }),
 

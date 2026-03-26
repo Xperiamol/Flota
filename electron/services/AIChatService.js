@@ -401,15 +401,18 @@ class AIChatService {
       ];
 
       // 第一轮调用：可能返回工具调用
-      const result = await this._streamRequest(config, fullMessages, temp, maxTk, onChunk);
+      const result = await this._streamRequest(config, fullMessages, temp, maxTk, onChunk, options.abortSignal);
 
       // 处理工具调用循环（最多3轮）
       if (result.toolCalls && result.toolCalls.length > 0) {
-        return await this._handleToolCalls(config, fullMessages, result, onChunk, temp, maxTk, 0);
+        return await this._handleToolCalls(config, fullMessages, result, onChunk, temp, maxTk, 0, options.abortSignal);
       }
 
       return { success: true, fullContent: result.content, usage: result.usage };
     } catch (error) {
+      if (error?.name === 'AbortError' || /aborted|取消|cancel/i.test(error?.message || '')) {
+        return { success: false, cancelled: true, error: '已取消生成' };
+      }
       this.logger.error('AIChatService', 'Stream chat failed', error);
       onChunk({ type: 'error', content: error.message });
       return { success: false, error: error.message };
@@ -418,7 +421,7 @@ class AIChatService {
 
   // ─── 处理工具调用 ───
 
-  async _handleToolCalls(config, messages, prevResult, onChunk, temp, maxTk, depth) {
+  async _handleToolCalls(config, messages, prevResult, onChunk, temp, maxTk, depth, abortSignal) {
     if (depth >= 3) {
       // 防止无限循环
       return { success: true, fullContent: prevResult.content || '', usage: prevResult.usage };
@@ -451,10 +454,10 @@ class AIChatService {
     }
 
     // 继续调用 AI，让它汇总工具结果
-    const newResult = await this._streamRequest(config, messages, temp, maxTk, onChunk);
+    const newResult = await this._streamRequest(config, messages, temp, maxTk, onChunk, abortSignal);
 
     if (newResult.toolCalls && newResult.toolCalls.length > 0) {
-      return await this._handleToolCalls(config, messages, newResult, onChunk, temp, maxTk, depth + 1);
+      return await this._handleToolCalls(config, messages, newResult, onChunk, temp, maxTk, depth + 1, abortSignal);
     }
 
     return { success: true, fullContent: newResult.content, usage: newResult.usage };
@@ -462,11 +465,21 @@ class AIChatService {
 
   // ─── 单次流式请求 ───
 
-  async _streamRequest(config, messages, temp, maxTk, onChunk) {
+  async _streamRequest(config, messages, temp, maxTk, onChunk, abortSignal = null) {
     const { url, headers, body } = this._buildRequest(config, messages, temp, maxTk);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 120000); // 2分钟超时
+    let abortHandler = null;
+
+    if (abortSignal) {
+      if (abortSignal.aborted) {
+        controller.abort();
+      } else {
+        abortHandler = () => controller.abort();
+        abortSignal.addEventListener('abort', abortHandler, { once: true });
+      }
+    }
 
     try {
       const response = await fetch(url, {
@@ -491,6 +504,9 @@ class AIChatService {
       return await this._parseSSEStream(response, onChunk, config.provider);
     } finally {
       clearTimeout(timer);
+      if (abortSignal && abortHandler) {
+        abortSignal.removeEventListener('abort', abortHandler);
+      }
     }
   }
 

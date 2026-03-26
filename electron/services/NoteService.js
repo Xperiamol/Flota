@@ -8,6 +8,7 @@ class NoteService extends EventEmitter {
   constructor() {
     super();
     this.noteDAO = new NoteDAO();
+    this.dbManager = this.noteDAO.dbManager;
     this.autoSaveTimers = new Map(); // 存储自动保存定时器
   }
 
@@ -21,7 +22,9 @@ class NoteService extends EventEmitter {
         title: noteData?.title || '无标题',
         content: noteData?.content || '',
         tags: noteData?.tags || [],
-        category: noteData?.category || 'default'
+        category: noteData?.category || 'default',
+        // 兼容历史调用方: 有的传 note_type, 有的传 type
+        note_type: noteData?.note_type || noteData?.type || 'markdown'
       };
       
       // 使用TagService规范化标签
@@ -31,7 +34,8 @@ class NoteService extends EventEmitter {
         title: safeNoteData.title,
         content: safeNoteData.content,
         tags: tagsString,
-        category: safeNoteData.category
+        category: safeNoteData.category,
+        note_type: safeNoteData.note_type
       });
       
       this.emit('note-created', note);
@@ -79,19 +83,20 @@ class NoteService extends EventEmitter {
    * @param {boolean} silent - 是否静默更新（不触发事件）
    */
   async updateNote(id, noteData, silent = false) {
+    let normalizedData = { ...noteData };
+
+    // 规范化 tags 参数：如果是数组则转换为逗号分隔的字符串
+    if (normalizedData.tags !== undefined) {
+      if (Array.isArray(normalizedData.tags)) {
+        normalizedData.tags = normalizedData.tags.join(',');
+      } else if (typeof normalizedData.tags !== 'string') {
+        normalizedData.tags = '';
+      }
+    }
+
     try {
       // 清除自动保存定时器
       this.clearAutoSaveTimer(id);
-      
-      // 规范化 tags 参数：如果是数组则转换为逗号分隔的字符串
-      const normalizedData = { ...noteData };
-      if (normalizedData.tags !== undefined) {
-        if (Array.isArray(normalizedData.tags)) {
-          normalizedData.tags = normalizedData.tags.join(',');
-        } else if (typeof normalizedData.tags !== 'string') {
-          normalizedData.tags = '';
-        }
-      }
       
       const note = this.noteDAO.update(id, normalizedData);
       if (!note) {
@@ -111,6 +116,38 @@ class NoteService extends EventEmitter {
       };
     } catch (error) {
       console.error('更新笔记失败:', error);
+
+      // 命中数据库损坏错误时，自动修复一次并重试，减少用户手动介入
+      if (this.dbManager?.isCorruptionError?.(error)) {
+        const repairResult = await this.dbManager.tryRepairOnCorruption(error, 'NoteService.updateNote');
+
+        if (repairResult.success) {
+          try {
+            const retriedNote = this.noteDAO.update(id, normalizedData);
+            if (!retriedNote) {
+              return { success: false, error: '笔记不存在' };
+            }
+
+            if (!silent) {
+              this.emit('note-updated', retriedNote);
+            }
+
+            return { success: true, data: retriedNote };
+          } catch (retryError) {
+            console.error('数据库修复后重试更新仍失败:', retryError);
+            return {
+              success: false,
+              error: this.dbManager.getCorruptionGuidanceMessage()
+            };
+          }
+        }
+
+        return {
+          success: false,
+          error: repairResult.error || this.dbManager.getCorruptionGuidanceMessage()
+        };
+      }
+
       return {
         success: false,
         error: error.message

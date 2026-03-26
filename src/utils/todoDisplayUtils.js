@@ -15,6 +15,16 @@ export function getTodayStr() {
 }
 
 /**
+ * 将 Date 转为 YYYY-MM-DD（本地时区）
+ * @param {Date} date
+ * @returns {string}
+ */
+export function toDateKey(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+/**
  * 判断一个 todo 是否为重复待办
  * @param {object} todo
  * @returns {boolean}
@@ -66,6 +76,51 @@ export function parseCompletions(completions) {
   } catch {
     return [];
   }
+}
+
+/**
+ * todo 是否命中某个“日期实例”。
+ * - 普通待办：due_date 命中目标日期
+ * - 重复待办：due_date 或 completions 任一命中目标日期
+ * @param {object} todo
+ * @param {Date} date
+ * @returns {boolean}
+ */
+export function isTodoInDateInstance(todo, date) {
+  if (!todo || !date) return false;
+
+  const hasDueDateMatch = (() => {
+    if (!todo.due_date) return false;
+    const todoDate = new Date(todo.due_date);
+    return todoDate.toDateString() === date.toDateString();
+  })();
+
+  if (!isRecurringTodo(todo)) {
+    return hasDueDateMatch;
+  }
+
+  const dateKey = toDateKey(date);
+  const hasCompletionMatch = parseCompletions(todo.completions).includes(dateKey);
+  return hasDueDateMatch || hasCompletionMatch;
+}
+
+/**
+ * 按目标日期判断 todo 是否完成。
+ * - 重复待办：看 completions 是否包含目标日期
+ * - 普通待办：看 completed / is_completed
+ * @param {object} todo
+ * @param {Date} date
+ * @returns {boolean}
+ */
+export function isTodoCompletedOnDate(todo, date) {
+  if (!todo) return false;
+
+  if (isRecurringTodo(todo)) {
+    const dateKey = toDateKey(date);
+    return parseCompletions(todo.completions).includes(dateKey);
+  }
+
+  return Boolean(todo.completed || todo.is_completed);
 }
 
 /**

@@ -22,7 +22,10 @@
     "release:notes": "node scripts/extract-release-notes.js",
     "release:patch": "npm version patch -m \"chore: release v%s\"",
     "release:minor": "npm version minor -m \"chore: release v%s\"",
-    "release:major": "npm version major -m \"chore: release v%s\""
+    "release:major": "npm version major -m \"chore: release v%s\"",
+    "release:patch:push": "npm run release:patch && git push origin main && git push origin --tags",
+    "release:minor:push": "npm run release:minor && git push origin main && git push origin --tags",
+    "release:major:push": "npm run release:major && git push origin main && git push origin --tags"
   },
   "keywords": [
     "electron",

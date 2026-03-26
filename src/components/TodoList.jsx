@@ -31,6 +31,7 @@ import {
   RadioButtonUnchecked as RadioButtonUncheckedIcon,
   Delete as DeleteIcon,
   Edit as EditIcon,
+  SelectAll as SelectAllIcon,
   MoreVert as MoreVertIcon,
   Search as SearchIcon,
   Clear as ClearIcon,
@@ -588,7 +589,15 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
       })
     })}>
       {/* 搜索框和筛选区域 */}
-      <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+      <Box
+        sx={{
+          pl: '25px',
+          pr: '30px',
+          pt: 2,
+          pb: 1,
+          flexShrink: 0
+        }}
+      >
         <TextField
           fullWidth
           size="small"
@@ -678,7 +687,12 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
 
       {/* 待办事项列表 */}
       <Box
-        sx={{ flex: 1, overflow: 'auto' }}
+        sx={{
+          flex: 1,
+          overflow: 'auto',
+          minHeight: 0,
+          scrollbarGutter: 'stable'
+        }}
         onMouseDown={(e) => {
           // 只在非多选模式下且有待办事项时启用拖拽
           if (!multiSelect.isMultiSelectMode && todos.length > 0 && e.button === 0) {
@@ -700,7 +714,7 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
         ) : todos.length === 0 ? (
           renderEmptyState()
         ) : (
-          <List sx={{ p: 0, overflow: 'visible' }}>
+          <List sx={{ py: 0, px: 2, overflow: 'visible' }}>
             {todos.map((todo) => (
               <Fade key={todo.id} in timeout={200}>
                 <ListItem
@@ -713,7 +727,12 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
                 >
                   <ListItemButton
                     onClick={(e) => multiSelect.handleClick(e, todo.id, () => handleTodoClick(todo))}
-                    onContextMenu={(e) => multiSelect.handleContextMenu(e, todo.id, multiSelect.isMultiSelectMode)}
+                    onContextMenu={(e) => multiSelect.handleContextMenu(
+                      e,
+                      todo.id,
+                      multiSelect.isMultiSelectMode,
+                      () => handleMenuClick(e, todo)
+                    )}
                     selected={multiSelect.isMultiSelectMode && multiSelect.isSelected(todo.id)}
                     sx={{
                       py: 0.6,
@@ -920,6 +939,21 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
           })
         }}
       >
+        <MenuItem
+          onClick={() => {
+            if (selectedTodo?.id) {
+              multiSelect.enterMultiSelectMode(selectedTodo.id)
+            }
+            handleMenuClose()
+          }}
+          disabled={multiSelect.isMultiSelectMode || !selectedTodo?.id}
+        >
+          <ListItemIcon>
+            <SelectAllIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>{t('common.enterMultiSelect')}</ListItemText>
+        </MenuItem>
+        <Divider />
         <MenuItem onClick={handleEdit}>
           <ListItemIcon>
             <EditIcon fontSize="small" />

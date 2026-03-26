@@ -78,6 +78,7 @@ const enUS = {
     create: 'Create',
     add: 'Add',
     remove: 'Remove',
+    enterMultiSelect: 'Enter Multi-Select Mode',
     close: 'Close',
     open: 'Open',
     back: 'Back',
@@ -276,6 +277,10 @@ const enUS = {
     exitFullscreen: 'Exit Fullscreen',
     convertToTodo: 'Convert to Todo',
     openInNewWindow: 'Open in new window',
+    duplicateNote: 'Duplicate Note',
+    duplicateSuccess: 'Note duplicated',
+    duplicateFailed: 'Failed to duplicate note',
+    copySuffix: 'Copy',
     batchRestore: 'Batch Restore',
     confirmDelete: 'Confirm Delete',
     unknownTime: 'Unknown time'

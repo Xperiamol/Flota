@@ -144,7 +144,20 @@ class TodoService extends EventEmitter {
    * 获取所有待办事项
    */
   getAllTodos(options = {}) {
-    return this.todoDAO.findAll(options);
+    const includeCompleted = options.includeCompleted !== false;
+    const todos = this.todoDAO.findAll({ ...options, includeCompleted: true });
+
+    if (includeCompleted) {
+      return todos;
+    }
+
+    return todos.filter((todo) => {
+      // 重复待办在 Schedule model 下以 completions 为准。
+      if (todo.repeat_type && todo.repeat_type !== 'none') {
+        return !RepeatUtils.isCompletedForToday(todo.completions, todo.repeat_type);
+      }
+      return !todo.is_completed;
+    });
   }
 
   /**
@@ -158,7 +171,25 @@ class TodoService extends EventEmitter {
    * 按四象限获取待办事项
    */
   getTodosByQuadrant(includeCompleted = false) {
-    return this.todoDAO.findByQuadrant(includeCompleted);
+    const quadrants = this.todoDAO.findByQuadrant(true);
+
+    if (includeCompleted) {
+      return quadrants;
+    }
+
+    const filterVisibleTodos = (list = []) => list.filter((todo) => {
+      if (todo.repeat_type && todo.repeat_type !== 'none') {
+        return !RepeatUtils.isCompletedForToday(todo.completions, todo.repeat_type);
+      }
+      return !todo.is_completed;
+    });
+
+    return {
+      urgent_important: filterVisibleTodos(quadrants.urgent_important),
+      not_urgent_important: filterVisibleTodos(quadrants.not_urgent_important),
+      urgent_not_important: filterVisibleTodos(quadrants.urgent_not_important),
+      not_urgent_not_important: filterVisibleTodos(quadrants.not_urgent_not_important)
+    };
   }
 
   /**

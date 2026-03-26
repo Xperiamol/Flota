@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Drawer,
@@ -11,7 +11,10 @@ import {
   Stack,
   Chip,
   ListItemIcon,
-  IconButton
+  IconButton,
+  Checkbox,
+  Menu,
+  MenuItem
 } from '@mui/material';
 import {
   Settings as SettingsIcon,
@@ -26,7 +29,8 @@ import {
   Mic as STTIcon,
   Code as CodeIcon,
   EditNote as EditNoteIcon,
-  DeleteOutline as DeleteIcon
+  DeleteOutline as DeleteIcon,
+  SelectAll as SelectAllIcon
 } from '@mui/icons-material';
 import { scrollbar } from '../styles/commonStyles';
 import { useStore } from '../store/useStore';
@@ -35,7 +39,7 @@ import TodoList from './TodoList';
 import MyDayPanel from './MyDayPanel';
 import { t } from '../utils/i18n';
 
-const SecondarySidebar = ({ open, onClose, width = 320, onTodoSelect, onViewModeChange, onShowCompletedChange, viewMode, showCompleted, onMultiSelectChange, onMultiSelectRefChange, todoRefreshTrigger, todoSortBy, onTodoSortByChange, showDeleted, selectedDate, calendarRefreshTrigger, onTodoUpdated }) => {
+const SecondarySidebar = ({ open, onClose, width = 380, onTodoSelect, onViewModeChange, onShowCompletedChange, viewMode, showCompleted, onMultiSelectChange, onMultiSelectRefChange, todoRefreshTrigger, todoSortBy, onTodoSortByChange, showDeleted, selectedDate, calendarRefreshTrigger, onTodoUpdated }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const currentView = useStore((state) => state.currentView);
@@ -50,6 +54,72 @@ const SecondarySidebar = ({ open, onClose, width = 320, onTodoSelect, onViewMode
   const aiActiveConvId = useStore((state) => state.aiActiveConvId);
   const aiSwitchConv = useStore((state) => state.aiSwitchConv);
   const aiDeleteConv = useStore((state) => state.aiDeleteConv);
+  const aiNewChat = useStore((state) => state.aiNewChat);
+  const [aiContextMenu, setAiContextMenu] = useState(null);
+  const [aiMultiSelectMode, setAiMultiSelectMode] = useState(false);
+  const [aiSelectedConvIds, setAiSelectedConvIds] = useState([]);
+
+  const handleAiContextMenu = (event, conv) => {
+    event.preventDefault();
+    setAiContextMenu({
+      mouseX: event.clientX + 2,
+      mouseY: event.clientY - 6,
+      conv
+    });
+  };
+
+  const closeAiContextMenu = () => {
+    setAiContextMenu(null);
+  };
+
+  const toggleAiSelected = (id) => {
+    setAiSelectedConvIds((prev) => (
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    ));
+  };
+
+  const enterAiMultiSelectMode = (id) => {
+    setAiMultiSelectMode(true);
+    setAiSelectedConvIds(id ? [id] : []);
+  };
+
+  const exitAiMultiSelectMode = () => {
+    setAiMultiSelectMode(false);
+    setAiSelectedConvIds([]);
+  };
+
+  // 将 AI 多选状态桥接给 App 顶层 MultiSelectToolbar
+  useEffect(() => {
+    if (currentView !== 'ai') {
+      return;
+    }
+
+    onMultiSelectChange?.({
+      isActive: aiMultiSelectMode,
+      selectedIds: aiSelectedConvIds,
+      selectedCount: aiSelectedConvIds.length,
+      totalCount: aiConversations.length,
+      itemType: 'AI对话'
+    });
+
+    if (!aiMultiSelectMode) {
+      onMultiSelectRefChange?.(null);
+      return;
+    }
+
+    onMultiSelectRefChange?.({
+      selectAll: () => setAiSelectedConvIds(aiConversations.map((conv) => conv.id)),
+      selectNone: () => setAiSelectedConvIds([]),
+      exitMultiSelectMode: exitAiMultiSelectMode
+    });
+  }, [
+    currentView,
+    aiMultiSelectMode,
+    aiSelectedConvIds,
+    aiConversations,
+    onMultiSelectChange,
+    onMultiSelectRefChange
+  ]);
 
   // 根据遮罩透明度设置获取对应的透明度值
   const getMaskOpacityValue = (isDark) => {
@@ -82,10 +152,21 @@ const SecondarySidebar = ({ open, onClose, width = 320, onTodoSelect, onViewMode
             refreshTrigger={todoRefreshTrigger}
             sortBy={todoSortBy}
             onSortByChange={onTodoSortByChange}
+            onTodoUpdated={onTodoUpdated}
           />
         );
       case 'calendar':
-        return <MyDayPanel selectedDate={selectedDate} onTodoSelect={onTodoSelect} refreshToken={calendarRefreshTrigger} onTodoUpdated={onTodoUpdated} />;
+        return (
+          <MyDayPanel
+            selectedDate={selectedDate}
+            onTodoSelect={onTodoSelect}
+            refreshToken={calendarRefreshTrigger}
+            onTodoUpdated={onTodoUpdated}
+            showCompleted={showCompleted}
+            onMultiSelectChange={onMultiSelectChange}
+            onMultiSelectRefChange={onMultiSelectRefChange}
+          />
+        );
       case 'plugins': {
         const categories = pluginStoreCategories && pluginStoreCategories.length > 0
           ? [{ id: 'all', name: t('plugins.allPlugins') }, ...pluginStoreCategories]
@@ -232,7 +313,6 @@ const SecondarySidebar = ({ open, onClose, width = 320, onTodoSelect, onViewMode
 
         return (
           <Box sx={(theme) => ({
-            p: 2,
             display: 'flex',
             flexDirection: 'column',
             height: '100%',
@@ -242,49 +322,122 @@ const SecondarySidebar = ({ open, onClose, width = 320, onTodoSelect, onViewMode
             backdropFilter: 'blur(12px) saturate(150%)',
             WebkitBackdropFilter: 'blur(12px) saturate(150%)'
           })}>
-            <Typography variant="h6" sx={{ mb: 2 }}>
-              对话历史
-            </Typography>
+            <Box sx={{ p: 2, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                对话历史
+              </Typography>
 
-            <List dense disablePadding sx={{ overflowY: 'auto', flex: 1, ...scrollbar.auto }}>
-              {aiConversations.map((conv) => (
-                <ListItemButton
-                  key={conv.id}
-                  selected={conv.id === aiActiveConvId}
-                  onClick={() => aiSwitchConv(conv.id)}
-                  sx={{
-                    borderRadius: 1,
-                    mb: 0.5,
-                    '&:hover .del-btn': { opacity: 1 },
-                  }}
-                >
-                  <ListItemText
-                    primary={conv.title || '新对话'}
-                    secondary={formatTime(conv.updatedAt)}
-                    primaryTypographyProps={{
-                      fontSize: 14,
-                      noWrap: true,
-                      fontWeight: conv.id === aiActiveConvId ? 600 : 400
+              <List dense disablePadding sx={{ overflowY: 'auto', flex: 1, ...scrollbar.auto }}>
+                {aiConversations.map((conv) => (
+                  <ListItemButton
+                    key={conv.id}
+                    selected={aiMultiSelectMode ? aiSelectedConvIds.includes(conv.id) : conv.id === aiActiveConvId}
+                    onClick={() => {
+                      if (aiMultiSelectMode) {
+                        toggleAiSelected(conv.id);
+                      } else {
+                        aiSwitchConv(conv.id);
+                      }
                     }}
-                    secondaryTypographyProps={{ fontSize: '0.72rem' }}
-                  />
-                  <IconButton
-                    className="del-btn"
-                    size="small"
-                    onClick={(e) => { e.stopPropagation(); aiDeleteConv(conv.id) }}
-                    sx={{ opacity: 0, transition: 'opacity 0.15s', ml: 0.5 }}
+                    onContextMenu={(e) => handleAiContextMenu(e, conv)}
+                    sx={{
+                      borderRadius: 1,
+                      mb: 0.5,
+                      '&:hover .del-btn': { opacity: 1 },
+                    }}
                   >
-                    <DeleteIcon sx={{ fontSize: 16 }} />
-                  </IconButton>
-                </ListItemButton>
-              ))}
-              {aiConversations.length === 0 && (
-                <Typography variant="caption" color="text.secondary"
-                  sx={{ px: 2, py: 3, display: 'block', textAlign: 'center' }}>
-                  暂无历史对话
-                </Typography>
-              )}
-            </List>
+                    {aiMultiSelectMode && (
+                      <ListItemIcon sx={{ minWidth: 36 }}>
+                        <Checkbox
+                          checked={aiSelectedConvIds.includes(conv.id)}
+                          size="small"
+                          sx={{ p: 0.5 }}
+                        />
+                      </ListItemIcon>
+                    )}
+                    <ListItemText
+                      primary={conv.title || '新对话'}
+                      secondary={formatTime(conv.updatedAt)}
+                      primaryTypographyProps={{
+                        fontSize: 14,
+                        noWrap: true,
+                        fontWeight: conv.id === aiActiveConvId ? 600 : 400
+                      }}
+                      secondaryTypographyProps={{ fontSize: '0.72rem' }}
+                    />
+                    {!aiMultiSelectMode && (
+                      <IconButton
+                        className="del-btn"
+                        size="small"
+                        onClick={(e) => { e.stopPropagation(); aiDeleteConv(conv.id) }}
+                        sx={{ opacity: 0, transition: 'opacity 0.15s', ml: 0.5 }}
+                      >
+                        <DeleteIcon sx={{ fontSize: 16 }} />
+                      </IconButton>
+                    )}
+                  </ListItemButton>
+                ))}
+                {aiConversations.length === 0 && (
+                  <Typography variant="caption" color="text.secondary"
+                    sx={{ px: 2, py: 3, display: 'block', textAlign: 'center' }}>
+                    暂无历史对话
+                  </Typography>
+                )}
+              </List>
+            </Box>
+
+            <Menu
+              open={Boolean(aiContextMenu)}
+              onClose={closeAiContextMenu}
+              anchorReference="anchorPosition"
+              anchorPosition={aiContextMenu ? { top: aiContextMenu.mouseY, left: aiContextMenu.mouseX } : undefined}
+            >
+              <MenuItem
+                onClick={() => {
+                  if (aiContextMenu?.conv?.id) {
+                    enterAiMultiSelectMode(aiContextMenu.conv.id);
+                  }
+                  closeAiContextMenu();
+                }}
+                disabled={aiMultiSelectMode || !aiContextMenu?.conv?.id}
+              >
+                <ListItemIcon>
+                  <SelectAllIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{t('common.enterMultiSelect')}</ListItemText>
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  if (aiContextMenu?.conv?.id) {
+                    aiSwitchConv(aiContextMenu.conv.id);
+                  }
+                  closeAiContextMenu();
+                }}
+                disabled={aiMultiSelectMode || !aiContextMenu?.conv?.id || aiContextMenu?.conv?.id === aiActiveConvId}
+              >
+                切换到此对话
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  if (aiContextMenu?.conv?.id) {
+                    aiDeleteConv(aiContextMenu.conv.id);
+                  }
+                  closeAiContextMenu();
+                }}
+                disabled={aiMultiSelectMode || !aiContextMenu?.conv?.id}
+              >
+                删除对话
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  aiNewChat();
+                  closeAiContextMenu();
+                }}
+                disabled={aiMultiSelectMode}
+              >
+                新建对话
+              </MenuItem>
+            </Menu>
           </Box>
         )
       }

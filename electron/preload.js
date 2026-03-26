@@ -241,6 +241,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getProviders: inv('ai:get-providers'),
     chat: inv('ai:chat'),
     chatStream: (messages, options) => ipcRenderer.invoke('ai:chat-stream', { messages, options }),
+    cancelStream: (requestId) => ipcRenderer.invoke('ai:cancel-stream', requestId),
     onChatChunk: listen('ai:chat-chunk'),
   },
 

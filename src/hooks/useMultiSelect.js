@@ -94,8 +94,14 @@ export const useMultiSelect = (options = {}) => {
   }, [selectedIds]);
   
   // 处理右键点击
-  const handleContextMenu = useCallback((event, id, currentMode = false) => {
+  const handleContextMenu = useCallback((event, id, currentMode = false, onContextMenuAction = null) => {
     event.preventDefault();
+
+    // 统一规则：如果调用方提供了右键菜单动作，则优先打开菜单，不切换多选模式。
+    if (typeof onContextMenuAction === 'function') {
+      onContextMenuAction(event, id);
+      return;
+    }
     
     if (!currentMode) {
       // 如果不在多选模式，右键进入多选模式并选中当前项

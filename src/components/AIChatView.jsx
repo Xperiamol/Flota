@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Box, Typography, TextField, IconButton, Paper, CircularProgress,
-  Chip, Fade, Avatar
+  Chip, Fade, Avatar, Menu, MenuItem
 } from '@mui/material'
 import { useTheme, alpha } from '@mui/material/styles'
 import {
@@ -14,10 +14,12 @@ import {
   Psychology as MemoryIcon,
   CalendarToday as CalendarIcon,
   Edit as EditIcon,
+  Stop as StopIcon,
 } from '@mui/icons-material'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useStore } from '../store/useStore'
+import { scrollbar } from '../styles/commonStyles'
 
 // ─── Markdown 渲染（react-markdown + remark-gfm） ───
 
@@ -43,12 +45,13 @@ const mdComponents = {
       overflow: 'auto', fontSize: '0.82rem', fontFamily: 'monospace',
       lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
       userSelect: 'text',
+      ...scrollbar.auto,
     }}>
       {children}
     </Box>
   ),
   table: ({ children }) => (
-    <Box sx={{ overflowX: 'auto', my: 1 }}>
+    <Box sx={{ overflowX: 'auto', my: 1, ...scrollbar.auto }}>
       <Box component="table" sx={{ borderCollapse: 'collapse', width: '100%', fontSize: '0.85rem' }}>{children}</Box>
     </Box>
   ),
@@ -181,10 +184,13 @@ export default function AIChatView() {
   const [loading, setLoading] = useState(false)
   const [streamContent, setStreamContent] = useState('')
   const [toolCalls, setToolCalls] = useState([])
+  const [messageContextMenu, setMessageContextMenu] = useState(null)
+  const [inputContextMenu, setInputContextMenu] = useState(null)
 
   const scrollRef = useRef(null)
   const inputRef = useRef(null)
   const chunkListenerRef = useRef(null)
+  const activeRequestIdRef = useRef(null)
 
   // 切换对话时加载消息
   useEffect(() => {
@@ -243,6 +249,9 @@ export default function AIChatView() {
     // 持久化用户消息
     aiUpdateConv(currentId, { messages: newMessages, title: getConversationTitle(newMessages) })
 
+    const requestId = `${currentId}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
+    activeRequestIdRef.current = requestId
+
     // 构建发送给 API 的消息（只含 role + content）
     const apiMessages = newMessages.map(m => ({ role: m.role, content: m.content }))
 
@@ -253,6 +262,10 @@ export default function AIChatView() {
       let currentToolCalls = []
 
       chunkListenerRef.current = window.electronAPI.ai.onChatChunk((chunk) => {
+        if (!chunk || chunk.requestId !== activeRequestIdRef.current) {
+          return
+        }
+
         switch (chunk.type) {
           case 'content':
             currentContent += chunk.content
@@ -276,17 +289,20 @@ export default function AIChatView() {
         }
       })
 
-      const result = await window.electronAPI.ai.chatStream(apiMessages, {})
+      const result = await window.electronAPI.ai.chatStream(apiMessages, { requestId })
 
       // 将流式结果添加为完整助手消息
-      const assistantContent = result.success
+      const assistantContent = result.cancelled
+        ? (currentContent || '已停止生成。')
+        : result.success
         ? (currentContent || result.fullContent || '')
         : (currentContent || `❌ ${result.error}`)
 
       const finalMessages = [...newMessages, {
         role: 'assistant',
         content: assistantContent,
-        toolCalls: currentToolCalls.length > 0 ? currentToolCalls : undefined
+        toolCalls: currentToolCalls.length > 0 ? currentToolCalls : undefined,
+        stopped: Boolean(result.cancelled)
       }]
       setMessages(finalMessages)
       setStreamContent('')
@@ -308,10 +324,22 @@ export default function AIChatView() {
         chunkListenerRef.current()
         chunkListenerRef.current = null
       }
+      activeRequestIdRef.current = null
       setLoading(false)
       inputRef.current?.focus()
     }
   }, [input, loading, messages, aiActiveConvId, aiNewChat, aiUpdateConv])
+
+  const handleCancel = useCallback(async () => {
+    const requestId = activeRequestIdRef.current
+    if (!loading || !requestId) return
+
+    try {
+      await window.electronAPI?.ai?.cancelStream?.(requestId)
+    } catch (_) {
+      // 取消失败时不阻断界面，等待请求自然结束
+    }
+  }, [loading])
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -324,6 +352,48 @@ export default function AIChatView() {
     navigator.clipboard.writeText(content).catch(() => {})
   }
 
+  const handleContinueGeneration = useCallback(() => {
+    if (loading) return
+    handleSend('请继续上一条回答，从刚才中断的位置继续，避免重复已输出内容。')
+  }, [loading, handleSend])
+
+  const handleMessageContextMenu = useCallback((event, msg, index) => {
+    event.preventDefault()
+    setMessageContextMenu({
+      mouseX: event.clientX + 2,
+      mouseY: event.clientY - 6,
+      msg,
+      index,
+    })
+  }, [])
+
+  const closeMessageContextMenu = useCallback(() => {
+    setMessageContextMenu(null)
+  }, [])
+
+  const handleInputContextMenu = useCallback((event) => {
+    event.preventDefault()
+    setInputContextMenu({
+      mouseX: event.clientX + 2,
+      mouseY: event.clientY - 6,
+    })
+  }, [])
+
+  const closeInputContextMenu = useCallback(() => {
+    setInputContextMenu(null)
+  }, [])
+
+  const handlePasteToInput = useCallback(async () => {
+    try {
+      const text = await navigator.clipboard.readText()
+      if (text) setInput(prev => prev + text)
+    } catch (_) {
+      // 忽略剪贴板读取异常
+    } finally {
+      closeInputContextMenu()
+    }
+  }, [closeInputContextMenu])
+
   return (
     <Box sx={{
       display: 'flex', flexDirection: 'column', height: '100%',
@@ -333,11 +403,8 @@ export default function AIChatView() {
       <Box ref={scrollRef} sx={{
         flex: 1, overflow: 'auto', px: 3, py: 2,
         maxWidth: 900, mx: 'auto', width: '100%',
-        '&::-webkit-scrollbar': { width: 6 },
-        '&::-webkit-scrollbar-thumb': {
-          bgcolor: alpha(theme.palette.text.primary, 0.15),
-          borderRadius: 3,
-        },
+        ...scrollbar.auto,
+        scrollbarGutter: 'stable',
       }}>
         {/* 空状态 */}
         {messages.length === 0 && !loading && (
@@ -380,7 +447,11 @@ export default function AIChatView() {
 
         {/* 历史消息 */}
         {messages.map((msg, i) => (
-          <Box key={i} sx={{ position: 'relative', '&:hover .copy-btn': { opacity: 1 } }}>
+          <Box
+            key={i}
+            onContextMenu={(e) => handleMessageContextMenu(e, msg, i)}
+            sx={{ position: 'relative', '&:hover .copy-btn': { opacity: 1 } }}
+          >
             <ChatMessage msg={msg} theme={theme} userAvatar={userAvatar} />
             {msg.role === 'assistant' && msg.content && (
               <IconButton
@@ -394,6 +465,18 @@ export default function AIChatView() {
               >
                 <CopyIcon sx={{ fontSize: 14 }} />
               </IconButton>
+            )}
+            {msg.role === 'assistant' && msg.stopped && i === messages.length - 1 && !loading && (
+              <Box sx={{ mt: -0.5, mb: 1.5, ml: 6 }}>
+                <Chip
+                  size="small"
+                  label="已手动停止，点击继续生成"
+                  clickable
+                  onClick={handleContinueGeneration}
+                  color="warning"
+                  variant="outlined"
+                />
+              </Box>
             )}
           </Box>
         ))}
@@ -492,7 +575,7 @@ export default function AIChatView() {
           '&:focus-within': {
             borderColor: theme.palette.primary.main,
           }
-        }}>
+        }} onContextMenu={handleInputContextMenu}>
           <TextField
             inputRef={inputRef}
             fullWidth
@@ -511,29 +594,88 @@ export default function AIChatView() {
             autoFocus
           />
           <IconButton
-            color="primary"
-            onClick={() => handleSend()}
-            disabled={!input.trim() || loading}
+            onClick={loading ? handleCancel : () => handleSend()}
+            disabled={loading ? false : !input.trim()}
             sx={{
-              bgcolor: input.trim() && !loading
-                ? theme.palette.primary.main : 'transparent',
-              color: input.trim() && !loading
-                ? theme.palette.primary.contrastText : theme.palette.action.disabled,
-              width: 36, height: 36,
+              width: 36,
+              height: 36,
+              bgcolor: loading
+                ? alpha(theme.palette.error.main, 0.12)
+                : (input.trim() ? theme.palette.primary.main : 'transparent'),
+              color: loading
+                ? theme.palette.error.main
+                : (input.trim() ? theme.palette.primary.contrastText : theme.palette.action.disabled),
               '&:hover': {
-                bgcolor: input.trim() && !loading
-                  ? theme.palette.primary.dark : 'transparent',
+                bgcolor: loading
+                  ? alpha(theme.palette.error.main, 0.2)
+                  : (input.trim() ? theme.palette.primary.dark : 'transparent'),
               },
               transition: 'all 0.2s',
             }}
+            aria-label={loading ? '停止生成' : '发送消息'}
           >
-            <SendIcon sx={{ fontSize: 18 }} />
+            {loading ? <StopIcon sx={{ fontSize: 18 }} /> : <SendIcon sx={{ fontSize: 18 }} />}
           </IconButton>
         </Box>
         <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block', textAlign: 'center' }}>
           FlotaAI 可能会出错，请核实重要信息
         </Typography>
       </Box>
+
+      <Menu
+        open={Boolean(messageContextMenu)}
+        onClose={closeMessageContextMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={messageContextMenu ? { top: messageContextMenu.mouseY, left: messageContextMenu.mouseX } : undefined}
+      >
+        <MenuItem
+          onClick={() => {
+            if (messageContextMenu?.msg?.content) {
+              handleCopy(messageContextMenu.msg.content)
+            }
+            closeMessageContextMenu()
+          }}
+          disabled={!messageContextMenu?.msg?.content}
+        >
+          复制消息
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            handleContinueGeneration()
+            closeMessageContextMenu()
+          }}
+          disabled={!(messageContextMenu?.msg?.role === 'assistant' && messageContextMenu?.msg?.stopped && messageContextMenu?.index === messages.length - 1 && !loading)}
+        >
+          继续生成
+        </MenuItem>
+      </Menu>
+
+      <Menu
+        open={Boolean(inputContextMenu)}
+        onClose={closeInputContextMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={inputContextMenu ? { top: inputContextMenu.mouseY, left: inputContextMenu.mouseX } : undefined}
+      >
+        <MenuItem onClick={handlePasteToInput}>粘贴</MenuItem>
+        <MenuItem
+          onClick={() => {
+            setInput('')
+            closeInputContextMenu()
+          }}
+          disabled={!input}
+        >
+          清空输入
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            handleSend()
+            closeInputContextMenu()
+          }}
+          disabled={!input.trim() || loading}
+        >
+          发送
+        </MenuItem>
+      </Menu>
     </Box>
   )
 }

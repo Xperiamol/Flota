@@ -40,6 +40,7 @@ class DatabaseManager {
   constructor() {
     this.db = null;
     this.dbPath = null;
+    this.repairInProgress = null;
   }
 
   /**
@@ -126,6 +127,12 @@ class DatabaseManager {
       // 6. 设置缓存大小（提高性能）
       this.db.pragma('cache_size = -8000'); // 8MB
       dbLog('设置 cache_size = -8000 (8MB)');
+
+      // 启动时做一次快速完整性检查，尽早发现损坏并给出修复指引
+      const quickCheck = this.checkIntegrity('quick_check');
+      if (!quickCheck.ok) {
+        dbLog('数据库快速完整性检查未通过:', quickCheck.details || quickCheck.error);
+      }
       
       // 创建表结构
       dbLog('开始创建表结构...');
@@ -143,6 +150,87 @@ class DatabaseManager {
       dbLog('数据库初始化失败:', error.message, error.stack);
       throw error;
     }
+  }
+
+  /**
+   * 判断错误是否属于数据库损坏类错误
+   * @param {Error|string} error
+   * @returns {boolean}
+   */
+  isCorruptionError(error) {
+    const message = String(error?.message || error || '').toLowerCase();
+    return message.includes('database disk image is malformed') ||
+      message.includes('sqlite_corrupt') ||
+      message.includes('sqlite_notadb') ||
+      message.includes('malformed');
+  }
+
+  /**
+   * 返回统一的用户可读错误文案
+   */
+  getCorruptionGuidanceMessage() {
+    return '数据库文件可能已损坏，已尝试自动修复但未成功。请先备份数据目录，再执行“npm run repair-db”或在设置中运行数据库修复。';
+  }
+
+  /**
+   * 完整性检查
+   * @param {'quick_check'|'integrity_check'} mode
+   */
+  checkIntegrity(mode = 'quick_check') {
+    if (!this.db) {
+      return { ok: false, error: '数据库未初始化' };
+    }
+
+    try {
+      const rows = this.db.prepare(`PRAGMA ${mode}`).all();
+      const key = mode;
+      const details = rows.map((row) => row[key]).filter(Boolean);
+      const ok = details.length === 1 && details[0] === 'ok';
+      return { ok, details };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  }
+
+  /**
+   * 命中损坏错误时执行一次串行修复，避免并发重复修复
+   * @param {Error|string} error
+   * @param {string} context
+   */
+  async tryRepairOnCorruption(error, context = 'unknown') {
+    if (!this.isCorruptionError(error)) {
+      return { success: false, skipped: true, reason: 'not-corruption-error' };
+    }
+
+    if (this.repairInProgress) {
+      return await this.repairInProgress;
+    }
+
+    this.repairInProgress = (async () => {
+      try {
+        dbLog(`检测到数据库损坏错误，开始自动修复。context=${context}`, String(error?.message || error));
+        const repairResult = await this.repairDatabase();
+        const postCheck = this.checkIntegrity('quick_check');
+        if (!repairResult.success || !postCheck.ok) {
+          return {
+            success: false,
+            error: this.getCorruptionGuidanceMessage(),
+            repairResult,
+            postCheck
+          };
+        }
+
+        return {
+          success: true,
+          repairResult,
+          postCheck
+        };
+      } finally {
+        this.repairInProgress = null;
+      }
+    })();
+
+    return await this.repairInProgress;
   }
 
   /**
@@ -878,11 +966,15 @@ class DatabaseManager {
         throw new Error('数据库未初始化');
       }
 
+      const beforeCheck = this.checkIntegrity('quick_check');
+
       const results = {
+        beforeCheck,
         walCheckpoint: false,
         ftsRebuild: false,
         vacuum: false,
-        analyze: false
+        analyze: false,
+        afterCheck: null
       };
 
       // 1. 执行 WAL checkpoint
@@ -943,6 +1035,8 @@ class DatabaseManager {
       } catch (error) {
         console.error('  ⚠️  ANALYZE 失败:', error.message);
       }
+
+      results.afterCheck = this.checkIntegrity('quick_check');
 
       console.log('✅ 数据库修复完成');
       return { success: true, results };
