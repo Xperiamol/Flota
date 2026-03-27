@@ -2,6 +2,15 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [3.0.2] - 2026-03-27
+
+### Fixed / 修复
+- 多选工具栏关闭按钮与顶部栏对齐
+- 多选菜单按钮样式统一和优化，增强视觉一致性
+
+### Changed / 变更
+- 改进一键版本发布流程，新增 `npm run release:patch:push` 等快捷命令，简化发布操作
+
 ## [3.0.0] - 2026-03-13
 
 ### Added / 新增
