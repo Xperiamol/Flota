@@ -654,18 +654,64 @@ class Mem0Service extends EventEmitter {
 
       const vecCandidates = this.db.prepare(sql).all(...params);
 
-      // 3. FTS 关键词候选集
-      const ftsHitIds = new Set();
+      // 3. FTS / LIKE 关键词候选集 (JS直接扫描 + DB深度兜底)
+      const hitMap = new Map(); // id -> matchCount
       try {
-        const ftsRows = this.db.prepare(`
-          SELECT rowid FROM mem0_fts WHERE mem0_fts MATCH ? LIMIT 50
-        `).all(this._buildFtsQuery(query));
-        ftsRows.forEach(r => ftsHitIds.add(r.rowid));
-      } catch (_) {
-        // FTS 不可用或查询解析失败，静默跳过
+        const queryClean = query.replace(/[^\w\u4e00-\u9fff\s]/g, ' ').trim();
+        const tokens = queryClean.split(/\s+/).filter(t => t.length > 0);
+        
+        if (tokens.length > 0) {
+          // JS 强力匹配 vecCandidates (解决中文没有空格导致 FTS 分词失败的问题)
+          vecCandidates.forEach(row => {
+            let mCount = 0;
+            const contentLower = row.content ? row.content.toLowerCase() : '';
+            for (const t of tokens) {
+              if (contentLower.includes(t.toLowerCase())) {
+                mCount++;
+              }
+            }
+            if (mCount > 0) {
+              hitMap.set(row.id, mCount);
+            }
+          });
+          
+          // 如果近期 500 条一条都没命中，则进行全库深度兜底（使用 LIKE AND，因为如果用 OR 会太多）
+          // 但是如果是极短查询（只有一个词），也可以只查那一个词
+          if (hitMap.size === 0) {
+             const likeParams = [userId];
+             let likeSql = `SELECT id FROM mem0_memories WHERE user_id = ? AND superseded_by IS NULL AND (`;
+             
+             // 使用 AND 强制全部词必须出现
+             const likeClauses = tokens.map(t => {
+                likeParams.push(`%${t}%`);
+                return `content LIKE ?`;
+             });
+             likeSql += likeClauses.join(' AND ') + `)`;
+
+             if (category) { likeSql += ' AND category = ?'; likeParams.push(category); }
+             likeSql += ' LIMIT 50';
+             
+             const likeRows = this.db.prepare(likeSql).all(...likeParams);
+             likeRows.forEach(r => {
+                hitMap.set(r.id, tokens.length);
+                // 把深层找出的 row 追加到 vecCandidates 参与后续向量与打分
+                if (!vecCandidates.find(v => v.id === r.id)) {
+                   const fullRow = this.db.prepare(
+                     `SELECT id, content, embedding_blob, embedding, metadata, category,
+                             memory_layer, source, importance_score, access_count,
+                             created_at, last_accessed_at
+                      FROM mem0_memories WHERE id = ?`
+                   ).get(r.id);
+                   if (fullRow) vecCandidates.push(fullRow);
+                }
+             });
+          }
+        }
+      } catch (e) {
+        console.warn('[Mem0] Keyword search fallback warning:', e.message);
       }
 
-      console.log('[Mem0] Candidates: vec=' + vecCandidates.length + ', fts=' + ftsHitIds.size);
+      console.log('[Mem0] Candidates: vec=' + vecCandidates.length + ', textHit=' + hitMap.size);
 
       // 4. 计算向量相似度
       const now = Date.now();
@@ -677,15 +723,20 @@ class Mem0Service extends EventEmitter {
           else return null;
 
           const vecScore = this.cosineSimilarity(queryVec, vec);
-          if (vecScore < minScore * 0.7) return null; // 预剪枝
+          const matchCount = hitMap.get(row.id) || 0;
+          const isTextHit = matchCount > 0;
+          
+          // 如果没有确切的文本匹配，且向量低于预剪枝下限(比如0.21)，抛弃
+          if (!isTextHit && vecScore < minScore * 0.7) return null; 
 
-          return { ...row, vecScore, metadata: JSON.parse(row.metadata || '{}') };
+          return { ...row, vecScore, isTextHit, matchCount, metadata: JSON.parse(row.metadata || '{}') };
         })
         .filter(Boolean);
 
       // 5. 多因子重排
       const ranked = scored.map(item => {
-        const relevance = item.vecScore;
+        // 如果文本直接匹配，但向量匹配的分数极低（例如跨语种或分词极化），我们依然给一个基础的 relevance
+        const relevance = Math.max(item.vecScore, item.isTextHit ? 0.5 : 0);
 
         // 新鲜度衰减 (半衰期模型)
         const ageDays = (now - item.created_at) / (86400000);
@@ -697,8 +748,8 @@ class Mem0Service extends EventEmitter {
         // 来源可信度
         const credibility = SOURCE_CREDIBILITY[item.source] || 0.5;
 
-        // FTS 关键词匹配加分
-        const ftsBonus = ftsHitIds.has(item.id) ? FTS_BOOST : 0;
+        // 文本匹配极其重要，每命中一个查询词增加显著分数
+        const textBonus = item.matchCount * 0.25;
 
         // 综合评分
         const finalScore =
@@ -706,7 +757,7 @@ class Mem0Service extends EventEmitter {
           RANK_WEIGHTS.freshness   * freshness +
           RANK_WEIGHTS.importance  * importance +
           RANK_WEIGHTS.credibility * credibility +
-          ftsBonus;
+          textBonus;
 
         return {
           id: item.id,
@@ -766,12 +817,13 @@ class Mem0Service extends EventEmitter {
    * @private
    */
   _buildFtsQuery(query) {
-    // 按空格拆分，每个词用 OR 连接，过滤太短的词
+    // 按空格拆分，过滤太短的词，但对于单字（中文等）使用 LIKE 兜底，因此 FTS 提供额外加权
     const tokens = query
       .replace(/[^\w\u4e00-\u9fff\s]/g, ' ')
       .split(/\s+/)
-      .filter(t => t.length >= 2);
-    if (tokens.length === 0) return query;
+      .filter(t => t.length >= 1);
+    
+    if (tokens.length === 0) return `"${query.replace(/"/g, '')}"`;
     return tokens.map(t => `"${t}"`).join(' OR ');
   }
 
