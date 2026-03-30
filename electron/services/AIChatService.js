@@ -144,6 +144,21 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'update_memory',
+      description: '更新或纠正记忆库中已有的记忆。当发现已有记忆不准确、过时需要修改时调用。',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'number', description: '要更新的记忆ID' },
+          content: { type: 'string', description: '更新后的记忆内容' }
+        },
+        required: ['id', 'content']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'list_memories',
       description: '列出记忆库中所有已保存的记忆条目。当用户想查看记忆库内容或询问记忆库是否有内容时调用。',
       parameters: {
@@ -291,7 +306,7 @@ class AIChatService {
         const results = await this.mem0Service.searchMemories(
           'current_user',
           args.query,
-          { limit: args.limit || 5 }
+          { limit: args.limit || 5, category: args.category }
         );
         if (!results || results.length === 0) {
           return JSON.stringify({ message: '记忆库中没有找到相关内容', results: [] });
@@ -299,7 +314,9 @@ class AIChatService {
         return JSON.stringify((results).map(r => ({
           content: r.content,
           category: r.category,
-          score: r.score
+          memory_layer: r.memory_layer,
+          score: r.score,
+          vecScore: r.vecScore
         })));
       }
 
@@ -313,9 +330,25 @@ class AIChatService {
         const result = await this.mem0Service.addMemory(
           'current_user',
           args.content.trim(),
-          { category: args.category || 'general' }
+          {
+            category: args.category || 'general',
+            source: 'ai_extract',
+            memoryLayer: args.layer
+          }
         );
         return JSON.stringify({ success: true, id: result.id, content: args.content.trim() });
+      }
+
+      case 'update_memory': {
+        if (!this.mem0Service?.isAvailable()) return JSON.stringify({ error: '记忆引擎未启用，无法更新记忆' });
+        if (!args.id || !args.content?.trim()) return JSON.stringify({ error: '记忆ID和新内容不能为空' });
+        try {
+          const result = await this.mem0Service.updateMemory(args.id, args.content.trim(), { source: 'ai_extract' });
+          if (!result.updated) return JSON.stringify({ error: `未找到ID为 ${args.id} 的记忆，或无更新` });
+          return JSON.stringify({ success: true, id: args.id, content: args.content.trim() });
+        } catch (error) {
+          return JSON.stringify({ error: `更新失败: ${error.message}` });
+        }
       }
 
       case 'list_memories': {
@@ -342,15 +375,29 @@ class AIChatService {
     }
   }
 
-  // ─── 获取系统提示词 ───
+  // ─── 获取系统提示词（v3: 自动注入 Profile 记忆） ───
 
-  _getSystemPrompt() {
+  async _getSystemPrompt() {
     const now = new Date();
     const dateStr = now.toLocaleDateString('zh-CN', {
       year: 'numeric', month: 'long', day: 'numeric',
       weekday: 'long'
     });
     const timeStr = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+
+    // v3: 自动加载 Profile 层记忆（用户偏好、约束）
+    let profileSection = '';
+    try {
+      if (this.mem0Service?.isAvailable() && typeof this.mem0Service.getProfileMemories === 'function') {
+        const profiles = await this.mem0Service.getProfileMemories('current_user');
+        if (profiles && profiles.length > 0) {
+          const items = profiles.map(p => `- ${p.content}`).join('\n');
+          profileSection = `\n\n## 关于用户（来自记忆）\n${items}`;
+        }
+      }
+    } catch (e) {
+      // Profile 加载失败不影响基础功能
+    }
 
     return `你是 FlotaAI，FlashNote 智能笔记应用的内置 AI 助手。
 
@@ -359,8 +406,13 @@ class AIChatService {
 ## 能力
 - 搜索、阅读、创建和编辑笔记
 - 查询和创建待办事项
-- 查看、搜索、添加记忆库条目
+- 查看、搜索、添加和更新记忆库条目
 - 写作辅助、翻译、问答等通用任务
+
+## 记忆管理规则（重要）
+- 当用户表达偏好（如"我喜欢..."、"我习惯..."等规则限制）时，主动调用 add_memory 保存为 preference
+- 当讨论产生重要结论或技术细节事实时，主动调用 add_memory 保存
+- 不要等用户要求，主动识别并保存有价值的信息。若发现已有记忆过时/不准确，立即用 update_memory 修正
 
 ## 规则
 - 用简洁友好的中文回复，适当使用 emoji
@@ -369,7 +421,7 @@ class AIChatService {
 - 编辑笔记前先确认用户意图，说明要修改的内容
 - 使用 Markdown 格式回复，善用列表和标题
 - 不确定时如实说明，不编造数据
-- 回复要简明扼要，避免冗余`;
+- 回复要简明扼要，避免冗余${profileSection}`;
   }
 
   // ─── 流式聊天（主方法） ───
@@ -394,9 +446,10 @@ class AIChatService {
       const temp = Math.min(Math.max(options.temperature || config.temperature, 0), 2);
       const maxTk = options.maxTokens || config.maxTokens || 4000;
 
-      // 构建完整消息列表
+      // 构建完整消息列表（v3: _getSystemPrompt 现在是异步的）
+      const systemPrompt = await this._getSystemPrompt();
       const fullMessages = [
-        { role: 'system', content: this._getSystemPrompt() },
+        { role: 'system', content: systemPrompt },
         ...messages
       ];
 
@@ -623,8 +676,9 @@ class AIChatService {
    * 非流式聊天（简单模式，用于快速操作）
    */
   async chat(messages, options = {}) {
+    const systemPrompt = await this._getSystemPrompt();
     const fullMessages = [
-      { role: 'system', content: this._getSystemPrompt() },
+      { role: 'system', content: systemPrompt },
       ...messages
     ];
     return await this.aiService.chat(fullMessages, options);

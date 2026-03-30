@@ -505,7 +505,7 @@ async function initializeServices() {
     const dbPath = path.join(app.getPath('userData'), 'database', 'flota.db')
     const appDataPath = app.getPath('userData')
     services.mem0Service = new Mem0Service(dbPath, appDataPath)
-    services.migrationService = new HistoricalDataMigrationService(services.mem0Service)
+    services.migrationService = new HistoricalDataMigrationService(services.mem0Service, services.aiService)
 
     // 并行初始化所有AI服务
     const logger = getLogger()
@@ -1607,6 +1607,20 @@ registerIpcHandlers([
     }
   }
 ])
+
+// mem0:cleanup — 生命周期治理（TTL + 衰减 + 孤儿清理）
+ipcMain.handle('mem0:cleanup', async (event) => {
+  try {
+    if (!services.mem0Service?.isAvailable()) {
+      return { success: false, error: 'Mem0 未初始化' }
+    }
+    const result = await services.mem0Service.cleanupMemories('current_user')
+    return { success: true, ...result }
+  } catch (error) {
+    console.error('[Mem0] cleanup 失败:', error)
+    return { success: false, error: error.message }
+  }
+})
 
 // 历史数据迁移 - 使用 migrationService 实现去重
 ipcMain.handle('mem0:migrate-historical', async (event) => {

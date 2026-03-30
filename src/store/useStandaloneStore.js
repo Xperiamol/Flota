@@ -61,7 +61,7 @@ export const useStandaloneStore = create((set, get) => ({
   // 更新笔记
   updateNote: async (noteId, updates) => {
     try {
-      if (!window.electronAPI) return false
+      if (!window.electronAPI) return { success: false, error: 'API不可用' }
       
       const result = await window.electronAPI.notes.update(noteId, updates)
       if (result?.success && result.data) {
@@ -72,7 +72,7 @@ export const useStandaloneStore = create((set, get) => ({
             note.id === updatedNote.id ? updatedNote : note
           )
         }))
-        return true
+        return { success: true, data: updatedNote }
       }
       
       // 无返回数据时，兜底本地合并
@@ -81,10 +81,10 @@ export const useStandaloneStore = create((set, get) => ({
           note.id === noteId ? { ...note, ...updates } : note
         )
       }))
-      return !!result?.success
+      return { success: !!result?.success, data: get().notes.find(n => n.id === noteId), error: result?.error }
     } catch (error) {
       console.error('更新笔记失败:', error)
-      return false
+      return { success: false, error: error.message }
     }
   },
   

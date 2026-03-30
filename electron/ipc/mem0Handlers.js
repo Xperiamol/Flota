@@ -109,6 +109,18 @@ function registerMem0Handlers(services) {
       { success: false, memoryCount: 0, errors: [] }
     )
   );
+
+  // v2: 手动触发记忆清理
+  ipcMain.handle('mem0:cleanup',
+    IpcHandlerFactory.createHandler(
+      async () => {
+        const userId = 'current_user';
+        return await mem0Service.cleanupMemories(userId);
+      },
+      '记忆清理失败',
+      { removed: 0, merged: 0 }
+    )
+  );
 }
 
 module.exports = { registerMem0Handlers };

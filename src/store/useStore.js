@@ -300,10 +300,11 @@ const useStore = create(
                 createNote: async (noteData) => {
                     try {
                         const result = await createNoteAPI(noteData)
-                        if (result) {
+                        const payload = result?.data || result
+                        if (result?.success || payload) {
                             const newNote = {
-                                ...result,
-                                tags: normalizeTags(result.tags)
+                                ...payload,
+                                tags: normalizeTags(payload.tags)
                             }
                             set((state) => ({
                                 notes: [newNote, ...state.notes],
@@ -311,7 +312,7 @@ const useStore = create(
                             }))
                             return { success: true, data: newNote }
                         }
-                        return { success: false, error: 'Failed to create note' }
+                        return { success: false, error: result?.error || 'Failed to create note' }
                     } catch (error) {
                         console.error('Failed to create note:', error)
                         return { success: false, error: error.message }
@@ -321,13 +322,14 @@ const useStore = create(
                 updateNote: async (id, updates) => {
                     try {
                         const result = await updateNoteAPI(id, updates)
-                        if (result) {
-                            const tags = Array.isArray(result.tags)
-                                ? result.tags
-                                : (typeof result.tags === 'string' && result.tags.trim())
-                                    ? result.tags.split(',')
+                        const payload = result?.data || result
+                        if (result?.success || payload) {
+                            const tags = Array.isArray(payload.tags)
+                                ? payload.tags
+                                : (typeof payload.tags === 'string' && payload.tags.trim())
+                                    ? payload.tags.split(',')
                                     : []
-                            const updatedNote = { ...result, tags }
+                            const updatedNote = { ...payload, tags }
 
                             // 准备更新状态
                             const stateUpdate = {
@@ -365,7 +367,7 @@ const useStore = create(
 
                             return { success: true, data: updatedNote }
                         }
-                        return { success: false, error: 'Failed to update note' }
+                        return { success: false, error: result?.error || 'Failed to update note' }
                     } catch (error) {
                         console.error('Failed to update note:', error)
                         return { success: false, error: error.message }

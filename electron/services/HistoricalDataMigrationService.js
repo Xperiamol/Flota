@@ -8,8 +8,9 @@ const DatabaseManager = require('../dao/DatabaseManager');
  * 无需额外的 JSON 状态文件，数据库是唯一真实来源(Single Source of Truth)
  */
 class HistoricalDataMigrationService {
-  constructor(mem0Service) {
+  constructor(mem0Service, aiService = null) {
     this.mem0Service = mem0Service;
+    this.aiService = aiService;
     this.dbManager = DatabaseManager.getInstance();
     this.db = this.dbManager.getDatabase();
 
@@ -242,6 +243,16 @@ class HistoricalDataMigrationService {
       results.memoryCount += todoResult.added;
       results.skippedCount += todoResult.skipped;
 
+      // 4. v2: 触发记忆生命周期清理
+      try {
+        const cleanupResult = await this.mem0Service.cleanupMemories(userId);
+        if (cleanupResult.removed > 0) {
+          console.log(`[Migration] 清理过期记忆: ${cleanupResult.removed} 条`);
+        }
+      } catch (cleanupErr) {
+        console.warn('[Migration] 记忆清理失败（非致命）:', cleanupErr.message);
+      }
+
       console.log(`[Migration] 迁移完成，新增 ${results.memoryCount} 条记忆，跳过 ${results.skippedCount} 条重复`);
 
       return {
@@ -296,6 +307,8 @@ class HistoricalDataMigrationService {
         `用户在过去${this.config.daysToAnalyze}天创建了${todos.length}个待办事项，其中${importantRatio.toFixed(0)}%标记为重要，显示出对重要任务的重视`,
         {
           category: 'task_planning',
+          memoryLayer: 'episodic',
+          source: 'historical_analysis',
           metadata: {
             source: 'historical_analysis',
             type: 'priority_pattern',
@@ -441,32 +454,18 @@ class HistoricalDataMigrationService {
       ? note.tags.split(',').map(t => t.trim()).filter(t => t)
       : [];
 
-    // 白板笔记特殊处理：提取 Excalidraw 中的文字内容
+    // 白板笔记：提取 Excalidraw 文字+关系
     if (note.note_type === 'whiteboard') {
       try {
-        const whiteboardData = JSON.parse(fullContent);
-        const textElements = [];
-
-        // 提取所有 text 类型的元素
-        if (whiteboardData.elements && Array.isArray(whiteboardData.elements)) {
-          whiteboardData.elements.forEach(element => {
-            if (element.type === 'text' && element.text && element.text.trim()) {
-              textElements.push(element.text.trim());
-            }
-          });
-        }
-
-        if (textElements.length > 0) {
-          fullContent = textElements.join('\n');
-          console.log(`[Migration] 白板笔记 ${note.id}，提取到 ${textElements.length} 个文字元素`);
-        } else {
-          console.log(`[Migration] 白板笔记 ${note.id} 无文字内容，跳过`);
-          return; // 无文字内容的白板笔记不存储
-        }
+        fullContent = this._extractWhiteboardKnowledge(note.id, fullContent);
+        if (!fullContent) return;
       } catch (e) {
-        console.warn(`[Migration] 白板笔记 ${note.id} JSON 解析失败:`, e.message);
-        return; // 解析失败的白板笔记跳过
+        console.warn(`[Migration] 白板笔记 ${note.id} 处理失败:`, e.message);
+        return;
       }
+    } else if (fullContent.length >= 200) {
+      // P2: 长笔记用 LLM 摘要，提高信噪比；失败时降级截断
+      fullContent = await this._summarizeNote(fullContent);
     }
 
     console.log(`[Migration] 处理笔记 ${note.id}，长度: ${fullContent.length} 字符`);
@@ -476,6 +475,8 @@ class HistoricalDataMigrationService {
       fullContent,
       {
         category: 'knowledge',
+        memoryLayer: 'artifact',
+        source: 'user_note',
         metadata: {
           source: 'user_note',
           note_id: note.id,
@@ -488,6 +489,119 @@ class HistoricalDataMigrationService {
     );
 
     console.log(`[Migration] 笔记 ${note.id} 存储成功，memory_id: ${memoryId}`);
+  }
+
+  /**
+   * 从白板 Excalidraw 数据中提取知识内容（文字 + 结构关系）
+   * @private
+   * @param {number} noteId
+   * @param {string} jsonContent - Excalidraw JSON 字符串
+   * @returns {string|null} 提取到的知识文本，无内容返回 null
+   */
+  _extractWhiteboardKnowledge(noteId, jsonContent) {
+    const whiteboardData = JSON.parse(jsonContent);
+    if (!whiteboardData.elements || !Array.isArray(whiteboardData.elements)) {
+      console.log(`[Migration] 白板笔记 ${noteId} 无 elements 数据，跳过`);
+      return null;
+    }
+
+    const elements = whiteboardData.elements;
+    const textElements = [];
+    const relationships = [];
+    const elementById = new Map();
+
+    // 第一遍：提取所有元素，建立 ID 映射
+    for (const el of elements) {
+      if (el.isDeleted) continue;
+      elementById.set(el.id, el);
+
+      if (el.type === 'text' && el.text && el.text.trim()) {
+        textElements.push(el.text.trim());
+      }
+    }
+
+    // 第二遍：提取箭头/连线关系
+    for (const el of elements) {
+      if (el.isDeleted) continue;
+      if (el.type === 'arrow' || el.type === 'line') {
+        const startId = el.startBinding?.elementId;
+        const endId = el.endBinding?.elementId;
+        if (startId && endId) {
+          const startEl = elementById.get(startId);
+          const endEl = elementById.get(endId);
+          // 尝试获取连接元素内含的文字
+          const startText = this._getElementText(startEl, elementById);
+          const endText = this._getElementText(endEl, elementById);
+          if (startText && endText) {
+            relationships.push(`${startText} → ${endText}`);
+          }
+        }
+      }
+    }
+
+    if (textElements.length === 0 && relationships.length === 0) {
+      console.log(`[Migration] 白板笔记 ${noteId} 无文字内容，跳过`);
+      return null;
+    }
+
+    // 构建结构化描述
+    const parts = [];
+    if (textElements.length > 0) {
+      parts.push(textElements.join('\n'));
+    }
+    if (relationships.length > 0) {
+      parts.push('关系: ' + relationships.join('; '));
+    }
+
+    const result = parts.join('\n');
+    console.log(`[Migration] 白板笔记 ${noteId}，提取 ${textElements.length} 个文字，${relationships.length} 个关系`);
+    return result;
+  }
+
+  /**
+   * 获取白板元素的文字内容（处理容器元素内嵌文字）
+   * @private
+   */
+  _getElementText(el, elementById) {
+    if (!el) return null;
+    // 直接是文字元素
+    if (el.type === 'text' && el.text) return el.text.trim();
+    // 容器元素可能有 boundElements 中包含 text
+    if (el.boundElements && Array.isArray(el.boundElements)) {
+      for (const bound of el.boundElements) {
+        if (bound.type === 'text') {
+          const textEl = elementById.get(bound.id);
+          if (textEl && textEl.text) return textEl.text.trim();
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 用 LLM 将长笔记压缩为知识摘要（P2）
+   * @private
+   * @param {string} content - 原始笔记内容
+   * @returns {string} 摘要文本，失败时降级为截断
+   */
+  async _summarizeNote(content) {
+    if (!this.aiService) {
+      return content.length > 800 ? content.substring(0, 800) + '...' : content;
+    }
+    try {
+      const result = await this.aiService.chat([{
+        role: 'user',
+        content: `请用1-3句话概括以下笔记的核心知识点，保留关键术语和结论，不要添加评论：\n\n${content.substring(0, 2000)}`
+      }], { maxTokens: 300, temperature: 0.3 });
+      const summary = result?.success && result.data?.content?.trim();
+      if (summary && summary.length >= 10) {
+        console.log(`[Migration] 笔记摘要: ${content.length}→${summary.length} 字符`);
+        return summary;
+      }
+    } catch (e) {
+      console.warn('[Migration] LLM 摘要失败，降级截断:', e.message);
+    }
+    return content.length > 800 ? content.substring(0, 800) + '...' : content;
   }
 
   /**
@@ -584,6 +698,8 @@ class HistoricalDataMigrationService {
       content,
       {
         category: 'knowledge',
+        memoryLayer: 'artifact',
+        source: 'user_todo',
         metadata: {
           source: 'user_todo',
           todo_id: todo.id,
