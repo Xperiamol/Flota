@@ -2,6 +2,13 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [3.0.4] - 2026-03-30
+
+### Changed / 更新内容
+- feat(ai): optimize Mem0Service retrieval and AIChatService prompt rules
+- build: auto-generate CHANGELOG.md during npm version lifecycle
+
+
 ## [3.0.3] - 2026-03-30
 
 ### Fixed / 修复
