@@ -210,8 +210,19 @@ jobs:
         run: |
           set -euo pipefail
           curl -fsSL -o ossutil.zip https://gosspublic.alicdn.com/ossutil/1.7.16/ossutil64.zip
-          unzip -q ossutil.zip
-          chmod +x ossutil64
+          rm -rf ossutil-bin
+          mkdir -p ossutil-bin
+          unzip -q ossutil.zip -d ossutil-bin
+
+          OSSUTIL_BIN="$(find ossutil-bin -type f \( -name 'ossutil64' -o -name 'ossutil' \) | head -n1 || true)"
+          if [[ -z "$OSSUTIL_BIN" ]]; then
+            echo "[publish-oss] ossutil executable not found after unzip"
+            find ossutil-bin -maxdepth 3 -print
+            exit 1
+          fi
+
+          chmod +x "$OSSUTIL_BIN"
+          echo "OSSUTIL_BIN=$OSSUTIL_BIN" >> "$GITHUB_ENV"
 
       - name: Upload to OSS
         shell: bash
@@ -223,5 +234,5 @@ jobs:
             exit 1
           fi
 
-          ./ossutil64 config -e "$OSS_ENDPOINT" -i "$OSS_ACCESS_KEY_ID" -k "$OSS_ACCESS_KEY_SECRET" -L CH
-          ./ossutil64 cp -rf oss-staging/downloads "oss://${OSS_BUCKET}/"
+          "$OSSUTIL_BIN" config -e "$OSS_ENDPOINT" -i "$OSS_ACCESS_KEY_ID" -k "$OSS_ACCESS_KEY_SECRET" -L CH
+          "$OSSUTIL_BIN" cp -rf oss-staging/downloads "oss://${OSS_BUCKET}/"
