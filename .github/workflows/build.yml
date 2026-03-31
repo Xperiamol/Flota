@@ -122,3 +122,106 @@ jobs:
             dist-electron/mcp-server.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-oss:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      OSS_BUCKET: ${{ secrets.OSS_BUCKET }}
+      OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
+      OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+      OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+      OSS_PUBLIC_BASE_URL: ${{ secrets.OSS_PUBLIC_BASE_URL }}
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Flota-*-${{ github.ref_name }}
+          merge-multiple: true
+          path: release-files
+
+      - name: Prepare release files for OSS
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p oss-staging/downloads/latest
+          mkdir -p "oss-staging/downloads/v${VERSION}"
+
+          WIN_SETUP="$(find release-files -type f -name '*Setup*.exe' | head -n1 || true)"
+          MAC_ARM64="$(find release-files -type f -name '*arm64*.dmg' | head -n1 || true)"
+          MAC_X64="$(find release-files -type f -name '*.dmg' ! -name '*arm64*' | head -n1 || true)"
+          LINUX_APPIMAGE="$(find release-files -type f -name '*.AppImage' | head -n1 || true)"
+          MCP_ZIP="$(find release-files -type f -name 'mcp-server.zip' | head -n1 || true)"
+
+          if [[ -z "$WIN_SETUP" || -z "$MAC_ARM64" || -z "$MAC_X64" || -z "$LINUX_APPIMAGE" ]]; then
+            echo "[publish-oss] Missing one or more required desktop artifacts"
+            echo "WIN_SETUP=$WIN_SETUP"
+            echo "MAC_ARM64=$MAC_ARM64"
+            echo "MAC_X64=$MAC_X64"
+            echo "LINUX_APPIMAGE=$LINUX_APPIMAGE"
+            exit 1
+          fi
+
+          cp "$WIN_SETUP" "oss-staging/downloads/v${VERSION}/Flota.Setup.${VERSION}.exe"
+          cp "$MAC_X64" "oss-staging/downloads/v${VERSION}/Flota-${VERSION}.dmg"
+          cp "$MAC_ARM64" "oss-staging/downloads/v${VERSION}/Flota-${VERSION}-arm64.dmg"
+          cp "$LINUX_APPIMAGE" "oss-staging/downloads/v${VERSION}/Flota-${VERSION}.AppImage"
+
+          cp "$WIN_SETUP" "oss-staging/downloads/latest/Flota.Setup.exe"
+          cp "$MAC_X64" "oss-staging/downloads/latest/Flota-mac-x64.dmg"
+          cp "$MAC_ARM64" "oss-staging/downloads/latest/Flota-mac-arm64.dmg"
+          cp "$LINUX_APPIMAGE" "oss-staging/downloads/latest/Flota.AppImage"
+
+          if [[ -n "$MCP_ZIP" ]]; then
+            cp "$MCP_ZIP" "oss-staging/downloads/v${VERSION}/mcp-server.zip"
+            cp "$MCP_ZIP" "oss-staging/downloads/latest/mcp-server.zip"
+          fi
+
+          BASE_URL="${OSS_PUBLIC_BASE_URL%/}"
+          if [[ -z "$BASE_URL" ]]; then
+            BASE_URL="https://${OSS_BUCKET}.oss-${OSS_ENDPOINT}.aliyuncs.com"
+          fi
+
+          cat > "oss-staging/downloads/release-manifest.json" <<EOF
+          {
+            "version": "${VERSION}",
+            "publishedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "latest": {
+              "windows": "${BASE_URL}/downloads/latest/Flota.Setup.exe",
+              "macosX64": "${BASE_URL}/downloads/latest/Flota-mac-x64.dmg",
+              "macosArm64": "${BASE_URL}/downloads/latest/Flota-mac-arm64.dmg",
+              "linux": "${BASE_URL}/downloads/latest/Flota.AppImage",
+              "android": "${BASE_URL}/downloads/latest/app-release.apk"
+            },
+            "versioned": {
+              "windows": "${BASE_URL}/downloads/v${VERSION}/Flota.Setup.${VERSION}.exe",
+              "macosX64": "${BASE_URL}/downloads/v${VERSION}/Flota-${VERSION}.dmg",
+              "macosArm64": "${BASE_URL}/downloads/v${VERSION}/Flota-${VERSION}-arm64.dmg",
+              "linux": "${BASE_URL}/downloads/v${VERSION}/Flota-${VERSION}.AppImage"
+            }
+          }
+          EOF
+
+      - name: Install ossutil
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL -o ossutil.zip https://gosspublic.alicdn.com/ossutil/1.7.16/ossutil64.zip
+          unzip -q ossutil.zip
+          chmod +x ossutil64
+
+      - name: Upload to OSS
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$OSS_BUCKET" || -z "$OSS_ENDPOINT" || -z "$OSS_ACCESS_KEY_ID" || -z "$OSS_ACCESS_KEY_SECRET" ]]; then
+            echo "[publish-oss] OSS secrets are not fully configured"
+            exit 1
+          fi
+
+          ./ossutil64 config -e "$OSS_ENDPOINT" -i "$OSS_ACCESS_KEY_ID" -k "$OSS_ACCESS_KEY_SECRET" -L CH
+          ./ossutil64 cp -rf oss-staging/downloads "oss://${OSS_BUCKET}/"

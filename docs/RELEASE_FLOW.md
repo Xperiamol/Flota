@@ -64,6 +64,31 @@ npm run release:major:push
 - 自动创建 GitHub Release 并上传安装包
 - Release 描述来自 `CHANGELOG.md`（非自动生成摘要）
 
+## 3.1 自动同步 OSS（latest 固定下载链接）
+
+推送 `v*` tag 后，工作流会在构建完成后自动：
+
+- 下载三平台构建产物
+- 上传版本目录：`downloads/vX.Y.Z/`
+- 覆盖稳定目录：`downloads/latest/`
+- 生成并上传 `downloads/release-manifest.json`
+
+需要在 GitHub 仓库 Secrets 中配置：
+
+- `OSS_BUCKET`：Bucket 名称（不带 `oss://`）
+- `OSS_ENDPOINT`：OSS Endpoint（示例：`oss-cn-hangzhou.aliyuncs.com`）
+- `OSS_ACCESS_KEY_ID`
+- `OSS_ACCESS_KEY_SECRET`
+- `OSS_PUBLIC_BASE_URL`（可选，建议配置为你的 OSS/CDN 公网域名）
+
+网页下载链接建议统一改为稳定地址（后续无需改版本号）：
+
+- Windows：`/downloads/latest/Flota.Setup.exe`
+- macOS Intel：`/downloads/latest/Flota-mac-x64.dmg`
+- macOS Apple 芯片：`/downloads/latest/Flota-mac-arm64.dmg`
+- Linux：`/downloads/latest/Flota.AppImage`
+- Android：`/downloads/latest/app-release.apk`（由手机端私有流程上传）
+
 ## 4. 生成本次 Release 描述（可本地预览）
 
 ### 提取最新版本条目
