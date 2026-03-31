@@ -2,6 +2,12 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [3.0.5] - 2026-03-31
+
+### Changed / 更新内容
+- ci: add OSS publish flow and website latest-version download page
+
+
 ## [3.0.4] - 2026-03-30
 
 ### Changed / 更新内容
