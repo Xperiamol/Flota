@@ -205,24 +205,17 @@ jobs:
           }
           EOF
 
-      - name: Install ossutil
+      - name: Setup Python for OSS upload
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install OSS Python SDK
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsSL -o ossutil.zip https://gosspublic.alicdn.com/ossutil/1.7.16/ossutil64.zip
-          rm -rf ossutil-bin
-          mkdir -p ossutil-bin
-          unzip -q ossutil.zip -d ossutil-bin
-
-          OSSUTIL_BIN="$(find ossutil-bin -type f \( -name 'ossutil64' -o -name 'ossutil' \) | head -n1 || true)"
-          if [[ -z "$OSSUTIL_BIN" ]]; then
-            echo "[publish-oss] ossutil executable not found after unzip"
-            find ossutil-bin -maxdepth 3 -print
-            exit 1
-          fi
-
-          chmod +x "$OSSUTIL_BIN"
-          echo "OSSUTIL_BIN=$OSSUTIL_BIN" >> "$GITHUB_ENV"
+          python -m pip install --upgrade pip
+          pip install oss2
 
       - name: Upload to OSS
         shell: bash
@@ -234,5 +227,40 @@ jobs:
             exit 1
           fi
 
-          "$OSSUTIL_BIN" config -e "$OSS_ENDPOINT" -i "$OSS_ACCESS_KEY_ID" -k "$OSS_ACCESS_KEY_SECRET" -L CH
-          "$OSSUTIL_BIN" cp -rf oss-staging/downloads "oss://${OSS_BUCKET}/"
+          python - <<'PY'
+          import os
+          import sys
+          from pathlib import Path
+          import mimetypes
+          import oss2
+
+          bucket_name = os.environ.get("OSS_BUCKET", "")
+          endpoint = os.environ.get("OSS_ENDPOINT", "")
+          access_key_id = os.environ.get("OSS_ACCESS_KEY_ID", "")
+          access_key_secret = os.environ.get("OSS_ACCESS_KEY_SECRET", "")
+
+          source_root = Path("oss-staging/downloads")
+          if not source_root.exists():
+              print(f"[publish-oss] source directory not found: {source_root}")
+              sys.exit(1)
+
+          auth = oss2.Auth(access_key_id, access_key_secret)
+          bucket = oss2.Bucket(auth, endpoint, bucket_name)
+
+          uploaded = 0
+          for local_path in source_root.rglob("*"):
+              if not local_path.is_file():
+                  continue
+
+              object_key = local_path.as_posix().replace("oss-staging/", "", 1)
+              content_type, _ = mimetypes.guess_type(str(local_path))
+              headers = {}
+              if content_type:
+                  headers["Content-Type"] = content_type
+
+              bucket.put_object_from_file(object_key, str(local_path), headers=headers)
+              uploaded += 1
+              print(f"[publish-oss] uploaded: {object_key}")
+
+          print(f"[publish-oss] upload complete, total files: {uploaded}")
+          PY
