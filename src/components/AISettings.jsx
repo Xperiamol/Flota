@@ -7,25 +7,20 @@ import {
   Button,
   Switch,
   FormControl,
-  FormControlLabel,
   InputLabel,
   Select,
   MenuItem,
   Alert,
-  Divider,
   Slider,
   CircularProgress,
   Link,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemSecondaryAction
+  ListItemText
 } from '@mui/material';
 import {
-  Psychology as AIIcon,
   Check as CheckIcon,
   Info as InfoIcon
 } from '@mui/icons-material';
+import { settingsFieldGroupSx, settingsRowSx, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../styles/commonStyles';
 
 const AISettings = ({ showSnackbar }) => {
   const { t } = useTranslation();
@@ -173,213 +168,156 @@ const AISettings = ({ showSnackbar }) => {
 
   return (
     <Box>
-      <List>
-        {/* AI 功能开关 */}
-        <ListItem>
+      <Box sx={settingsSectionSx}>
+        <Typography variant="h6" sx={sectionTitleSx}>AI 助手</Typography>
+        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
+          管理 AI 功能开关、模型服务和生成参数
+        </Typography>
+        <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2 })}>
           <ListItemText
             primary={t('ai.enableAI')}
             secondary={t('ai.enableAIDesc')}
+            primaryTypographyProps={{ sx: { fontWeight: 650 } }}
           />
-          <ListItemSecondaryAction>
-            <Switch
-              checked={config.enabled}
-              onChange={(e) => handleConfigChange('enabled', e.target.checked)}
-              color="primary"
-            />
-          </ListItemSecondaryAction>
-        </ListItem>
+          <Switch
+            checked={config.enabled}
+            onChange={(e) => handleConfigChange('enabled', e.target.checked)}
+            color="primary"
+          />
+        </Box>
+      </Box>
 
-        <Divider />
-
-        {/* 提供商选择 */}
-        <ListItem>
-          <Box sx={{ width: '100%', pt: 1, pb: 1 }}>
-            <FormControl fullWidth size="small">
-              <InputLabel>{t('ai.provider')}</InputLabel>
-              <Select
-                value={config.provider}
-                label={t('ai.provider')}
-                onChange={(e) => handleProviderChange(e.target.value)}
+      <Box sx={settingsSectionSx}>
+        <Typography variant="subtitle1" sx={sectionTitleSx}>服务配置</Typography>
+        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
+          选择模型服务，并填写访问凭据
+        </Typography>
+        <Box sx={settingsFieldGroupSx}>
+          <FormControl fullWidth size="small">
+            <InputLabel>{t('ai.provider')}</InputLabel>
+            <Select value={config.provider} label={t('ai.provider')} onChange={(e) => handleProviderChange(e.target.value)}>
+              {providers.map(provider => (
+                <MenuItem key={provider.id} value={provider.id}>
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>{provider.name}</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{provider.description}</Typography>
+                  </Box>
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Box>
+        <Box sx={settingsFieldGroupSx}>
+          <TextField
+            fullWidth
+            size="small"
+            label={t('ai.apiKey')}
+            type="password"
+            value={config.apiKey}
+            onChange={(e) => handleConfigChange('apiKey', e.target.value)}
+            onBlur={handleTextBlur}
+            placeholder={t('ai.apiKeyPlaceholder')}
+            helperText={selectedProvider && getProviderDocLink(config.provider) && (
+              <Link
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (window.electronAPI?.system) {
+                    window.electronAPI.system.openExternal(getProviderDocLink(config.provider));
+                  }
+                }}
               >
-                {providers.map(provider => (
-                  <MenuItem key={provider.id} value={provider.id}>
-                    <Box>
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        {provider.name}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                        {provider.description}
-                      </Typography>
-                    </Box>
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
-        </ListItem>
-
-        <Divider />
-
-        {/* API Key */}
-        <ListItem>
-          <Box sx={{ width: '100%', pt: 1, pb: 1 }}>
+                {t('ai.howToGetApiKey')}
+              </Link>
+            )}
+          />
+        </Box>
+        {config.provider === 'custom' && (
+          <Box sx={settingsFieldGroupSx}>
             <TextField
               fullWidth
               size="small"
-              label={t('ai.apiKey')}
-              type="password"
-              value={config.apiKey}
-              onChange={(e) => handleConfigChange('apiKey', e.target.value)}
+              label={t('ai.apiUrl')}
+              value={config.apiUrl}
+              onChange={(e) => handleConfigChange('apiUrl', e.target.value)}
               onBlur={handleTextBlur}
-              placeholder={t('ai.apiKeyPlaceholder')}
-              helperText={
-                selectedProvider && getProviderDocLink(config.provider) && (
-                  <Link
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      if (window.electronAPI?.system) {
-                        window.electronAPI.system.openExternal(getProviderDocLink(config.provider));
-                      }
-                    }}
-                  >
-                    {t('ai.howToGetApiKey')}
-                  </Link>
-                )
-              }
+              placeholder={t('ai.apiUrlPlaceholder')}
+              helperText={t('ai.apiUrlDesc')}
             />
           </Box>
-        </ListItem>
-
-        {/* 自定义 API URL */}
-        {config.provider === 'custom' && (
-          <>
-            <Divider />
-            <ListItem>
-              <Box sx={{ width: '100%', pt: 1, pb: 1 }}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  label={t('ai.apiUrl')}
-                  value={config.apiUrl}
-                  onChange={(e) => handleConfigChange('apiUrl', e.target.value)}
-                  onBlur={handleTextBlur}
-                  placeholder={t('ai.apiUrlPlaceholder')}
-                  helperText={t('ai.apiUrlDesc')}
-                />
-              </Box>
-            </ListItem>
-          </>
         )}
-
-        <Divider />
-
-        {/* 模型选择 */}
-        <ListItem>
-          <Box sx={{ width: '100%', pt: 1, pb: 1 }}>
-            {selectedProvider && selectedProvider.models && selectedProvider.models.length > 0 ? (
-              <FormControl fullWidth size="small">
-                <InputLabel>{t('ai.model')}</InputLabel>
-                <Select
-                  value={config.model}
-                  label={t('ai.model')}
-                  onChange={(e) => handleConfigChange('model', e.target.value)}
-                >
-                  {selectedProvider.models.map(model => (
-                    <MenuItem key={model} value={model}>
-                      {model}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            ) : (
-              <TextField
-                fullWidth
-                size="small"
-                label={t('ai.modelName')}
-                value={config.model}
-                onChange={(e) => handleConfigChange('model', e.target.value)}
-                onBlur={handleTextBlur}
-                placeholder={t('ai.modelPlaceholder')}
-              />
-            )}
-          </Box>
-        </ListItem>
-
-        <Divider />
-
-        {/* Temperature */}
-        <ListItem>
-          <Box sx={{ width: '100%', pt: 2, pb: 2 }}>
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              {t('ai.temperature')}: {typeof config.temperature === 'number' && !isNaN(config.temperature) ? config.temperature : 0.7}
-            </Typography>
-            <Slider
-              value={typeof config.temperature === 'number' && !isNaN(config.temperature) ? config.temperature : 0.7}
-              onChange={(e, value) => handleConfigChange('temperature', value)}
-              min={0}
-              max={2}
-              step={0.1}
-              marks={[
-                { value: 0, label: '0' },
-                { value: 1, label: '1' },
-                { value: 2, label: '2' }
-              ]}
-              valueLabelDisplay="auto"
-            />
-            <Typography variant="caption" color="text.secondary">
-              {t('ai.temperatureDesc')}
-            </Typography>
-          </Box>
-        </ListItem>
-
-        <Divider />
-
-        {/* Max Tokens */}
-        <ListItem>
-          <Box sx={{ width: '100%', pt: 2, pb: 2 }}>
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              {t('ai.maxTokens')}: {typeof config.maxTokens === 'number' && !isNaN(config.maxTokens) ? config.maxTokens : 2000}
-            </Typography>
-            <Slider
-              value={typeof config.maxTokens === 'number' && !isNaN(config.maxTokens) ? config.maxTokens : 2000}
-              onChange={(e, value) => handleConfigChange('maxTokens', value)}
-              min={100}
-              max={4000}
-              step={100}
-              marks={[
-                { value: 100, label: '100' },
-                { value: 2000, label: '2000' },
-                { value: 4000, label: '4000' }
-              ]}
-              valueLabelDisplay="auto"
-            />
-            <Typography variant="caption" color="text.secondary">
-              {t('ai.maxTokensDesc')}
-            </Typography>
-          </Box>
-        </ListItem>
-
-        <Divider />
-
-        {/* 操作按钮 */}
-        <ListItem>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, pt: 1, pb: 1, width: '100%' }}>
-            <Box sx={{ flex: 1 }} />
-            <Button
-              variant="outlined"
+        <Box sx={settingsFieldGroupSx}>
+          {selectedProvider && selectedProvider.models && selectedProvider.models.length > 0 ? (
+            <FormControl fullWidth size="small">
+              <InputLabel>{t('ai.model')}</InputLabel>
+              <Select value={config.model} label={t('ai.model')} onChange={(e) => handleConfigChange('model', e.target.value)}>
+                {selectedProvider.models.map(model => (
+                  <MenuItem key={model} value={model}>{model}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          ) : (
+            <TextField
+              fullWidth
               size="small"
-              onClick={handleTestConnection}
-              disabled={!config.apiKey || testing}
-              startIcon={testing ? <CircularProgress size={16} /> : <CheckIcon />}
-            >
-              {testing ? t('ai.testing') : t('ai.testConnection')}
-            </Button>
-          </Box>
-        </ListItem>
-      </List>
+              label={t('ai.modelName')}
+              value={config.model}
+              onChange={(e) => handleConfigChange('model', e.target.value)}
+              onBlur={handleTextBlur}
+              placeholder={t('ai.modelPlaceholder')}
+            />
+          )}
+        </Box>
+      </Box>
 
-      {/* 使用说明 */}
+      <Box sx={settingsSectionSx}>
+        <Typography variant="subtitle1" sx={sectionTitleSx}>生成参数</Typography>
+        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
+          控制回答随机性和最大输出长度
+        </Typography>
+        <Box sx={settingsFieldGroupSx}>
+          <Typography variant="body2" color="text.secondary" gutterBottom>
+            {t('ai.temperature')}: {typeof config.temperature === 'number' && !isNaN(config.temperature) ? config.temperature : 0.7}
+          </Typography>
+          <Slider
+            value={typeof config.temperature === 'number' && !isNaN(config.temperature) ? config.temperature : 0.7}
+            onChange={(e, value) => handleConfigChange('temperature', value)}
+            min={0}
+            max={2}
+            step={0.1}
+            marks={[{ value: 0, label: '0' }, { value: 1, label: '1' }, { value: 2, label: '2' }]}
+            valueLabelDisplay="auto"
+          />
+          <Typography variant="caption" color="text.secondary">{t('ai.temperatureDesc')}</Typography>
+        </Box>
+        <Box sx={settingsFieldGroupSx}>
+          <Typography variant="body2" color="text.secondary" gutterBottom>
+            {t('ai.maxTokens')}: {typeof config.maxTokens === 'number' && !isNaN(config.maxTokens) ? config.maxTokens : 2000}
+          </Typography>
+          <Slider
+            value={typeof config.maxTokens === 'number' && !isNaN(config.maxTokens) ? config.maxTokens : 2000}
+            onChange={(e, value) => handleConfigChange('maxTokens', value)}
+            min={100}
+            max={4000}
+            step={100}
+            marks={[{ value: 100, label: '100' }, { value: 2000, label: '2000' }, { value: 4000, label: '4000' }]}
+            valueLabelDisplay="auto"
+          />
+          <Typography variant="caption" color="text.secondary">{t('ai.maxTokensDesc')}</Typography>
+        </Box>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', pt: 1 }}>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={handleTestConnection}
+            disabled={!config.apiKey || testing}
+            startIcon={testing ? <CircularProgress size={16} /> : <CheckIcon />}
+          >
+            {testing ? t('ai.testing') : t('ai.testConnection')}
+          </Button>
+        </Box>
+      </Box>
+
       <Alert severity="info" icon={<InfoIcon />} sx={{ mt: 3 }}>
         <Typography variant="body2" gutterBottom>
           <strong>{t('ai.usageInstructions')}：</strong>

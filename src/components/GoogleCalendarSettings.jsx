@@ -21,7 +21,7 @@ import {
   Chip,
 } from '@mui/material';
 import { Sync, CheckCircle, CloudSync, Google as GoogleIcon, LinkOff } from '@mui/icons-material';
-import { spacing, flex, combo } from '../styles/commonStyles';
+import { spacing, flex, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../styles/commonStyles';
 
 const GoogleCalendarSettings = () => {
   const { t } = useTranslation();
@@ -206,9 +206,12 @@ const GoogleCalendarSettings = () => {
 
   return (
     <Box>
-      <Typography variant="h6" sx={spacing.mb2}>
-        Google Calendar 设置
-      </Typography>
+      <Box sx={settingsSectionSx}>
+        <Typography variant="h6" sx={sectionTitleSx}>Google Calendar 设置</Typography>
+        <Typography variant="caption" sx={sectionDescriptionSx}>
+          连接 Google 账号，并配置日历同步规则
+        </Typography>
+      </Box>
 
       {message && (
         <Alert severity={message.type} sx={spacing.mb2} onClose={() => setMessage(null)}>
@@ -216,7 +219,7 @@ const GoogleCalendarSettings = () => {
         </Alert>
       )}
 
-      <Box sx={combo.section}>
+      <Box sx={settingsSectionSx}>
         {/* 账号连接 */}
         <Typography variant="subtitle2" sx={spacing.mb1}>
           账号连接
@@ -247,7 +250,7 @@ const GoogleCalendarSettings = () => {
             )}
           </Box>
         ) : (
-          <Box sx={{ ...flex.spaceBetween, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+          <Box sx={{ ...flex.spaceBetween, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: '14px' }}>
             <Box sx={{ ...flex.row }}>
               <CheckCircle color="success" sx={{ mr: 1 }} />
               <Typography variant="body2">已连接</Typography>
@@ -268,7 +271,7 @@ const GoogleCalendarSettings = () => {
 
       {/* 日历选择 */}
       {config.connected && calendars.length > 0 && (
-        <Box sx={combo.section}>
+        <Box sx={settingsSectionSx}>
           <Typography variant="subtitle2" sx={spacing.mb1}>
             选择日历
           </Typography>
@@ -285,7 +288,7 @@ const GoogleCalendarSettings = () => {
                   sx={{
                     border: '1px solid',
                     borderColor: config.calendarId === cal.id ? 'primary.main' : 'divider',
-                    borderRadius: 1,
+                    borderRadius: '12px',
                   }}
                 >
                   <ListItemText
@@ -308,7 +311,7 @@ const GoogleCalendarSettings = () => {
 
       {/* 同步选项 */}
       {config.connected && (
-        <Box sx={combo.section}>
+        <Box sx={settingsSectionSx}>
           <Typography variant="subtitle2" sx={spacing.mb1}>
             同步选项
           </Typography>

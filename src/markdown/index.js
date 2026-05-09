@@ -33,7 +33,7 @@ export function createMarkdownRenderer(options = {}) {
 
   // 初始化 markdown-it
   const md = new MarkdownIt({
-    html: true,           // 允许 HTML 标签
+    html: false,          // 禁止用户原始 HTML，避免预览区脚本注入
     linkify: true,        // 自动转换 URL 为链接
     typographer: true,    // 启用智能引号和其他排版替换
     breaks: true,         // 转换换行符为 <br>
@@ -49,6 +49,8 @@ export function createMarkdownRenderer(options = {}) {
       return '' // 使用默认转义
     }
   })
+
+  md.validateLink = (url) => /^(https?:|mailto:|app:|data:image\/)/i.test(url)
 
   // 注册标准插件
   md.use(markdownItMark) // ==高亮== 语法支持

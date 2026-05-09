@@ -140,6 +140,9 @@ class DatabaseManager {
       dbLog('表结构创建完成');
     
       // 执行数据库迁移
+      if (dbExists && !customDbPath) {
+        await this.backupBeforeMigration(dbDir);
+      }
       dbLog('开始执行数据库迁移...');
       await this.runMigrations();
       dbLog('数据库迁移完成');
@@ -149,6 +152,27 @@ class DatabaseManager {
     } catch (error) {
       dbLog('数据库初始化失败:', error.message, error.stack);
       throw error;
+    }
+  }
+
+  async backupBeforeMigration(dbDir) {
+    try {
+      const backupDir = path.join(dbDir, 'backups');
+      if (!fs.existsSync(backupDir)) {
+        fs.mkdirSync(backupDir, { recursive: true });
+      }
+
+      const day = new Date().toISOString().slice(0, 10);
+      const backupPath = path.join(backupDir, `pre-migration-${day}.db`);
+      if (fs.existsSync(backupPath)) {
+        dbLog('今日迁移前备份已存在，跳过:', backupPath);
+        return;
+      }
+
+      await this.db.backup(backupPath);
+      dbLog('迁移前备份完成:', backupPath);
+    } catch (error) {
+      dbLog('迁移前备份失败，继续启动:', error.message);
     }
   }
 
@@ -432,6 +456,143 @@ class DatabaseManager {
   }
 
   /**
+   * 判断错误是否来自 notes_fts 旧结构，常见于修复脚本把 FTS 表重建成仅 content 列后。
+   */
+  isNotesFtsSchemaError(error) {
+    const message = String(error?.message || error || '').toLowerCase();
+    return message.includes('notes_fts') &&
+      (message.includes('title') || message.includes('column'));
+  }
+
+  getNotesFtsState() {
+    const ftsTable = this.db.prepare(
+      "SELECT name, sql FROM sqlite_master WHERE type='table' AND name='notes_fts'"
+    ).get();
+
+    if (!ftsTable) {
+      return {
+        exists: false,
+        columns: [],
+        triggers: [],
+        isValid: false
+      };
+    }
+
+    let columns = [];
+    let triggers = [];
+    let tableSql = '';
+
+    try {
+      tableSql = String(ftsTable.sql || '').toLowerCase();
+      columns = this.db.prepare('PRAGMA table_info(notes_fts)').all().map(col => col.name);
+      triggers = this.db.prepare(`
+        SELECT name, sql
+        FROM sqlite_master
+        WHERE type='trigger' AND name IN ('notes_fts_insert', 'notes_fts_update', 'notes_fts_delete')
+      `).all();
+    } catch (error) {
+      return {
+        exists: true,
+        columns,
+        triggers,
+        error: error.message,
+        isValid: false
+      };
+    }
+
+    const triggerSql = triggers.map(trigger => trigger.sql || '').join('\n').toLowerCase();
+    const hasRequiredColumns = columns.includes('title') && columns.includes('content');
+    const hasRequiredTriggers = triggers.length === 3 &&
+      triggerSql.includes('insert into notes_fts(rowid, title, content)') &&
+      !triggerSql.includes('update notes_fts set');
+    const usesExternalContent = tableSql.includes("content='notes'") || tableSql.includes('content="notes"');
+
+    return {
+      exists: true,
+      columns,
+      triggers,
+      tableSql,
+      usesExternalContent,
+      isValid: hasRequiredColumns && hasRequiredTriggers && !usesExternalContent
+    };
+  }
+
+  rebuildNotesFts(reason = 'schema-check') {
+    if (!this.db) {
+      throw new Error('数据库未初始化');
+    }
+
+    dbLog('重建 notes_fts 全文搜索索引:', reason);
+
+    const rebuild = this.db.transaction(() => {
+      this.db.exec('DROP TRIGGER IF EXISTS notes_fts_insert');
+      this.db.exec('DROP TRIGGER IF EXISTS notes_fts_update');
+      this.db.exec('DROP TRIGGER IF EXISTS notes_fts_delete');
+      this.db.exec('DROP TABLE IF EXISTS notes_fts');
+
+      this.db.exec(`
+        CREATE VIRTUAL TABLE notes_fts USING fts5(
+          title,
+          content,
+          tokenize='unicode61 remove_diacritics 1'
+        )
+      `);
+
+      const existingNotes = this.db.prepare('SELECT id, title, content FROM notes').all();
+      const insertStmt = this.db.prepare(
+        'INSERT INTO notes_fts(rowid, title, content) VALUES (?, ?, ?)'
+      );
+
+      for (const note of existingNotes) {
+        insertStmt.run(note.id, note.title || '', note.content || '');
+      }
+
+      this.db.exec(`
+        CREATE TRIGGER notes_fts_insert AFTER INSERT ON notes BEGIN
+          INSERT INTO notes_fts(rowid, title, content)
+          VALUES (new.id, new.title, new.content);
+        END
+      `);
+
+      this.db.exec(`
+        CREATE TRIGGER notes_fts_update AFTER UPDATE ON notes BEGIN
+          DELETE FROM notes_fts WHERE rowid = old.id;
+          INSERT INTO notes_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
+        END
+      `);
+
+      this.db.exec(`
+        CREATE TRIGGER notes_fts_delete AFTER DELETE ON notes BEGIN
+          DELETE FROM notes_fts WHERE rowid = old.id;
+        END
+      `);
+
+      return existingNotes.length;
+    });
+
+    const syncedNotes = rebuild();
+    this.db.prepare('SELECT COUNT(*) AS c FROM notes_fts').get();
+    dbLog(`notes_fts 重建完成，已同步 ${syncedNotes} 条笔记`);
+    return { success: true, syncedNotes };
+  }
+
+  ensureNotesFtsSchema(reason = 'migration') {
+    const state = this.getNotesFtsState();
+
+    if (state.isValid) {
+      dbLog('notes_fts 结构正常，跳过重建');
+      return { rebuilt: false, state };
+    }
+
+    const rebuildReason = state.exists
+      ? `${reason}: invalid columns=${state.columns.join(',') || '(empty)'}, triggers=${state.triggers.length}`
+      : `${reason}: missing notes_fts`;
+
+    const result = this.rebuildNotesFts(rebuildReason);
+    return { rebuilt: true, state, result };
+  }
+
+  /**
    * 执行数据库迁移
    */
   async runMigrations() {
@@ -557,76 +718,8 @@ class DatabaseManager {
         console.log('✅ is_favorite字段添加完成');
       }
       
-      // 检查FTS5表是否需要重建
-      let needRebuildFTS = titleAdded;
-      if (!needRebuildFTS) {
-        try {
-          // 尝试查询FTS表，看是否有title字段
-          this.db.prepare('SELECT title FROM notes_fts LIMIT 1').all();
-        } catch (error) {
-          if (error.message.includes('no such column: title')) {
-            console.log('检测到FTS5表缺少title字段，需要重建');
-            needRebuildFTS = true;
-          }
-        }
-      }
-      
-      // 如果需要，重建FTS5表
-      if (needRebuildFTS) {
-        console.log('重建FTS5全文搜索索引...');
-        try {
-          // 删除旧的FTS表和触发器
-          this.db.exec('DROP TRIGGER IF EXISTS notes_fts_insert');
-          this.db.exec('DROP TRIGGER IF EXISTS notes_fts_update');
-          this.db.exec('DROP TRIGGER IF EXISTS notes_fts_delete');
-          this.db.exec('DROP TABLE IF EXISTS notes_fts');
-          
-          // 重新创建FTS表
-          this.db.exec(`
-            CREATE VIRTUAL TABLE notes_fts USING fts5(
-              title, 
-              content, 
-              content=notes, 
-              content_rowid=id,
-              tokenize='unicode61 remove_diacritics 1'
-            )
-          `);
-          
-          // 同步现有数据
-          const existingNotes = this.db.prepare('SELECT id, title, content FROM notes').all();
-          const insertStmt = this.db.prepare(
-            'INSERT INTO notes_fts(rowid, title, content) VALUES (?, ?, ?)'
-          );
-          
-          for (const note of existingNotes) {
-            insertStmt.run(note.id, note.title || '', note.content || '');
-          }
-          
-          // 创建同步触发器
-          this.db.exec(`
-            CREATE TRIGGER IF NOT EXISTS notes_fts_insert AFTER INSERT ON notes BEGIN
-              INSERT INTO notes_fts(rowid, title, content) 
-              VALUES (new.id, new.title, new.content);
-            END
-          `);
-          
-          this.db.exec(`
-            CREATE TRIGGER IF NOT EXISTS notes_fts_update AFTER UPDATE ON notes BEGIN
-              DELETE FROM notes_fts WHERE rowid = old.id;
-              INSERT INTO notes_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
-            END
-          `);
-          
-          this.db.exec(`
-            CREATE TRIGGER IF NOT EXISTS notes_fts_delete AFTER DELETE ON notes BEGIN
-              DELETE FROM notes_fts WHERE rowid = old.id;
-            END
-          `);
-          
-          console.log(`✅ FTS5全文搜索索引重建完成（已同步 ${existingNotes.length} 条笔记）`);
-        } catch (ftsError) {
-          console.error('重建FTS5索引失败:', ftsError);
-        }
+      if (titleAdded) {
+        this.rebuildNotesFts('notes title column added');
       }
       
       // ===== 笔记类型系统 (2025-11-11) =====
@@ -699,131 +792,14 @@ class DatabaseManager {
       
       // 6. FTS5 全文搜索
       try {
-        const ftsTables = this.db.prepare(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name='notes_fts'"
-        ).all();
-        
-        if (ftsTables.length === 0) {
-          console.log('创建 FTS5 全文搜索引擎...');
-          
-          this.db.exec(`
-            CREATE VIRTUAL TABLE notes_fts USING fts5(
-              title, 
-              content, 
-              content=notes, 
-              content_rowid=id,
-              tokenize='unicode61 remove_diacritics 1'
-            )
-          `);
-          
-          // 同步现有数据
-          const existingNotes = this.db.prepare('SELECT id, title, content FROM notes').all();
-          const insertStmt = this.db.prepare(
-            'INSERT INTO notes_fts(rowid, title, content) VALUES (?, ?, ?)'
-          );
-          
-          for (const note of existingNotes) {
-            insertStmt.run(note.id, note.title || '', note.content || '');
-          }
-          
-          // 创建同步触发器
-          this.db.exec(`
-            CREATE TRIGGER IF NOT EXISTS notes_fts_insert AFTER INSERT ON notes BEGIN
-              INSERT INTO notes_fts(rowid, title, content) 
-              VALUES (new.id, new.title, new.content);
-            END
-          `);
-          
-          this.db.exec(`
-            CREATE TRIGGER IF NOT EXISTS notes_fts_update AFTER UPDATE ON notes BEGIN
-              DELETE FROM notes_fts WHERE rowid = old.id;
-              INSERT INTO notes_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
-            END
-          `);
-          
-          this.db.exec(`
-            CREATE TRIGGER IF NOT EXISTS notes_fts_delete AFTER DELETE ON notes BEGIN
-              DELETE FROM notes_fts WHERE rowid = old.id;
-            END
-          `);
-          
-          console.log(`✅ FTS5 全文搜索引擎创建完成（已同步 ${existingNotes.length} 条笔记）`);
+        const ftsResult = this.ensureNotesFtsSchema('startup migration');
+        if (ftsResult.rebuilt) {
+          console.log('✅ FTS5 全文搜索引擎已重建');
         } else {
-          console.log('FTS5 全文搜索引擎已存在');
+          console.log('FTS5 全文搜索引擎已是最新版本');
         }
       } catch (ftsError) {
-        console.warn('FTS5 创建失败（不影响应用）:', ftsError.message);
-      }
-      
-      // ===== 修复 FTS5 触发器错误 (2025-12-15) =====
-      // 之前的触发器在外部内容表模式下使用了错误的 UPDATE 语法，导致 SQLITE_CORRUPT_VTAB
-      console.log('检查并修复 FTS5 触发器...');
-      try {
-        // 检查是否需要修复（通过检查触发器定义）
-        const triggers = this.db.prepare(
-          "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='notes_fts_update'"
-        ).all();
-
-        const needsFix = triggers.length === 0 ||
-                        (triggers[0].sql && triggers[0].sql.includes('UPDATE notes_fts SET'));
-
-        if (needsFix) {
-          console.log('检测到旧版 FTS5 触发器，开始重建...');
-
-          // 删除旧的触发器和 FTS5 表
-          this.db.exec('DROP TRIGGER IF EXISTS notes_fts_insert');
-          this.db.exec('DROP TRIGGER IF EXISTS notes_fts_update');
-          this.db.exec('DROP TRIGGER IF EXISTS notes_fts_delete');
-          this.db.exec('DROP TABLE IF EXISTS notes_fts');
-
-          // 重新创建 FTS5 表
-          this.db.exec(`
-            CREATE VIRTUAL TABLE notes_fts USING fts5(
-              title,
-              content,
-              content=notes,
-              content_rowid=id,
-              tokenize='unicode61 remove_diacritics 1'
-            )
-          `);
-
-          // 同步现有数据
-          const existingNotes = this.db.prepare('SELECT id, title, content FROM notes').all();
-          const insertStmt = this.db.prepare(
-            'INSERT INTO notes_fts(rowid, title, content) VALUES (?, ?, ?)'
-          );
-
-          for (const note of existingNotes) {
-            insertStmt.run(note.id, note.title || '', note.content || '');
-          }
-
-          // 创建正确的触发器（使用 DELETE + INSERT 而不是 UPDATE）
-          this.db.exec(`
-            CREATE TRIGGER notes_fts_insert AFTER INSERT ON notes BEGIN
-              INSERT INTO notes_fts(rowid, title, content)
-              VALUES (new.id, new.title, new.content);
-            END
-          `);
-
-          this.db.exec(`
-            CREATE TRIGGER notes_fts_update AFTER UPDATE ON notes BEGIN
-              DELETE FROM notes_fts WHERE rowid = old.id;
-              INSERT INTO notes_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
-            END
-          `);
-
-          this.db.exec(`
-            CREATE TRIGGER notes_fts_delete AFTER DELETE ON notes BEGIN
-              DELETE FROM notes_fts WHERE rowid = old.id;
-            END
-          `);
-
-          console.log(`✅ FTS5 触发器已修复并重建（已同步 ${existingNotes.length} 条笔记）`);
-        } else {
-          console.log('FTS5 触发器已是最新版本，跳过修复');
-        }
-      } catch (ftsError) {
-        console.error('FTS5 修复失败:', ftsError);
+        console.warn('FTS5 检查/修复失败（不影响应用启动）:', ftsError.message);
       }
 
       // 分析表优化查询计划
@@ -972,6 +948,7 @@ class DatabaseManager {
         beforeCheck,
         walCheckpoint: false,
         ftsRebuild: false,
+        ftsUsable: null,
         vacuum: false,
         analyze: false,
         afterCheck: null
@@ -990,30 +967,13 @@ class DatabaseManager {
       // 2. 重建 FTS5 虚拟表
       try {
         console.log('  🔨 重建 FTS5 虚拟表...');
-        
-        const ftsExists = this.db.prepare(`
-          SELECT name FROM sqlite_master 
-          WHERE type='table' AND name='notes_fts'
-        `).get();
-
-        if (ftsExists) {
-          this.db.exec('DROP TABLE IF EXISTS notes_fts');
-          
-          this.db.exec(`
-            CREATE VIRTUAL TABLE notes_fts USING fts5(
-              content,
-              content='notes',
-              content_rowid='id',
-              tokenize='porter unicode61'
-            )`);
-          
-          this.db.exec('INSERT INTO notes_fts(notes_fts) VALUES(\'rebuild\')');
-          
-          results.ftsRebuild = true;
-          console.log('  ✅ FTS5 表重建完成');
-        }
+        this.rebuildNotesFts('repairDatabase');
+        results.ftsRebuild = true;
+        results.ftsUsable = true;
+        console.log('  ✅ FTS5 表重建完成');
       } catch (error) {
         console.error('  ⚠️  FTS5 重建失败:', error.message);
+        results.ftsUsable = false;
       }
 
       // 3. 优化数据库
@@ -1079,27 +1039,20 @@ class DatabaseManager {
       console.log('[迁移] 开始修复 changes 表的 entity_id 类型...');
       console.log(`[迁移] 当前类型: ${entityIdColumn.type} → 目标类型: TEXT`);
       
-      // 开始事务
-      this.db.exec('BEGIN TRANSACTION');
-      
-      try {
+      const migrate = this.db.transaction(() => {
         // 统计数据
         const stats = this.db.prepare('SELECT COUNT(*) as total FROM changes').get();
         console.log(`[迁移] 当前 changes 表有 ${stats.total} 条记录`);
-        
-        if (stats.total > 0) {
-          // 有数据时，创建备份表
-          const backupTableName = `changes_backup_${Date.now()}`;
-          this.db.exec(`CREATE TABLE ${backupTableName} AS SELECT * FROM changes`);
-          console.log(`[迁移] 已备份到 ${backupTableName}`);
-        }
-        
-        // 删除旧表
-        this.db.exec('DROP TABLE IF EXISTS changes');
-        
-        // 创建新表（entity_id 为 TEXT）
+
+        const backupTableName = `changes_backup_${Date.now()}`;
+        this.db.exec(`CREATE TABLE ${backupTableName} AS SELECT * FROM changes`);
+        console.log(`[迁移] 已备份到 ${backupTableName}`);
+
+        const oldColumns = new Set(changesTableInfo.map(col => col.name));
+
+        this.db.exec('DROP TABLE IF EXISTS changes_new');
         this.db.exec(`
-          CREATE TABLE changes (
+          CREATE TABLE changes_new (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             entity_type TEXT NOT NULL,
             entity_id TEXT NOT NULL,
@@ -1107,29 +1060,42 @@ class DatabaseManager {
             change_data TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             synced INTEGER DEFAULT 0,
-            synced_at DATETIME NULL
+            synced_at DATETIME NULL,
+            device_id TEXT
           )
         `);
-        
+
+        const selectDeviceId = oldColumns.has('device_id') ? 'device_id' : 'NULL AS device_id';
+        this.db.exec(`
+          INSERT INTO changes_new (
+            id, entity_type, entity_id, operation, change_data, created_at, synced, synced_at, device_id
+          )
+          SELECT
+            id,
+            entity_type,
+            CAST(entity_id AS TEXT),
+            operation,
+            change_data,
+            created_at,
+            COALESCE(synced, 0),
+            synced_at,
+            ${selectDeviceId}
+          FROM changes
+        `);
+
+        this.db.exec('DROP TABLE IF EXISTS changes');
+        this.db.exec('ALTER TABLE changes_new RENAME TO changes');
+
         // 重建索引
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_changes_entity ON changes(entity_type, entity_id)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_changes_synced ON changes(synced)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_changes_created_at ON changes(created_at DESC)');
-        
-        // 删除同步标记，触发全量同步
-        const syncMarkerPath = path.join(getUserDataPath(), 'sync-initialized.marker');
-        if (fs.existsSync(syncMarkerPath)) {
-          fs.unlinkSync(syncMarkerPath);
-          console.log('[迁移] 已删除同步标记，下次将触发全量同步');
-        }
-        
-        // 提交事务
-        this.db.exec('COMMIT');
-        
+      });
+
+      try {
+        migrate();
         console.log('[迁移] ✅ changes 表迁移完成');
-        console.log('[迁移] 📝 下次同步将自动执行全量同步');
       } catch (error) {
-        this.db.exec('ROLLBACK');
         throw error;
       }
     } catch (error) {

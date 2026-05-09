@@ -8,6 +8,13 @@ const { EventEmitter } = require('events');
 const path = require('path');
 const fs = require('fs');
 
+let safeStorage = null;
+try {
+  safeStorage = require('electron').safeStorage;
+} catch (e) {
+  safeStorage = null;
+}
+
 // 获取用户数据路径（兼容 standalone 模式）
 const getUserDataPath = () => {
   let app = null;
@@ -48,11 +55,15 @@ class V3SyncService extends EventEmitter {
     this.isSyncing = false;
     this.status = 'disabled';
     this.lastError = null;
+    this.lastErrorCategory = null;
     this.lastSyncTime = 0;
+    this.lastSyncDuration = 0;
+    this.lastSyncStartedAt = 0;
 
     // 自动同步定时器
     this.autoSyncTimer = null;
     this.autoSyncInterval = 5 * 60 * 1000; // 默认 5 分钟
+    this.autoSyncNextAt = 0;
 
     // 图片同步标记
     this._imageDirectoriesEnsured = false;
@@ -86,6 +97,189 @@ class V3SyncService extends EventEmitter {
     return this;
   }
 
+  normalizeRootPath(rootPath, fallbackRootPath = '/Flota/') {
+    const base = typeof fallbackRootPath === 'string' && fallbackRootPath.trim()
+      ? fallbackRootPath.trim()
+      : '/Flota/';
+
+    if (typeof rootPath !== 'string' || !rootPath.trim()) {
+      return base.startsWith('/')
+        ? (base.endsWith('/') ? base : `${base}/`)
+        : `/${base.endsWith('/') ? base : `${base}/`}`;
+    }
+
+    const normalized = rootPath.trim();
+    return normalized.startsWith('/')
+      ? (normalized.endsWith('/') ? normalized : `${normalized}/`)
+      : `/${normalized.endsWith('/') ? normalized : `${normalized}/`}`;
+  }
+
+  hasSavedPassword() {
+    return !!(
+      this.config?.credentials?.password ||
+      this.config?.credentials?.passwordEncrypted
+    );
+  }
+
+  classifyError(error) {
+    if (!error) return null;
+    const message = (error.message || error.toString() || '').toLowerCase();
+    const status = error.status || error.statusCode;
+
+    if (status === 401 || status === 403 || /unauthor|forbidden|认证|密码|凭据/.test(message)) {
+      return 'auth';
+    }
+    if (status === 507 || /quota|insufficient storage|空间|容量/.test(message)) {
+      return 'quota';
+    }
+    if (/etimedout|enotfound|econnrefused|network|超时|网络|无法连接/.test(message)) {
+      return 'network';
+    }
+    if (status >= 500 || /server|服务器/.test(message)) {
+      return 'server';
+    }
+    return 'unknown';
+  }
+
+  /**
+   * 构建一份新的配置候选。
+   *
+   * 设计原则（重要）：
+   *   - 密码字段是"显式"的：只要 input 里出现 password 字段，就**完全**以 input.password 为准；
+   *     绝不悄悄回退到磁盘上已保存的旧密码。否则会出现"用户改了密码但实际还在用旧的"这种
+   *     极其难调试的错配。
+   *   - 仅当 input 中**完全没有** password 字段时，才沿用 this.config 里的密码（用于内部
+   *     调用：例如 enable() 不带任何参数地重新创建 engine）。
+   *   - `preservePassword` 选项已废弃，传入也无效，留参数仅为向后兼容。
+   */
+  buildConfigCandidate(input = {}) {
+    const defaults = this.getDefaultConfig();
+    const current = this.config || defaults;
+    const currentCredentials = current.credentials || {};
+    const hasPasswordField = Object.prototype.hasOwnProperty.call(input || {}, 'password');
+    const hasUsernameField = Object.prototype.hasOwnProperty.call(input || {}, 'username');
+    const hasBaseUrlField = Object.prototype.hasOwnProperty.call(input || {}, 'baseUrl');
+    const hasRootPathField = Object.prototype.hasOwnProperty.call(input || {}, 'rootPath');
+
+    // 唯一的密码取值规则：
+    //   - input 显式带 password 字段 → 完全用 input.password（即使是空字符串）
+    //   - input 没有 password 字段   → 沿用 this.config 里的密码
+    const password = hasPasswordField
+      ? (typeof input.password === 'string' ? input.password : '')
+      : (currentCredentials.password || '');
+
+    return {
+      ...defaults,
+      ...current,
+      enabled: typeof input.enabled === 'boolean' ? input.enabled : (current.enabled ?? defaults.enabled),
+      autoSync: typeof input.autoSync === 'boolean' ? input.autoSync : (current.autoSync ?? defaults.autoSync),
+      autoSyncInterval: typeof input.autoSyncInterval === 'number'
+        ? input.autoSyncInterval
+        : (current.autoSyncInterval || defaults.autoSyncInterval),
+      baseUrl: hasBaseUrlField && typeof input.baseUrl === 'string' && input.baseUrl.trim()
+        ? input.baseUrl.trim()
+        : (current.baseUrl || defaults.baseUrl),
+      rootPath: this.normalizeRootPath(
+        hasRootPathField ? input.rootPath : current.rootPath,
+        current.rootPath || defaults.rootPath
+      ),
+      syncCategories: Array.isArray(input.syncCategories)
+        ? [...input.syncCategories]
+        : (current.syncCategories || defaults.syncCategories),
+      credentials: {
+        username: hasUsernameField && typeof input.username === 'string'
+          ? input.username.trim()
+          : (currentCredentials.username || ''),
+        password,
+      },
+    };
+  }
+
+  validateConnectionConfig(config) {
+    if (!config?.credentials?.username) {
+      throw new Error('请填写用户名');
+    }
+
+    if (!config?.credentials?.password) {
+      throw new Error('请填写应用密码');
+    }
+
+    if (!config?.baseUrl || !/^https?:\/\/.+/i.test(config.baseUrl)) {
+      throw new Error('WebDAV 地址格式不正确');
+    }
+  }
+
+  createSyncEngine(config) {
+    return new SyncEngine({
+      baseUrl: config.baseUrl || 'https://dav.jianguoyun.com/dav',
+      username: config.credentials.username,
+      password: config.credentials.password,
+      rootPath: config.rootPath || '/Flota/',
+      enableDebugLog: config.enableDebugLog || false,
+      syncIPCHandler: this.syncIPCHandler,
+      syncCategories: config.syncCategories || ['notes', 'images', 'settings', 'todos'],
+    });
+  }
+
+  bindEngineEvents(engine) {
+    engine.on('syncStart', () => {
+      this.isSyncing = true;
+      this.status = 'syncing';
+      this.lastSyncStartedAt = Date.now();
+      this.emit('syncStart');
+    });
+
+    if (this.lastSyncTime > 0) {
+      engine.lastSyncTime = this.lastSyncTime;
+    }
+
+    engine.on('syncProgress', (data) => {
+      this.emit('syncProgress', data);
+    });
+
+    engine.on('syncComplete', (result) => {
+      this.isSyncing = false;
+      this.lastSyncTime = Date.now();
+      this.lastSyncDuration = this.lastSyncStartedAt
+        ? this.lastSyncTime - this.lastSyncStartedAt
+        : 0;
+
+      if (result.success) {
+        this.status = 'success';
+        this.lastError = null;
+        this.lastErrorCategory = null;
+        if (result.errors > 0) {
+          console.warn(`[V3SyncService] 同步完成，包含 ${result.errors} 个非致命告警`);
+        }
+      } else {
+        this.status = 'error';
+        this.lastError = `同步完成但有 ${result.errors} 个错误`;
+        this.lastErrorCategory = 'unknown';
+      }
+
+      this.refreshNextAutoSyncAt();
+      this.saveConfig();
+      this.emit('syncComplete', result);
+    });
+
+    engine.on('syncError', (error) => {
+      this.isSyncing = false;
+      this.status = 'error';
+      this.lastError = error.message;
+      this.lastErrorCategory = this.classifyError(error);
+      this.emit('syncError', error);
+    });
+  }
+
+  refreshNextAutoSyncAt() {
+    if (this.isEnabled && this.config?.autoSync && this.autoSyncTimer) {
+      const interval = this.config.autoSyncInterval || this.autoSyncInterval;
+      this.autoSyncNextAt = Date.now() + interval;
+    } else {
+      this.autoSyncNextAt = 0;
+    }
+  }
+
   /**
    * 设置冲突解决处理器
    * @param {Object} syncIPCHandler - SyncIPCHandler 实例
@@ -97,76 +291,46 @@ class V3SyncService extends EventEmitter {
 
   /**
    * 启用同步服务
+   * 关键不变量：
+   *  - 在连接验证通过之前，不修改任何已生效状态（this.engine/this.config/this.isEnabled）
+   *  - 不写盘（saveConfig 仅在验证通过后调用），避免把错误账户残留到下次启动
    */
   async enable() {
-    if (!this.config || !this.config.credentials) {
-      throw new Error('请先配置同步凭据');
-    }
+    const nextConfig = this.buildConfigCandidate();
+    this.validateConnectionConfig(nextConfig);
 
     console.log('[V3SyncService] 启用同步服务...');
 
-    // 创建同步引擎
-    this.engine = new SyncEngine({
-      baseUrl: this.config.baseUrl || 'https://dav.jianguoyun.com/dav',
-      username: this.config.credentials.username,
-      password: this.config.credentials.password,
-      rootPath: this.config.rootPath || '/Flota/',
-      enableDebugLog: this.config.enableDebugLog || false,
-      syncIPCHandler: this.syncIPCHandler, // 传递冲突解决处理器
-      syncCategories: this.config.syncCategories || ['notes', 'images', 'settings', 'todos'], // 传递启用的类别
-    });
+    const nextEngine = this.createSyncEngine(nextConfig);
 
-    // 转发事件
-    this.engine.on('syncStart', () => {
-      this.isSyncing = true;
-      this.status = 'syncing';
-      this.emit('syncStart');
-    });
-
-    // 恢复 lastSyncTime 到引擎（避免重启后白板预览全量重传）
-    if (this.lastSyncTime > 0) {
-      this.engine.lastSyncTime = this.lastSyncTime;
+    // 先验证连接，失败时直接抛出且不污染当前状态。
+    // 注意：此处尚未 bindEngineEvents，避免临时引擎的 syncError 事件覆盖业务状态。
+    try {
+      await nextEngine.testConnection();
+    } catch (error) {
+      this.lastError = error.message;
+      this.lastErrorCategory = this.classifyError(error);
+      this.status = this.isEnabled ? 'error' : 'disabled';
+      throw error;
     }
 
-    this.engine.on('syncProgress', (data) => {
-      this.emit('syncProgress', data);
-    });
+    // 验证通过，正式接管
+    this.bindEngineEvents(nextEngine);
+    this.stopAutoSync();
+    if (this.engine) {
+      this.engine.removeAllListeners();
+    }
 
-    this.engine.on('syncComplete', (result) => {
-      this.isSyncing = false;
-      this.lastSyncTime = Date.now();
-
-      if (result.success) {
-        this.status = 'success';
-        // 任务级失败在引擎中按非致命告警处理，不再污染错误状态。
-        this.lastError = null;
-        if (result.errors > 0) {
-          console.warn(`[V3SyncService] 同步完成，包含 ${result.errors} 个非致命告警`);
-        }
-      } else {
-        this.status = 'error';
-        this.lastError = `同步完成但有 ${result.errors} 个错误`;
-      }
-
-      // 持久化同步时间
-      this.saveConfig();
-
-      this.emit('syncComplete', result);
-    });
-
-    this.engine.on('syncError', (error) => {
-      this.isSyncing = false;
-      this.status = 'error';
-      this.lastError = error.message;
-      this.emit('syncError', error);
-    });
-
-    // 测试连接
-    await this.engine.testConnection();
-
+    this.engine = nextEngine;
+    this.config = {
+      ...nextConfig,
+      enabled: true,
+    };
     this.isEnabled = true;
+    this.isSyncing = false;
     this.status = 'idle';
-    this.config.enabled = true;
+    this.lastError = null;
+    this.lastErrorCategory = null;
     this.saveConfig();
 
     // 启动自动同步
@@ -197,13 +361,17 @@ class V3SyncService extends EventEmitter {
     console.log('[V3SyncService] 禁用同步服务...');
 
     this.isEnabled = false;
+    this.isSyncing = false;
     this.status = 'disabled';
-    this.engine = null;
+    if (this.engine) {
+      this.engine.removeAllListeners();
+      this.engine = null;
+    }
 
     // 停止自动同步
     this.stopAutoSync();
 
-    this.config.enabled = false;
+    this.config = this.buildConfigCandidate({ enabled: false });
     this.saveConfig();
 
     this.emit('disabled');
@@ -213,40 +381,91 @@ class V3SyncService extends EventEmitter {
    * 设置凭据
    */
   async setCredentials(username, password, baseUrl = 'https://dav.jianguoyun.com/dav', rootPath = undefined) {
-    this.config = this.config || {};
-    this.config.credentials = { username, password };
-    this.config.baseUrl = baseUrl;
-
-    if (typeof rootPath === 'string' && rootPath.trim()) {
-      const normalized = rootPath.trim();
-      this.config.rootPath = normalized.startsWith('/')
-        ? (normalized.endsWith('/') ? normalized : `${normalized}/`)
-        : `/${normalized.endsWith('/') ? normalized : `${normalized}/`}`;
-    } else if (!this.config.rootPath) {
-      this.config.rootPath = '/Flota/';
-    }
-
+    this.config = this.buildConfigCandidate({ username, password, baseUrl, rootPath });
     this.saveConfig();
 
     console.log('[V3SyncService] 凭据已设置');
   }
 
+  canEncryptCredentials() {
+    return !!safeStorage?.isEncryptionAvailable?.();
+  }
+
+  encryptPassword(password) {
+    if (!password || !this.canEncryptCredentials()) return null;
+    return safeStorage.encryptString(password).toString('base64');
+  }
+
+  decryptPassword(encryptedPassword) {
+    if (!encryptedPassword || !this.canEncryptCredentials()) return '';
+    return safeStorage.decryptString(Buffer.from(encryptedPassword, 'base64'));
+  }
+
   /**
    * 测试连接
+   *
+   * 重要：测试连接时绝不"复用旧密码"。
+   *   - 如果调用方传入 configInput 且其中显式包含 password 字段，就严格用该密码（即使为空字符串）。
+   *   - 如果 configInput 中没有 password 字段，才会沿用磁盘上已保存的密码（用于内部 enable() 重连场景）。
+   * `options` 参数已废弃，仅为向后兼容保留签名。
    */
-  async testConnection() {
-    if (!this.config || !this.config.credentials) {
-      throw new Error('请先配置同步凭据');
+  async testConnection(configInput = null, _options = undefined) {
+    const config = configInput
+      ? this.buildConfigCandidate(configInput)
+      : this.buildConfigCandidate();
+
+    this.validateConnectionConfig(config);
+
+    if (configInput && Object.prototype.hasOwnProperty.call(configInput, 'password')) {
+      const incoming = typeof configInput.password === 'string' ? configInput.password : '';
+      console.log(
+        `[V3SyncService] 测试连接：使用 ${incoming ? '前端传入的新密码' : '空密码（前端显式清空）'}`
+      );
+    } else {
+      console.log('[V3SyncService] 测试连接：未传入 password 字段，沿用磁盘已保存的密码');
     }
 
-    // 创建临时引擎
-    const tempEngine = new SyncEngine({
-      baseUrl: this.config.baseUrl || 'https://dav.jianguoyun.com/dav',
-      username: this.config.credentials.username,
-      password: this.config.credentials.password,
-    });
-
+    const tempEngine = this.createSyncEngine(config);
     return await tempEngine.testConnection();
+  }
+
+  /**
+   * 保存连接配置
+   * `options` 参数已废弃，仅为向后兼容保留签名。
+   */
+  async saveConnectionConfig(configInput = {}, _options = undefined) {
+    const nextConfig = this.buildConfigCandidate(configInput);
+    this.validateConnectionConfig(nextConfig);
+
+    // 灾难防御：当用户名/服务器/根路径任一发生变化时，必须清理本地 cached manifest，
+    // 否则旧账号的 manifest 会与新账号云端做 diff，可能产生大规模误删/上传/覆盖。
+    const oldCreds = (this.config && this.config.credentials) || {};
+    const identityChanged = (
+      oldCreds.username && oldCreds.username !== nextConfig.credentials.username
+    ) || (
+      this.config && this.config.baseUrl && this.config.baseUrl !== nextConfig.baseUrl
+    ) || (
+      this.config && this.config.rootPath && this.config.rootPath !== nextConfig.rootPath
+    );
+    if (identityChanged) {
+      try {
+        const manifestPath = path.join(getUserDataPath(), 'sync-manifest.json');
+        if (fs.existsSync(manifestPath)) {
+          fs.unlinkSync(manifestPath);
+          console.log('[V3SyncService] 检测到账号/服务器变更，已清理本地 cached manifest');
+        }
+      } catch (e) {
+        console.warn('[V3SyncService] 清理 cached manifest 失败:', e.message);
+      }
+    }
+
+    this.config = {
+      ...nextConfig,
+      enabled: this.isEnabled,
+    };
+    this.saveConfig();
+
+    return this.getStatus();
   }
 
   /**
@@ -295,7 +514,10 @@ class V3SyncService extends EventEmitter {
           console.error('[V3SyncService] 自动同步失败:', error);
         }
       }
+      this.autoSyncNextAt = Date.now() + interval;
     }, interval);
+
+    this.autoSyncNextAt = Date.now() + interval;
   }
 
   /**
@@ -307,6 +529,7 @@ class V3SyncService extends EventEmitter {
       this.autoSyncTimer = null;
       console.log('[V3SyncService] 自动同步已停止');
     }
+    this.autoSyncNextAt = 0;
   }
 
   /**
@@ -392,20 +615,29 @@ class V3SyncService extends EventEmitter {
    * 获取状态
    */
   getStatus() {
+    const intervalMs = this.config?.autoSyncInterval || this.autoSyncInterval;
     return {
       serviceName: this.serviceName,
       displayName: this.displayName,
+      accountConfigured: !!this.config?.credentials?.username && this.hasSavedPassword(),
       enabled: this.isEnabled,
       syncing: this.isSyncing,
       status: this.status,
       lastError: this.lastError,
+      lastErrorCategory: this.lastErrorCategory,
       lastSyncTime: this.lastSyncTime,
+      lastSyncDuration: this.lastSyncDuration,
+      nextAutoSyncTime: this.autoSyncNextAt || 0,
       config: {
         autoSync: this.config?.autoSync || false,
-        autoSyncInterval: (this.config?.autoSyncInterval || this.autoSyncInterval) / 1000 / 60, // 转为分钟
+        autoSyncInterval: intervalMs / 1000 / 60, // 分钟
+        autoSyncIntervalMs: intervalMs,
         baseUrl: this.config?.baseUrl || '',
+        rootPath: this.config?.rootPath || '/Flota/',
         username: this.config?.credentials?.username || '',
+        hasSavedPassword: this.hasSavedPassword(),
         syncCategories: this.config?.syncCategories || [],
+        canEncryptCredentials: this.canEncryptCredentials(),
       },
     };
   }
@@ -418,6 +650,13 @@ class V3SyncService extends EventEmitter {
       try {
         const content = fs.readFileSync(this.configPath, 'utf8');
         this.config = JSON.parse(content);
+
+        if (this.config?.credentials?.passwordEncrypted) {
+          const decrypted = this.decryptPassword(this.config.credentials.passwordEncrypted);
+          if (decrypted) {
+            this.config.credentials.password = decrypted;
+          }
+        }
 
         // 恢复上次同步时间
         if (typeof this.config.lastSyncTime === 'number') {
@@ -445,6 +684,14 @@ class V3SyncService extends EventEmitter {
         ...this.config,
         lastSyncTime: this.lastSyncTime
       };
+
+      if (configToSave.credentials?.password && this.canEncryptCredentials()) {
+        configToSave.credentials = {
+          ...configToSave.credentials,
+          passwordEncrypted: this.encryptPassword(configToSave.credentials.password)
+        };
+        delete configToSave.credentials.password;
+      }
 
       fs.writeFileSync(this.configPath, JSON.stringify(configToSave, null, 2), 'utf8');
       console.log('[V3SyncService] 配置已保存');
@@ -554,6 +801,7 @@ class V3SyncService extends EventEmitter {
       this.config.rootPath + 'images/',               // /Flota/images/
       this.config.rootPath + 'images/whiteboard/',    // /Flota/images/whiteboard/
       this.config.rootPath + 'images/whiteboard-preview/',  // /Flota/images/whiteboard-preview/
+      this.config.rootPath + 'wallpaper/',            // /Flota/wallpaper/
     ];
 
     for (const dir of directories) {

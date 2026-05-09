@@ -8,12 +8,70 @@ const listen = (ch) => (cb) => {
   return () => ipcRenderer.removeListener(ch, h)
 }
 
+const INVOKE_ALLOWLIST = new Set([
+  'todo:toggleComplete',
+  'google-calendar:get-config',
+  'google-calendar:get-status',
+  'google-calendar:save-config',
+  'google-calendar:list-calendars',
+  'google-calendar:start-auth',
+  'google-calendar:disconnect',
+  'google-calendar:sync',
+  'caldav:get-config',
+  'caldav:get-status',
+  'caldav:save-config',
+  'caldav:test-connection',
+  'caldav:sync',
+  'proxy:get-config',
+  'proxy:save-config',
+  'proxy:test',
+  'mem0:is-available',
+  'mem0:stats',
+  'mem0:get',
+  'mem0:search',
+  'mem0:delete',
+  'mem0:clear',
+  'mem0:cleanup',
+  'mem0:migrate-historical',
+  'data:import-obsidian-vault',
+  'data:export-to-obsidian',
+  'data:get-importer-config',
+  'data:update-importer-config',
+  'data:get-exporter-config',
+  'data:update-exporter-config',
+  'data:get-available-importers-exporters'
+])
+
+// 允许旧的 src/api/* 通过 electronAPI.invoke 访问的低风险业务前缀（避免逐条枚举）。
+// 注意：这里刻意不包含 system:/db:/window:/plugin-store: 等高风险通道。
+const INVOKE_ALLOWED_PREFIXES = [
+  'note:',
+  'tag:',
+  'tags:',
+  'todo:',
+  'setting:',
+  'sync:',
+  'data:',
+  'proxy:',
+  'mem0:',
+  'caldav:',
+  'google-calendar:',
+]
+
+const isAllowedInvokeChannel = (channel) => (
+  typeof channel === 'string' &&
+  (INVOKE_ALLOWLIST.has(channel) || INVOKE_ALLOWED_PREFIXES.some((p) => channel.startsWith(p)))
+)
+
+const isAllowedEventChannel = (channel) => (
+  typeof channel === 'string' &&
+  (/^obsidian-[a-z-]+$/.test(channel) ||
+    ['create-new-note', 'create-new-todo', 'open-settings', 'quick-input', 'todo:focus', 'system-theme-changed'].includes(channel))
+)
+
 // 暴露受保护的方法给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
   // 应用信息
-  getVersion: inv('app-version'),
-  helloWorld: inv('hello-world'),
-
   // 笔记相关API
   notes: {
     create: inv('note:create'),
@@ -158,7 +216,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setSize: inv('window:set-size'),
     getPosition: inv('window:get-position'),
     setPosition: inv('window:set-position'),
-    createFloatingBall: inv('window:create-floating-ball'),
     getAllWindows: inv('window:get-all'),
     getWindowById: inv('window:get-by-id'),
     closeWindow: inv('window:close-window'),
@@ -193,17 +250,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   db: { getInfo: inv('db:get-info'), repair: inv('db:repair') },
   // 日志
   log: { openDir: inv('log:open-dir') },
-
-  // 同步诊断和修复
-  diagnoseSync: inv('sync:diagnose'),
-  fixMissingSyncId: inv('sync:fix-missing-sync-id'),
-
-  // 悬浮球相关API
-  floatingBall: {
-    create: inv('floating-ball:create'),
-    hide: inv('floating-ball:hide'),
-    show: inv('floating-ball:show'),
-  },
 
   // 快捷键相关API
   shortcuts: {
@@ -242,6 +288,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     chat: inv('ai:chat'),
     chatStream: (messages, options) => ipcRenderer.invoke('ai:chat-stream', { messages, options }),
     cancelStream: (requestId) => ipcRenderer.invoke('ai:cancel-stream', requestId),
+    executePendingAction: inv('ai:execute-pending-action'),
     onChatChunk: listen('ai:chat-chunk'),
   },
 
@@ -285,6 +332,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     clear: inv('mem0:clear'),
     stats: inv('mem0:stats'),
     isAvailable: inv('mem0:is-available'),
+    cleanup: inv('mem0:cleanup'),
+    migrateHistorical: inv('mem0:migrate-historical'),
   },
 
   // 网络状态
@@ -296,29 +345,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 云同步相关API
   sync: {
-    getAvailableServices: inv('sync:get-available-services'),
+    getConfig: inv('sync:get-config'),
     getStatus: inv('sync:get-status'),
+    saveConfig: inv('sync:save-config'),
     testConnection: inv('sync:test-connection'),
     switchService: inv('sync:switch-service'),
     disable: inv('sync:disable'),
+    disconnect: inv('sync:disconnect'),
     enableCategory: inv('sync:enable-category'),
     disableCategory: inv('sync:disable-category'),
     manualSync: inv('sync:manual-sync'),
-    forceStop: inv('sync:force-stop'),
-    getConflicts: inv('sync:get-conflicts'),
     resolveConflict: inv('sync:resolve-conflict'),
-    exportData: inv('sync:export-data'),
-    importData: inv('sync:import-data'),
     forceFullSync: inv('sync:force-full-sync'),
     toggleAutoSync: inv('sync:toggle-auto-sync'),
     setAutoSyncInterval: inv('sync:set-auto-sync-interval'),
     clearAll: inv('sync:clear-all'),
     downloadImage: inv('sync:download-image'),
     uploadImage: inv('sync:upload-image'),
-    syncImages: inv('sync:sync-images'),
     cleanupUnusedImages: inv('sync:cleanup-unused-images'),
     getUnusedImagesStats: inv('sync:get-unused-images-stats'),
     onSyncStart: listen('sync:start'),
+    onSyncProgress: listen('sync:progress'),
     onSyncComplete: listen('sync:complete'),
     onSyncError: listen('sync:error'),
     onConflictDetected: listen('sync:conflict'),
@@ -334,19 +381,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onProgress: listen('mcp:install-progress'),
   },
 
-  // 通用方法
-  invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
-  on: (channel, callback) => ipcRenderer.on(channel, callback),
-  removeListener: (channel, callback) => ipcRenderer.removeListener(channel, callback),
+  // 兼容旧代码的受限通用方法，禁止渲染层调用任意 IPC。
+  invoke: (channel, ...args) => {
+    if (!isAllowedInvokeChannel(channel)) {
+      return Promise.reject(new Error(`IPC channel not allowed: ${channel}`))
+    }
+    return ipcRenderer.invoke(channel, ...args)
+  },
+  on: (channel, callback) => {
+    if (isAllowedEventChannel(channel)) {
+      ipcRenderer.on(channel, callback)
+    }
+  },
+  removeListener: (channel, callback) => {
+    if (isAllowedEventChannel(channel)) {
+      ipcRenderer.removeListener(channel, callback)
+    }
+  },
 
   // 兼容旧代码的受限 ipcRenderer
   ipcRenderer: {
     on: (channel, callback) => {
-      const validChannels = ['create-new-note', 'create-new-todo', 'open-settings', 'quick-input', 'system-theme-changed']
+      const validChannels = ['create-new-note', 'create-new-todo', 'open-settings', 'quick-input', 'todo:focus', 'system-theme-changed']
       if (validChannels.includes(channel)) ipcRenderer.on(channel, callback)
     },
     removeAllListeners: (channel) => {
-      const validChannels = ['create-new-note', 'create-new-todo', 'open-settings', 'quick-input', 'system-theme-changed']
+      const validChannels = ['create-new-note', 'create-new-todo', 'open-settings', 'quick-input', 'todo:focus', 'system-theme-changed']
       if (validChannels.includes(channel)) ipcRenderer.removeAllListeners(channel)
     },
   },

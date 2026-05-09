@@ -7,13 +7,22 @@ const Database = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
 
-// 数据库路径
-const prodDbPath = path.join(
-  process.env.APPDATA || path.join(process.env.USERPROFILE, 'AppData', 'Roaming'),
-  'Flota',
-  'database',
-  'flota.db'
-);
+function getUserDataPath() {
+  if (process.platform === 'win32') {
+    const roamingDir = process.env.APPDATA ||
+      path.join(process.env.USERPROFILE || process.env.HOME, 'AppData', 'Roaming');
+    return path.join(roamingDir, 'Flota');
+  }
+
+  if (process.platform === 'darwin') {
+    return path.join(process.env.HOME, 'Library', 'Application Support', 'Flota');
+  }
+
+  return path.join(process.env.XDG_CONFIG_HOME || path.join(process.env.HOME, '.config'), 'Flota');
+}
+
+// 数据库路径，支持通过 FLOTA_DB_PATH 手动指定。
+const prodDbPath = process.env.FLOTA_DB_PATH || path.join(getUserDataPath(), 'database', 'flota.db');
 
 console.log('🔧 开始修复数据库...\n');
 console.log('数据库路径:', prodDbPath);
@@ -56,36 +65,60 @@ try {
     console.error('❌ 完整性检查失败:', error.message);
   }
 
-  // 5. 尝试重建 FTS5 表（如果存在问题）
+  // 5. 重建 FTS5 表，确保列和触发器与应用写入逻辑一致
   console.log('\n🔨 重建 FTS5 虚拟表...');
   try {
-    // 检查 FTS5 表是否存在
-    const ftsExists = db.prepare(`
+    const notesExists = db.prepare(`
       SELECT name FROM sqlite_master 
-      WHERE type='table' AND name='notes_fts'
+      WHERE type='table' AND name='notes'
     `).get();
 
-    if (ftsExists) {
-      console.log('  - 删除旧的 FTS5 表...');
-      db.exec('DROP TABLE IF EXISTS notes_fts');
-      
-      console.log('  - 重新创建 FTS5 表...');
-      db.exec(`
-        CREATE VIRTUAL TABLE notes_fts USING fts5(
-          content,
-          content='notes',
-          content_rowid='id',
-          tokenize='porter unicode61'
-        )
-      `);
-      
-      console.log('  - 重建 FTS5 索引...');
-      db.exec('INSERT INTO notes_fts(notes_fts) VALUES(\'rebuild\')');
-      
-      console.log('✅ FTS5 表重建完成');
-    } else {
-      console.log('  ℹ️  FTS5 表不存在，跳过');
+    if (!notesExists) {
+      throw new Error('notes 表不存在，无法重建 notes_fts');
     }
+
+    console.log('  - 删除旧的 FTS5 触发器和表...');
+    db.exec('DROP TRIGGER IF EXISTS notes_fts_insert');
+    db.exec('DROP TRIGGER IF EXISTS notes_fts_update');
+    db.exec('DROP TRIGGER IF EXISTS notes_fts_delete');
+    db.exec('DROP TABLE IF EXISTS notes_fts');
+
+    console.log('  - 重新创建 FTS5 表...');
+    db.exec(`
+      CREATE VIRTUAL TABLE notes_fts USING fts5(
+        title,
+        content,
+        content='notes',
+        content_rowid='id',
+        tokenize='unicode61 remove_diacritics 1'
+      )
+    `);
+
+    console.log('  - 同步现有笔记...');
+    const existingNotes = db.prepare('SELECT id, title, content FROM notes').all();
+    const insertStmt = db.prepare('INSERT INTO notes_fts(rowid, title, content) VALUES (?, ?, ?)');
+    for (const note of existingNotes) {
+      insertStmt.run(note.id, note.title || '', note.content || '');
+    }
+
+    console.log('  - 创建同步触发器...');
+    db.exec(`
+      CREATE TRIGGER notes_fts_insert AFTER INSERT ON notes BEGIN
+        INSERT INTO notes_fts(rowid, title, content)
+        VALUES (new.id, new.title, new.content);
+      END;
+
+      CREATE TRIGGER notes_fts_update AFTER UPDATE ON notes BEGIN
+        DELETE FROM notes_fts WHERE rowid = old.id;
+        INSERT INTO notes_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
+      END;
+
+      CREATE TRIGGER notes_fts_delete AFTER DELETE ON notes BEGIN
+        DELETE FROM notes_fts WHERE rowid = old.id;
+      END;
+    `);
+
+    console.log(`✅ FTS5 表重建完成（已同步 ${existingNotes.length} 条笔记）`);
   } catch (error) {
     console.error('⚠️  FTS5 重建失败:', error.message);
   }

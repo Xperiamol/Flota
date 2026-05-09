@@ -189,11 +189,15 @@ class NoteDAO {
       return this.findById(id);
     }
 
-    // 如果提供了 updated_at（同步时），使用提供的值；否则使用当前时间
-    if (updated_at !== undefined) {
+    // updated_at 处理策略：
+    // - 显式传入有效值 → 使用该值
+    // - 同步场景 (skipChangeLog=true) 但未传/传了无效值 → 不修改 updated_at，保持原值
+    //   （避免同步路径下因字段缺失而把 updated_at 误覆盖为 CURRENT_TIMESTAMP）
+    // - 普通场景未传 → 使用 CURRENT_TIMESTAMP（用户编辑自动刷新时间）
+    if (updated_at !== undefined && updated_at !== null) {
       updates.push('updated_at = ?');
       values.push(updated_at);
-    } else {
+    } else if (!skipChangeLog) {
       updates.push('updated_at = CURRENT_TIMESTAMP');
     }
     values.push(id);
@@ -201,7 +205,7 @@ class NoteDAO {
     const stmt = db.prepare(`
       UPDATE notes
       SET ${updates.join(', ')}
-      WHERE id = ? AND is_deleted = 0
+      WHERE id = ?${skipChangeLog ? '' : ' AND is_deleted = 0'}
     `);
 
     stmt.run(...values);

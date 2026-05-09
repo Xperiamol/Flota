@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Box, Typography, TextField, IconButton, Paper, CircularProgress,
-  Chip, Fade, Avatar, Menu, MenuItem
+  Chip, Fade, Avatar, Menu, MenuItem, Button, Tooltip
 } from '@mui/material'
 import { useTheme, alpha } from '@mui/material/styles'
 import {
@@ -20,6 +20,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useStore } from '../store/useStore'
 import { scrollbar } from '../styles/commonStyles'
+import { buildContextPackageFromNotes, getContextSources, truncateText } from '../utils/aiContextUtils'
 
 // ─── Markdown 渲染（react-markdown + remark-gfm） ───
 
@@ -103,11 +104,20 @@ const QUICK_ACTIONS = [
   { label: '📝 总结笔记', prompt: '帮我总结一下当前笔记的要点' },
   { label: '🔍 搜索记忆', prompt: '搜索我的记忆库' },
   { label: '✨ 新建笔记', prompt: '帮我创建一个新笔记' },
+  { label: '🧭 规划任务', prompt: '根据当前上下文，帮我拆解下一步行动计划' },
+  { label: '🔗 关联笔记', prompt: '找出和当前笔记最相关的内容，并说明关联原因' },
+]
+
+const CONTEXT_OPTIONS = [
+  { key: 'currentNote', label: '当前笔记' },
+  { key: 'relatedNotes', label: '相关笔记' },
+  { key: 'todos', label: '近期待办' },
+  { key: 'memories', label: '相关记忆' },
 ]
 
 // ─── 聊天消息组件 ───
 
-const ChatMessage = React.memo(({ msg, theme, userAvatar }) => {
+const ChatMessage = React.memo(({ msg, theme, userAvatar, onExecuteAction, executingActionId, onSaveAsNote, onAskFollowUp, onOpenSource }) => {
   const isUser = msg.role === 'user'
 
   return (
@@ -135,15 +145,57 @@ const ChatMessage = React.memo(({ msg, theme, userAvatar }) => {
         <Box sx={{ maxWidth: '80%', minWidth: 0 }}>
           {/* 工具调用指示器 */}
           {msg.toolCalls?.map((tc, i) => (
-            <Chip
-              key={i}
-              size="small"
-              icon={TOOL_ICONS[tc.name] || <SparkleIcon fontSize="small" />}
-              label={`${TOOL_LABELS[tc.name] || tc.name}${tc.done ? ' ✓' : '...'}`}
-              variant="outlined"
-              color={tc.done ? 'success' : 'default'}
-              sx={{ mb: 0.5, mr: 0.5, height: 24, fontSize: '0.75rem' }}
-            />
+            <Box key={`${tc.name}-${i}`} sx={{ mb: 0.75 }}>
+              <Tooltip title={tc.summary || tc.error || 'AI 正在调用应用能力'} arrow>
+                <Chip
+                  size="small"
+                  icon={TOOL_ICONS[tc.name] || <SparkleIcon fontSize="small" />}
+                  label={`${TOOL_LABELS[tc.name] || tc.name}${tc.action ? ' · 待确认' : tc.done ? ' ✓' : '...'}`}
+                  variant="outlined"
+                  color={tc.action ? 'warning' : tc.done ? 'success' : 'default'}
+                  sx={{ mr: 0.5, height: 24, fontSize: '0.75rem' }}
+                />
+              </Tooltip>
+              {tc.action && (
+                <Paper
+                  elevation={0}
+                  sx={{
+                    mt: 0.75,
+                    p: 1,
+                    borderRadius: 2,
+                    border: '1px solid',
+                    borderColor: alpha(theme.palette.warning.main, 0.35),
+                    bgcolor: alpha(theme.palette.warning.main, 0.08),
+                  }}
+                >
+                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 0.5 }}>
+                    待你确认：{tc.action.summary || tc.action.label}
+                  </Typography>
+                  {tc.action.memoryReview?.summary && (
+                    <Box sx={{ mb: 0.75 }}>
+                      <Typography variant="caption" color={tc.action.memoryReview.level === 'warning' ? 'warning.main' : 'text.secondary'} sx={{ display: 'block' }}>
+                        {tc.action.memoryReview.summary}
+                      </Typography>
+                      {tc.action.memoryReview.candidates?.slice(0, 2).map(candidate => (
+                        <Typography key={candidate.id || candidate.content} variant="caption" color="text.secondary" sx={{ display: 'block', pl: 1, mt: 0.25 }}>
+                          相似记忆：{candidate.content}
+                        </Typography>
+                      ))}
+                    </Box>
+                  )}
+                  <Button
+                    size="small"
+                    variant="contained"
+                    color="warning"
+                    disabled={executingActionId === tc.action.actionId}
+                    onClick={() => onExecuteAction?.(tc.action)}
+                    sx={{ borderRadius: 2, textTransform: 'none' }}
+                  >
+                    {executingActionId === tc.action.actionId ? '执行中…' : '确认执行'}
+                  </Button>
+                </Paper>
+              )}
+            </Box>
           ))}
 
           {/* 消息内容 */}
@@ -169,21 +221,44 @@ const ChatMessage = React.memo(({ msg, theme, userAvatar }) => {
               </Box>
             </Paper>
           )}
+          {!isUser && msg.content && (
+            <Box sx={{ display: 'flex', gap: 0.75, mt: 0.75, flexWrap: 'wrap', opacity: 0.9 }}>
+              <Chip size="small" label="存为笔记" onClick={() => onSaveAsNote?.(msg.content)} variant="outlined" sx={{ height: 24 }} />
+              <Chip size="small" label="继续追问" onClick={() => onAskFollowUp?.(msg.content)} variant="outlined" sx={{ height: 24 }} />
+            </Box>
+          )}
+          {!isUser && msg.contextSources?.length > 0 && (
+            <Box sx={{ display: 'flex', gap: 0.5, mt: 0.75, flexWrap: 'wrap' }}>
+              {msg.contextSources.map(source => (
+                <Chip
+                  key={`${source.type}-${source.id || source.title}`}
+                  size="small"
+                  label={source.label}
+                  clickable={Boolean(source.id && source.type !== 'memory')}
+                  onClick={() => source.id && source.type !== 'memory' && onOpenSource?.(source.id)}
+                  variant="outlined"
+                  sx={{ height: 22, fontSize: '0.7rem', opacity: 0.75 }}
+                />
+              ))}
+            </Box>
+          )}
         </Box>
       </Box>
     </Fade>
   )
 })
 
-export default function AIChatView() {
+export default function AIChatView({ onTodoUpdated }) {
   const theme = useTheme()
-  const { userAvatar, aiConversations, aiActiveConvId, aiNewChat, aiUpdateConv } = useStore()
+  const { userAvatar, notes, selectedNoteId, setSelectedNoteId, aiConversations, aiActiveConvId, aiNewChat, aiUpdateConv, aiCommandRequest, aiClearCommandRequest, loadNotes } = useStore()
 
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [streamContent, setStreamContent] = useState('')
   const [toolCalls, setToolCalls] = useState([])
+  const [contextEnabled, setContextEnabled] = useState({ currentNote: true, relatedNotes: true, todos: true, memories: true })
+  const [executingActionId, setExecutingActionId] = useState(null)
   const [messageContextMenu, setMessageContextMenu] = useState(null)
   const [inputContextMenu, setInputContextMenu] = useState(null)
 
@@ -227,6 +302,18 @@ export default function AIChatView() {
     return text.length > 24 ? text.slice(0, 24) + '…' : text
   }
 
+  const buildContextPackage = useCallback((query, todos = [], memories = []) => {
+    return buildContextPackageFromNotes({ notes, todos, memories, selectedNoteId, query, contextEnabled })
+  }, [contextEnabled, notes, selectedNoteId])
+
+  const parseToolResult = (result) => {
+    try {
+      return typeof result === 'string' ? JSON.parse(result) : result
+    } catch (_) {
+      return null
+    }
+  }
+
   // 发送消息
   const handleSend = useCallback(async (customPrompt) => {
     const text = (customPrompt || input).trim()
@@ -254,6 +341,30 @@ export default function AIChatView() {
 
     // 构建发送给 API 的消息（只含 role + content）
     const apiMessages = newMessages.map(m => ({ role: m.role, content: m.content }))
+    let todoContext = []
+    let memoryContext = []
+    if (contextEnabled.todos) {
+      try {
+        const todoResult = await window.electronAPI?.todos?.getAll?.({ includeCompleted: false, limit: 100 })
+        todoContext = Array.isArray(todoResult?.data) ? todoResult.data : Array.isArray(todoResult) ? todoResult : []
+      } catch (_) {
+        todoContext = []
+      }
+    }
+    if (contextEnabled.memories) {
+      try {
+        const memoryQuery = truncateText(text, 260)
+        const memoryResult = await window.electronAPI?.mem0?.search?.({
+          userId: 'current_user',
+          query: memoryQuery,
+          options: { limit: 5 }
+        })
+        memoryContext = Array.isArray(memoryResult?.results) ? memoryResult.results : []
+      } catch (_) {
+        memoryContext = []
+      }
+    }
+    const contextPackage = buildContextPackage(text, todoContext, memoryContext)
 
     try {
       // 注册 chunk 监听
@@ -272,15 +383,26 @@ export default function AIChatView() {
             setStreamContent(currentContent)
             break
           case 'tool_start':
-            currentToolCalls = [...currentToolCalls, { name: chunk.name, done: false }]
+            currentToolCalls = [...currentToolCalls, { name: chunk.name, args: chunk.args, done: false }]
             setToolCalls([...currentToolCalls])
             break
-          case 'tool_end':
+          case 'tool_end': {
+            const parsed = parseToolResult(chunk.result)
             currentToolCalls = currentToolCalls.map(tc =>
-              tc.name === chunk.name && !tc.done ? { ...tc, done: true } : tc
+              tc.name === chunk.name && !tc.done
+                ? {
+                  ...tc,
+                  done: true,
+                  result: parsed,
+                  action: parsed?.requiresConfirmation ? parsed : undefined,
+                  summary: parsed?.summary || parsed?.message || parsed?.error,
+                  error: parsed?.error,
+                }
+                : tc
             )
             setToolCalls([...currentToolCalls])
             break
+          }
           case 'error':
             setStreamContent(prev => prev + `\n\n⚠️ ${chunk.content}`)
             break
@@ -289,7 +411,11 @@ export default function AIChatView() {
         }
       })
 
-      const result = await window.electronAPI.ai.chatStream(apiMessages, { requestId })
+      const result = await window.electronAPI.ai.chatStream(apiMessages, {
+        requestId,
+        contextPackage,
+        requireConfirmation: true,
+      })
 
       // 将流式结果添加为完整助手消息
       const assistantContent = result.cancelled
@@ -302,6 +428,7 @@ export default function AIChatView() {
         role: 'assistant',
         content: assistantContent,
         toolCalls: currentToolCalls.length > 0 ? currentToolCalls : undefined,
+        contextSources: getContextSources(contextPackage),
         stopped: Boolean(result.cancelled)
       }]
       setMessages(finalMessages)
@@ -328,7 +455,7 @@ export default function AIChatView() {
       setLoading(false)
       inputRef.current?.focus()
     }
-  }, [input, loading, messages, aiActiveConvId, aiNewChat, aiUpdateConv])
+  }, [input, loading, messages, aiActiveConvId, aiNewChat, aiUpdateConv, buildContextPackage, contextEnabled.todos, contextEnabled.memories])
 
   const handleCancel = useCallback(async () => {
     const requestId = activeRequestIdRef.current
@@ -341,6 +468,22 @@ export default function AIChatView() {
     }
   }, [loading])
 
+  useEffect(() => {
+    if (!aiCommandRequest?.prompt) return
+    const { prompt, autoSend } = aiCommandRequest
+    if (loading) {
+      setInput(prompt)
+      return
+    }
+    aiClearCommandRequest?.()
+    if (autoSend) {
+      handleSend(prompt)
+    } else {
+      setInput(prompt)
+      inputRef.current?.focus()
+    }
+  }, [aiCommandRequest, aiClearCommandRequest, handleSend, loading])
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -351,6 +494,86 @@ export default function AIChatView() {
   const handleCopy = (content) => {
     navigator.clipboard.writeText(content).catch(() => {})
   }
+
+  const updateCurrentConversationMessages = useCallback((updater) => {
+    const nextMessages = updater(messages)
+    setMessages(nextMessages)
+    if (aiActiveConvId) {
+      aiUpdateConv(aiActiveConvId, { messages: nextMessages, title: getConversationTitle(nextMessages) })
+    }
+    return nextMessages
+  }, [aiActiveConvId, aiUpdateConv, messages])
+
+  const handleExecuteAction = useCallback(async (action) => {
+    if (!action?.actionId || executingActionId) return
+    setExecutingActionId(action.actionId)
+    try {
+      const result = await window.electronAPI?.ai?.executePendingAction?.(action.actionId)
+      const content = result?.success
+        ? `已执行：${action.summary || action.label || 'AI 操作'}`
+        : `执行失败：${result?.error || '未知错误'}`
+      updateCurrentConversationMessages(prev => [...prev.map(msg => ({
+        ...msg,
+        toolCalls: msg.toolCalls?.map(tc =>
+          tc.action?.actionId === action.actionId
+            ? { ...tc, action: undefined, done: Boolean(result?.success), summary: content, error: result?.success ? undefined : result?.error }
+            : tc
+        )
+      })), {
+        role: 'assistant',
+        content,
+        toolCalls: [{
+          name: action.name,
+          done: Boolean(result?.success),
+          summary: content,
+          error: result?.success ? undefined : result?.error,
+        }]
+      }])
+      if (result?.success) {
+        if (action.name === 'create_todo') {
+          onTodoUpdated?.()
+        } else if (['create_note', 'edit_note'].includes(action.name)) {
+          loadNotes?.()
+        }
+      }
+    } catch (error) {
+      updateCurrentConversationMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `执行失败：${error.message}`
+      }])
+    } finally {
+      setExecutingActionId(null)
+    }
+  }, [executingActionId, loadNotes, onTodoUpdated, updateCurrentConversationMessages])
+
+  const handleSaveAsNote = useCallback(async (content) => {
+    if (!content?.trim()) return
+    try {
+      const title = content.split('\n').find(line => line.trim())?.replace(/^#+\s*/, '').slice(0, 40) || 'AI 回答'
+      const result = await window.electronAPI?.notes?.create?.({
+        title,
+        content,
+        tags: 'AI',
+        category: 'AI'
+      })
+      if (result?.success !== false) {
+        loadNotes?.()
+        updateCurrentConversationMessages(prev => [...prev, { role: 'assistant', content: `已保存为笔记：${title}` }])
+      }
+    } catch (error) {
+      updateCurrentConversationMessages(prev => [...prev, { role: 'assistant', content: `保存笔记失败：${error.message}` }])
+    }
+  }, [loadNotes, updateCurrentConversationMessages])
+
+  const handleAskFollowUp = useCallback((content) => {
+    const excerpt = truncateText(content, 500)
+    setInput(`基于这段回答继续深入：\n\n${excerpt}\n\n`)
+    inputRef.current?.focus()
+  }, [])
+
+  const handleOpenSource = useCallback((noteId) => {
+    setSelectedNoteId?.(noteId)
+  }, [setSelectedNoteId])
 
   const handleContinueGeneration = useCallback(() => {
     if (loading) return
@@ -452,7 +675,16 @@ export default function AIChatView() {
             onContextMenu={(e) => handleMessageContextMenu(e, msg, i)}
             sx={{ position: 'relative', '&:hover .copy-btn': { opacity: 1 } }}
           >
-            <ChatMessage msg={msg} theme={theme} userAvatar={userAvatar} />
+            <ChatMessage
+              msg={msg}
+              theme={theme}
+              userAvatar={userAvatar}
+              onExecuteAction={handleExecuteAction}
+              executingActionId={executingActionId}
+              onSaveAsNote={handleSaveAsNote}
+              onAskFollowUp={handleAskFollowUp}
+              onOpenSource={handleOpenSource}
+            />
             {msg.role === 'assistant' && msg.content && (
               <IconButton
                 className="copy-btn"
@@ -497,9 +729,9 @@ export default function AIChatView() {
                   key={i}
                   size="small"
                   icon={TOOL_ICONS[tc.name] || <SparkleIcon fontSize="small" />}
-                  label={`${TOOL_LABELS[tc.name] || tc.name}${tc.done ? ' ✓' : '...'}`}
+                  label={`${TOOL_LABELS[tc.name] || tc.name}${tc.action ? ' · 待确认' : tc.done ? ' ✓' : '...'}`}
                   variant="outlined"
-                  color={tc.done ? 'success' : 'default'}
+                  color={tc.action ? 'warning' : tc.done ? 'success' : 'default'}
                   sx={{ mb: 0.5, mr: 0.5, height: 24, fontSize: '0.75rem' }}
                 />
               ))}
@@ -563,6 +795,26 @@ export default function AIChatView() {
         px: 3, py: 2, borderTop: `1px solid ${theme.palette.divider}`,
         flexShrink: 0, maxWidth: 900, mx: 'auto', width: '100%',
       }}>
+        <Box sx={{ display: 'flex', gap: 0.75, mb: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Typography variant="caption" color="text.secondary">上下文</Typography>
+          {CONTEXT_OPTIONS.map(option => (
+            <Chip
+              key={option.key}
+              size="small"
+              label={option.label}
+              clickable
+              color={contextEnabled[option.key] ? 'primary' : 'default'}
+              variant={contextEnabled[option.key] ? 'filled' : 'outlined'}
+              onClick={() => setContextEnabled(prev => ({ ...prev, [option.key]: !prev[option.key] }))}
+              sx={{ height: 24, borderRadius: 3 }}
+            />
+          ))}
+          {selectedNoteId && contextEnabled.currentNote && (
+            <Typography variant="caption" color="text.secondary">
+              已注入当前笔记
+            </Typography>
+          )}
+        </Box>
         <Box sx={{
           display: 'flex', gap: 1, alignItems: 'flex-end',
           bgcolor: theme.palette.mode === 'dark'
@@ -586,7 +838,7 @@ export default function AIChatView() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             variant="standard"
-            InputProps={{ disableUnderline: true }}
+            slotProps={{ input: { disableUnderline: true } }}
             sx={{
               '& .MuiInput-root': { fontSize: '0.9rem' },
             }}
@@ -647,6 +899,24 @@ export default function AIChatView() {
           disabled={!(messageContextMenu?.msg?.role === 'assistant' && messageContextMenu?.msg?.stopped && messageContextMenu?.index === messages.length - 1 && !loading)}
         >
           继续生成
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            handleSaveAsNote(messageContextMenu?.msg?.content)
+            closeMessageContextMenu()
+          }}
+          disabled={!(messageContextMenu?.msg?.role === 'assistant' && messageContextMenu?.msg?.content)}
+        >
+          存为笔记
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            handleAskFollowUp(messageContextMenu?.msg?.content)
+            closeMessageContextMenu()
+          }}
+          disabled={!(messageContextMenu?.msg?.role === 'assistant' && messageContextMenu?.msg?.content)}
+        >
+          基于此追问
         </MenuItem>
       </Menu>
 

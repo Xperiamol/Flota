@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from '../utils/i18n';
 import { useError } from './ErrorProvider';
 import {
@@ -6,12 +6,9 @@ import {
   Typography,
   Button,
   Alert,
-  Divider,
   CircularProgress,
   List,
   ListItem,
-  ListItemText,
-  ListItemSecondaryAction,
   Chip,
   Dialog,
   DialogTitle,
@@ -29,18 +26,16 @@ import {
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import {
-  Memory as MemoryIcon,
   Delete as DeleteIcon,
   Info as InfoIcon,
   Refresh as RefreshIcon,
   Search as SearchIcon,
   Psychology as PsychologyIcon,
   AutoAwesome as AutoAwesomeIcon,
-  Speed as SpeedIcon,
   CleaningServices as CleanIcon,
   Timeline as TimelineIcon
 } from '@mui/icons-material';
-import { scrollbar } from '../styles/commonStyles';
+import { emptyStateSx, scrollbar, settingsFieldGroupSx, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../styles/commonStyles';
 
 // ─── 分层配色 ───
 const LAYER_COLORS = {
@@ -90,13 +85,15 @@ const RingProgress = ({ value, max, size = 56, color, label, count }) => {
 
 // ─── 指标卡片 ───
 const MetricCard = ({ icon, label, value, color = 'text.secondary' }) => (
-  <Box sx={{
+  <Box sx={(theme) => ({
     display: 'flex', flexDirection: 'column', alignItems: 'center',
     px: 1.5, py: 1,
-    borderRadius: 1.5,
-    bgcolor: (t) => alpha(t.palette.primary.main, 0.04),
+    borderRadius: '12px',
+    border: '1px solid',
+    borderColor: theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.10)' : 'rgba(15,23,42,0.06)',
+    bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.62)',
     minWidth: 72,
-  }}>
+  })}>
     <Typography variant="body2" sx={{ color, fontWeight: 700, fontSize: 16 }}>{value}</Typography>
     <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 10, mt: 0.25, whiteSpace: 'nowrap' }}>
       {icon} {label}
@@ -106,7 +103,7 @@ const MetricCard = ({ icon, label, value, color = 'text.secondary' }) => (
 
 const Mem0Settings = () => {
   const { t } = useTranslation();
-  const { showError, showSuccess } = useError();
+  const { showError } = useError();
   const [available, setAvailable] = useState(false);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
@@ -128,8 +125,8 @@ const Mem0Settings = () => {
   const checkAvailability = useCallback(async () => {
     setLoading(true);
     try {
-      if (window.electronAPI?.invoke) {
-        const result = await window.electronAPI.invoke('mem0:is-available');
+      if (window.electronAPI?.mem0?.isAvailable) {
+        const result = await window.electronAPI.mem0.isAvailable();
         setAvailable(result?.available || false);
         if (result?.available) {
           await loadStats();
@@ -145,8 +142,8 @@ const Mem0Settings = () => {
 
   const loadStats = useCallback(async () => {
     try {
-      if (window.electronAPI?.invoke) {
-        const result = await window.electronAPI.invoke('mem0:stats', { userId });
+      if (window.electronAPI?.mem0?.stats) {
+        const result = await window.electronAPI.mem0.stats({ userId });
         if (result?.success && result?.stats) setStats(result.stats);
       }
     } catch (error) {
@@ -156,10 +153,10 @@ const Mem0Settings = () => {
 
   const loadMemories = useCallback(async () => {
     try {
-      if (window.electronAPI?.invoke) {
+      if (window.electronAPI?.mem0?.get) {
         const options = { limit: 200 };
         if (selectedCategory !== 'all') options.category = selectedCategory;
-        const result = await window.electronAPI.invoke('mem0:get', { userId, options });
+        const result = await window.electronAPI.mem0.get({ userId, options });
         if (result?.success && Array.isArray(result?.memories)) {
           setMemories(result.memories);
         } else {
@@ -176,8 +173,8 @@ const Mem0Settings = () => {
     if (!searchQuery.trim()) return;
     setSearching(true);
     try {
-      if (window.electronAPI?.invoke) {
-        const result = await window.electronAPI.invoke('mem0:search', {
+      if (window.electronAPI?.mem0?.search) {
+        const result = await window.electronAPI.mem0.search({
           userId, query: searchQuery, options: { limit: 10, threshold: 0.3 }
         });
         if (result?.success && Array.isArray(result?.results)) {
@@ -197,8 +194,8 @@ const Mem0Settings = () => {
 
   const handleDeleteMemory = async (memoryId) => {
     try {
-      if (window.electronAPI?.invoke) {
-        const result = await window.electronAPI.invoke('mem0:delete', { memoryId });
+      if (window.electronAPI?.mem0?.delete) {
+        const result = await window.electronAPI.mem0.delete({ memoryId });
         if (result?.success) {
           setMessage({ type: 'success', text: t('mem0.memoryDeleted') });
           await loadStats();
@@ -215,8 +212,8 @@ const Mem0Settings = () => {
 
   const handleClearAll = async () => {
     try {
-      if (window.electronAPI?.invoke) {
-        const result = await window.electronAPI.invoke('mem0:clear', { userId });
+      if (window.electronAPI?.mem0?.clear) {
+        const result = await window.electronAPI.mem0.clear({ userId });
         if (result.success) {
           setMessage({ type: 'success', text: t('mem0.allMemoriesCleared') });
           setMemories([]);
@@ -233,8 +230,8 @@ const Mem0Settings = () => {
   const handleCleanup = async () => {
     setCleaning(true);
     try {
-      if (window.electronAPI?.invoke) {
-        const result = await window.electronAPI.invoke('mem0:cleanup');
+      if (window.electronAPI?.mem0?.cleanup) {
+        const result = await window.electronAPI.mem0.cleanup();
         if (result) {
           setMessage({ type: 'success', text: `清理完成：移除 ${result.removed || 0} 条过期记忆` });
           await loadStats();
@@ -251,8 +248,8 @@ const Mem0Settings = () => {
     setLoading(true);
     setMessage({ type: 'info', text: t('mem0.processingNotes') });
     try {
-      if (window.electronAPI?.invoke) {
-        const result = await window.electronAPI.invoke('mem0:migrate-historical');
+      if (window.electronAPI?.mem0?.migrateHistorical) {
+        const result = await window.electronAPI.mem0.migrateHistorical();
         if (result?.success) {
           const skippedText = result.skippedCount > 0 ? `，跳过 ${result.skippedCount} 条重复` : '';
           setMessage({ type: 'success', text: `完成! 新增 ${result.memoryCount || 0} 条记忆${skippedText}` });
@@ -305,25 +302,19 @@ const Mem0Settings = () => {
       )}
 
       {!available ? (
-        <Alert severity="info" icon={<InfoIcon />}>
+        <Alert severity="info" icon={<InfoIcon />} sx={(theme) => emptyStateSx(theme)}>
           <Typography variant="body2" gutterBottom><strong>{t('mem0.featureTitle')}</strong></Typography>
           <Typography variant="body2">{t('mem0.featureDesc')}</Typography>
         </Alert>
       ) : (
         <Box>
           {/* ═══ 顶部仪表盘 ═══ */}
-          <Paper elevation={0} sx={{
-            p: 2.5, mb: 2.5, borderRadius: 1,
-            bgcolor: (t) => alpha(t.palette.background.paper, 0.6),
-            border: '1px solid',
-            borderColor: 'divider',
-            backdropFilter: 'blur(12px)',
-          }}>
+          <Paper elevation={0} sx={settingsSectionSx}>
             {/* 状态标题 */}
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <PsychologyIcon sx={{ color: 'primary.main', fontSize: 22 }} />
-                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                <Typography variant="subtitle1" sx={sectionTitleSx}>
                   记忆引擎
                 </Typography>
                 <Chip
@@ -351,11 +342,11 @@ const Mem0Settings = () => {
 
             {/* 分层环形图 */}
             {layerData.length > 0 && (
-              <Box sx={{
+              <Box sx={(theme) => ({
                 display: 'flex', justifyContent: 'center', gap: 3, mb: 2,
-                py: 1.5, px: 2, borderRadius: 1,
-                bgcolor: (t) => alpha(t.palette.background.default, 0.5),
-              }}>
+                py: 1.5, px: 2, borderRadius: '14px',
+                bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.035)' : 'rgba(15,23,42,0.035)',
+              })}>
                 {layerData.map(ld => (
                   <Tooltip
                     key={ld.key}
@@ -387,24 +378,25 @@ const Mem0Settings = () => {
           </Paper>
 
           {/* ═══ 操作按钮 ═══ */}
-          <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
-            <Button
-              variant="outlined" size="small"
-              startIcon={<AutoAwesomeIcon />}
-              onClick={() => setMigrateDialogOpen(true)}
-              disabled={loading}
-            >
-              {t('mem0.importHistoricalNotes')}
-            </Button>
-            <Button
-              variant="outlined" size="small" color="secondary"
-              startIcon={<CleanIcon />}
-              onClick={handleCleanup}
-              disabled={cleaning}
-            >
-              {cleaning ? '清理中...' : '智能清理'}
-            </Button>
-            <Box sx={{ flex: 1 }} />
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+              <Button
+                variant="outlined" size="small"
+                startIcon={<AutoAwesomeIcon />}
+                onClick={() => setMigrateDialogOpen(true)}
+                disabled={loading}
+              >
+                {t('mem0.importHistoricalNotes')}
+              </Button>
+              <Button
+                variant="outlined" size="small" color="secondary"
+                startIcon={<CleanIcon />}
+                onClick={handleCleanup}
+                disabled={cleaning}
+              >
+                {cleaning ? '清理中...' : '智能清理'}
+              </Button>
+            </Box>
             <Button
               variant="outlined" size="small" color="error"
               startIcon={<DeleteIcon />}
@@ -415,12 +407,13 @@ const Mem0Settings = () => {
             </Button>
           </Box>
 
-          <Divider sx={{ mb: 2 }} />
-
           {/* ═══ 语义搜索 ═══ */}
-          <Box sx={{ mb: 2.5 }}>
-            <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Box sx={settingsSectionSx}>
+            <Typography variant="subtitle1" sx={{ ...sectionTitleSx, display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <SearchIcon fontSize="small" /> 混合语义搜索
+            </Typography>
+            <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
+              用关键词或自然语言检索长期记忆
             </Typography>
             <Box sx={{ display: 'flex', gap: 1, mb: 1.5 }}>
               <TextField
@@ -443,14 +436,26 @@ const Mem0Settings = () => {
             </Box>
 
             {Array.isArray(searchResults) && searchResults.length > 0 && (
-              <Box sx={{
+              <Box sx={(theme) => ({
                 maxHeight: 280, overflowY: 'auto',
-                border: '1px solid', borderColor: 'divider', borderRadius: 1,
+                ...settingsFieldGroupSx(theme),
+                p: 0,
                 ...scrollbar.auto
-              }}>
+              })}>
                 <List dense disablePadding>
                   {searchResults.map((memory) => (
-                    <ListItem key={memory.id} divider sx={{ py: 1.25 }}>
+                    <ListItem
+                      key={memory.id}
+                      divider
+                      secondaryAction={(
+                        <Tooltip title={t('mem0.delete')}>
+                          <IconButton size="small" edge="end" onClick={() => handleDeleteMemory(memory.id)}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      sx={{ py: 1.25, pr: 6 }}
+                    >
                       <Box sx={{ flex: 1, minWidth: 0 }}>
                         <Typography variant="body2" sx={{ wordBreak: 'break-word', lineHeight: 1.5 }}>
                           {memory.content}
@@ -486,13 +491,6 @@ const Mem0Settings = () => {
                           </Typography>
                         </Box>
                       </Box>
-                      <ListItemSecondaryAction>
-                        <Tooltip title={t('mem0.delete')}>
-                          <IconButton size="small" edge="end" onClick={() => handleDeleteMemory(memory.id)}>
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      </ListItemSecondaryAction>
                     </ListItem>
                   ))}
                 </List>
@@ -500,12 +498,10 @@ const Mem0Settings = () => {
             )}
           </Box>
 
-          <Divider sx={{ mb: 2 }} />
-
           {/* ═══ 记忆列表 ═══ */}
-          <Box>
+          <Box sx={settingsSectionSx}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-              <Typography variant="subtitle2" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Typography variant="subtitle1" sx={{ ...sectionTitleSx, display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 <TimelineIcon fontSize="small" />
                 {t('mem0.memoryList')} ({Array.isArray(memories) ? memories.length : 0})
               </Typography>
@@ -528,18 +524,30 @@ const Mem0Settings = () => {
             </Box>
 
             {!Array.isArray(memories) || memories.length === 0 ? (
-              <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>
+              <Typography variant="body2" color="text.secondary" sx={(theme) => ({ ...emptyStateSx(theme), py: 3 })}>
                 {t('mem0.noMemories')}
               </Typography>
             ) : (
-              <Box sx={{
+              <Box sx={(theme) => ({
                 maxHeight: 400, overflowY: 'auto',
-                border: '1px solid', borderColor: 'divider', borderRadius: 1,
+                ...settingsFieldGroupSx(theme),
+                p: 0,
                 ...scrollbar.auto
-              }}>
+              })}>
                 <List dense disablePadding>
                   {memories.map((memory) => (
-                    <ListItem key={memory.id} divider sx={{ py: 1 }}>
+                    <ListItem
+                      key={memory.id}
+                      divider
+                      secondaryAction={(
+                        <Tooltip title={t('mem0.delete')}>
+                          <IconButton size="small" edge="end" onClick={() => handleDeleteMemory(memory.id)}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      sx={{ py: 1, pr: 6 }}
+                    >
                       <Box sx={{ flex: 1, minWidth: 0 }}>
                         <Typography variant="body2" sx={{ wordBreak: 'break-word', lineHeight: 1.5 }}>
                           {memory.content}
@@ -572,24 +580,11 @@ const Mem0Settings = () => {
                           </Typography>
                         </Box>
                       </Box>
-                      <ListItemSecondaryAction>
-                        <Tooltip title={t('mem0.delete')}>
-                          <IconButton size="small" edge="end" onClick={() => handleDeleteMemory(memory.id)}>
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      </ListItemSecondaryAction>
                     </ListItem>
                   ))}
                 </List>
               </Box>
             )}
-          </Box>
-
-          <Divider sx={{ my: 2 }} />
-
-          {/* ═══ 技术信息 ═══ */}
-          <Box sx={{ opacity: 0.7 }}>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
               {t('mem0.technicalDesc')}
             </Typography>

@@ -234,9 +234,12 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
   // 获取当月的所有Todo
   const loadTodos = async () => {
     try {
-      // 在专注视图中，总是加载已完成的待办（因为需要计算专注时长）
-      const includeCompleted = viewMode === 'focus' ? true : showCompleted;
-      const data = await fetchTodos({ includeCompleted });
+      // 关键：日历视图始终拉全量待办。
+      // 重复待办在后端按"今天是否已完成"过滤会让任务整体从数据集消失，
+      // 导致几天后的格子（下一周期的到期日）也拿不到该 todo。
+      // 这里改为前端按格子的目标日 _completedOnDate 决定是否展示，
+      // showCompleted 只控制单元格内的过滤（incompleteTodos vs dayTodosWithState）。
+      const data = await fetchTodos({ includeCompleted: true });
       const normalizedTodos = (data || []).map(todo => ({
         ...todo,
         completed: isTodoCompleted(todo)
@@ -332,7 +335,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
         });
       }, 3000);
     }
-  }, [onTodoUpdated, showError]);
+  }, [onTodoUpdated, showError, pendingComplete]);
 
   useEffect(() => {
     loadData();
@@ -563,6 +566,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
               const itemsToDisplay = viewMode === 'todos'
                 ? (showCompleted ? dayTodosWithState : incompleteTodos)
                 : items;
+              const isSelectedDay = selectedDate && dayInfo.date.toDateString() === selectedDate.toDateString();
 
               return (
                 <Box
@@ -573,6 +577,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                   sx={{
                     borderRight: index % 7 < 6 ? `1px solid ${theme.palette.divider}` : 'none',
                     borderBottom: index < calendarDays.length - 7 ? `1px solid ${theme.palette.divider}` : 'none',
+                    backgroundColor: dayInfo.isCurrentMonth ? 'transparent' : theme.palette.action.hover,
                     minHeight: '100px',
                     position: 'relative',
                     overflow: 'hidden', // 防止内容溢出
@@ -594,25 +599,26 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                       height: '100%',
                       minHeight: '100px',
                       p: 1.5,
-                      backgroundColor: dayInfo.isCurrentMonth
-                        ? (dayInfo.isToday
-                          ? theme.palette.primary.light + '15' // 今天的浅色底色
-                          : (selectedDate && dayInfo.date.toDateString() === selectedDate.toDateString()
-                            ? theme.palette.primary.light + '20'
-                            : 'transparent'))
-                        : theme.palette.action.hover,
-                      border: dayInfo.isToday
-                        ? `2px solid ${theme.palette.primary.main}`
-                        : (selectedDate && dayInfo.date.toDateString() === selectedDate.toDateString()
-                          ? `2px solid ${theme.palette.primary.main}`
-                          : 'none'),
-                      borderRadius: (dayInfo.isToday || (selectedDate && dayInfo.date.toDateString() === selectedDate.toDateString())) ? 1 : 0,
+                      backgroundColor: isSelectedDay
+                        ? theme.palette.primary.light + '18'
+                        : (dayInfo.isToday
+                          ? theme.palette.primary.light + '10'
+                          : 'transparent'),
+                      border: '1px solid',
+                      borderColor: dayInfo.isToday || isSelectedDay
+                        ? theme.palette.primary.main
+                        : 'transparent',
+                      borderRadius: dayInfo.isToday || isSelectedDay ? '12px' : 0,
+                      boxShadow: isSelectedDay ? `inset 0 0 0 1px ${theme.palette.primary.main}22` : 'none',
                       display: 'flex',
                       flexDirection: 'column',
                       cursor: 'pointer',
-                      transition: createTransitionString(ANIMATIONS.button),
+                      transition: 'background-color 180ms cubic-bezier(0.32,0.72,0,1), border-color 180ms cubic-bezier(0.32,0.72,0,1), box-shadow 180ms cubic-bezier(0.32,0.72,0,1)',
                       '&:hover': {
-                        backgroundColor: theme.palette.action.hover
+                        backgroundColor: isSelectedDay
+                          ? theme.palette.primary.light + '22'
+                          : (dayInfo.isCurrentMonth ? theme.palette.action.hover : 'transparent'),
+                        borderColor: dayInfo.isToday || isSelectedDay ? theme.palette.primary.main : theme.palette.divider,
                       },
                       overflow: 'hidden', // 防止内容溢出
                       minWidth: 0 // 确保可以收缩
@@ -652,11 +658,11 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                               '@keyframes pulse': {
                                 '0%, 100%': {
                                   opacity: 1,
-                                  transform: 'scale(1)'
+                                  boxShadow: `0 0 0 0 ${theme.palette.primary.main}33`
                                 },
                                 '50%': {
                                   opacity: 0.6,
-                                  transform: 'scale(1.2)'
+                                  boxShadow: `0 0 0 4px ${theme.palette.primary.main}00`
                                 }
                               }
                             }}
@@ -671,11 +677,13 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                           (itemsToDisplay.notesCount > 0 || itemsToDisplay.todosTotal > 0))) && (
                           <Box
                             sx={{
-                              width: 20,
+                              minWidth: 22,
                               height: 20,
-                              borderRadius: '50%',
-                              backgroundColor: theme.palette.primary.main,
-                              color: theme.palette.primary.contrastText,
+                              px: 0.75,
+                              borderRadius: 999,
+                              backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.10)' : 'rgba(15,23,42,0.06)',
+                              color: theme.palette.primary.main,
+                              border: `1px solid ${theme.palette.primary.main}33`,
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',

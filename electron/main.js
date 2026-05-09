@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, shell, Tray, Menu, nativeImage, protocol, nativeTheme, net } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, shell, Tray, Menu, nativeImage, protocol, nativeTheme, net, session } = require('electron')
 const path = require('path')
 
 // 加载环境变量
@@ -77,9 +77,12 @@ protocol.registerSchemesAsPrivileged([
   {
     scheme: 'app',
     privileges: {
+      // standard=true 才会被 Chromium 视为“标准协议”，从而支持对 app:// 进行 CORS/fetch。
+      // 否则会出现：Cross origin requests are only supported for protocol schemes: ... (不含 app)
+      standard: true,
       secure: true,
+      corsEnabled: true,
       supportFetchAPI: true,
-      bypassCSP: true,
       stream: true
     }
   }
@@ -106,7 +109,6 @@ const { setupMCPHandlers } = require('./ipc/mcpHandlers')
 const STTService = require('./services/STTService')
 const Mem0Service = require('./services/Mem0Service')
 const HistoricalDataMigrationService = require('./services/HistoricalDataMigrationService')
-const IpcHandlerFactory = require('./utils/ipcHandlerFactory')
 const CalDAVSyncService = require('./services/CalDAVSyncService')
 const GoogleCalendarService = require('./services/GoogleCalendarService')
 const ProxyService = require('./services/ProxyService')
@@ -123,8 +125,52 @@ let shortcutService
 let tray = null
 let pluginManager
 const activeAIStreams = new Map()
+let cspConfigured = false
+
+function setupContentSecurityPolicy() {
+  if (cspConfigured) return
+  cspConfigured = true
+
+  const scriptSrc = isDev
+    ? "'self' 'unsafe-eval' http://localhost:5174"
+    : "'self'"
+  const connectSrc = isDev
+    ? "'self' app: https: http://localhost:* ws://localhost:*"
+    : "'self' app: https:"
+  const csp = [
+    "default-src 'self' app:",
+    `script-src ${scriptSrc}`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' app: data: blob: https:",
+    "font-src 'self' data:",
+    "media-src 'self' app: data: blob:",
+    `connect-src ${connectSrc}`,
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'"
+  ].join('; ')
+
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    // 开发模式下主窗口加载 Vite dev server（http://localhost:5174），
+    // Vite/react 会注入 inline script 作为 preamble；如果我们强行覆盖 CSP，会导致
+    // “@vitejs/plugin-react can't detect preamble” 以及 inline script 被拦截。
+    if (isDev && typeof details.url === 'string' && details.url.startsWith('http://localhost:5174')) {
+      callback({ responseHeaders: details.responseHeaders })
+      return
+    }
+
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [csp]
+      }
+    })
+  })
+}
 
 function createWindow() {
+  setupContentSecurityPolicy()
+
   // 加载保存的窗口状态
   const windowStatePath = path.join(app.getPath('userData'), 'window-state.json')
   let windowState = {
@@ -290,7 +336,7 @@ function createWindow() {
       })
 
       // 正式版应用内禁用 Electron 原生右键菜单（统一由前端自定义菜单处理）
-      mainWindow.webContents.on('context-menu', (event, params) => {
+      mainWindow.webContents.on('context-menu', (event) => {
         event.preventDefault()
       })
     }
@@ -338,18 +384,92 @@ function createTray() {
     const pngPath = isDev
       ? path.join(__dirname, '../logo.png')
       : path.join(process.resourcesPath, 'logo.png')
+    const macTemplatePngPath = isDev
+      ? path.join(__dirname, '../logomac.png')
+      : path.join(process.resourcesPath, 'logomac.png')
 
     let trayIcon = null
 
+    // macOS: 使用 template image（单色，跟随系统深浅色），并使用更合适的 16px 托盘尺寸
+    if (process.platform === 'darwin') {
+      if (fs.existsSync(macTemplatePngPath)) {
+        const raw = nativeImage.createFromPath(macTemplatePngPath)
+        if (!raw.isEmpty()) {
+          // 关键点：
+          // - macOS 菜单栏托盘图标“外圈阴影/占位”跟最终图标尺寸强相关
+          // - 用户希望“图形更大”但“占位/阴影不变”，因此不能简单把最终尺寸放大
+          // - 方案：按 alpha 通道自动裁掉透明留白，再等比缩放到 16px 以内
+          //   (不强行裁成正方形，避免把左右图形截断)
+          let img = raw
+          try {
+            const { width, height } = raw.getSize()
+            const buf = raw.toBitmap()
+            if (buf && buf.length >= width * height * 4) {
+              // Heuristic alpha threshold; ignore near-transparent pixels.
+              const alphaThreshold = 16
+              let minX = width,
+                minY = height,
+                maxX = -1,
+                maxY = -1
+
+              for (let y = 0; y < height; y++) {
+                const row = y * width * 4
+                for (let x = 0; x < width; x++) {
+                  const a = buf[row + x * 4 + 3]
+                  if (a > alphaThreshold) {
+                    if (x < minX) minX = x
+                    if (y < minY) minY = y
+                    if (x > maxX) maxX = x
+                    if (y > maxY) maxY = y
+                  }
+                }
+              }
+
+              if (maxX >= 0 && maxY >= 0) {
+                // Add a tiny padding so strokes don't touch the edge after resize.
+                const pad = Math.max(1, Math.round(Math.min(width, height) * 0.01))
+                const x0 = Math.max(0, minX - pad)
+                const y0 = Math.max(0, minY - pad)
+                const x1 = Math.min(width - 1, maxX + pad)
+                const y1 = Math.min(height - 1, maxY + pad)
+                const cropW = Math.max(1, x1 - x0 + 1)
+                const cropH = Math.max(1, y1 - y0 + 1)
+                img = raw.crop({ x: x0, y: y0, width: cropW, height: cropH })
+              }
+            }
+          } catch (_) {
+            // If pixel scanning/crop fails, fall back to original image.
+            img = raw
+          }
+
+          // Fit into 16x16 while preserving aspect ratio (avoid distortion/clipping).
+          try {
+            const s = img.getSize()
+            const scale = Math.min(16 / s.width, 16 / s.height)
+            const w = Math.max(1, Math.round(s.width * scale))
+            const h = Math.max(1, Math.round(s.height * scale))
+            trayIcon = img.resize({ width: w, height: h })
+          } catch (_) {
+            trayIcon = img.resize({ width: 16, height: 16 })
+          }
+          trayIcon.setTemplateImage(true)
+        }
+      }
+    }
+
     // 优先使用多尺寸 ICO（含 16/32/48 等标准 Windows 尺寸）
-    if (fs.existsSync(icoPath)) {
+    if (!trayIcon && fs.existsSync(icoPath)) {
       trayIcon = nativeImage.createFromPath(icoPath)
     }
     // ICO 加载失败则用 PNG 缩放到 32x32
     if (!trayIcon || trayIcon.isEmpty()) {
       if (fs.existsSync(pngPath)) {
         const raw = nativeImage.createFromPath(pngPath)
-        if (!raw.isEmpty()) trayIcon = raw.resize({ width: 32, height: 32 })
+        if (!raw.isEmpty()) {
+          const size = process.platform === 'darwin' ? 16 : 32
+          trayIcon = raw.resize({ width: size, height: size })
+          if (process.platform === 'darwin') trayIcon.setTemplateImage(true)
+        }
       }
     }
     // 两者都失败 → 不创建托盘，避免透明空图标
@@ -892,6 +1012,12 @@ if (!gotTheLock) {
         }
         const mimeType = mimeTypes[ext] || 'application/octet-stream'
 
+        // 开发环境下，渲染层来自 Vite dev server（http://localhost:5174），
+        // fetch(app://images/...) 会走 CORS；这里仅对 dev origin 放行。
+        const origin = request?.headers?.get?.('origin') || ''
+        const allowDevOrigin =
+          isDev && (origin === 'http://localhost:5174' || origin === 'http://127.0.0.1:5174')
+
         // 音频文件：用 net.fetch 代理本地文件，自动处理 Range/Content-Length/streaming
         if (mimeType.startsWith('audio/')) {
           const fileUrl = 'file://' + fullPath.replace(/\\/g, '/')
@@ -903,12 +1029,19 @@ if (!gotTheLock) {
         
         const isWallpaper = relativePath.startsWith('wallpaper/')
         console.log('[Protocol] 返回文件，MIME:', mimeType)
+        const headers = {
+          'Content-Type': mimeType,
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': isWallpaper ? 'no-cache' : 'public, max-age=31536000'
+        }
+
+        if (allowDevOrigin) {
+          headers['Access-Control-Allow-Origin'] = origin
+          headers['Vary'] = 'Origin'
+        }
+
         return new Response(data, {
-          headers: { 
-            'Content-Type': mimeType,
-            'Accept-Ranges': 'bytes',
-            'Cache-Control': isWallpaper ? 'no-cache' : 'public, max-age=31536000'
-          }
+          headers
         })
       } catch (error) {
         console.error('[Protocol] 处理请求失败:', error)
@@ -1049,7 +1182,7 @@ app.on('activate', () => {
 
 // ============= IPC 处理程序 =============
 
-const { validatePath, validateRelativePath, validateString, validateId, validateUrl, validateArray, validateObject } = require('./utils/ipcValidator')
+const { validateImagePath, validateRelativePath, validateString, validateUrl } = require('./utils/ipcValidator')
 
 const registerIpcHandlers = (handlers) => {
   for (const { channel, handler } of handlers) {
@@ -1058,22 +1191,15 @@ const registerIpcHandlers = (handlers) => {
 }
 
 const createServicePassthroughHandler = (getService, methodName) => {
-  return async (event, ...args) => {
+  // ipcMain.handle will always pass (event, ...args). We must drop `event`,
+  // otherwise services will receive the IPC event object as their first arg.
+  return async (_event, ...args) => {
     const service = getService()
     return await service[methodName](...args)
   }
 }
 
 const getEventWindow = (event) => BrowserWindow.fromWebContents(event.sender)
-
-// 应用基础API
-ipcMain.handle('app-version', () => {
-  return app.getVersion()
-})
-
-ipcMain.handle('hello-world', () => {
-  return 'Hello from Electron Main Process!'
-})
 
 // 插件商店相关
 const ensurePluginManager = () => {
@@ -1440,6 +1566,17 @@ registerIpcHandlers([
   { channel: 'ai:chat', handler: createTryCatchHandler('aiService', 'chat', 'AI聊天失败') }
 ])
 
+ipcMain.handle('ai:execute-pending-action', async (_event, actionId) => {
+  try {
+    if (!services.aiChatService) {
+      return { success: false, error: 'AI助手服务尚未初始化，请稍后重试' }
+    }
+    return await services.aiChatService.executePendingAction(actionId)
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
 // AI Chat 助手流式聊天
 ipcMain.handle('ai:chat-stream', async (event, { messages, options }) => {
   const requestId = options?.requestId || `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
@@ -1547,12 +1684,7 @@ registerIpcHandlers([
     channel: 'mem0:get',
     handler: async (event, { userId, options }) => {
       try {
-        console.log('[Mem0] 获取记忆请求:', { userId, options })
         const memories = await services.mem0Service.getMemories(userId, options)
-        console.log(`[Mem0] 返回 ${memories.length} 条记忆`)
-        if (memories.length > 0) {
-          console.log('[Mem0] 第一条记忆类别:', memories[0].category)
-        }
         return { success: true, memories }
       } catch (error) {
         console.error('获取记忆列表失败:', error)
@@ -1959,9 +2091,9 @@ ipcMain.handle('system:open-external', async (event, url) => {
 // 读取图片文件并转换为base64
 ipcMain.handle('system:read-image-as-base64', async (event, filePath) => {
   try {
-    validatePath(filePath)
-    const imageData = fs.readFileSync(filePath)
-    const ext = path.extname(filePath).toLowerCase().substring(1)
+    const safePath = validateImagePath(filePath)
+    const imageData = fs.readFileSync(safePath)
+    const ext = path.extname(safePath).toLowerCase().substring(1)
     const mimeType = {
       'jpg': 'jpeg',
       'jpeg': 'jpeg',
@@ -2235,66 +2367,6 @@ ipcMain.handle('whiteboard:save-preview', async (event, { syncId, pngBase64 }) =
     return { success: false, error: error.message }
   }
 })
-
-// 图片云同步相关 IPC 处理器
-ipcMain.handle('sync:download-image', async (event, relativePath) => {
-  try {
-    const { getInstance: getV3SyncService } = require('./services/sync/V3SyncService')
-    const v3Service = getV3SyncService()
-
-    if (!v3Service || !v3Service.isEnabled) {
-      return { success: false, error: '云同步服务未启用' }
-    }
-
-    // 保留完整子目录结构 (images/whiteboard/xxx, images/whiteboard-preview/xxx 等)
-    const localPath = path.join(app.getPath('userData'), relativePath)
-    await require('fs').promises.mkdir(path.dirname(localPath), { recursive: true })
-
-    await v3Service.downloadImage(relativePath, localPath)
-    return { success: true }
-  } catch (error) {
-    console.error('下载图片失败:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('sync:upload-image', async (event, localPath, relativePath) => {
-  try {
-    const { getInstance: getV3SyncService } = require('./services/sync/V3SyncService')
-    const v3Service = getV3SyncService()
-
-    if (!v3Service || !v3Service.isEnabled) {
-      return { success: false, error: '云同步服务未启用' }
-    }
-
-    await v3Service.uploadImage(localPath, relativePath)
-    return { success: true }
-  } catch (error) {
-    console.error('上传图片失败:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-// ===== 以下图片管理功能已废弃，V3 同步系统不再需要这些功能 =====
-// sync:sync-images - V3 自动同步图片，无需手动批量同步
-
-// 图片清理功能 - V3 同步集成版本
-const syncCleanupHandlers = {
-  'sync:get-unused-images-stats': 'getUnusedImagesStats',
-  'sync:cleanup-unused-images':   'cleanupUnusedImages',
-}
-
-for (const [channel, method] of Object.entries(syncCleanupHandlers)) {
-  ipcMain.handle(channel, async (event, retentionDays = 30) => {
-    try {
-      const v3Service = require('./services/sync/V3SyncService').getInstance()
-      return await v3Service[method](retentionDays)
-    } catch (error) {
-      console.error(`${channel} 失败:`, error)
-      return { success: false, error: error.message }
-    }
-  })
-}
 
 // 应用退出时清理资源
 let isQuittingApp = false;

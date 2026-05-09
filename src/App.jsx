@@ -10,7 +10,6 @@ import {
   Box,
   AppBar,
   useMediaQuery,
-  Typography,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -28,7 +27,6 @@ import { createAppTheme } from './styles/theme'
 import { generatePatternCSS } from './utils/patternStyles'
 import { initI18n } from './utils/i18n'
 import Toolbar from './components/Toolbar'
-import NoteList from './components/NoteList'
 import NoteEditor from './components/NoteEditor'
 import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
@@ -38,7 +36,8 @@ import DragAnimationProvider from './components/DragAnimationProvider'
 import TodoEditDialog from './components/TodoEditDialog'
 import CreateTodoModal from './components/CreateTodoModal'
 import CommandPalette from './components/CommandPalette'
-import { ErrorProvider, useError } from './components/ErrorProvider'
+import AICommandCenter from './components/AICommandCenter'
+import { ErrorProvider } from './components/ErrorProvider'
 import logger from './utils/logger'
 
 // 懒加载非首屏组件，减少初始bundle大小
@@ -59,103 +58,6 @@ const LoadingFallback = () => (
   </Box>
 )
 
-function rewriteCssUrls(cssText, sheetHref) {
-  if (!cssText || !sheetHref) {
-    return cssText
-  }
-
-  try {
-    return cssText.replace(/url\(([^)]+)\)/g, (match, raw) => {
-      if (!raw) return match
-      const cleaned = raw.trim().replace(/^['"]|['"]$/g, '')
-      if (/^(data:|https?:|file:|app:|#)/i.test(cleaned)) {
-        return match
-      }
-      try {
-        const absolute = new URL(cleaned, sheetHref).href
-        // logger.log('[Plugin Window] Rewriting URL:', cleaned, '->', absolute)
-        return `url("${absolute}")`
-      } catch (err) {
-        console.warn('[Plugin Window] URL 重写失败:', cleaned, err)
-        return match
-      }
-    })
-  } catch (error) {
-    console.warn('[Plugin Window] CSS URL 重写失败:', error)
-    return cssText
-  }
-}
-
-// 辅助函数：同步样式到 iframe
-const syncIframeStyles = async (iframe) => {
-  if (!iframe || !iframe.contentWindow) return
-
-  try {
-    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document
-    const iframeHead = iframeDoc.head
-
-    // 移除旧的样式（避免重复）
-    const oldStyles = iframeHead.querySelectorAll('style[data-emotion], style[data-inline-css], style[data-source], link[data-injected]')
-    oldStyles.forEach(s => s.remove())
-
-    // 方案1：直接在 iframe 中添加 <link> 标签引用主应用的 CSS 文件
-    const mainStyleLinks = document.querySelectorAll('link[rel="stylesheet"]')
-    mainStyleLinks.forEach(link => {
-      const clonedLink = iframeDoc.createElement('link')
-      clonedLink.rel = 'stylesheet'
-      clonedLink.href = link.href
-      clonedLink.setAttribute('data-injected', 'true')
-      iframeHead.appendChild(clonedLink)
-    })
-
-    // 方案2：复制所有 emotion 样式标签（Material-UI 的动态样式）
-    // 这些样式会随着组件渲染动态增加，所以需要持续监听
-    const copyEmotionStyles = () => {
-      const emotionStyles = document.querySelectorAll('style[data-emotion]')
-      const iframeEmotionStyles = iframeHead.querySelectorAll('style[data-emotion]')
-
-      // 移除 iframe 中旧的 emotion 样式
-      iframeEmotionStyles.forEach(s => s.remove())
-
-      // 复制新的样式
-      if (emotionStyles.length > 0) {
-        let totalLength = 0
-        emotionStyles.forEach(style => {
-          const cloned = style.cloneNode(true)
-          iframeHead.appendChild(cloned)
-          totalLength += style.textContent?.length || 0
-        })
-        logger.log(`[Plugin Window] ✅ 已同步 ${emotionStyles.length} 个 emotion 样式，总长度: ${totalLength} 字符`)
-      }
-    }
-
-    // 立即复制一次
-    copyEmotionStyles()
-
-    // 持续监听主文档的样式变化，自动同步到 iframe
-    const styleObserver = new MutationObserver(() => {
-      copyEmotionStyles()
-    })
-
-    styleObserver.observe(document.head, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['data-emotion']
-    })
-
-    // 将观察器保存到 iframe，以便后续清理
-    if (!iframe.__styleObserver) {
-      iframe.__styleObserver = styleObserver
-    }
-
-    const totalStyles = iframeHead.querySelectorAll('style').length
-    const totalLinks = iframeHead.querySelectorAll('link[rel="stylesheet"]').length
-    logger.log(`[Plugin Window] 样式初始化完成 - Style: ${totalStyles}, Link: ${totalLinks}`)
-  } catch (err) {
-    console.warn('[Plugin Window] 同步样式失败:', err)
-  }
-}
 import { createTodo as createTodoAPI } from './api/todoAPI'
 import TimeZoneUtils from './utils/timeZoneUtils'
 import { subscribePluginEvents, subscribePluginUiRequests, subscribePluginWindowRequests, loadPluginFile, executePluginCommand } from './api/pluginAPI'
@@ -164,7 +66,7 @@ import themeManager from './utils/pluginThemeManager'
 import { PluginNotificationListener } from './utils/PluginNotificationListener'
 
 function App() {
-  const { theme, setTheme, primaryColor, loadNotes, currentView, initializeSettings, setCurrentView, createNote, batchDeleteNotes, batchDeleteTodos, batchCompleteTodos, batchRestoreNotes, batchPermanentDeleteNotes, getAllTags, batchSetTags, selectedNoteId, setSelectedNoteId, updateNoteInList, aiDeleteConv, maskOpacity, christmasMode, backgroundPattern, patternOpacity, wallpaperPath } = useStore()
+  const { theme, primaryColor, loadNotes, currentView, initializeSettings, setCurrentView, createNote, batchDeleteNotes, batchDeleteTodos, batchCompleteTodos, batchRestoreNotes, batchPermanentDeleteNotes, getAllTags, batchSetTags, selectedNoteId, setSelectedNoteId, updateNoteInList, aiDeleteConv, maskOpacity, christmasMode, backgroundPattern, patternOpacity, wallpaperPath } = useStore()
   const refreshPluginCommands = useStore((state) => state.refreshPluginCommands)
   const addPluginCommand = useStore((state) => state.addPluginCommand)
   const removePluginCommand = useStore((state) => state.removePluginCommand)
@@ -172,6 +74,7 @@ function App() {
   const [secondarySidebarOpen, setSecondarySidebarOpen] = useState(true)
   const [showDeleted, setShowDeleted] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+  const [aiCommandCenterOpen, setAiCommandCenterOpen] = useState(false)
 
   // TODO视图相关状态
   const [todoViewMode, setTodoViewMode] = useState('quadrant')
@@ -245,7 +148,6 @@ function App() {
 
   // 永久删除确认状态
   const [permanentDeleteConfirm, setPermanentDeleteConfirm] = useState(false)
-  const [todoPermanentDeleteConfirm, setTodoPermanentDeleteConfirm] = useState(false)
 
   // 标签选择对话框状态
   const [tagSelectionDialogOpen, setTagSelectionDialogOpen] = useState(false)
@@ -265,6 +167,11 @@ function App() {
   const [resolvedTheme, setResolvedTheme] = useState(() => resolveDisplayTheme(theme))
 
   const appTheme = createAppTheme(resolvedTheme, primaryColor)
+
+  // 让 CSS 可以基于真实主题模式做分支（例如 hljs 暗色高亮覆盖）
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', resolvedTheme)
+  }, [resolvedTheme])
 
   // 根据遮罩透明度设置获取对应的透明度值
   const getMaskOpacityValue = (isDark) => {
@@ -368,6 +275,16 @@ function App() {
     refreshPluginCommands()
   }, [refreshPluginCommands])
 
+  useEffect(() => {
+    const unsubscribe = window.electronAPI?.sync?.onSyncComplete?.(async () => {
+      await initializeSettings()
+      initI18n(useStore.getState().language)
+    })
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe()
+    }
+  }, [initializeSettings])
+
   // 监听视图切换，只在切换到笔记视图时重新加载并排序笔记列表
   useEffect(() => {
     if (currentView === 'notes') {
@@ -384,11 +301,22 @@ function App() {
     }
   }, [currentView]);
 
-  // 监听命令面板快捷键 (Ctrl+Shift+P / Cmd+Shift+P)
+  // 监听命令面板快捷键
   useEffect(() => {
+    const isEditableTarget = (target) => Boolean(
+      target?.closest?.('input, textarea, [contenteditable="true"], .ProseMirror')
+    )
+
     const handleKeyDown = (e) => {
-      // Ctrl+Shift+P (Windows/Linux) 或 Cmd+Shift+P (Mac)
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'P') {
+      const key = e.key.toLowerCase()
+      const isMod = e.ctrlKey || e.metaKey
+      if (isMod && e.shiftKey && key === 'k') {
+        e.preventDefault()
+        setAiCommandCenterOpen(true)
+      } else if (isMod && !e.shiftKey && key === 'k' && !isEditableTarget(e.target)) {
+        e.preventDefault()
+        setAiCommandCenterOpen(true)
+      } else if (isMod && e.shiftKey && key === 'p') {
         e.preventDefault()
         setCommandPaletteOpen(true)
       }
@@ -586,22 +514,6 @@ function App() {
   };
 
   useEffect(() => {
-    // 测试 Electron API 连接
-    const testElectronAPI = async () => {
-      try {
-        if (window.electronAPI) {
-          const version = await window.electronAPI.getVersion()
-          const message = await window.electronAPI.helloWorld()
-          logger.log('App Version:', version)
-          logger.log('Hello World:', message)
-        }
-      } catch (error) {
-        console.error('Electron API 测试失败:', error)
-      }
-    }
-
-    testElectronAPI()
-
     // 初始化设置
     const initApp = async () => {
       await initializeSettings()
@@ -647,13 +559,18 @@ function App() {
           createNote()
         })
 
-        // 监听刷新笔记列表事件（用于首次启动显示欢迎笔记）
-        window.electronAPI.ipcRenderer.on('refresh-notes', async (event, data) => {
-          logger.log('[App] 收到refresh-notes事件:', data)
-          await loadNotes()
-          if (data && data.selectNoteId) {
-            setSelectedNoteId(data.selectNoteId)
-            setCurrentView('notes')
+        // 监听待办提醒点击事件，跳转并打开对应待办
+        window.electronAPI.ipcRenderer.on('todo:focus', async (_event, todoId) => {
+          setCurrentView('todo')
+          setTodoRefreshTrigger(prev => prev + 1)
+          try {
+            const result = await window.electronAPI.todos.getAll({ includeCompleted: true })
+            const todo = result?.data?.find(item => String(item.id) === String(todoId))
+            if (todo) {
+              setSelectedTodo(todo)
+            }
+          } catch (error) {
+            console.error('聚焦待办失败:', error)
           }
         })
       }
@@ -681,10 +598,10 @@ function App() {
         window.electronAPI.ipcRenderer.removeAllListeners('create-new-todo')
         window.electronAPI.ipcRenderer.removeAllListeners('open-settings')
         window.electronAPI.ipcRenderer.removeAllListeners('quick-input')
-        window.electronAPI.ipcRenderer.removeAllListeners('refresh-notes')
+        window.electronAPI.ipcRenderer.removeAllListeners('todo:focus')
       }
     }
-  }, [createNote, loadNotes])
+  }, [createNote])
 
   useEffect(() => {
     const unsubscribe = subscribePluginUiRequests((payload) => {
@@ -886,7 +803,7 @@ function App() {
             <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
             {/* 工具栏和内容区域 */}
-            <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, minWidth: 0 }}>
               {/* 顶部工具栏 */}
               <AppBar
                 position="static"
@@ -1108,6 +1025,7 @@ function App() {
                   return {
                     flex: 1,
                     overflow: 'hidden',
+                    minWidth: 0,
                     backgroundColor: theme.palette.mode === 'dark'
                       ? `rgba(15, 23, 42, ${opacity})`
                       : `rgba(240, 244, 248, ${opacity})`,
@@ -1143,7 +1061,7 @@ function App() {
                           height: '100%'
                         }}
                       >
-                        <AIChatView />
+                        <AIChatView onTodoUpdated={handleTodoUpdated} />
                       </Box>
                     )}
                   </Suspense>
@@ -1198,13 +1116,15 @@ function App() {
             open={true}
             onClose={pluginWindow.closable ? () => setPluginWindow(null) : undefined}
             maxWidth={false}
-            PaperProps={{
-              sx: {
-                width: pluginWindow.width,
-                height: pluginWindow.height,
-                maxWidth: '90vw',
-                maxHeight: '90vh',
-                m: 2
+            slotProps={{
+              paper: {
+                sx: {
+                  width: pluginWindow.width,
+                  height: pluginWindow.height,
+                  maxWidth: '90vw',
+                  maxHeight: '90vh',
+                  m: 2
+                }
               }
             }}
           >
@@ -1282,6 +1202,11 @@ function App() {
         <CommandPalette
           open={commandPaletteOpen}
           onClose={() => setCommandPaletteOpen(false)}
+        />
+
+        <AICommandCenter
+          open={aiCommandCenterOpen}
+          onClose={() => setAiCommandCenterOpen(false)}
         />
 
         <Suspense fallback={null}>

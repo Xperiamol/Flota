@@ -84,38 +84,37 @@ class SyncIPCHandler {
    * 注册所有 IPC 处理器
    */
   registerHandlers() {
+    this.safeHandle('sync:get-config', async () => {
+      return this.v3SyncService.getStatus();
+    });
+
     // 获取同步状态
     this.safeHandle('sync:get-status', async () => {
       const v3Status = this.v3SyncService.getStatus();
       return { v3: v3Status };
     });
 
+    // 保存配置
+    // 重要：不再有任何"复用旧密码"的隐式回退。前端传什么就保存什么。
+    this.safeHandle('sync:save-config', async (_event, config) => {
+      return await this.v3SyncService.saveConnectionConfig(config);
+    });
+
     // 测试连接
-    this.safeHandle('sync:test-connection', async (event, serviceName, config) => {
-      await this.v3SyncService.setCredentials(
-        config.username,
-        config.password,
-        config.baseUrl,
-        config.rootPath
-      );
-      return await this.v3SyncService.testConnection();
+    // 重要：始终用前端传入的 config 进行测试。如果 password 字段缺失则用旧密码、
+    // 但只要前端显式传了 password 字段（即使是空字符串），就**严格**用它去测。
+    this.safeHandle('sync:test-connection', async (_event, _serviceName, config) => {
+      return await this.v3SyncService.testConnection(config);
     });
 
     // 启用同步（切换服务）
-    this.safeHandle('sync:switch-service', async (event, serviceName, config) => {
-      // 如果没有传密码，使用已保存的密码
-      let password = config.password;
-      if (!password && this.v3SyncService.config?.credentials?.password) {
-        password = this.v3SyncService.config.credentials.password;
-        console.log('[SyncIPCHandler] 使用已保存的密码');
-      }
-      
-      await this.v3SyncService.setCredentials(
-        config.username,
-        password,
-        config.baseUrl,
-        config.rootPath
-      );
+    // 关键：先用候选配置做连接验证，验证通过后才落盘 + enable，避免错误账户污染本地配置。
+    this.safeHandle('sync:switch-service', async (_event, _serviceName, config) => {
+      // 第一步：仅用候选配置测试连接（不落盘）
+      await this.v3SyncService.testConnection(config);
+      // 第二步：测试通过后才把账户写盘
+      await this.v3SyncService.saveConnectionConfig(config);
+      // 第三步：启用（enable 内部会再做一次幂等的连接校验）
       await this.v3SyncService.enable();
       return { success: true };
     });
@@ -129,7 +128,7 @@ class SyncIPCHandler {
     });
 
     // 启用特定类别的同步
-    this.safeHandle('sync:enable-category', async (event, category) => {
+    this.safeHandle('sync:enable-category', async (_event, category) => {
       this.v3SyncService.enableCategory(category);
       // 如果服务未启用，启用它
       if (!this.v3SyncService.isEnabled && this.v3SyncService.config?.credentials?.username) {
@@ -139,7 +138,7 @@ class SyncIPCHandler {
     });
 
     // 禁用特定类别的同步
-    this.safeHandle('sync:disable-category', async (event, category) => {
+    this.safeHandle('sync:disable-category', async (_event, category) => {
       this.v3SyncService.disableCategory(category);
       // 如果所有类别都禁用了，禁用服务
       if (this.v3SyncService.config?.syncCategories?.length === 0 && this.v3SyncService.isEnabled) {
@@ -171,29 +170,15 @@ class SyncIPCHandler {
     });
 
     // 切换自动同步
-    this.safeHandle('sync:toggle-auto-sync', async (event, enabled) => {
-      if (!this.v3SyncService.isEnabled) {
-        throw new Error('V3 同步服务未启用');
-      }
+    this.safeHandle('sync:toggle-auto-sync', async (_event, enabled) => {
       this.v3SyncService.toggleAutoSync(enabled);
       return { success: true };
     });
 
     // 设置自动同步间隔
-    this.safeHandle('sync:set-auto-sync-interval', async (event, minutes) => {
-      if (!this.v3SyncService.isEnabled) {
-        throw new Error('V3 同步服务未启用');
-      }
+    this.safeHandle('sync:set-auto-sync-interval', async (_event, minutes) => {
       this.v3SyncService.setAutoSyncInterval(minutes);
       return { success: true };
-    });
-
-    // 导出数据
-    this.safeHandle('sync:export-data', async (event, filePath) => {
-      const data = await this.v3SyncService.exportData();
-      const fs = require('fs');
-      fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-      return { success: true, message: '数据已导出' };
     });
 
     // 清除所有配置
@@ -202,8 +187,13 @@ class SyncIPCHandler {
       return { success: true };
     });
 
+    this.safeHandle('sync:disconnect', async () => {
+      this.v3SyncService.clearAll();
+      return { success: true };
+    });
+
     // 冲突解决
-    this.safeHandle('sync:resolve-conflict', async (event, conflictId, resolution) => {
+    this.safeHandle('sync:resolve-conflict', async (_event, conflictId, resolution) => {
       const conflict = this.pendingConflicts.get(conflictId);
       if (!conflict) {
         return { success: false, error: '冲突不存在或已解决' };
@@ -224,7 +214,7 @@ class SyncIPCHandler {
     });
 
     // 下载图片（从云端下载到本地）
-    this.safeHandle('sync:download-image', async (event, relativePath) => {
+    this.safeHandle('sync:download-image', async (_event, relativePath) => {
       if (!this.v3SyncService || !this.v3SyncService.isEnabled) {
         return { success: false, error: '同步服务未启用' };
       }
@@ -241,7 +231,7 @@ class SyncIPCHandler {
     });
 
     // 上传图片（从本地上传到云端）
-    this.safeHandle('sync:upload-image', async (event, localPath, relativePath) => {
+    this.safeHandle('sync:upload-image', async (_event, localPath, relativePath) => {
       if (!this.v3SyncService || !this.v3SyncService.isEnabled) {
         return { success: false, error: '同步服务未启用' };
       }
@@ -256,12 +246,12 @@ class SyncIPCHandler {
     });
 
     // 获取未使用图片统计
-    this.safeHandle('sync:get-unused-images-stats', async (event, retentionDays) => {
+    this.safeHandle('sync:get-unused-images-stats', async (_event, retentionDays) => {
       return await this.v3SyncService.getUnusedImagesStats(retentionDays || 30);
     });
 
     // 清理未使用图片
-    this.safeHandle('sync:cleanup-unused-images', async (event, retentionDays) => {
+    this.safeHandle('sync:cleanup-unused-images', async (_event, retentionDays) => {
       return await this.v3SyncService.cleanupUnusedImages(retentionDays || 30);
     });
 

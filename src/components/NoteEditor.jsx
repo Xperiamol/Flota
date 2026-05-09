@@ -8,11 +8,15 @@ import {
   IconButton,
   Tooltip,
   Divider,
+  Popover,
+  Stack,
+  Chip,
   Alert,
   Snackbar
 } from '@mui/material'
 import {
   AutoMode as AutoSaveIcon,
+  InfoOutlined as RelatedIcon,
   PushPin as PinIcon,
   PushPinOutlined as PinOutlinedIcon,
   Tag as TagIcon,
@@ -25,7 +29,8 @@ import {
   Code as CodeIcon,
   GetApp as GetAppIcon,
   CheckCircle as CheckCircleIcon,
-  Error as ErrorIcon
+  Error as ErrorIcon,
+  Close as CloseIcon
 } from '@mui/icons-material'
 import { useStore } from '../store/useStore'
 import { useStandaloneContext } from './StandaloneProvider'
@@ -40,6 +45,7 @@ import WhiteboardEditor from './WhiteboardEditor'
 import NoteTypeConversionDialog from './NoteTypeConversionDialog'
 import WYSIWYGEditor from './WYSIWYGEditor'
 import AIAssistPanel from './AIAssistPanel'
+import RelatedContextPanel from './RelatedContextPanel'
 import { useDebouncedSave } from '../hooks/useDebouncedSave'
 import { imageAPI } from '../api/imageAPI'
 import { convertMarkdownToWhiteboard, convertWhiteboardToMarkdown, extractImageUrls } from '../utils/markdownToWhiteboardConverter'
@@ -101,12 +107,16 @@ const NoteEditor = () => {
   const [showToolbar, setShowToolbar] = useState(!isStandaloneMode && !minibarMode) // 独立窗口或minibar模式默认隐藏工具栏
   const [wikiLinkError, setWikiLinkError] = useState('') // wiki 链接错误提示
   const [isOpenInStandaloneWindow, setIsOpenInStandaloneWindow] = useState(false) // 是否在独立窗口中打开
+  const [relatedAnchorEl, setRelatedAnchorEl] = useState(null)
   const contentRef = useRef(null)
   const titleRef = useRef(null)
   const toolbarTimeoutRef = useRef(null)
   const wysiwygEditorRef = useRef(null)
+  // WYSIWYG editor 实例存到 state，避免 ref 在首次渲染时为 null 导致工具栏拿不到
+  const [wysiwygEditor, setWysiwygEditor] = useState(null)
 
   const currentNote = notes.find(note => note.id === selectedNoteId)
+  const selectedNoteIdRef = useRef(selectedNoteId)
   const prevNoteIdRef = useRef(null)
   const prevStateRef = useRef({ title: '', content: '', tags: '', noteType: 'markdown' })
   const hasUnsavedChangesRef = useRef(false)
@@ -124,27 +134,33 @@ const NoteEditor = () => {
     return result
   }
 
+  const createSavePayload = (state) => ({
+    title: (state.title || '').trim() || '无标题',
+    content: state.content || '',
+    tags: formatTags(parseTags(state.tags || '')),
+    note_type: state.noteType || 'markdown'
+  })
+
   // 保存函数（稳定引用，带重试机制和队列管理）
   const performSave = async (retries = 3) => {
-    if (!selectedNoteId) return
+    const noteId = selectedNoteId
+    if (!noteId) return
+
+    const stateToSave = createSavePayload({ ...prevStateRef.current })
 
     // 使用保存队列避免并发冲突
-    return saveQueue.add(selectedNoteId, async () => {
+    return saveQueue.add(noteId, async () => {
       setIsAutoSaving(true)
       
       for (let attempt = 0; attempt < retries; attempt++) {
         try {
-          const tagsArray = parseTags(prevStateRef.current.tags)
-          const result = ensureUpdateSucceeded(await updateNote(selectedNoteId, {
-            title: prevStateRef.current.title.trim() || '无标题',
-            content: prevStateRef.current.content,
-            tags: formatTags(tagsArray),
-            note_type: prevStateRef.current.noteType
-          }))
+          const result = ensureUpdateSucceeded(await updateNote(noteId, stateToSave))
           const persistedSavedAt = getSavedAtFromUpdateResult(result)
           setLastSaved(persistedSavedAt || currentNote?.updated_at || currentNote?.created_at || null)
-          setHasUnsavedChanges(false)
-          hasUnsavedChangesRef.current = false
+          if (selectedNoteIdRef.current === noteId) {
+            setHasUnsavedChanges(false)
+            hasUnsavedChangesRef.current = false
+          }
           setShowSaveError(false)
           logger.log('[NoteEditor] 自动保存成功')
           setIsAutoSaving(false)
@@ -220,6 +236,10 @@ const NoteEditor = () => {
     hasUnsavedChangesRef.current = hasUnsavedChanges
   }, [hasUnsavedChanges])
 
+  useEffect(() => {
+    selectedNoteIdRef.current = selectedNoteId
+  }, [selectedNoteId])
+
   // 第一步：在切换笔记前保存旧笔记
   useEffect(() => {
     // 只在 selectedNoteId 真正变化时才执行
@@ -227,12 +247,7 @@ const NoteEditor = () => {
       // 检查是否有未保存的更改
       if (hasUnsavedChangesRef.current) {
         const oldNoteId = prevNoteIdRef.current
-        const stateToSave = {
-          title: prevStateRef.current.title.trim() || '无标题',
-          content: prevStateRef.current.content,
-          tags: formatTags(parseTags(prevStateRef.current.tags)),
-          note_type: prevStateRef.current.noteType
-        }
+        const stateToSave = createSavePayload({ ...prevStateRef.current })
 
         // 先取消当前的防抖保存
         cancelSave()
@@ -260,14 +275,10 @@ const NoteEditor = () => {
     if (prevView === 'notes' && currentView !== 'notes' && selectedNoteId && hasUnsavedChangesRef.current) {
       logger.log('[NoteEditor] 切换视图前保存笔记，从', prevView, '切换到', currentView)
       cancelSave()
-      saveQueue.add(selectedNoteId, async () => {
-        const stateToSave = {
-          title: prevStateRef.current.title.trim() || '无标题',
-          content: prevStateRef.current.content,
-          tags: formatTags(parseTags(prevStateRef.current.tags)),
-          note_type: prevStateRef.current.noteType
-        }
-        await updateNote(selectedNoteId, stateToSave)
+      const noteId = selectedNoteId
+      const stateToSave = createSavePayload({ ...prevStateRef.current })
+      saveQueue.add(noteId, async () => {
+        await updateNote(noteId, stateToSave)
       }).catch(error => {
         console.error('[NoteEditor] 切换视图时保存失败:', error)
       })
@@ -299,12 +310,12 @@ const NoteEditor = () => {
     checkWindowStatus()
 
     // 通过 IPC 事件驱动更新，替代 2 秒轮询
-    const unsubCreated = window.electronAPI?.onWindowCreated?.((data) => {
+    const unsubCreated = window.electronAPI?.window?.onWindowCreated?.((data) => {
       if (data?.noteId == selectedNoteId) {
         setIsOpenInStandaloneWindow(true)
       }
     })
-    const unsubClosed = window.electronAPI?.onWindowClosed?.((data) => {
+    const unsubClosed = window.electronAPI?.window?.onWindowClosed?.((data) => {
       if (data?.noteId == selectedNoteId) {
         setIsOpenInStandaloneWindow(false)
       }
@@ -404,13 +415,16 @@ const NoteEditor = () => {
     return () => {
       shortcutManager.unregisterListener(document)
 
-      // 组件卸载时立即保存
-      if (hasUnsavedChangesRef.current && selectedNoteId) {
-        const tagsArray = parseTags(prevStateRef.current.tags)
-        updateNote(selectedNoteId, {
-          title: prevStateRef.current.title.trim() || '无标题',
-          content: prevStateRef.current.content,
-          tags: formatTags(tagsArray)
+      // 组件卸载时立即保存（使用 ref 拿到最新值，避免闭包过期）
+      const noteId = selectedNoteIdRef.current
+      if (hasUnsavedChangesRef.current && noteId) {
+        const snapshot = prevStateRef.current
+        const tagsArray = parseTags(snapshot.tags)
+        updateNote(noteId, {
+          title: (snapshot.title || '').trim() || '无标题',
+          content: snapshot.content,
+          tags: formatTags(tagsArray),
+          note_type: snapshot.noteType || 'markdown'
         }).catch(error => {
           console.error('组件卸载时保存失败:', error)
         })
@@ -527,6 +541,14 @@ const NoteEditor = () => {
     if (selectedNoteId) {
       await togglePinNote(selectedNoteId)
     }
+  }
+
+  const handleToggleRelatedContext = (event) => {
+    setRelatedAnchorEl((prev) => (prev ? null : event.currentTarget))
+  }
+
+  const handleCloseRelatedContext = () => {
+    setRelatedAnchorEl(null)
   }
 
   // 处理 wiki 链接点击
@@ -1381,6 +1403,28 @@ const NoteEditor = () => {
     return isDark ? values.dark : values.light
   }
 
+  const relatedOpen = Boolean(relatedAnchorEl)
+  const noteTags = parseTags(tags)
+  const plainContent = String(content || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/!\[[^\]]*]\([^)]+\)/g, ' ')
+    .replace(/\[[^\]]+]\([^)]+\)/g, ' ')
+    .replace(/[#>*_`~|=-]/g, ' ')
+  const latinWordCount = (plainContent.match(/[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)?/g) || []).length
+  const cjkCharCount = (plainContent.match(/[\u4e00-\u9fa5]/g) || []).length
+  const wordCount = latinWordCount + cjkCharCount
+  const charCount = String(content || '').length
+  const noteCreatedAt = currentNote?.created_at || currentNote?.createdAt
+  const noteUpdatedAt = lastSaved || currentNote?.updated_at || currentNote?.updatedAt || noteCreatedAt
+  const noteMetaItems = [
+    { label: '类型', value: noteType === 'whiteboard' ? '白板' : editorMode === 'wysiwyg' ? '所见即所得' : 'Markdown' },
+    { label: '字数', value: `${wordCount} 字` },
+    { label: '字符', value: `${charCount} 个` },
+    { label: '创建', value: formatLastSaved(noteCreatedAt) || '未知' },
+    { label: '更新', value: formatLastSaved(noteUpdatedAt) || '未知' },
+    { label: '状态', value: currentNote?.is_pinned ? '已置顶' : hasUnsavedChanges ? '有未保存更改' : '已保存' },
+  ]
+
   return (
     <Box
       sx={(theme) => {
@@ -1462,15 +1506,53 @@ const NoteEditor = () => {
             </Box>
           ) : hasUnsavedChanges ? (
             <Box sx={{
-              display: 'inline-flex', alignItems: 'center', gap: 0.5,
-              px: 1, py: 0.35, borderRadius: '999px',
-              bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(245, 158, 11, 0.14)',
-              color: 'warning.main',
-              maxWidth: '100%'
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 0.75,
+              px: 1,
+              py: 0.35,
+              borderRadius: '999px',
+              bgcolor: (theme) => theme.palette.mode === 'dark'
+                ? 'rgba(96, 165, 250, 0.14)'
+                : 'rgba(59, 130, 246, 0.10)',
+              color: 'text.secondary',
+              maxWidth: '100%',
+              '@keyframes gentleBounce': {
+                '0%, 80%, 100%': {
+                  transform: 'translateY(0)',
+                  opacity: 0.45
+                },
+                '40%': {
+                  transform: 'translateY(-2px)',
+                  opacity: 1
+                }
+              }
             }}>
-              <EditIcon sx={{ fontSize: 16, color: 'warning.main' }} />
-              <Typography variant="caption" sx={{ fontWeight: 600, color: 'warning.main', whiteSpace: 'nowrap' }}>
-                {t('common.unsavedChanges')}
+              <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: '3px', pl: 0.125 }}>
+                {[0, 1, 2].map((index) => (
+                  <Box
+                    key={index}
+                    sx={{
+                      width: 4,
+                      height: 4,
+                      borderRadius: '50%',
+                      bgcolor: 'primary.main',
+                      opacity: 0.45,
+                      animation: 'gentleBounce 1.2s ease-in-out infinite',
+                      animationDelay: `${index * 0.14}s`,
+                    }}
+                  />
+                ))}
+              </Box>
+              <Typography
+                variant="caption"
+                sx={{
+                  fontWeight: 500,
+                  color: 'text.secondary',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {t('common.editing')}
               </Typography>
             </Box>
           ) : lastSaved ? (
@@ -1570,6 +1652,22 @@ const NoteEditor = () => {
               ) : (
                 <PinOutlinedIcon sx={{ fontSize: 18 }} />
               )}
+            </IconButton>
+          </Tooltip>
+
+          <Tooltip title={relatedOpen ? '隐藏笔记详情' : '显示笔记详情'}>
+            <IconButton
+              onClick={handleToggleRelatedContext}
+              size="small"
+              sx={{
+                borderRadius: '8px',
+                color: relatedOpen ? 'primary.main' : 'text.secondary',
+                bgcolor: relatedOpen
+                  ? (theme) => theme.palette.mode === 'dark' ? 'rgba(96,165,250,0.16)' : 'rgba(25,118,210,0.1)'
+                  : 'transparent',
+              }}
+            >
+              <RelatedIcon sx={{ fontSize: 18 }} />
             </IconButton>
           </Tooltip>
 
@@ -1710,7 +1808,7 @@ const NoteEditor = () => {
                 disabled={!selectedNoteId || (editorMode === 'markdown' && viewMode === 'preview')}
                 viewMode={editorMode === 'wysiwyg' ? null : viewMode}
                 onViewModeChange={editorMode === 'wysiwyg' ? null : setViewMode}
-                editor={wysiwygEditorRef.current?.getEditor?.()}
+                editor={wysiwygEditor}
                 editorMode={editorMode}
               />
             </Box>
@@ -1735,12 +1833,23 @@ const NoteEditor = () => {
                   if (e.defaultPrevented) return
                   e.preventDefault()
                   e.stopPropagation()
-                  wysiwygEditorRef.current?.insertImageFiles(imageFiles)
+                  // 计算鼠标落点对应的文档位置
+                  let dropPos
+                  try {
+                    const view = wysiwygEditor?.view
+                    const coords = view?.posAtCoords({ left: e.clientX, top: e.clientY })
+                    if (coords) dropPos = coords.pos
+                  } catch {
+                    /* 边界异常，回退到当前光标 */
+                  }
+                  wysiwygEditorRef.current?.insertImageFiles(imageFiles, dropPos)
                 }}
               >
                 <WYSIWYGEditor
                   ref={wysiwygEditorRef}
+                  noteId={selectedNoteId}
                   content={content}
+                  onEditorReady={setWysiwygEditor}
                   onChange={(newContent) => {
                     setContent(newContent)
                     setHasUnsavedChanges(true)
@@ -1808,6 +1917,13 @@ const NoteEditor = () => {
                         boxSizing: 'border-box',
                         ...scrollbar.default,
                       },
+                      // 防止超长无断词文本撑破布局；textarea 本身允许换行，但无空格长串会导致横向溢出
+                      '& .MuiInputBase-inputMultiline': {
+                        overflowWrap: 'anywhere',
+                        wordBreak: 'break-word',
+                        whiteSpace: 'pre-wrap',
+                        maxWidth: '100%',
+                      },
                     }}
                   />
                 </Box>
@@ -1861,6 +1977,116 @@ const NoteEditor = () => {
           </Box>
         )}
       </Box>
+
+      <Popover
+        open={relatedOpen}
+        anchorEl={relatedAnchorEl}
+        onClose={handleCloseRelatedContext}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        slotProps={{
+          paper: {
+            sx: (theme) => ({
+              mt: 0.75,
+              width: 336,
+              maxWidth: 'calc(100vw - 32px)',
+              borderRadius: '14px',
+              overflow: 'hidden',
+              border: '1px solid',
+              borderColor: theme.palette.mode === 'dark'
+                ? 'rgba(148, 163, 184, 0.18)'
+                : 'rgba(148, 163, 184, 0.24)',
+              bgcolor: theme.palette.mode === 'dark'
+                ? 'rgba(15, 23, 42, 0.78)'
+                : 'rgba(255, 255, 255, 0.78)',
+              backdropFilter: 'blur(18px) saturate(160%)',
+              WebkitBackdropFilter: 'blur(18px) saturate(160%)',
+              boxShadow: '0 18px 56px rgba(15, 23, 42, 0.22), 0 4px 16px rgba(15, 23, 42, 0.10)',
+              backgroundClip: 'padding-box',
+            })
+          }
+        }}
+      >
+        <Box sx={{ p: 0.55 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1.25, pt: 0.7, pb: 0.35 }}>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.04em', color: 'text.disabled' }}>
+                笔记详情
+              </Typography>
+              <Typography noWrap sx={{ fontSize: 13, fontWeight: 650, mt: 0.25 }}>
+                {currentNote?.title || '未命名'}
+              </Typography>
+            </Box>
+            <Tooltip title="关闭详情">
+              <IconButton size="small" onClick={handleCloseRelatedContext} sx={{ borderRadius: '8px', p: 0.55 }}>
+                <CloseIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
+          </Box>
+
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+              columnGap: 1,
+              rowGap: 0,
+              px: 0.65,
+              py: 0.25,
+            }}
+          >
+            {noteMetaItems.map((item, index) => (
+              <Box
+                key={item.label}
+                sx={{
+                  minWidth: 0,
+                  px: 0.45,
+                  py: 0.55,
+                  borderTop: index > 1 ? '1px solid' : 0,
+                  borderColor: 'divider',
+                }}
+              >
+                <Typography color="text.disabled" sx={{ fontSize: 10.5, fontWeight: 700, mb: 0.1 }}>
+                  {item.label}
+                </Typography>
+                <Typography noWrap sx={{ fontSize: 12.5, fontWeight: 650 }}>
+                  {item.value}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+
+          {noteTags.length > 0 && (
+            <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap" sx={{ mt: 0.7, px: 0.15 }}>
+              {noteTags.slice(0, 8).map((tag) => (
+                <Chip
+                  key={tag}
+                  label={`#${tag}`}
+                  size="small"
+                  variant="outlined"
+                  sx={{ height: 21, borderRadius: '7px', fontSize: 11.5, fontWeight: 650 }}
+                />
+              ))}
+            </Stack>
+          )}
+        </Box>
+
+        <Divider sx={{ opacity: 0.7 }} />
+
+        <RelatedContextPanel
+          embedded
+          forceExpanded
+          notes={notes}
+          selectedNoteId={selectedNoteId}
+          onSelectNote={(noteId) => {
+            store.setSelectedNoteId(noteId)
+            handleCloseRelatedContext()
+          }}
+          onOpenTodo={() => {
+            store.setCurrentView?.('todo')
+            handleCloseRelatedContext()
+          }}
+        />
+      </Popover>
 
       {/* 保存成功提示 */}
       <Snackbar

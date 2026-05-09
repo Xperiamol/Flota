@@ -20,6 +20,7 @@ import {
   CheckCircleOutline,
 } from '@mui/icons-material'
 import { getDisplayCategories } from './pluginUtils'
+import { createSoftGlassCardSx } from '../styles/commonStyles'
 
 const PluginCard = ({
   plugin,
@@ -40,26 +41,13 @@ const PluginCard = ({
 
   return (
     <Card
-      variant="outlined"
       sx={(muiTheme) => ({
-        position: 'relative',
+        // 复用个人中心同款 soft-glass 卡片样式（含 hover 反馈与顶部渐变细条）
+        ...createSoftGlassCardSx(muiTheme.palette.primary.main)(muiTheme),
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        backgroundColor: muiTheme.palette.mode === 'dark'
-          ? 'rgba(30, 41, 59, 0.85)'
-          : 'rgba(255, 255, 255, 0.85)',
-        backdropFilter: 'blur(12px) saturate(150%)',
-        WebkitBackdropFilter: 'blur(12px) saturate(150%)',
-        transition: 'border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease',
-        '&:hover': {
-          borderColor: 'primary.main',
-          boxShadow: muiTheme.palette.mode === 'dark'
-            ? '0 8px 32px rgba(0, 0, 0, 0.3)'
-            : '0 8px 32px rgba(0, 0, 0, 0.1)',
-          transform: 'translateY(-2px)',
-          cursor: 'pointer'
-        }
+        cursor: 'pointer',
       })}
       onClick={() => onSelect(plugin.id)}
     >

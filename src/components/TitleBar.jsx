@@ -10,6 +10,7 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
   const theme = useTheme();
   const { t } = useTranslation();
   const { currentView, titleBarStyle } = useStore();
+  const isMac = titleBarStyle === 'mac';
 
   // 根据当前视图获取对应的标题
   const getViewTitle = () => {
@@ -85,7 +86,11 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
         <Box
           sx={{
             position: 'absolute',
-            left: titleBarStyle === 'mac' ? '72px' : '12px',
+            // macOS 左上角为系统窗口控制区域，minibar 需要避开该区域
+            left: isMac ? '80px' : '12px',
+            top: '50%',
+            // macOS 下向下微调一点，避免贴得太上
+            transform: isMac ? 'translateY(calc(-50% + 2px))' : 'translateY(-50%)',
             WebkitAppRegion: 'no-drag',
           }}
         >
@@ -133,92 +138,8 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
       )}
 
       {titleBarStyle === 'mac' ? (
-        /* Mac风格的窗口控制按钮 - 左侧 */
-        <Box
-          sx={{
-            position: 'absolute',
-            left: '12px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            WebkitAppRegion: 'no-drag',
-          }}
-        >
-          {/* 关闭按钮 - 红色 */}
-          <Tooltip title={t('toolbar.macButtons.close')} placement="bottom">
-            <Box
-              onClick={handleClose}
-              sx={{
-                width: '12px',
-                height: '12px',
-                borderRadius: '50%',
-                backgroundColor: '#ff5f57',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: createTransitionString(ANIMATIONS.button),
-                '&:hover': {
-                  backgroundColor: '#ff3b30',
-                  transform: 'scale(1.1)',
-                },
-                '&:active': {
-                  transform: 'scale(0.95)',
-                },
-              }}
-            />
-          </Tooltip>
-
-          {/* 最小化按钮 - 黄色 */}
-          <Tooltip title={t('toolbar.macButtons.minimize')} placement="bottom">
-            <Box
-              onClick={handleMinimize}
-              sx={{
-                width: '12px',
-                height: '12px',
-                borderRadius: '50%',
-                backgroundColor: '#ffbd2e',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: createTransitionString(ANIMATIONS.button),
-                '&:hover': {
-                  backgroundColor: '#ff9500',
-                  transform: 'scale(1.1)',
-                },
-                '&:active': {
-                  transform: 'scale(0.95)',
-                },
-              }}
-            />
-          </Tooltip>
-
-          {/* 最大化按钮 - 绿色 */}
-          <Tooltip title={t('toolbar.macButtons.maximize')} placement="bottom">
-            <Box
-              onClick={handleMaximize}
-              sx={{
-                width: '12px',
-                height: '12px',
-                borderRadius: '50%',
-                backgroundColor: '#28ca42',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: createTransitionString(ANIMATIONS.button),
-                '&:hover': {
-                  backgroundColor: '#20a934',
-                  transform: 'scale(1.1)',
-                },
-                '&:active': {
-                  transform: 'scale(0.95)',
-                },
-              }}
-            />
-          </Tooltip>
-        </Box>
+        /* macOS 下不渲染自定义窗口控制按钮（系统自带），避免重复与误导 */
+        null
       ) : (
         /* Windows风格的窗口控制按钮 - 右侧 */
         <Box

@@ -18,7 +18,12 @@ class RepeatUtils {
     }
 
     try {
-      const date = typeof currentDate === 'string' ? parseISO(currentDate) : currentDate;
+      // 关键：先把 UTC/带时区字符串归一化为"本地朴素时间"字符串。
+      // 否则 parseISO(UTC) + addDays + format(本地) 会因为时区差跳过一天
+      // （例如 2026-05-08T18:00:00Z 在 +8 时区其实是 5.9 02:00，
+      //  错误推进会得到 2026-05-11T02:00:00，直接跳过 5.10）。
+      const naive = typeof currentDate === 'string' ? this.toLocalNaive(currentDate) : currentDate;
+      const date = typeof naive === 'string' ? parseISO(naive) : naive;
       if (!isValid(date)) {
         return null;
       }
@@ -109,6 +114,29 @@ class RepeatUtils {
   // ── Schedule model helpers ──────────────────────────────
 
   /**
+   * 把任意 ISO 字符串归一化为"本地朴素时间"字符串（无 Z / 无时区后缀）。
+   * 例如：'2026-05-08T18:00:00.000Z' 在 UTC+8 → '2026-05-09T02:00:00'。
+   * 这样后续的日期算术（按本地天数推进）和输出（按本地 wall clock 格式化）才会一致，
+   * 不会因为时区差额外跳过 1 天。
+   * @param {string} dateStr
+   * @returns {string}
+   */
+  static toLocalNaive(dateStr) {
+    if (!dateStr) return dateStr;
+    // 已是朴素本地格式，直接返回
+    if (!/Z$|[+-]\d{2}:\d{2}$/.test(dateStr)) return dateStr;
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    return `${y}-${m}-${day}T${hh}:${mm}:${ss}`;
+  }
+
+  /**
    * 今天的日期字符串 (YYYY-MM-DD，本地时区)
    * @returns {string}
    */
@@ -159,13 +187,15 @@ class RepeatUtils {
    */
   static adjustOverdueDueDate(dueDate) {
     if (!dueDate) return dueDate;
+    // 先归一化为本地朴素时间，substring(0,10) 才能正确反映"用户视角的日期"
+    const naive = this.toLocalNaive(dueDate);
     const todayStr = this.todayKey();
-    const dueKey = dueDate.substring(0, 10);
+    const dueKey = naive.substring(0, 10);
     if (dueKey < todayStr) {
-      const timePart = dueDate.length > 10 ? dueDate.substring(10) : '';
+      const timePart = naive.length > 10 ? naive.substring(10) : '';
       return todayStr + timePart;
     }
-    return dueDate;
+    return naive;
   }
 
   /**

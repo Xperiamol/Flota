@@ -1,5 +1,4 @@
-import React, { useState, useEffect } from 'react';
-import { useTranslation } from '../utils/i18n';
+import { useState, useEffect } from 'react';
 import { useError } from './ErrorProvider';
 import {
   Box,
@@ -11,10 +10,8 @@ import {
   Select,
   MenuItem,
   FormControl,
-  Alert,
 } from '@mui/material';
 import {
-  Cloud as CloudIcon,
   CheckBox as TodoIcon,
   Settings as SettingsIcon,
   CheckCircle as CheckCircleIcon,
@@ -22,13 +19,11 @@ import {
   CloudOff as CloudOffIcon,
   Image as ImageIcon,
   Tune as TuneIcon,
-  Extension as ExtensionIcon,
   Description as DescriptionIcon,
 } from '@mui/icons-material';
-import { iconWithColor, combo, flex, spacing } from '../styles/commonStyles';
+import { iconWithColor, combo, flex, settingsRowSx, spacing } from '../styles/commonStyles';
 
 const SyncRegistryView = ({ onOpenSettings }) => {
-  const { t } = useTranslation();
   const { showError } = useError();
   const [syncRegistry, setSyncRegistry] = useState([]);
   const [isInitialized, setIsInitialized] = useState(false); // 标记是否已初始化
@@ -107,51 +102,52 @@ const SyncRegistryView = ({ onOpenSettings }) => {
   
   const buildSyncRegistry = () => {
     const { nutcloud, googleCal, googleCalStatus, caldav, caldavStatus } = backendStatus;
+    const nutcloudV3 = nutcloud?.v3;
+    const nutcloudServiceEnabled = !!nutcloudV3?.enabled;
+    const nutcloudAccountConfigured = !!nutcloudV3?.accountConfigured;
+
+    const buildNutcloudCategory = ({ id, name, icon, category }) => {
+      const categoryEnabled = nutcloudV3?.config?.syncCategories?.includes(category) || false;
+      return {
+        id,
+        name,
+        icon,
+        type: 'nutcloud-category',
+        category,
+        selectedProvider: 'nutcloud',
+        availableProviders: [
+          { id: 'nutcloud', name: '坚果云' },
+        ],
+        enabled: nutcloudServiceEnabled && categoryEnabled,
+        categoryEnabled,
+        serviceEnabled: nutcloudServiceEnabled,
+        accountConfigured: nutcloudAccountConfigured,
+        controlDisabled: !nutcloudServiceEnabled,
+        status: nutcloudV3?.status || 'idle',
+        lastSync: nutcloudV3?.lastSyncTime || null,
+        error: nutcloudV3?.lastError || null,
+      };
+    };
     
     const registry = [
-      {
+      buildNutcloudCategory({
         id: 'notes',
         name: '笔记',
         icon: <DescriptionIcon />,
-        type: 'nutcloud-category',
         category: 'notes',
-        selectedProvider: 'nutcloud',
-        availableProviders: [
-          { id: 'nutcloud', name: '坚果云' },
-        ],
-        enabled: nutcloud?.v3?.config?.syncCategories?.includes('notes') || false,
-        status: nutcloud?.v3?.status || 'idle',
-        lastSync: nutcloud?.v3?.lastSyncTime || null,
-        error: nutcloud?.v3?.lastError || null,
-      },
-      {
+      }),
+      buildNutcloudCategory({
         id: 'images',
         name: '图片',
         icon: <ImageIcon />,
-        type: 'nutcloud-category',
         category: 'images',
-        selectedProvider: 'nutcloud',
-        availableProviders: [
-          { id: 'nutcloud', name: '坚果云' },
-        ],
-        enabled: nutcloud?.v3?.config?.syncCategories?.includes('images') || false,
-        status: nutcloud?.v3?.status || 'idle',
-        lastSync: nutcloud?.v3?.lastSyncTime || null,
-      },
-      {
+      }),
+      buildNutcloudCategory({
         id: 'settings',
         name: '设置项',
         icon: <TuneIcon />,
-        type: 'nutcloud-category',
         category: 'settings',
-        selectedProvider: 'nutcloud',
-        availableProviders: [
-          { id: 'nutcloud', name: '坚果云' },
-        ],
-        enabled: nutcloud?.v3?.config?.syncCategories?.includes('settings') || false,
-        status: nutcloud?.v3?.status || 'idle',
-        lastSync: nutcloud?.v3?.lastSyncTime || null,
-      },
+      }),
       {
         id: 'todos',
         name: '待办',
@@ -166,18 +162,24 @@ const SyncRegistryView = ({ onOpenSettings }) => {
         category: 'todos',
         // 显示当前选中服务的状态
         enabled: providerSelections.todos === 'nutcloud'
-          ? (nutcloud?.v3?.config?.syncCategories?.includes('todos') || false)
+          ? (nutcloudServiceEnabled && (nutcloudV3?.config?.syncCategories?.includes('todos') || false))
           : providerSelections.todos === 'google-calendar' 
           ? (googleCal?.data?.enabled || false)
           : (caldav?.data?.enabled || false),
+        categoryEnabled: providerSelections.todos === 'nutcloud'
+          ? (nutcloudV3?.config?.syncCategories?.includes('todos') || false)
+          : undefined,
+        serviceEnabled: providerSelections.todos === 'nutcloud' ? nutcloudServiceEnabled : true,
+        accountConfigured: providerSelections.todos === 'nutcloud' ? nutcloudAccountConfigured : true,
+        controlDisabled: providerSelections.todos === 'nutcloud' && !nutcloudServiceEnabled,
         connected: providerSelections.todos === 'google-calendar' ? googleCal?.data?.connected : undefined,
         status: providerSelections.todos === 'nutcloud'
-          ? (nutcloud?.v3?.status || 'idle')
+          ? (nutcloudV3?.status || 'idle')
           : providerSelections.todos === 'google-calendar'
           ? (googleCalStatus?.data?.syncing ? 'syncing' : 'idle')
           : (caldavStatus?.data?.syncing ? 'syncing' : 'idle'),
         lastSync: providerSelections.todos === 'nutcloud'
-          ? nutcloud?.v3?.lastSyncTime
+          ? nutcloudV3?.lastSyncTime
           : providerSelections.todos === 'google-calendar' 
           ? googleCalStatus?.data?.lastSync 
           : caldavStatus?.data?.lastSync,
@@ -308,6 +310,10 @@ const SyncRegistryView = ({ onOpenSettings }) => {
   };
 
   const getStatusIcon = (item) => {
+    if (item.selectedProvider === 'nutcloud' && !item.serviceEnabled) {
+      return <CloudOffIcon sx={item.accountConfigured ? iconWithColor.warning : iconWithColor.disabled} />;
+    }
+
     if (!item.enabled) {
       return <CloudOffIcon sx={iconWithColor.disabled} />;
     }
@@ -328,8 +334,12 @@ const SyncRegistryView = ({ onOpenSettings }) => {
   };
 
   const getStatusText = (item) => {
+    if (item.selectedProvider === 'nutcloud' && !item.serviceEnabled) {
+      return item.accountConfigured ? '坚果云已停用' : '坚果云未配置';
+    }
+
     if (!item.enabled) {
-      return '未启用';
+      return '未参与同步';
     }
 
     if (item.selectedProvider === 'google-calendar' && !item.connected) {
@@ -362,28 +372,34 @@ const SyncRegistryView = ({ onOpenSettings }) => {
 
   return (
     <Box>
-      <Typography variant="h6" sx={spacing.mb3}>
+      <Typography variant="h6" sx={{ mb: 0.5 }}>
         同步总览
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={spacing.mb3}>
+        这里的开关只控制各数据类型是否参与同步；账号启停、自动同步和密码请进入对应服务设置。
       </Typography>
       
       <List disablePadding>
-        {syncRegistry.map((item, index) => (
+        {syncRegistry.map((item) => (
           <ListItem
             key={item.id}
-            sx={{
-              border: '1px solid',
-              borderColor: 'divider',
-              borderRadius: 1,
+            sx={(theme) => ({
+              ...settingsRowSx(theme),
               mb: 1.5,
               display: 'flex',
               alignItems: 'center',
               gap: 2,
               py: 2,
               px: 2.5,
+              bgcolor: theme.palette.mode === 'dark'
+                ? 'rgba(255,255,255,0.06)'
+                : 'rgba(255,255,255,0.78)',
               '&:hover': {
-                bgcolor: 'action.hover',
+                bgcolor: theme.palette.mode === 'dark'
+                  ? 'rgba(255,255,255,0.085)'
+                  : 'rgba(255,255,255,0.9)',
               },
-            }}
+            })}
           >
             {/* 图标 */}
             <Box 
@@ -444,11 +460,11 @@ const SyncRegistryView = ({ onOpenSettings }) => {
                 ml: 'auto',
               }}
             >
-              {/* 启用开关 */}
+              {/* 数据类型同步开关，不是账号总开关 */}
               <Switch
-                size="small"
                 checked={item.enabled}
                 onChange={() => handleToggleEnabled(item)}
+                disabled={item.controlDisabled}
               />
 
               {/* 设置按钮 */}

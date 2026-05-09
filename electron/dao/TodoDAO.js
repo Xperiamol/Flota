@@ -355,11 +355,15 @@ class TodoDAO {
       }
     }
 
-    // 如果提供了 updated_at（同步时），使用提供的值；否则使用当前时间
-    if (updated_at !== undefined) {
+    // updated_at 处理策略：
+    // - 显式传入有效值 → 使用该值
+    // - 同步场景 (skipChangeLog=true) 但未传 → 不修改 updated_at，保持原值
+    //   （避免同步路径下因字段缺失而把 updated_at 误覆盖为 CURRENT_TIMESTAMP）
+    // - 普通场景未传 → 使用 CURRENT_TIMESTAMP（用户编辑自动刷新时间）
+    if (updated_at !== undefined && updated_at !== null) {
       updateFields.push('updated_at = ?');
       params.push(updated_at);
-    } else {
+    } else if (!skipChangeLog) {
       updateFields.push('updated_at = CURRENT_TIMESTAMP');
     }
     params.push(id);

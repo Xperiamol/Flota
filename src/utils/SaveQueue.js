@@ -19,8 +19,14 @@ class SaveQueue {
    * @returns {Promise} 保存完成的Promise
    */
   async add(id, saveFunc) {
-    // 如果该ID已经在队列中，移除旧的任务
-    this.queue = this.queue.filter(task => task.id !== id);
+    // 如果该ID已经在队列中，用最新快照替换旧任务，并释放旧 Promise。
+    this.queue = this.queue.filter(task => {
+      if (task.id === id) {
+        task.resolve({ cancelled: true });
+        return false;
+      }
+      return true;
+    });
 
     // 创建新的保存任务
     const task = {

@@ -5,6 +5,7 @@
 
 const { EventEmitter } = require('events');
 const { getInstance: getLogger } = require('./LoggerService');
+const { encryptValue, decryptValue } = require('../utils/secureValue');
 
 class AIService extends EventEmitter {
   constructor(settingDAO) {
@@ -138,7 +139,7 @@ class AIService extends EventEmitter {
       const config = {
         enabled: enabledSetting ? enabledSetting.value : false,
         provider: providerSetting ? providerSetting.value : 'openai',
-        apiKey: apiKeySetting ? apiKeySetting.value : '',
+        apiKey: apiKeySetting ? decryptValue(apiKeySetting.value) : '',
         apiUrl: apiUrlSetting ? apiUrlSetting.value : '',
         model: modelSetting ? modelSetting.value : 'gpt-3.5-turbo',
         temperature: temperatureSetting ? temperatureSetting.value : 0.7,
@@ -168,7 +169,7 @@ class AIService extends EventEmitter {
       // 使用 SettingDAO.set() 方法，让DAO自己处理类型转换
       this.settingDAO.set('ai_enabled', enabled, 'boolean', 'AI功能开关');
       this.settingDAO.set('ai_provider', provider, 'string', 'AI服务提供商');
-      this.settingDAO.set('ai_api_key', apiKey, 'string', 'AI API密钥');
+      this.settingDAO.set('ai_api_key', encryptValue(apiKey), 'string', 'AI API密钥');
       this.settingDAO.set('ai_api_url', apiUrl || '', 'string', '自定义API地址');
       this.settingDAO.set('ai_model', model, 'string', 'AI模型');
       this.settingDAO.set('ai_temperature', temperature, 'number', '温度参数');

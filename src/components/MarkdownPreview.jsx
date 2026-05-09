@@ -1,115 +1,92 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { Box, Typography, Modal, IconButton } from '@mui/material'
-import CloseIcon from '@mui/icons-material/Close'
-import ZoomInIcon from '@mui/icons-material/ZoomIn'
-import ZoomOutIcon from '@mui/icons-material/ZoomOut'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { Box, Typography } from '@mui/material'
 import { scrollbar } from '../styles/commonStyles'
-import { imageAPI } from '../api/imageAPI'
 import { getImageResolver } from '../utils/ImageProtocolResolver'
 import { createMarkdownRenderer } from '../markdown/index.js'
 import { urlToWav } from '../utils/audioCodec'
 import { useError } from './ErrorProvider'
+import ImagePreviewModal, { canvasToPngBlob } from './ImagePreviewModal'
 import '../markdown/markdown.css'
 import 'highlight.js/styles/github.css'
 import logger from '../utils/logger'
 
-// 自定义图片组件 - 支持 app:// 协议和云端图片
-const CustomImage = ({ src, alt, ...props }) => {
-  const [imageSrc, setImageSrc] = useState(src)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(false)
+const ALLOWED_TAGS = new Set([
+  'A', 'ABBR', 'B', 'BLOCKQUOTE', 'BR', 'CODE', 'DEL', 'DIV', 'EM', 'H1', 'H2',
+  'H3', 'H4', 'H5', 'H6', 'HR', 'I', 'IMG', 'INPUT', 'LI', 'MARK', 'OL', 'P',
+  'PRE', 'S', 'SPAN', 'STRONG', 'SUMMARY', 'TABLE', 'TBODY', 'TD', 'TH', 'THEAD',
+  'TR', 'UL', 'DETAILS'
+])
 
-  useEffect(() => {
-    const loadImage = async () => {
-      if (!src) {
-        setLoading(false)
-        setError(true)
-        return
+const ALLOWED_ATTRS = new Set([
+  'alt', 'checked', 'class', 'colspan', 'data-tag', 'data-wiki-section',
+  'data-wiki-target', 'href', 'id', 'rel', 'rowspan', 'src', 'style', 'target',
+  'title', 'type'
+])
+
+const isSafeUrl = (value) => {
+  if (!value) return true
+  return /^(https?:|mailto:|app:|data:image\/|#|\/(?!\/))/i.test(value)
+}
+
+const sanitizeStyle = (style) => {
+  const allowedProps = new Set(['background-color', 'border-left-color', 'color', 'font-weight', 'margin-bottom'])
+  return style
+    .split(';')
+    .map(rule => rule.trim())
+    .filter(Boolean)
+    .filter((rule) => {
+      const [rawProp, ...rawValueParts] = rule.split(':')
+      const prop = rawProp?.trim().toLowerCase()
+      const value = rawValueParts.join(':').trim().toLowerCase()
+      return allowedProps.has(prop) && value && !/url\s*\(|expression\s*\(|javascript:/i.test(value)
+    })
+    .join('; ')
+}
+
+const sanitizeMarkdownHtml = (html) => {
+  const template = document.createElement('template')
+  template.innerHTML = html
+
+  const walk = (node) => {
+    for (const child of [...node.children]) {
+      if (!ALLOWED_TAGS.has(child.tagName)) {
+        child.replaceWith(...child.childNodes)
+        continue
       }
 
-      try {
-        // 使用协议解析器处理所有类型的图片路径
-        const resolver = getImageResolver()
-        const resolvedSrc = await resolver.resolve(src)
+      for (const attr of [...child.attributes]) {
+        const name = attr.name.toLowerCase()
+        const value = attr.value
+        const allowed = ALLOWED_ATTRS.has(name) || name.startsWith('aria-') || name.startsWith('data-')
+        const unsafeHandler = name.startsWith('on')
+        const unsafeUrl = (name === 'href' || name === 'src') && !isSafeUrl(value)
 
-        if (resolvedSrc) {
-          setImageSrc(resolvedSrc)
-          setError(false)
-        } else {
-          setError(true)
+        if (!allowed || unsafeHandler || unsafeUrl) {
+          child.removeAttribute(attr.name)
+        } else if (name === 'style') {
+          const safeStyle = sanitizeStyle(value)
+          if (safeStyle) child.setAttribute('style', safeStyle)
+          else child.removeAttribute('style')
         }
-      } catch (err) {
-        console.error('加载图片失败:', err)
-        setError(true)
-      } finally {
-        setLoading(false)
       }
+
+      if (child.tagName === 'A') {
+        child.setAttribute('rel', 'noopener noreferrer')
+      }
+
+      walk(child)
     }
-
-    loadImage()
-  }, [src])
-
-  if (loading) {
-    return (
-      <span
-        style={{
-          display: 'inline-block',
-          padding: '8px',
-          border: '1px dashed #ccc',
-          borderRadius: '4px',
-          color: '#666'
-        }}
-      >
-        加载中...
-      </span>
-    )
   }
 
-  if (error) {
-    return (
-      <span
-        style={{
-          display: 'inline-block',
-          padding: '8px',
-          border: '1px solid #f44336',
-          borderRadius: '4px',
-          color: '#f44336',
-          backgroundColor: 'rgba(244, 67, 54, 0.1)'
-        }}
-      >
-        图片加载失败: {alt || src}
-      </span>
-    )
-  }
-
-  return (
-    <img
-      src={imageSrc}
-      alt={alt}
-      {...props}
-      style={{
-        maxWidth: '100%',
-        height: 'auto',
-        borderRadius: '4px',
-        ...props.style
-      }}
-      onError={() => setError(true)}
-    />
-  )
+  walk(template.content)
+  return template.innerHTML
 }
 
 const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
   const { showSuccess, showError } = useError()
   const [renderedHTML, setRenderedHTML] = useState('')
-  // 图片预览状态
+  const previewRef = useRef(null)
   const [previewImage, setPreviewImage] = useState(null)
-  const [imageZoom, setImageZoom] = useState(1)
-  // 图片拖动状态
-  const [isDragging, setIsDragging] = useState(false)
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
-  const [imagePosition, setImagePosition] = useState({ x: 0, y: 0 })
-  // 模态框容器引用
-  const modalContainerRef = useRef(null)
 
   // 创建 Markdown 渲染器实例（使用 useMemo 避免重复创建）
   const md = useMemo(() => {
@@ -138,7 +115,7 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
         }
       }
     })
-  }, [onWikiLinkClick, onTagClick])
+  }, [onWikiLinkClick, onTagClick, renderedHTML])
 
   // 渲染 Markdown 内容
   useEffect(() => {
@@ -148,11 +125,11 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
     }
 
     try {
-      const html = md.render(content)
+      const html = sanitizeMarkdownHtml(md.render(content))
       setRenderedHTML(html)
     } catch (error) {
       console.error('Markdown 渲染失败:', error)
-      setRenderedHTML(`<div style="color: red;">渲染失败: ${error.message}</div>`)
+      setRenderedHTML('<div class="markdown-render-error">渲染失败</div>')
     }
   }, [content, md])
 
@@ -195,7 +172,7 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
       }
     }
 
-    const previewElement = document.querySelector('.markdown-preview-content')
+    const previewElement = previewRef.current
     if (previewElement) {
       previewElement.addEventListener('click', handleClick)
       return () => {
@@ -207,7 +184,7 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
   // 处理图片加载
   useEffect(() => {
     const loadImages = async () => {
-      const previewElement = document.querySelector('.markdown-preview-content')
+      const previewElement = previewRef.current
       if (!previewElement) return
 
       const images = previewElement.querySelectorAll('img')
@@ -440,15 +417,9 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
             canvas.height = img.naturalHeight
             const ctx = canvas.getContext('2d')
             ctx.drawImage(img, 0, 0)
-            
-            canvas.toBlob(async (blob) => {
-              await navigator.clipboard.write([
-                new ClipboardItem({
-                  'image/png': blob
-                })
-              ])
-              showSuccess('图片已复制到剪贴板')
-            })
+            const blob = await canvasToPngBlob(canvas)
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+            showSuccess('图片已复制到剪贴板')
           } catch (fallbackError) {
             console.error('备用复制方法也失败:', fallbackError)
             showError(fallbackError, '复制图片失败')
@@ -457,7 +428,7 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
       }
     }
 
-    const previewElement = document.querySelector('.markdown-preview-content')
+    const previewElement = previewRef.current
     if (previewElement) {
       previewElement.addEventListener('contextmenu', handleImageContextMenu)
       return () => {
@@ -474,11 +445,10 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
         e.preventDefault()
         e.stopPropagation()
         setPreviewImage(target.src)
-        setImageZoom(1)
       }
     }
 
-    const previewElement = document.querySelector('.markdown-preview-content')
+    const previewElement = previewRef.current
     if (previewElement) {
       previewElement.addEventListener('dblclick', handleImageDoubleClick)
       return () => {
@@ -486,91 +456,6 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
       }
     }
   }, [renderedHTML])
-
-  // 关闭图片预览
-  const handleClosePreview = () => {
-    setPreviewImage(null)
-    setImageZoom(1)
-    setImagePosition({ x: 0, y: 0 })
-    setIsDragging(false)
-  }
-
-  // 图片缩放
-  const handleZoomIn = () => {
-    setImageZoom(prev => Math.min(prev + 0.25, 3))
-  }
-
-  const handleZoomOut = () => {
-    setImageZoom(prev => Math.max(prev - 0.25, 0.5))
-    // 缩小时重置位置
-    if (imageZoom <= 1) {
-      setImagePosition({ x: 0, y: 0 })
-    }
-  }
-
-  // 图片拖动处理
-  const handleMouseDown = (e) => {
-    if (imageZoom > 1) {
-      e.preventDefault()
-      setIsDragging(true)
-      setDragStart({
-        x: e.clientX - imagePosition.x,
-        y: e.clientY - imagePosition.y
-      })
-    }
-  }
-
-  const handleMouseMove = (e) => {
-    if (isDragging && imageZoom > 1) {
-      setImagePosition({
-        x: e.clientX - dragStart.x,
-        y: e.clientY - dragStart.y
-      })
-    }
-  }
-
-  const handleMouseUp = () => {
-    setIsDragging(false)
-  }
-
-  // 滚轮缩放 - 使用 useCallback 以便在 useEffect 中使用
-  const handleWheel = useCallback((e) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (e.deltaY < 0) {
-      setImageZoom(prev => Math.min(prev + 0.1, 3))
-    } else {
-      setImageZoom(prev => {
-        const newZoom = Math.max(prev - 0.1, 0.5)
-        if (newZoom <= 1) {
-          setImagePosition({ x: 0, y: 0 })
-        }
-        return newZoom
-      })
-    }
-  }, [])
-
-  // 使用回调 ref 来确保在 DOM 元素可用时立即绑定事件
-  const setModalRef = useCallback((node) => {
-    // 清理旧的监听器
-    if (modalContainerRef.current) {
-      modalContainerRef.current.removeEventListener('wheel', handleWheel)
-    }
-    
-    // 保存新的引用
-    modalContainerRef.current = node
-    
-    // 添加新的监听器
-    if (node) {
-      node.addEventListener('wheel', handleWheel, { passive: false })
-    }
-  }, [handleWheel])
-
-  // 重置缩放和位置
-  const handleResetZoom = () => {
-    setImageZoom(1)
-    setImagePosition({ x: 0, y: 0 })
-  }
 
   if (!content || content.trim() === '') {
     return (
@@ -594,6 +479,7 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
   return (
   <>
     <Box
+      ref={previewRef}
       className="markdown-preview-content"
       sx={{
         height: '100%',
@@ -633,6 +519,19 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
         '& p': {
           marginBottom: 1,
           lineHeight: 1.6
+        },
+        '& a': {
+          color: (theme) => (theme.palette.mode === 'dark' ? theme.palette.primary.light : theme.palette.primary.main),
+          textDecoration: 'underline',
+          textUnderlineOffset: '2px',
+          textDecorationThickness: 'from-font',
+          wordBreak: 'break-all',
+        },
+        '& a:visited': {
+          color: (theme) => (theme.palette.mode === 'dark' ? theme.palette.primary.light : theme.palette.primary.main),
+        },
+        '& a:hover': {
+          textDecorationThickness: '2px',
         },
         '& ul, & ol': {
           paddingLeft: 2,
@@ -709,7 +608,7 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
           objectFit: 'contain',
           display: 'block',
           margin: '8px auto',
-          transition: 'transform 0.2s ease',
+          transition: 'opacity 180ms cubic-bezier(0.32, 0.72, 0, 1)',
           '&:hover': {
             opacity: 0.9
           }
@@ -732,136 +631,7 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
       dangerouslySetInnerHTML={{ __html: renderedHTML }}
     />
 
-    {/* 图片预览模态框 */}
-    <Modal
-      open={!!previewImage}
-      onClose={handleClosePreview}
-      sx={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}
-    >
-      <Box
-        ref={setModalRef}
-        sx={{
-          position: 'relative',
-          width: '100vw',
-          height: '100vh',
-          outline: 'none',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'hidden',
-          cursor: imageZoom > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default'
-        }}
-        onClick={handleClosePreview}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-      >
-        {/* 工具栏 */}
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 16,
-            right: 16,
-            display: 'flex',
-            gap: 1,
-            backgroundColor: 'rgba(0, 0, 0, 0.6)',
-            borderRadius: 2,
-            padding: '4px 8px',
-            zIndex: 10
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <IconButton
-            size="small"
-            onClick={handleZoomOut}
-            sx={{ color: 'white' }}
-            title="缩小 (滚轮下)"
-          >
-            <ZoomOutIcon />
-          </IconButton>
-          <Typography 
-            sx={{ 
-              color: 'white', 
-              lineHeight: '32px', 
-              minWidth: 60, 
-              textAlign: 'center',
-              cursor: 'pointer',
-              '&:hover': { opacity: 0.8 }
-            }}
-            onClick={handleResetZoom}
-            title="点击重置"
-          >
-            {Math.round(imageZoom * 100)}%
-          </Typography>
-          <IconButton
-            size="small"
-            onClick={handleZoomIn}
-            sx={{ color: 'white' }}
-            title="放大 (滚轮上)"
-          >
-            <ZoomInIcon />
-          </IconButton>
-          <IconButton
-            size="small"
-            onClick={handleClosePreview}
-            sx={{ color: 'white' }}
-            title="关闭 (Esc)"
-          >
-            <CloseIcon />
-          </IconButton>
-        </Box>
-
-        {/* 提示信息 */}
-        {imageZoom > 1 && (
-          <Typography
-            sx={{
-              position: 'absolute',
-              bottom: 16,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              color: 'rgba(255, 255, 255, 0.7)',
-              backgroundColor: 'rgba(0, 0, 0, 0.5)',
-              padding: '4px 12px',
-              borderRadius: 2,
-              fontSize: '12px',
-              zIndex: 10
-            }}
-          >
-            拖动查看 · 滚轮缩放 · 点击背景关闭
-          </Typography>
-        )}
-
-        {/* 图片 */}
-        <img
-          src={previewImage}
-          alt="预览"
-          draggable={false}
-          style={{
-            maxWidth: imageZoom <= 1 ? '95vw' : 'none',
-            maxHeight: imageZoom <= 1 ? '90vh' : 'none',
-            objectFit: 'contain',
-            transform: `scale(${imageZoom}) translate(${imagePosition.x / imageZoom}px, ${imagePosition.y / imageZoom}px)`,
-            transition: isDragging ? 'none' : 'transform 0.2s ease',
-            borderRadius: 8,
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
-            cursor: imageZoom > 1 ? (isDragging ? 'grabbing' : 'grab') : 'zoom-in',
-            userSelect: 'none'
-          }}
-          onClick={(e) => {
-            e.stopPropagation()
-            if (imageZoom <= 1) {
-              setImageZoom(2)
-            }
-          }}
-          onMouseDown={handleMouseDown}
-        />
-      </Box>
-    </Modal>
+    <ImagePreviewModal src={previewImage} onClose={() => setPreviewImage(null)} />
     </>
   )
 }

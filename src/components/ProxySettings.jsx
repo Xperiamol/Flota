@@ -7,17 +7,12 @@ import {
   TextField,
   Button,
   Switch,
-  FormControlLabel,
   Alert,
-  Divider,
-  List,
-  ListItem,
   ListItemText,
-  ListItemSecondaryAction,
   Chip,
 } from '@mui/material';
-import { CheckCircle, Error as ErrorIcon, Wifi, WifiOff } from '@mui/icons-material';
-import { spacing, flex, combo } from '../styles/commonStyles';
+import { CheckCircle, WifiOff } from '@mui/icons-material';
+import { flex, settingsFieldGroupSx, settingsRowSx, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../styles/commonStyles';
 import logger from '../utils/logger';
 
 const ProxySettings = ({ showSnackbar }) => {
@@ -119,160 +114,86 @@ const ProxySettings = ({ showSnackbar }) => {
 
   return (
     <Box>
-      <List>
-        {/* 当前状态 */}
-        <ListItem>
+      <Box sx={settingsSectionSx}>
+        <Typography variant="h6" sx={sectionTitleSx}>网络代理</Typography>
+        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
+          配置应用访问网络时使用的本地代理
+        </Typography>
+        <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2 })}>
           <ListItemText
             primary={t('proxy.proxyStatus')}
             secondary={config.enabled ? t('proxy.enabledWithUrl', { url: getProxyUrl() }) : t('proxy.disabled')}
+            primaryTypographyProps={{ sx: { fontWeight: 650 } }}
           />
-          <ListItemSecondaryAction>
-            <Box sx={{ ...flex.rowGap1 }}>
-              {config.enabled ? (
-                <CheckCircle color="success" />
-              ) : (
-                <WifiOff color="disabled" />
-              )}
-            </Box>
-          </ListItemSecondaryAction>
-        </ListItem>
-
-        <Divider />
-
-        {/* 启用开关 */}
-        <ListItem>
+          {config.enabled ? <CheckCircle color="success" /> : <WifiOff color="disabled" />}
+        </Box>
+        <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2 })}>
           <ListItemText
             primary={t('proxy.enableProxy')}
             secondary={t('proxy.enableProxyDesc')}
+            primaryTypographyProps={{ sx: { fontWeight: 650 } }}
           />
-          <ListItemSecondaryAction>
-            <Switch
-              checked={config.enabled}
-              onChange={(e) => setConfig({ ...config, enabled: e.target.checked })}
+          <Switch checked={config.enabled} onChange={(e) => setConfig({ ...config, enabled: e.target.checked })} />
+        </Box>
+      </Box>
+
+      <Box sx={settingsSectionSx}>
+        <Typography variant="subtitle1" sx={sectionTitleSx}>{t('proxy.hostAddress')}</Typography>
+        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
+          {t('proxy.hostAddressDesc')}
+        </Typography>
+        <Box sx={settingsFieldGroupSx}>
+          <Box sx={{ ...flex.rowGap2, flexWrap: 'wrap' }}>
+            <TextField
+              value={config.host}
+              onChange={(e) => setConfig({ ...config, host: e.target.value })}
+              placeholder="127.0.0.1"
+              disabled={!config.enabled}
+              size="small"
+              label={t('proxy.hostAddress')}
+              sx={{ flex: '1 1 220px' }}
             />
-          </ListItemSecondaryAction>
-        </ListItem>
-
-        <Divider />
-
-        {/* 配置 */}
-        <ListItem>
-          <Box sx={{ width: '100%' }}>
-            <Typography variant="subtitle2" sx={{ ...spacing.mb1, fontWeight: 700 }}>
-              {t('proxy.hostAddress')}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-              {t('proxy.hostAddressDesc')}
-            </Typography>
-
-            <Box sx={{ ...flex.rowGap2, flexWrap: 'wrap' }}>
-              <TextField
-                value={config.host}
-                onChange={(e) => setConfig({ ...config, host: e.target.value })}
-                placeholder="127.0.0.1"
-                disabled={!config.enabled}
-                size="small"
-                label={t('proxy.hostAddress')}
-                sx={{ flex: '1 1 220px' }}
-              />
-              <TextField
-                value={config.port}
-                onChange={(e) => setConfig({ ...config, port: e.target.value })}
-                placeholder="7890"
-                disabled={!config.enabled}
-                size="small"
-                label={t('proxy.port')}
-                sx={{ flex: '0 0 140px' }}
-              />
-            </Box>
-          </Box>
-        </ListItem>
-
-        <Divider />
-
-        {/* 常用配置 */}
-        <ListItem>
-          <Box sx={{ width: '100%' }}>
-            <Typography variant="subtitle2" sx={{ ...spacing.mb1, fontWeight: 700 }}>
-              {t('proxy.commonConfigs')}
-            </Typography>
-            <Box sx={{ ...flex.rowGap1, flexWrap: 'wrap' }}>
-              <Chip
-                label={t('proxy.clashPort')}
-                size="small"
-                onClick={() => setConfig({ ...config, host: '127.0.0.1', port: '7890' })}
-                sx={{ cursor: 'pointer' }}
-              />
-              <Chip
-                label={t('proxy.v2raynPort')}
-                size="small"
-                onClick={() => setConfig({ ...config, host: '127.0.0.1', port: '10809' })}
-                sx={{ cursor: 'pointer' }}
-              />
-              <Chip
-                label={t('proxy.shadowsocksPort')}
-                size="small"
-                onClick={() => setConfig({ ...config, host: '127.0.0.1', port: '1080' })}
-                sx={{ cursor: 'pointer' }}
-              />
-            </Box>
-          </Box>
-        </ListItem>
-
-        <Divider />
-
-        {/* 操作按钮 */}
-        <ListItem>
-          <Box sx={{ ...flex.rowGap2, width: '100%' }}>
-            <Button
-              variant="contained"
+            <TextField
+              value={config.port}
+              onChange={(e) => setConfig({ ...config, port: e.target.value })}
+              placeholder="7890"
+              disabled={!config.enabled}
               size="small"
-              onClick={handleSave}
-            >
-              {t('proxy.saveConfig')}
-            </Button>
-
-            <Box sx={{ flex: 1 }} />
-
-            <Button
-              variant="outlined"
-              size="small"
-              onClick={handleTest}
-              disabled={!config.enabled || testing}
-            >
-              {testing ? t('proxy.testing') : t('proxy.testProxy')}
-            </Button>
+              label={t('proxy.port')}
+              sx={{ flex: '0 0 140px' }}
+            />
           </Box>
-        </ListItem>
-
-        <Divider />
-
-        {/* 帮助信息 */}
-        <ListItem>
-          <Box>
-            <Typography variant="subtitle2" gutterBottom color="text.secondary" sx={{ fontWeight: 700 }}>
-              {t('proxy.usageInstructions')}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {t('proxy.usageInstructionsList', { returnObjects: true }).map((item, index) => (
-                <React.Fragment key={index}>
-                  {index + 1}. {item}<br />
-                </React.Fragment>
-              ))}
-            </Typography>
-            <Typography variant="subtitle2" gutterBottom color="text.secondary" sx={{ mt: 2, fontWeight: 700 }}>
-              {t('proxy.importantNotes')}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {t('proxy.importantNotesList', { returnObjects: true }).map((item, index) => (
-                <React.Fragment key={index}>
-                  • {item}<br />
-                </React.Fragment>
-              ))}
-            </Typography>
+        </Box>
+        <Box sx={settingsFieldGroupSx}>
+          <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>{t('proxy.commonConfigs')}</Typography>
+          <Box sx={{ ...flex.rowGap1, flexWrap: 'wrap' }}>
+            <Chip label={t('proxy.clashPort')} size="small" onClick={() => setConfig({ ...config, host: '127.0.0.1', port: '7890' })} sx={{ cursor: 'pointer' }} />
+            <Chip label={t('proxy.v2raynPort')} size="small" onClick={() => setConfig({ ...config, host: '127.0.0.1', port: '10809' })} sx={{ cursor: 'pointer' }} />
+            <Chip label={t('proxy.shadowsocksPort')} size="small" onClick={() => setConfig({ ...config, host: '127.0.0.1', port: '1080' })} sx={{ cursor: 'pointer' }} />
           </Box>
-        </ListItem>
-      </List>
+        </Box>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1.5, pt: 1 }}>
+          <Button variant="contained" size="small" onClick={handleSave}>{t('proxy.saveConfig')}</Button>
+          <Button variant="outlined" size="small" onClick={handleTest} disabled={!config.enabled || testing}>
+            {testing ? t('proxy.testing') : t('proxy.testProxy')}
+          </Button>
+        </Box>
+      </Box>
+
+      <Alert severity="info" sx={{ mt: 3 }}>
+        <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 700 }}>{t('proxy.usageInstructions')}</Typography>
+        <Typography variant="body2" component="div">
+          {t('proxy.usageInstructionsList', { returnObjects: true }).map((item, index) => (
+            <Box key={index}>{index + 1}. {item}</Box>
+          ))}
+        </Typography>
+        <Typography variant="subtitle2" gutterBottom sx={{ mt: 2, fontWeight: 700 }}>{t('proxy.importantNotes')}</Typography>
+        <Typography variant="body2" component="div">
+          {t('proxy.importantNotesList', { returnObjects: true }).map((item, index) => (
+            <Box key={index}>• {item}</Box>
+          ))}
+        </Typography>
+      </Alert>
     </Box>
   );
 };

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from '../utils/i18n';
-import { Box, IconButton, Tooltip, Typography, Zoom } from '@mui/material';
+import { Box, ButtonBase, Tooltip, Typography, Zoom } from '@mui/material';
 import {
   StickyNote2,
   CheckBox,
@@ -16,7 +16,89 @@ import {
 } from '@mui/icons-material';
 import { useTheme } from '@mui/material/styles';
 import { useStore } from '../store/useStore';
-import { createTransitionString, ANIMATIONS } from '../utils/animationConfig';
+
+// 业界领先的导航动画曲线：Apple "spring-out" / Linear / Raycast 通用
+// 比 Material Standard (0.4, 0, 0.2, 1) 更跟手、更紧致
+const NAV_EASING = 'cubic-bezier(0.32, 0.72, 0, 1)';
+const NAV_DURATION = 180;
+const NAV_DURATION_FAST = 120;
+
+// 单个导航按钮：左侧流体指示条 + 极轻背景过渡，无 scale/rotate
+const NavItem = React.memo(function NavItem({
+  active,
+  tooltip,
+  onClick,
+  children,
+}) {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+
+  const hoverBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.045)';
+  const activeBg = isDark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.06)';
+  const pressBg = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.085)';
+
+  return (
+    <Tooltip title={tooltip} placement="right" enterDelay={400} enterNextDelay={200}>
+      <Box sx={{ position: 'relative', width: '44px', height: '44px' }}>
+        {/* 左侧流体指示条：选中时从中心向上下伸展 */}
+        <Box
+          aria-hidden
+          sx={{
+            position: 'absolute',
+            left: '-10px',
+            top: '50%',
+            width: '3px',
+            height: '20px',
+            borderRadius: '2px',
+            backgroundColor: theme.palette.primary.main,
+            transform: active
+              ? 'translateY(-50%) scaleY(1)'
+              : 'translateY(-50%) scaleY(0.2)',
+            opacity: active ? 1 : 0,
+            transformOrigin: 'center',
+            transition: `transform ${NAV_DURATION}ms ${NAV_EASING}, opacity ${NAV_DURATION_FAST}ms ${NAV_EASING}`,
+            pointerEvents: 'none',
+          }}
+        />
+        <ButtonBase
+          onClick={onClick}
+          focusRipple={false}
+          disableRipple
+          sx={{
+            width: '44px',
+            height: '44px',
+            borderRadius: '12px',
+            color: active ? theme.palette.primary.main : theme.palette.text.secondary,
+            backgroundColor: active ? activeBg : 'transparent',
+            transition: `background-color ${NAV_DURATION}ms ${NAV_EASING}, color ${NAV_DURATION}ms ${NAV_EASING}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            // 关键：完全无 transform，避免抖动/位移
+            '&:hover': {
+              backgroundColor: active ? activeBg : hoverBg,
+              color: active ? theme.palette.primary.main : theme.palette.text.primary,
+            },
+            '&:active': {
+              backgroundColor: pressBg,
+              transition: `background-color ${NAV_DURATION_FAST}ms ${NAV_EASING}, color ${NAV_DURATION_FAST}ms ${NAV_EASING}`,
+            },
+            '&:focus-visible': {
+              outline: `2px solid ${theme.palette.primary.main}`,
+              outlineOffset: '2px',
+            },
+            // icon 只过渡颜色，不做 transform
+            '& svg, & img': {
+              transition: `color ${NAV_DURATION}ms ${NAV_EASING}, opacity ${NAV_DURATION}ms ${NAV_EASING}`,
+            },
+          }}
+        >
+          {children}
+        </ButtonBase>
+      </Box>
+    </Tooltip>
+  );
+});
 
 // 圣诞图标路径
 const CHRISTMAS_ICONS = {
@@ -191,19 +273,24 @@ const Sidebar = ({ open = true, onClose }) => {
           sx={{
             width: '40px',
             height: '40px',
-            borderRadius: '8px',
+            borderRadius: '10px',
             backgroundColor: userAvatar ? 'transparent' : theme.palette.primary.main,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             background: userAvatar ? 'none' : `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
-            boxShadow: avatarHover ? '0 4px 12px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.2)',
+            // 柔和的双层 elevation：环境光 + 投影
+            boxShadow: avatarHover
+              ? '0 0 0 2px rgba(255,255,255,0.08), 0 6px 16px rgba(0,0,0,0.22)'
+              : '0 0 0 0 rgba(255,255,255,0), 0 2px 6px rgba(0,0,0,0.18)',
             overflow: 'hidden',
             cursor: 'pointer',
-            transition: createTransitionString(ANIMATIONS.button),
-            transform: avatarHover ? 'scale(1.1) rotate(5deg)' : 'scale(1)',
+            // 仅过渡 box-shadow / filter，不做 transform，避免"翻车感"
+            transition: `box-shadow ${NAV_DURATION}ms ${NAV_EASING}, filter ${NAV_DURATION}ms ${NAV_EASING}`,
+            filter: avatarHover ? 'brightness(1.06)' : 'brightness(1)',
             '&:active': {
-              transform: 'scale(0.95)',
+              filter: 'brightness(0.94)',
+              transition: `filter ${NAV_DURATION_FAST}ms ${NAV_EASING}`,
             },
           }}
         >
@@ -328,65 +415,29 @@ const Sidebar = ({ open = true, onClose }) => {
         }}
       >
         {menuItems.map((item) => (
-          <Tooltip key={item.id} title={item.tooltip} placement="right">
-            <IconButton
-              onClick={() => handleMenuClick(item.id)}
-              sx={{
-                width: '44px',
-                height: '44px',
-                borderRadius: '8px',
-                color: currentView === item.id
-                  ? theme.palette.primary.main
-                  : theme.palette.text.secondary,
-                backgroundColor: currentView === item.id
-                  ? theme.palette.mode === 'dark'
-                    ? 'rgba(144, 202, 249, 0.12)'
-                    : 'rgba(25, 118, 210, 0.08)'
-                  : 'transparent',
-                border: currentView === item.id
-                  ? `2px solid ${theme.palette.primary.main}`
-                  : '2px solid transparent',
-                transition: createTransitionString(ANIMATIONS.button),
-                '&:hover': {
-                  backgroundColor: currentView === item.id
-                    ? theme.palette.mode === 'dark'
-                      ? 'rgba(144, 202, 249, 0.16)'
-                      : 'rgba(25, 118, 210, 0.12)'
-                    : theme.palette.mode === 'dark'
-                      ? 'rgba(255, 255, 255, 0.08)'
-                      : 'rgba(0, 0, 0, 0.04)',
-                  color: currentView === item.id
-                    ? theme.palette.primary.main
-                    : theme.palette.text.primary,
-                  transform: 'scale(1.05)',
-                },
-                '&:active': {
-                  transform: 'scale(0.95)',
-                },
-              }}
-            >
-              {christmasMode && CHRISTMAS_ICONS[item.id] ? (
-                <Box
-                  component="img"
-                  src={CHRISTMAS_ICONS[item.id]}
-                  alt={item.label}
-                  sx={{
-                    width: '22px',
-                    height: '22px',
-                    objectFit: 'contain',
-                    transition: createTransitionString(ANIMATIONS.button),
-                  }}
-                />
-              ) : (
-                React.cloneElement(item.icon, {
-                  sx: {
-                    fontSize: '20px',
-                    transition: createTransitionString(ANIMATIONS.button),
-                  }
-                })
-              )}
-            </IconButton>
-          </Tooltip>
+          <NavItem
+            key={item.id}
+            tooltip={item.tooltip}
+            active={currentView === item.id}
+            onClick={() => handleMenuClick(item.id)}
+          >
+            {christmasMode && CHRISTMAS_ICONS[item.id] ? (
+              <Box
+                component="img"
+                src={CHRISTMAS_ICONS[item.id]}
+                alt={item.label}
+                sx={{
+                  width: '22px',
+                  height: '22px',
+                  objectFit: 'contain',
+                }}
+              />
+            ) : (
+              React.cloneElement(item.icon, {
+                sx: { fontSize: '20px' }
+              })
+            )}
+          </NavItem>
         ))}
       </Box>
 
@@ -406,59 +457,26 @@ const Sidebar = ({ open = true, onClose }) => {
             opacity: 0.5,
           }}
         />
-        <Tooltip title={t('sidebar.settingsTooltip')} placement="right">
-          <IconButton
-            onClick={() => handleMenuClick('settings')}
-            sx={{
-              width: '44px',
-              height: '44px',
-              borderRadius: '8px',
-              color: currentView === 'settings'
-                ? theme.palette.primary.main
-                : theme.palette.text.secondary,
-              backgroundColor: currentView === 'settings'
-                ? theme.palette.mode === 'dark'
-                  ? 'rgba(144, 202, 249, 0.12)'
-                  : 'rgba(25, 118, 210, 0.08)'
-                : 'transparent',
-              border: currentView === 'settings'
-                ? `2px solid ${theme.palette.primary.main}`
-                : '2px solid transparent',
-              transition: createTransitionString(ANIMATIONS.button),
-              '&:hover': {
-                backgroundColor: currentView === 'settings'
-                  ? theme.palette.mode === 'dark'
-                    ? 'rgba(144, 202, 249, 0.16)'
-                    : 'rgba(25, 118, 210, 0.12)'
-                  : theme.palette.mode === 'dark'
-                    ? 'rgba(255, 255, 255, 0.08)'
-                    : 'rgba(0, 0, 0, 0.04)',
-                color: currentView === 'settings'
-                  ? theme.palette.primary.main
-                  : theme.palette.text.primary,
-                transform: 'scale(1.05)',
-              },
-              '&:active': {
-                transform: 'scale(0.95)',
-              },
-            }}
-          >
-            {christmasMode ? (
-              <Box
-                component="img"
-                src={CHRISTMAS_ICONS.settings}
-                alt="Settings"
-                sx={{
-                  width: '22px',
-                  height: '22px',
-                  objectFit: 'contain',
-                }}
-              />
-            ) : (
-              <Settings sx={{ fontSize: '20px' }} />
-            )}
-          </IconButton>
-        </Tooltip>
+        <NavItem
+          tooltip={t('sidebar.settingsTooltip')}
+          active={currentView === 'settings'}
+          onClick={() => handleMenuClick('settings')}
+        >
+          {christmasMode ? (
+            <Box
+              component="img"
+              src={CHRISTMAS_ICONS.settings}
+              alt="Settings"
+              sx={{
+                width: '22px',
+                height: '22px',
+                objectFit: 'contain',
+              }}
+            />
+          ) : (
+            <Settings sx={{ fontSize: '20px' }} />
+          )}
+        </NavItem>
       </Box>
     </Box>
   );

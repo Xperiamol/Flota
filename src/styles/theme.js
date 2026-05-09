@@ -97,29 +97,126 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
             MuiButton: {
                 styleOverrides: {
                     root: {
-                        borderRadius: 12,
-                        boxShadow: isDark
-                            ? 'inset 0 1px 0 rgba(255,255,255,0.05)'
-                            : 'inset 0 1px 0 rgba(255,255,255,0.4), 0 1px 2px rgba(0,0,0,0.05)',
-                        transition: 'background-color 0.2s cubic-bezier(0.4,0,0.2,1), box-shadow 0.2s cubic-bezier(0.4,0,0.2,1), transform 0.2s cubic-bezier(0.4,0,0.2,1), color 0.2s cubic-bezier(0.4,0,0.2,1)',
+                        borderRadius: 10,
+                        boxShadow: 'none',
+                        transition: 'background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, color 160ms ease',
+                        // 禁止 hover 位移/缩放：有些页面会在 sx 里写 transform，这里统一压掉，避免“按钮飘动”
                         '&:hover': {
-                            boxShadow: isDark
-                                ? 'inset 0 1px 0 rgba(255,255,255,0.1), 0 4px 12px rgba(0,0,0,0.3)'
-                                : 'inset 0 1px 0 rgba(255,255,255,0.6), 0 4px 12px rgba(0,0,0,0.1)',
-                            transform: 'translateY(-1px)',
+                            transform: 'none !important',
+                            boxShadow: 'none',
                         },
                         '&:active': {
-                            transform: 'translateY(0)',
+                            transform: 'none !important',
                             boxShadow: 'none',
                         },
                     },
-                    containedPrimary: {
-                        background: `linear-gradient(135deg, ${primaryColor} 0%, ${alpha(primaryColor, 0.9)} 100%)`,
-                        boxShadow: `0 4px 12px ${alpha(primaryColor, 0.4)}`,
+                    text: {
                         '&:hover': {
-                            boxShadow: `0 6px 16px ${alpha(primaryColor, 0.5)}`,
+                            backgroundColor: alpha(primaryColor, isDark ? 0.12 : 0.08),
+                        },
+                    },
+                    outlined: {
+                        borderColor: alpha(primaryColor, isDark ? 0.26 : 0.22),
+                        backgroundColor: alpha(primaryColor, isDark ? 0.04 : 0.03),
+                        '&:hover': {
+                            borderColor: alpha(primaryColor, isDark ? 0.42 : 0.36),
+                            backgroundColor: alpha(primaryColor, isDark ? 0.10 : 0.07),
+                        },
+                    },
+                    contained: {
+                        boxShadow: `0 1px 2px ${alpha('#000000', isDark ? 0.28 : 0.10)}`,
+                        '&:hover': {
+                            boxShadow: `0 2px 8px ${alpha('#000000', isDark ? 0.24 : 0.10)}`,
+                        },
+                    },
+                    containedPrimary: {
+                        background: `linear-gradient(135deg, ${alpha(primaryColor, 0.95)} 0%, ${alpha(primaryColor, 0.82)} 100%)`,
+                        boxShadow: `0 2px 8px ${alpha(primaryColor, isDark ? 0.22 : 0.18)}`,
+                        '&:hover': {
+                            background: `linear-gradient(135deg, ${primaryColor} 0%, ${alpha(primaryColor, 0.88)} 100%)`,
+                            boxShadow: `0 3px 10px ${alpha(primaryColor, isDark ? 0.26 : 0.20)}`,
                         }
                     }
+                },
+            },
+            MuiIconButton: {
+                styleOverrides: {
+                    // 注意：不要在 root 设置 borderRadius，让 IconButton 维持 MUI 默认的 50%（圆形），
+                    // 否则像 CalendarView / TodoList 里完成任务的勾选按钮会变成圆角方形。
+                    root: {
+                        transition: 'background-color 160ms ease, color 160ms ease, box-shadow 160ms ease',
+                        '&:hover': {
+                            backgroundColor: alpha(primaryColor, isDark ? 0.12 : 0.08),
+                            boxShadow: 'none',
+                        },
+                        '&:active': {
+                            boxShadow: 'none',
+                        },
+                    },
+                },
+            },
+            MuiFab: {
+                styleOverrides: {
+                    root: {
+                        // 保留现有定位/布局 transform，避免绝对定位组件在 hover 时跳动。
+                    },
+                },
+            },
+            MuiSwitch: {
+                styleOverrides: {
+                    root: {
+                        width: 46,
+                        height: 28,
+                        padding: 0,
+                        overflow: 'visible',
+                    },
+                    switchBase: {
+                        padding: 3,
+                        transitionDuration: '180ms',
+                        '&.Mui-checked': {
+                            transform: 'translateX(18px)',
+                            color: '#fff',
+                            '& + .MuiSwitch-track': {
+                                opacity: 1,
+                                borderColor: alpha(primaryColor, isDark ? 0.28 : 0.22),
+                                background: `linear-gradient(135deg, ${alpha(primaryColor, isDark ? 0.92 : 0.88)} 0%, ${alpha(primaryColor, isDark ? 0.72 : 0.68)} 100%)`,
+                                boxShadow: `0 4px 12px ${alpha(primaryColor, isDark ? 0.18 : 0.16)}`,
+                            },
+                            '& .MuiSwitch-thumb': {
+                                backgroundColor: '#ffffff',
+                                boxShadow: isDark
+                                    ? '0 2px 8px rgba(2, 6, 23, 0.28)'
+                                    : '0 2px 8px rgba(15, 23, 42, 0.16)',
+                            },
+                        },
+                        '&.Mui-disabled': {
+                            opacity: 0.42,
+                            '& + .MuiSwitch-track': {
+                                opacity: 0.52,
+                            },
+                        },
+                    },
+                    thumb: {
+                        width: 22,
+                        height: 22,
+                        backgroundColor: isDark ? '#f8fafc' : '#ffffff',
+                        boxShadow: isDark
+                            ? '0 2px 8px rgba(2, 6, 23, 0.22)'
+                            : '0 2px 6px rgba(15, 23, 42, 0.12)',
+                    },
+                    track: {
+                        borderRadius: 999,
+                        opacity: 1,
+                        boxSizing: 'border-box',
+                        border: `1px solid ${alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.08 : 0.10)}`,
+                        background: isDark
+                            ? 'linear-gradient(135deg, rgba(148,163,184,0.14), rgba(71,85,105,0.18))'
+                            : 'linear-gradient(135deg, rgba(203,213,225,0.58), rgba(226,232,240,0.9))',
+                        boxShadow: isDark
+                            ? 'inset 0 1px 1px rgba(255,255,255,0.04)'
+                            : 'inset 0 1px 1px rgba(255,255,255,0.72)',
+                        transition: 'background 180ms ease, border-color 180ms ease, box-shadow 180ms ease',
+                    },
                 },
             },
             MuiOutlinedInput: {
@@ -144,11 +241,13 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
             MuiDialog: {
                 styleOverrides: {
                     paper: {
-                        borderRadius: 24,
+                        borderRadius: 20,
                         backdropFilter: glassBlur,
                         backgroundColor: glassBackground,
                         border: glassBorder,
-                        boxShadow: '0 40px 80px -12px rgba(0, 0, 0, 0.3)', // Deep shadow for dialogs
+                        boxShadow: isDark
+                            ? '0 28px 70px rgba(0,0,0,0.36)'
+                            : '0 28px 70px rgba(15,23,42,0.18)',
                     }
                 }
             },
@@ -188,8 +287,10 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                         backdropFilter: glassBlur,
                         backgroundColor: glassBackground,
                         border: glassBorder,
-                        borderRadius: 8,
-                        boxShadow: '0 8px 30px rgba(0,0,0,0.12)'
+                        borderRadius: 12,
+                        boxShadow: isDark
+                            ? '0 14px 42px rgba(0,0,0,0.32)'
+                            : '0 14px 42px rgba(15,23,42,0.14)',
                     }
                 }
             },
@@ -251,10 +352,17 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                         borderRadius: 12,
                         margin: '4px 8px',
                         transition: 'background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease',
+                        '&:hover': {
+                            transform: 'none !important',
+                        },
+                        '&:active': {
+                            transform: 'none !important',
+                        },
                         '&.Mui-selected': {
                             backgroundColor: alpha(primaryColor, 0.15),
                             '&:hover': {
                                 backgroundColor: alpha(primaryColor, 0.25),
+                                transform: 'none !important',
                             },
                         },
                     }

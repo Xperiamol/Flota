@@ -39,7 +39,11 @@ function setupMCPHandlers(mcpDownloader, mainWindow) {
 
       const retryListener = (data) => {
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('mcp:download-retry', data);
+          mainWindow.webContents.send('mcp:install-progress', {
+            ...data,
+            percent: data?.percent || 0,
+            status: 'retrying'
+          });
         }
       };
 

@@ -4,8 +4,6 @@
  * 提供统一的本地数据访问接口，支持原子化读写
  */
 
-const path = require('path');
-const { app } = require('electron');
 const NoteDAO = require('../../dao/NoteDAO');
 const TodoDAO = require('../../dao/TodoDAO');
 const DatabaseManager = require('../../dao/DatabaseManager');
@@ -125,21 +123,7 @@ class StorageAdapter {
 
     const settings = {};
     for (const row of rows) {
-      try {
-        // 根据类型解析 value
-        if (row.type === 'json' || row.type === 'object') {
-          settings[row.key] = JSON.parse(row.value);
-        } else if (row.type === 'number') {
-          settings[row.key] = Number(row.value);
-        } else if (row.type === 'boolean') {
-          settings[row.key] = row.value === 'true' || row.value === '1';
-        } else {
-          settings[row.key] = row.value;
-        }
-      } catch (error) {
-        console.warn(`[StorageAdapter] 解析设置失败: ${row.key}`, error);
-        settings[row.key] = row.value;
-      }
+      settings[row.key] = this.parseSettingValue(row.value, row.type, row.key);
     }
 
     return settings;
@@ -346,7 +330,7 @@ class StorageAdapter {
     const upsertStmt = this.db.prepare(`
       INSERT INTO settings (key, value, type)
       VALUES (?, ?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value, type = excluded.type
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, type = excluded.type, updated_at = CURRENT_TIMESTAMP
     `);
 
     const transaction = this.db.transaction((entries) => {
@@ -357,6 +341,64 @@ class StorageAdapter {
     });
 
     transaction(Object.entries(settings));
+  }
+
+  /**
+   * 获取所有设置及其逐 key 时间戳（同步用）
+   *
+   * @returns {Promise<{values: Object, timestamps: Object<string, number>}>}
+   */
+  async getAllSettingsWithTimestamps() {
+    const rows = this.db.prepare(`SELECT key, value, type, updated_at FROM settings`).all();
+    const values = {};
+    const timestamps = {};
+    for (const row of rows) {
+      values[row.key] = this.parseSettingValue(row.value, row.type, row.key);
+      timestamps[row.key] = this.parseTimestamp(row.updated_at);
+    }
+    return { values, timestamps };
+  }
+
+  /**
+   * 按 key 仲裁后写入设置：仅当 cloudTimestamp[key] > 本地 updated_at 时才写入。
+   *
+   * @param {Object} cloudValues
+   * @param {Object<string, number>} cloudTimestamps
+   * @returns {Promise<{updated: number, skipped: number}>}
+   */
+  async mergeSettingsByKey(cloudValues, cloudTimestamps) {
+    const localRows = this.db.prepare(`SELECT key, updated_at FROM settings`).all();
+    const localTsMap = new Map();
+    for (const row of localRows) {
+      localTsMap.set(row.key, this.parseTimestamp(row.updated_at));
+    }
+
+    const upsertStmt = this.db.prepare(`
+      INSERT INTO settings (key, value, type, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, type = excluded.type, updated_at = excluded.updated_at
+    `);
+
+    let updated = 0;
+    let skipped = 0;
+
+    const tx = this.db.transaction(() => {
+      for (const [key, value] of Object.entries(cloudValues || {})) {
+        const cloudTs = cloudTimestamps?.[key] ?? 0;
+        const localTs = localTsMap.get(key) ?? 0;
+        if (cloudTs <= localTs) {
+          skipped++;
+          continue;
+        }
+        const { serialized, type } = this.serializeSettingValue(value);
+        const ts = this.toSQLiteDateTime(cloudTs) || null;
+        upsertStmt.run(key, serialized, type, ts);
+        updated++;
+      }
+    });
+    tx();
+
+    return { updated, skipped };
   }
 
   /**
@@ -567,7 +609,9 @@ class StorageAdapter {
    * @private
    */
   serializeSettingValue(value) {
-    if (typeof value === 'object' && value !== null) {
+    if (value === null) {
+      return { serialized: 'null', type: 'json' };
+    } else if (typeof value === 'object') {
       return { serialized: JSON.stringify(value), type: 'json' };
     } else if (typeof value === 'number') {
       return { serialized: String(value), type: 'number' };
@@ -575,6 +619,24 @@ class StorageAdapter {
       return { serialized: value ? '1' : '0', type: 'boolean' };
     } else {
       return { serialized: String(value), type: 'string' };
+    }
+  }
+
+  /**
+   * 反序列化设置值
+   * @private
+   */
+  parseSettingValue(value, type, key = '') {
+    try {
+      if (type === 'json' || type === 'object' || type === 'array') {
+        return JSON.parse(value);
+      }
+      if (type === 'number') return Number(value);
+      if (type === 'boolean') return value === 'true' || value === '1';
+      return value;
+    } catch (error) {
+      console.warn(`[StorageAdapter] 解析设置失败: ${key}`, error);
+      return type === 'array' ? [] : value;
     }
   }
 }

@@ -64,6 +64,28 @@ import { t } from '../utils/i18n';
 const {
   filters: { placeholder }
 } = zhCN;
+
+const COMPLETION_BUTTON_SIZE = 32;
+const COMPLETION_ICON_SIZE = 22;
+const completionSlotSx = {
+  minWidth: 40,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center'
+};
+const completionButtonSx = {
+  width: COMPLETION_BUTTON_SIZE,
+  height: COMPLETION_BUTTON_SIZE,
+  p: 0,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  flexShrink: 0
+};
+const completionIconSx = {
+  fontSize: COMPLETION_ICON_SIZE,
+  display: 'block'
+};
 import {
   getPriorityFromQuadrant,
   getPriorityIcon,
@@ -784,9 +806,11 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
                         />
                       </ListItemIcon>
                     )}
-                    <ListItemIcon sx={{ minWidth: 40 }}>
+                    <ListItemIcon sx={completionSlotSx}>
                       {isFutureRecurringTodo(todo) ? (
-                        <ScheduleIcon sx={{ color: 'text.disabled', opacity: 0.35 }} />
+                        <IconButton size="small" disabled sx={{ ...completionButtonSx, opacity: 0.35 }}>
+                          <ScheduleIcon sx={{ ...completionIconSx, color: 'text.disabled' }} />
+                        </IconButton>
                       ) : (
                       <IconButton
                         size="small"
@@ -796,6 +820,7 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
                         }}
                         aria-label="切换完成状态"
                         sx={{
+                          ...completionButtonSx,
                           position: 'relative',
                           transition: createTransitionString(ANIMATIONS.stateChange),
                           zIndex: 2,
@@ -808,10 +833,11 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
                         }}
                       >
                         {todo.completed ? (
-                          <CheckCircleIcon sx={{ color: 'success.main' }} />
+                          <CheckCircleIcon sx={{ ...completionIconSx, color: 'success.main' }} />
                         ) : pendingComplete.has(todo.id) ? (
                           <RadioButtonUncheckedIcon
                             sx={{
+                              ...completionIconSx,
                               color: 'warning.main',
                               animation: createAnimationString(ANIMATIONS.pulse)
                             }}
@@ -819,12 +845,13 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
                         ) : celebratingTodos.has(todo.id) ? (
                           <CheckCircleIcon
                             sx={{
+                              ...completionIconSx,
                               color: 'success.main',
                               filter: 'drop-shadow(0 0 8px rgba(76, 175, 80, 0.6))'
                             }}
                           />
                         ) : (
-                          <RadioButtonUncheckedIcon sx={{ color: 'text.secondary' }} />
+                          <RadioButtonUncheckedIcon sx={{ ...completionIconSx, color: 'text.secondary' }} />
                         )}
                       </IconButton>
                       )}

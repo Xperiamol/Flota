@@ -18,6 +18,12 @@ import { fetchInstalledPlugins } from '../api/pluginAPI'
 import { normalizeTags } from '../utils/tagUtils'
 import { searchNotesAPI } from '../api/searchAPI'
 
+const IS_MACOS =
+    typeof navigator !== 'undefined' &&
+    String(navigator.userAgentData?.platform || Reflect.get(navigator, 'platform') || '')
+        .toLowerCase()
+        .includes('mac')
+
 const useStore = create(
     persist(
         devtools(
@@ -25,7 +31,8 @@ const useStore = create(
                 // 主题相关状态
                 theme: 'system',
                 primaryColor: '#1976d2',
-                titleBarStyle: 'windows', // 标题栏样式：'mac' 或 'windows'
+                // macOS 下强制使用 mac 样式（并在设置中隐藏该项）
+                titleBarStyle: IS_MACOS ? 'mac' : 'windows', // 标题栏样式：'mac' 或 'windows'
                 language: 'zh-CN', // 界面语言
 
                 // 笔记相关状态
@@ -57,10 +64,13 @@ const useStore = create(
                 aiConversations: [], // [{id, title, messages, createdAt, updatedAt}]
                 aiActiveConvId: null,
                 aiMessageMultiSelectRequest: null,
+                aiCommandRequest: null,
                 // 工具栏按钮排序（null = 使用默认排序）
                 toolbarOrder: null,
                 // 浮动面板自定义格式项（null = 不显示额外格式项）
                 floatingPanelItems: null,
+                // 编辑器右键菜单显示项（null = 使用默认项）
+                contextMenuItems: null,
 
                 // 插件商店相关 UI 状态
                 pluginStoreFilters: {
@@ -87,7 +97,10 @@ const useStore = create(
 
                 setPrimaryColor: (color) => set({ primaryColor: color }),
 
-                setTitleBarStyle: (style) => set({ titleBarStyle: style }),
+                setTitleBarStyle: (style) => {
+                    if (IS_MACOS) return
+                    set({ titleBarStyle: style })
+                },
 
                 setEditorMode: (mode) => set({ editorMode: mode }),
 
@@ -139,10 +152,20 @@ const useStore = create(
                     }
                 })),
                 aiClearMessageMultiSelectRequest: () => set({ aiMessageMultiSelectRequest: null }),
+                aiDispatchCommand: (prompt, options = {}) => set({
+                    aiCommandRequest: {
+                        requestId: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                        prompt,
+                        autoSend: options.autoSend !== false
+                    }
+                }),
+                aiClearCommandRequest: () => set({ aiCommandRequest: null }),
 
                 setToolbarOrder: (order) => set({ toolbarOrder: order }),
 
                 setFloatingPanelItems: (items) => set({ floatingPanelItems: items }),
+
+                setContextMenuItems: (items) => set({ contextMenuItems: items }),
 
                 setLanguage: (language) => set({ language }),
 
@@ -596,13 +619,13 @@ const useStore = create(
                                 if (settings.customThemeColor) {
                                     set({ primaryColor: settings.customThemeColor })
                                 }
-                                if (settings.userAvatar) {
-                                    set({ userAvatar: settings.userAvatar })
+                                if (settings.userAvatar !== undefined) {
+                                    set({ userAvatar: settings.userAvatar || '' })
                                 }
-                                if (settings.userName) {
-                                    set({ userName: settings.userName })
+                                if (settings.userName !== undefined) {
+                                    set({ userName: settings.userName || '' })
                                 }
-                                if (settings.titleBarStyle) {
+                                if (!IS_MACOS && settings.titleBarStyle) {
                                     set({ titleBarStyle: settings.titleBarStyle })
                                 }
                                 if (settings.language) {
@@ -623,10 +646,29 @@ const useStore = create(
                                 if (settings.patternOpacity !== undefined) {
                                     set({ patternOpacity: Number(settings.patternOpacity) })
                                 }
-                                if (settings.wallpaperPath) {
-                                    set({ wallpaperPath: settings.wallpaperPath })
+                                if (settings.wallpaperPath !== undefined) {
+                                    set({ wallpaperPath: settings.wallpaperPath || '' })
+                                }
+                                if (settings.editorMode) {
+                                    set({ editorMode: settings.editorMode })
+                                }
+                                if (settings.aiPanelMode) {
+                                    set({ aiPanelMode: settings.aiPanelMode })
+                                }
+                                if (settings.toolbarOrder !== undefined) {
+                                    set({ toolbarOrder: settings.toolbarOrder || null })
+                                }
+                                if (settings.floatingPanelItems !== undefined) {
+                                    set({ floatingPanelItems: settings.floatingPanelItems || null })
+                                }
+                                if (settings.contextMenuItems !== undefined) {
+                                    set({ contextMenuItems: settings.contextMenuItems || null })
                                 }
                             }
+                        }
+                        // 兜底：macOS 下始终锁定为 mac，避免历史持久化/远端写入覆盖
+                        if (IS_MACOS) {
+                            set({ titleBarStyle: 'mac' })
                         }
                     } catch (error) {
                         console.error('Failed to load settings:', error)
@@ -693,6 +735,7 @@ const useStore = create(
                 aiActiveConvId: state.aiActiveConvId,
                 toolbarOrder: state.toolbarOrder,
                 floatingPanelItems: state.floatingPanelItems,
+                contextMenuItems: state.contextMenuItems,
                 backgroundPattern: state.backgroundPattern,
                 patternOpacity: state.patternOpacity,
                 wallpaperPath: state.wallpaperPath,

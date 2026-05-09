@@ -29,14 +29,16 @@ class NoteService extends EventEmitter {
       
       // 使用TagService规范化标签
       const tagsString = TagService.formatTags(safeNoteData.tags);
-      
-      const note = this.noteDAO.create({
+
+      const notePayload = {
         title: safeNoteData.title,
         content: safeNoteData.content,
         tags: tagsString,
         category: safeNoteData.category,
         note_type: safeNoteData.note_type
-      });
+      };
+
+      const note = this.noteDAO.create(notePayload);
       
       this.emit('note-created', note);
       return {
@@ -45,6 +47,14 @@ class NoteService extends EventEmitter {
       };
     } catch (error) {
       console.error('创建笔记失败:', error);
+
+      if (this.dbManager?.isNotesFtsSchemaError?.(error)) {
+        return {
+          success: false,
+          error: '全文搜索索引结构异常，请重启应用触发启动修复或运行数据库修复'
+        };
+      }
+
       return {
         success: false,
         error: error.message
@@ -116,6 +126,13 @@ class NoteService extends EventEmitter {
       };
     } catch (error) {
       console.error('更新笔记失败:', error);
+
+      if (this.dbManager?.isNotesFtsSchemaError?.(error)) {
+        return {
+          success: false,
+          error: '全文搜索索引结构异常，请重启应用触发启动修复或运行数据库修复'
+        };
+      }
 
       // 命中数据库损坏错误时，自动修复一次并重试，减少用户手动介入
       if (this.dbManager?.isCorruptionError?.(error)) {

@@ -1,8 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Box,
-  Drawer,
-  useMediaQuery,
   useTheme,
   Typography,
   List,
@@ -39,9 +37,8 @@ import TodoList from './TodoList';
 import MyDayPanel from './MyDayPanel';
 import { t } from '../utils/i18n';
 
-const SecondarySidebar = ({ open, onClose, width = 380, onTodoSelect, onViewModeChange, onShowCompletedChange, viewMode, showCompleted, onMultiSelectChange, onMultiSelectRefChange, todoRefreshTrigger, todoSortBy, onTodoSortByChange, showDeleted, selectedDate, calendarRefreshTrigger, onTodoUpdated }) => {
+const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, onShowCompletedChange, viewMode, showCompleted, onMultiSelectChange, onMultiSelectRefChange, todoRefreshTrigger, todoSortBy, onTodoSortByChange, showDeleted, selectedDate, calendarRefreshTrigger, onTodoUpdated }) => {
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const currentView = useStore((state) => state.currentView);
   const maskOpacity = useStore((state) => state.maskOpacity);
   const pluginStoreFilters = useStore((state) => state.pluginStoreFilters);
@@ -58,6 +55,34 @@ const SecondarySidebar = ({ open, onClose, width = 380, onTodoSelect, onViewMode
   const [aiContextMenu, setAiContextMenu] = useState(null);
   const [aiMultiSelectMode, setAiMultiSelectMode] = useState(false);
   const [aiSelectedConvIds, setAiSelectedConvIds] = useState([]);
+
+  const sidebarItemSx = (active = false) => ({
+    borderRadius: '12px',
+    mb: 0.5,
+    px: 1.25,
+    minHeight: 40,
+    border: '1px solid',
+    borderColor: active
+      ? 'primary.main'
+      : 'transparent',
+    bgcolor: active
+      ? (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(25,118,210,0.08)'
+      : 'transparent',
+    transition: 'background-color 180ms cubic-bezier(0.32,0.72,0,1), border-color 180ms cubic-bezier(0.32,0.72,0,1), color 180ms cubic-bezier(0.32,0.72,0,1)',
+    '&:hover': {
+      bgcolor: active
+        ? (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.11)' : 'rgba(25,118,210,0.11)'
+        : (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.055)' : 'rgba(15,23,42,0.045)',
+      borderColor: active
+        ? 'primary.main'
+        : (theme) => theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.14)' : 'rgba(15,23,42,0.08)',
+    },
+    '&.Mui-selected': {
+      bgcolor: active
+        ? (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(25,118,210,0.08)'
+        : undefined,
+    },
+  });
 
   const handleAiContextMenu = (event, conv) => {
     event.preventDefault();
@@ -137,7 +162,13 @@ const SecondarySidebar = ({ open, onClose, width = 380, onTodoSelect, onViewMode
   const renderSidebarContent = () => {
     switch (currentView) {
       case 'notes':
-        return <NoteList showDeleted={showDeleted} onMultiSelectChange={onMultiSelectChange} onMultiSelectRefChange={onMultiSelectRefChange} />;
+        return (
+          <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflow: 'hidden' }}>
+            <Box sx={{ flex: 1, minHeight: 0, height: '100%', display: 'flex', overflow: 'hidden' }}>
+              <NoteList showDeleted={showDeleted} onMultiSelectChange={onMultiSelectChange} onMultiSelectRefChange={onMultiSelectRefChange} />
+            </Box>
+          </Box>
+        );
       case 'todo':
         return (
           <TodoList 
@@ -223,17 +254,17 @@ const SecondarySidebar = ({ open, onClose, width = 380, onTodoSelect, onViewMode
                   key={category.id || category}
                   selected={pluginStoreFilters.category === (category.id || category)}
                   onClick={() => setPluginStoreCategory(category.id || category)}
-                  sx={{
-                    borderRadius: 1,
-                    mb: 0.5
-                  }}
+                  sx={sidebarItemSx(pluginStoreFilters.category === (category.id || category))}
                 >
                   <ListItemText
-                    primary={category.name || category}
-                    primaryTypographyProps={{
-                      fontSize: 14,
-                      fontWeight: pluginStoreFilters.category === (category.id || category) ? 600 : 400
-                    }}
+                    primary={(
+                      <Typography sx={{
+                        fontSize: 14,
+                        fontWeight: pluginStoreFilters.category === (category.id || category) ? 600 : 400
+                      }}>
+                        {category.name || category}
+                      </Typography>
+                    )}
                   />
                 </ListItemButton>
               ))}
@@ -258,14 +289,14 @@ const SecondarySidebar = ({ open, onClose, width = 380, onTodoSelect, onViewMode
         ]
 
         return (
-          <Box sx={(theme) => ({ 
+          <Box sx={(theme) => ({
             p: 2, 
             display: 'flex', 
             flexDirection: 'column', 
             height: '100%',
             backgroundColor: theme.palette.mode === 'dark'
-              ? 'rgba(30, 41, 59, 0.85)'
-              : 'rgba(255, 255, 255, 0.85)',
+              ? 'rgba(15,23,42,0.38)'
+              : 'rgba(255,255,255,0.58)',
             backdropFilter: 'blur(12px) saturate(150%)',
             WebkitBackdropFilter: 'blur(12px) saturate(150%)'
           })}>
@@ -279,20 +310,20 @@ const SecondarySidebar = ({ open, onClose, width = 380, onTodoSelect, onViewMode
                   key={category.id}
                   selected={settingsTabValue === category.id}
                   onClick={() => setSettingsTabValue(category.id)}
-                  sx={{
-                    borderRadius: 1,
-                    mb: 0.5
-                  }}
+                  sx={sidebarItemSx(settingsTabValue === category.id)}
                 >
-                  <ListItemIcon sx={{ minWidth: 40 }}>
+                  <ListItemIcon sx={{ minWidth: 38, color: settingsTabValue === category.id ? 'primary.main' : 'text.secondary' }}>
                     {category.icon}
                   </ListItemIcon>
                   <ListItemText
-                    primary={category.name}
-                    primaryTypographyProps={{
-                      fontSize: 14,
-                      fontWeight: settingsTabValue === category.id ? 600 : 400
-                    }}
+                    primary={(
+                      <Typography sx={{
+                        fontSize: 14,
+                        fontWeight: settingsTabValue === category.id ? 600 : 400
+                      }}>
+                        {category.name}
+                      </Typography>
+                    )}
                   />
                 </ListItemButton>
               ))}
@@ -341,8 +372,7 @@ const SecondarySidebar = ({ open, onClose, width = 380, onTodoSelect, onViewMode
                     }}
                     onContextMenu={(e) => handleAiContextMenu(e, conv)}
                     sx={{
-                      borderRadius: 1,
-                      mb: 0.5,
+                      ...sidebarItemSx(aiMultiSelectMode ? aiSelectedConvIds.includes(conv.id) : conv.id === aiActiveConvId),
                       '&:hover .del-btn': { opacity: 1 },
                     }}
                   >
@@ -356,14 +386,19 @@ const SecondarySidebar = ({ open, onClose, width = 380, onTodoSelect, onViewMode
                       </ListItemIcon>
                     )}
                     <ListItemText
-                      primary={conv.title || '新对话'}
-                      secondary={formatTime(conv.updatedAt)}
-                      primaryTypographyProps={{
-                        fontSize: 14,
-                        noWrap: true,
-                        fontWeight: conv.id === aiActiveConvId ? 600 : 400
-                      }}
-                      secondaryTypographyProps={{ fontSize: '0.72rem' }}
+                      primary={(
+                        <Typography noWrap sx={{
+                          fontSize: 14,
+                          fontWeight: conv.id === aiActiveConvId ? 600 : 400
+                        }}>
+                          {conv.title || '新对话'}
+                        </Typography>
+                      )}
+                      secondary={(
+                        <Typography component="span" color="text.secondary" sx={{ display: 'block', fontSize: '0.72rem' }}>
+                          {formatTime(conv.updatedAt)}
+                        </Typography>
+                      )}
                     />
                     {!aiMultiSelectMode && (
                       <IconButton

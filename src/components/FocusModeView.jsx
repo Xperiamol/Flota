@@ -2,7 +2,6 @@ import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react'
 import {
   Box,
   Typography,
-  Button,
   Chip,
   Stack,
   LinearProgress,
@@ -18,8 +17,6 @@ import {
 import {
   PlayArrow as PlayArrowIcon,
   Pause as PauseIcon,
-  NavigateBefore as NavigateBeforeIcon,
-  NavigateNext as NavigateNextIcon,
   AccessTime as AccessTimeIcon,
   Flag as FlagIcon,
   TaskAlt as TaskAltIcon,
@@ -267,14 +264,6 @@ const FocusModeView = ({
     }, 800); // 汇聚动画持续时间
   };
 
-  const handleNext = () => {
-    setActiveIndex((prev) => clampIndex(prev + 1, focusCandidates.length));
-  };
-
-  const handlePrev = () => {
-    setActiveIndex((prev) => clampIndex(prev - 1, focusCandidates.length));
-  };
-
   const startLongPress = () => {
     if (!currentTodo || isCompleting) return;
     setPressProgress(0);
@@ -331,73 +320,6 @@ const FocusModeView = ({
     }
   };
 
-  const renderMeta = () => {
-    if (!currentTodo) return null;
-
-    const chips = [];
-
-    if (currentTodo.priorityKey) {
-      const priorityColor = getPriorityColor(currentTodo.priorityKey) || '#1976d2';
-      chips.push(
-        <Chip
-          key="priority"
-          icon={<FlagIcon sx={{ fontSize: 14 }} />}
-          label={getPriorityText(currentTodo.priorityKey)}
-          size="small"
-          sx={{
-            backgroundColor: `${priorityColor}22`,
-            color: priorityColor,
-            fontSize: '0.7rem',
-            height: 20
-          }}
-        />
-      );
-    }
-
-    if (currentTodo.due_date) {
-      const formatted = TimeZoneUtils.formatForDisplay(currentTodo.due_date, { shortFormat: true });
-      
-      if (formatted) {
-        chips.push(
-          <Chip
-            key="due"
-            icon={<AccessTimeIcon sx={{ fontSize: 14 }} />}
-            label={formatted}
-            size="small"
-            sx={{ 
-              fontSize: '0.7rem',
-              height: 20
-            }}
-          />
-        );
-      }
-    }
-
-    currentTodo.tags.forEach((tag, index) => {
-      chips.push(
-        <Chip
-          key={`tag-${index}`}
-          label={`#${tag}`}
-          size="small"
-          sx={{ 
-            fontSize: '0.7rem',
-            height: 20
-          }}
-        />
-      );
-    });
-
-    if (!chips.length) {
-      return null;
-    }
-
-    return (
-      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap justifyContent="center">
-        {chips}
-      </Stack>
-    );
-  };
-
   const totalFocusedSeconds = currentTodo
     ? (currentTodo.focus_time_seconds || 0) + (isFocusing ? elapsedSeconds : 0)
     : 0;
@@ -432,11 +354,7 @@ const FocusModeView = ({
           '&::before': rippleAnimating ? {
             content: '""',
             position: 'absolute',
-            left: `${buttonPosition.x}px`,
-            top: `${buttonPosition.y}px`,
-            width: '100px',
-            height: '100px',
-            borderRadius: '50%',
+            inset: 0,
             background: (theme) => {
               // 使用系统设置的主题色
               const themeColor = primaryColor || '#1976d2';
@@ -456,29 +374,29 @@ const FocusModeView = ({
                 return `rgba(${r}, ${g}, ${b}, ${opacity})`;
               }
             },
-            transform: rippleDirection === 'expand' 
-              ? 'translate(-50%, -50%) scale(0)'
-              : 'translate(-50%, -50%) scale(20)',
+            clipPath: rippleDirection === 'expand'
+              ? `circle(0px at ${buttonPosition.x}px ${buttonPosition.y}px)`
+              : `circle(140vmax at ${buttonPosition.x}px ${buttonPosition.y}px)`,
             animation: rippleDirection === 'expand' 
-              ? 'rippleExpand 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards'
-              : 'rippleContract 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards',
+              ? 'rippleExpand 0.8s cubic-bezier(0.32, 0.72, 0, 1) forwards'
+              : 'rippleContract 0.8s cubic-bezier(0.32, 0.72, 0, 1) forwards',
             '@keyframes rippleExpand': {
               '0%': {
-                transform: 'translate(-50%, -50%) scale(0)',
+                clipPath: `circle(0px at ${buttonPosition.x}px ${buttonPosition.y}px)`,
                 opacity: 1
               },
               '100%': {
-                transform: 'translate(-50%, -50%) scale(20)',
+                clipPath: `circle(140vmax at ${buttonPosition.x}px ${buttonPosition.y}px)`,
                 opacity: 0.3
               }
             },
             '@keyframes rippleContract': {
               '0%': {
-                transform: 'translate(-50%, -50%) scale(20)',
+                clipPath: `circle(140vmax at ${buttonPosition.x}px ${buttonPosition.y}px)`,
                 opacity: 0.3
               },
               '100%': {
-                transform: 'translate(-50%, -50%) scale(0)',
+                clipPath: `circle(0px at ${buttonPosition.x}px ${buttonPosition.y}px)`,
                 opacity: 0
               }
             }
@@ -636,16 +554,20 @@ const FocusModeView = ({
                 width: 72,
                 height: 72,
                 fontSize: '1.5rem',
-                boxShadow: (theme) => 
-                  isFocusing 
+                boxShadow: (theme) =>
+                  isFocusing
                     ? `0 8px 32px ${theme.palette.error.main}40`
                     : `0 8px 32px ${theme.palette.primary.main}30`,
-                transition: 'background-color 0.3s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s cubic-bezier(0.4,0,0.2,1), transform 0.3s cubic-bezier(0.4,0,0.2,1), color 0.3s cubic-bezier(0.4,0,0.2,1)',
+                transition: 'background-color 180ms cubic-bezier(0.32,0.72,0,1), box-shadow 180ms cubic-bezier(0.32,0.72,0,1), filter 120ms cubic-bezier(0.32,0.72,0,1), color 180ms cubic-bezier(0.32,0.72,0,1)',
                 '&:hover': {
-                  transform: 'scale(1.05)',
+                  boxShadow: (theme) =>
+                    isFocusing
+                      ? `0 10px 36px ${theme.palette.error.main}52`
+                      : `0 10px 36px ${theme.palette.primary.main}42`,
+                  filter: 'brightness(1.04)',
                 },
                 '&:active': {
-                  transform: 'scale(0.95)',
+                  filter: 'brightness(0.94)',
                 }
               }}
             >
@@ -671,12 +593,13 @@ const FocusModeView = ({
                   height: 72,
                   fontSize: '1.5rem',
                   boxShadow: (theme) => `0 8px 32px ${theme.palette.success.main}30`,
-                  transition: 'background-color 0.3s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s cubic-bezier(0.4,0,0.2,1), transform 0.3s cubic-bezier(0.4,0,0.2,1)',
+                  transition: 'background-color 180ms cubic-bezier(0.32,0.72,0,1), box-shadow 180ms cubic-bezier(0.32,0.72,0,1), filter 120ms cubic-bezier(0.32,0.72,0,1)',
                   '&:hover': {
-                    transform: 'scale(1.05)',
+                    boxShadow: (theme) => `0 10px 36px ${theme.palette.success.main}42`,
+                    filter: 'brightness(1.04)',
                   },
                   '&:active': {
-                    transform: 'scale(0.95)',
+                    filter: 'brightness(0.94)',
                   }
                 }}
               >
@@ -716,16 +639,19 @@ const FocusModeView = ({
                 fontSize: '1.5rem',
                 backgroundColor: showTodoList ? 'secondary.main' : 'action.hover',
                 color: showTodoList ? 'secondary.contrastText' : 'text.primary',
-                boxShadow: showTodoList 
+                boxShadow: showTodoList
                   ? (theme) => `0 8px 32px ${theme.palette.secondary.main}30`
                   : '0 4px 16px rgba(0,0,0,0.1)',
-                transition: 'background-color 0.3s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s cubic-bezier(0.4,0,0.2,1), transform 0.3s cubic-bezier(0.4,0,0.2,1), color 0.3s cubic-bezier(0.4,0,0.2,1)',
+                transition: 'background-color 180ms cubic-bezier(0.32,0.72,0,1), box-shadow 180ms cubic-bezier(0.32,0.72,0,1), filter 120ms cubic-bezier(0.32,0.72,0,1), color 180ms cubic-bezier(0.32,0.72,0,1)',
                 '&:hover': {
-                  transform: 'scale(1.05)',
                   backgroundColor: showTodoList ? 'secondary.main' : 'action.selected',
+                  boxShadow: showTodoList
+                    ? (theme) => `0 10px 36px ${theme.palette.secondary.main}42`
+                    : '0 8px 24px rgba(0,0,0,0.14)',
+                  filter: 'brightness(1.04)',
                 },
                 '&:active': {
-                  transform: 'scale(0.95)',
+                  filter: 'brightness(0.94)',
                 }
               }}
             >
@@ -786,18 +712,25 @@ const FocusModeView = ({
                   {focusCandidates.length === 0 ? (
                     <ListItem>
                       <ListItemText
-                        primary="暂无需要专注的任务"
-                        secondary="何妨吟啸且徐行"
-                        primaryTypographyProps={{
-                          fontFamily: '"OPPOSans R", "OPPOSans", system-ui, -apple-system, sans-serif',
-                          textAlign: 'center',
-                          fontSize: '0.9rem'
-                        }}
-                        secondaryTypographyProps={{
-                          fontFamily: '"OPPOSans R", "OPPOSans", system-ui, -apple-system, sans-serif',
-                          textAlign: 'center',
-                          fontSize: '0.8rem'
-                        }}
+                        primary={(
+                          <Typography sx={{
+                            fontFamily: '"OPPOSans R", "OPPOSans", system-ui, -apple-system, sans-serif',
+                            textAlign: 'center',
+                            fontSize: '0.9rem'
+                          }}>
+                            暂无需要专注的任务
+                          </Typography>
+                        )}
+                        secondary={(
+                          <Typography component="span" color="text.secondary" sx={{
+                            display: 'block',
+                            fontFamily: '"OPPOSans R", "OPPOSans", system-ui, -apple-system, sans-serif',
+                            textAlign: 'center',
+                            fontSize: '0.8rem'
+                          }}>
+                            何妨吟啸且徐行
+                          </Typography>
+                        )}
                       />
                     </ListItem>
                   ) : (
@@ -847,7 +780,21 @@ const FocusModeView = ({
                             {index + 1}
                           </Box>
                           <ListItemText
-                            primary={todo.content || todo.title}
+                            primary={(
+                              <Typography sx={{
+                                fontFamily: '"OPPOSans R", "OPPOSans", system-ui, -apple-system, sans-serif',
+                                fontWeight: isActive ? 600 : 400,
+                                color: isActive ? 'text.primary' : 'text.secondary',
+                                fontSize: '0.9rem',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'normal',
+                                overflowWrap: 'break-word',
+                                wordBreak: 'break-word'
+                              }}>
+                                {todo.content || todo.title}
+                              </Typography>
+                            )}
                             secondary={
                               <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5 }}>
                                 <Chip
@@ -884,19 +831,6 @@ const FocusModeView = ({
                                 )}
                               </Stack>
                             }
-                            primaryTypographyProps={{
-                              fontFamily: '"OPPOSans R", "OPPOSans", system-ui, -apple-system, sans-serif',
-                              fontWeight: isActive ? 600 : 400,
-                              color: isActive ? 'text.primary' : 'text.secondary',
-                              fontSize: '0.9rem',
-                              sx: {
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'normal',
-                                overflowWrap: 'break-word',
-                                wordBreak: 'break-word'
-                              }
-                            }}
                           />
                         </ListItem>
                       );

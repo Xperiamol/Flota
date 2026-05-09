@@ -33,6 +33,28 @@ import { ANIMATIONS, createAnimationString, createTransitionString, GREEN_SWEEP_
 import { t } from '../utils/i18n';
 import { isRecurringTodo, isTodoCompleted, isTodoOverdue, isTodoDueToday, isFutureRecurringTodo } from '../utils/todoDisplayUtils';
 
+const COMPLETION_BUTTON_SIZE = 32;
+const COMPLETION_ICON_SIZE = 22;
+const completionSlotSx = {
+  minWidth: 40,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center'
+};
+const completionButtonBaseSx = {
+  width: COMPLETION_BUTTON_SIZE,
+  height: COMPLETION_BUTTON_SIZE,
+  p: 0,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  flexShrink: 0
+};
+const completionIconSx = {
+  fontSize: COMPLETION_ICON_SIZE,
+  display: 'block'
+};
+
 /**
  * 获取Todo优先级颜色
  */
@@ -144,8 +166,8 @@ const TodoItem = ({
     if (isFutureRecurring) {
       return (
         <Tooltip title="下一周期未到，暂不可完成">
-          <IconButton size="small" disabled sx={{ opacity: 0.35 }}>
-            <ScheduleIcon />
+          <IconButton size="small" disabled sx={{ ...completionButtonBaseSx, opacity: 0.35 }}>
+            <ScheduleIcon sx={completionIconSx} />
           </IconButton>
         </Tooltip>
       );
@@ -158,12 +180,14 @@ const TodoItem = ({
         onToggleComplete(todo);
       },
       sx: {
+        ...completionButtonBaseSx,
         color: isCompleted
           ? theme.palette.success.main
           : getTodoPriorityColor(todo),
         ...(pendingComplete.has(todo.id) && {
-          transform: 'scale(1.1)',
-          transition: 'transform 0.1s ease-in-out'
+          filter: 'brightness(1.18)',
+          boxShadow: `0 0 0 3px ${theme.palette.success.main}22`,
+          transition: 'filter 120ms cubic-bezier(0.32,0.72,0,1), box-shadow 120ms cubic-bezier(0.32,0.72,0,1)'
         })
       }
     };
@@ -173,7 +197,7 @@ const TodoItem = ({
       iconProps.onDoubleClick = iconProps.onClick;
     }
 
-    const icon = isCompleted ? <CheckCircle /> : <Circle />;
+    const icon = isCompleted ? <CheckCircle sx={completionIconSx} /> : <Circle sx={completionIconSx} />;
 
     return (
       <Tooltip title={isCompleted ? t('todos.uncompleteTodo') : t('todos.completeTodo')}>
@@ -190,8 +214,8 @@ const TodoItem = ({
     if (isFutureRecurring) {
       return (
         <Tooltip title="下一周期未到，暂不可完成">
-          <IconButton size="small" disabled sx={{ opacity: 0.35 }}>
-            <ScheduleIcon />
+          <IconButton size="small" disabled sx={{ ...completionButtonBaseSx, opacity: 0.35 }}>
+            <ScheduleIcon sx={completionIconSx} />
           </IconButton>
         </Tooltip>
       );
@@ -205,6 +229,7 @@ const TodoItem = ({
           onToggleComplete(todo);
         }}
         sx={{
+          ...completionButtonBaseSx,
           position: 'relative',
           transition: createTransitionString(ANIMATIONS.stateChange),
           zIndex: 2,
@@ -217,10 +242,11 @@ const TodoItem = ({
         }}
       >
         {isCompleted ? (
-          <CheckCircleIcon sx={{ color: 'success.main' }} />
+          <CheckCircleIcon sx={{ ...completionIconSx, color: 'success.main' }} />
         ) : pendingComplete.has(todo.id) ? (
           <RadioButtonUncheckedIcon
             sx={{
+              ...completionIconSx,
               color: 'warning.main',
               animation: createAnimationString(ANIMATIONS.pulse)
             }}
@@ -228,12 +254,13 @@ const TodoItem = ({
         ) : celebratingTodos.has(todo.id) ? (
           <CheckCircleIcon
             sx={{
+              ...completionIconSx,
               color: 'success.main',
               filter: 'drop-shadow(0 0 8px rgba(76, 175, 80, 0.6))'
             }}
           />
         ) : (
-          <RadioButtonUncheckedIcon sx={{ color: 'text.secondary' }} />
+          <RadioButtonUncheckedIcon sx={{ ...completionIconSx, color: 'text.secondary' }} />
         )}
       </IconButton>
     );
@@ -370,7 +397,7 @@ const TodoItem = ({
             : `1px solid ${dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'}`,
           transition: createTransitionString(ANIMATIONS.hover),
           cursor: 'grab',
-          '&:active': { cursor: 'grabbing', transform: 'scale(0.98)' },
+          '&:active': { cursor: 'grabbing', filter: 'brightness(0.97)' },
           '&:hover': {
             bgcolor: dark ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.9)',
             boxShadow: dark ? '0 2px 8px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.06)',
@@ -420,7 +447,7 @@ const TodoItem = ({
           />
         </ListItemIcon>
       )}
-      <ListItemIcon sx={{ minWidth: variant === 'mydaypanel' ? 36 : 40 }}>
+      <ListItemIcon sx={{ ...completionSlotSx, minWidth: variant === 'mydaypanel' ? 36 : 40 }}>
         {variant === 'default' ? renderTodoListIcon() : renderCompletionIcon()}
       </ListItemIcon>
       {renderContent()}

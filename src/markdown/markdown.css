@@ -3,6 +3,52 @@
  * 为自定义 Markdown 插件提供样式支持
  */
 
+/* ==================== Code Highlight (hljs) ==================== */
+/* 备注：当前渲染层引入了 highlight.js 的 github（亮色）主题。
+ * 该主题在暗色背景下会出现 token 颜色过暗、不可读的问题。
+ * 这里用 data-theme=dark 做最小覆盖，保证暗黑模式可读性。
+ */
+[data-theme="dark"] .hljs {
+  color: #e2e8f0;            /* slate-200 */
+  background: transparent;   /* 交由外层 pre/code 背景控制 */
+}
+
+[data-theme="dark"] .hljs-comment,
+[data-theme="dark"] .hljs-quote {
+  color: #94a3b8;            /* slate-400 */
+}
+
+[data-theme="dark"] .hljs-keyword,
+[data-theme="dark"] .hljs-selector-tag,
+[data-theme="dark"] .hljs-literal {
+  color: #c4b5fd;            /* violet-300 */
+}
+
+[data-theme="dark"] .hljs-string,
+[data-theme="dark"] .hljs-doctag,
+[data-theme="dark"] .hljs-regexp {
+  color: #86efac;            /* green-300 */
+}
+
+[data-theme="dark"] .hljs-number,
+[data-theme="dark"] .hljs-built_in,
+[data-theme="dark"] .hljs-type {
+  color: #fdba74;            /* orange-300 */
+}
+
+[data-theme="dark"] .hljs-title,
+[data-theme="dark"] .hljs-section,
+[data-theme="dark"] .hljs-function .hljs-title {
+  color: #67e8f9;            /* cyan-300 */
+}
+
+[data-theme="dark"] .hljs-attr,
+[data-theme="dark"] .hljs-attribute,
+[data-theme="dark"] .hljs-name,
+[data-theme="dark"] .hljs-tag {
+  color: #93c5fd;            /* blue-300 */
+}
+
 /* ==================== 高亮样式 ==================== */
 .markdown-highlight {
   background-color: #fef08a;
@@ -130,29 +176,42 @@
 /* ==================== Callout / Container 统一样式（对齐 WYSIWYG 编辑器）==================== */
 .markdown-callout {
   --callout-color: #6b7280;
-  border-left: 4px solid var(--callout-color);
-  padding: 10px 14px;
-  margin: 0.5rem 0;
-  border-radius: 8px;
-  background-color: rgba(107, 114, 128, 0.05);
+  border: 1px solid color-mix(in srgb, var(--callout-color) 22%, transparent);
+  background-color: color-mix(in srgb, var(--callout-color) 7%, transparent);
+  padding: 12px 16px 14px;
+  margin: 12px 0;
+  border-radius: 12px;
 }
 
 .markdown-callout-header {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 8px;
   font-weight: 600;
-  margin-bottom: 0.5rem;
+  font-size: 12.5px;
+  letter-spacing: 0.02em;
+  margin-bottom: 6px;
   color: var(--callout-color);
+  user-select: none;
+  line-height: 1;
 }
 
 .markdown-callout-icon {
-  font-size: 1.1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--callout-color) 16%, transparent);
+  font-size: 12px;
   line-height: 1;
 }
 
 .markdown-callout-title {
-  font-size: 0.95rem;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .markdown-callout-content {
@@ -167,30 +226,26 @@
   margin-bottom: 0;
 }
 
-/* ── 类型颜色（5 标准 + 兼容旧类型）───────────────────── */
+/* ── 类型颜色（5 标准 + 兼容旧类型）—— 仅设置 accent，背景由基类 color-mix 自适应 ───────────────── */
 .markdown-callout-note,
 .markdown-callout-info,
 .markdown-callout-todo {
   --callout-color: #3b82f6;
-  background-color: rgba(59, 130, 246, 0.05);
 }
 
 .markdown-callout-tip,
 .markdown-callout-success {
   --callout-color: #22c55e;
-  background-color: rgba(34, 197, 94, 0.05);
 }
 
 .markdown-callout-important,
 .markdown-callout-question {
   --callout-color: #8b5cf6;
-  background-color: rgba(139, 92, 246, 0.05);
 }
 
 .markdown-callout-warning,
 .markdown-callout-tldr {
   --callout-color: #f59e0b;
-  background-color: rgba(245, 158, 11, 0.05);
 }
 
 .markdown-callout-caution,
@@ -199,24 +254,20 @@
 .markdown-callout-bug,
 .markdown-callout-failure {
   --callout-color: #ef4444;
-  background-color: rgba(239, 68, 68, 0.05);
 }
 
 .markdown-callout-quote {
   --callout-color: #6b7280;
-  background-color: rgba(107, 114, 128, 0.05);
 }
 
 .markdown-callout-example,
 .markdown-callout-abstract,
 .markdown-callout-summary {
   --callout-color: #06b6d4;
-  background-color: rgba(6, 182, 212, 0.05);
 }
 
 .markdown-callout-details {
   --callout-color: #6b7280;
-  background-color: rgba(107, 114, 128, 0.05);
 }
 
 /* ── Details 折叠特殊样式 ──────────────────────────── */

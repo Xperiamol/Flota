@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { Box, Alert, CircularProgress, IconButton, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField } from '@mui/material'
-import { GetApp as ExportIcon, AutoAwesome as AIIcon, Undo as UndoIcon } from '@mui/icons-material'
-import { Excalidraw, exportToBlob, exportToSvg, THEME } from '@excalidraw/excalidraw'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { Box, Alert, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField } from '@mui/material'
+import { AutoAwesome as AIIcon, Undo as UndoIcon } from '@mui/icons-material'
+import { Excalidraw, exportToSvg, THEME } from '@excalidraw/excalidraw'
 import { useStore } from '../store/useStore'
 import { useStandaloneContext } from './StandaloneProvider'
 import { useDebouncedSave } from '../hooks/useDebouncedSave'
 import { aiGenerateExcalidrawElements } from '../utils/aiExcalidrawGenerator'
+import { canvasToPngBlob } from './ImagePreviewModal'
 import '@excalidraw/excalidraw/index.css'
 import logger from '../utils/logger'
 
@@ -13,7 +14,7 @@ import logger from '../utils/logger'
  * 白板编辑器组件
  * 直接使用 @excalidraw/excalidraw React 组件
  */
-const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false, onGetContent, onExportPNG }) => {
+const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onExportPNG }) => {
   // Get context from either main store or standalone context
   let store
   let actualIsStandaloneMode = isStandaloneMode
@@ -607,21 +608,25 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
               const svgUrl = URL.createObjectURL(svgBlob)
               return new Promise((resolve, reject) => {
                 const img = new Image()
-                img.onload = () => {
-                  const SCALE = 2
-                  const canvas = document.createElement('canvas')
-                  canvas.width = img.naturalWidth * SCALE
-                  canvas.height = img.naturalHeight * SCALE
-                  const ctx = canvas.getContext('2d')
-                  ctx.scale(SCALE, SCALE)
-                  ctx.drawImage(img, 0, 0)
-                  URL.revokeObjectURL(svgUrl)
-                  canvas.toBlob(pngBlob => {
+                img.onload = async () => {
+                  try {
+                    const SCALE = 2
+                    const canvas = document.createElement('canvas')
+                    canvas.width = img.naturalWidth * SCALE
+                    canvas.height = img.naturalHeight * SCALE
+                    const ctx = canvas.getContext('2d')
+                    ctx.scale(SCALE, SCALE)
+                    ctx.drawImage(img, 0, 0)
+                    URL.revokeObjectURL(svgUrl)
+                    const pngBlob = await canvasToPngBlob(canvas)
                     const reader = new FileReader()
                     reader.onloadend = () => resolve(reader.result.split(',')[1])
                     reader.onerror = reject
                     reader.readAsDataURL(pngBlob)
-                  }, 'image/png')
+                  } catch (error) {
+                    URL.revokeObjectURL(svgUrl)
+                    reject(error)
+                  }
                 }
                 img.onerror = (e) => { URL.revokeObjectURL(svgUrl); reject(e) }
                 img.src = svgUrl
@@ -758,7 +763,7 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
     }
   }, [])
 
-  const handleAIBtnPointerUp = useCallback((e) => {
+  const handleAIBtnPointerUp = useCallback(() => {
     if (!aiDragRef.current.dragging) return
     aiDragRef.current.dragging = false
     if (!aiDragRef.current.hasMoved) {
@@ -812,11 +817,6 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
     setAiUndoAvailable(false)
     logger.log('[WhiteboardEditor] 已撤销 AI 生成')
   }, [excalidrawAPI])
-
-  // 保存白板
-  const saveWhiteboard = useCallback(async () => {
-    await saveNow()
-  }, [saveNow])
 
   // 获取当前白板内容（用于类型转换）
   const getCurrentContent = useCallback(async () => {
@@ -874,17 +874,18 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
 
       await new Promise((resolve, reject) => {
         const img = new Image()
-        img.onload = () => {
-          const SCALE = 3
-          const canvas = document.createElement('canvas')
-          canvas.width = img.naturalWidth * SCALE
-          canvas.height = img.naturalHeight * SCALE
-          const ctx = canvas.getContext('2d')
-          ctx.scale(SCALE, SCALE)
-          ctx.drawImage(img, 0, 0)
-          URL.revokeObjectURL(svgUrl)
+        img.onload = async () => {
+          try {
+            const SCALE = 3
+            const canvas = document.createElement('canvas')
+            canvas.width = img.naturalWidth * SCALE
+            canvas.height = img.naturalHeight * SCALE
+            const ctx = canvas.getContext('2d')
+            ctx.scale(SCALE, SCALE)
+            ctx.drawImage(img, 0, 0)
+            URL.revokeObjectURL(svgUrl)
 
-          canvas.toBlob(pngBlob => {
+            const pngBlob = await canvasToPngBlob(canvas)
             const url = URL.createObjectURL(pngBlob)
             const a = document.createElement('a')
             a.href = url
@@ -893,7 +894,10 @@ const WhiteboardEditor = ({ noteId, showToolbar = true, isStandaloneMode = false
             URL.revokeObjectURL(url)
             logger.log('[WhiteboardEditor] 导出 PNG 成功')
             resolve()
-          }, 'image/png')
+          } catch (error) {
+            URL.revokeObjectURL(svgUrl)
+            reject(error)
+          }
         }
         img.onerror = (e) => { URL.revokeObjectURL(svgUrl); reject(e) }
         img.src = svgUrl

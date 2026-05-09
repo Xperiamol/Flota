@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import {
   ThemeProvider,
   CssBaseline,
@@ -118,6 +118,8 @@ function StandaloneWindow() {
     }
     loadSettings()
 
+    const unsubSyncComplete = window.electronAPI.sync?.onSyncComplete?.(loadSettings)
+
     // 监听设置变更（用户在主窗口修改时实时同步）
     const unsubSetting = window.electronAPI.settings.onSettingChanged((data) => {
       if (!data?.key) return
@@ -145,6 +147,7 @@ function StandaloneWindow() {
     })
 
     return () => {
+      if (typeof unsubSyncComplete === 'function') unsubSyncComplete()
       if (typeof unsubSetting === 'function') unsubSetting()
       if (typeof unsubTrackTheme === 'function') unsubTrackTheme()
       window.electronAPI.ipcRenderer.removeAllListeners('system-theme-changed')

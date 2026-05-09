@@ -6,21 +6,17 @@ import {
   TextField,
   Button,
   Switch,
-  FormControlLabel,
   Alert,
-  Divider,
   CircularProgress,
   Link,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemSecondaryAction
+  ListItemText
 } from '@mui/material';
 import {
   Check as CheckIcon,
   Info as InfoIcon,
   GraphicEq as TranscribeIcon
 } from '@mui/icons-material';
+import { settingsFieldGroupSx, settingsRowSx, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../styles/commonStyles';
 
 const STTSettings = ({ showSnackbar }) => {
   const { t } = useTranslation();
@@ -127,111 +123,100 @@ const STTSettings = ({ showSnackbar }) => {
 
   return (
     <Box>
-      <List>
-        {/* STT 功能开关 */}
-        <ListItem>
+      <Box sx={settingsSectionSx}>
+        <Typography variant="h6" sx={sectionTitleSx}>语音转文字</Typography>
+        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
+          配置火山引擎语音识别服务和测试识别能力
+        </Typography>
+        <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2 })}>
           <ListItemText
             primary={t('stt.speechToTextFeature')}
             secondary={t('stt.speechToTextDesc')}
+            primaryTypographyProps={{ sx: { fontWeight: 650 } }}
           />
-          <ListItemSecondaryAction>
-            <Switch
-              checked={config.enabled}
-              onChange={(e) => handleConfigChange('enabled', e.target.checked)}
-              color="primary"
-            />
-          </ListItemSecondaryAction>
-        </ListItem>
+          <Switch
+            checked={config.enabled}
+            onChange={(e) => handleConfigChange('enabled', e.target.checked)}
+            color="primary"
+          />
+        </Box>
+      </Box>
 
-        <Divider />
+      <Box sx={settingsSectionSx}>
+        <Typography variant="subtitle1" sx={sectionTitleSx}>火山引擎配置</Typography>
+        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
+          填写控制台中的应用凭据和识别服务 Cluster ID
+        </Typography>
+        <Box sx={settingsFieldGroupSx}>
+          <TextField
+            fullWidth
+            size="small"
+            label="App ID"
+            value={config.volcAppId}
+            onChange={(e) => handleConfigChange('volcAppId', e.target.value)}
+            onBlur={handleTextBlur}
+            placeholder="控制台获取的应用 ID"
+            helperText={(
+              <Link
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (window.electronAPI?.system) {
+                    window.electronAPI.system.openExternal('https://console.volcengine.com/speech/service/8');
+                  }
+                }}
+              >
+                前往火山引擎控制台获取
+              </Link>
+            )}
+          />
+        </Box>
+        <Box sx={settingsFieldGroupSx}>
+          <TextField
+            fullWidth
+            size="small"
+            label="Access Token"
+            type="password"
+            value={config.volcToken}
+            onChange={(e) => handleConfigChange('volcToken', e.target.value)}
+            onBlur={handleTextBlur}
+            placeholder="控制台获取的令牌"
+          />
+        </Box>
+        <Box sx={settingsFieldGroupSx}>
+          <TextField
+            fullWidth
+            size="small"
+            label="Cluster ID"
+            value={config.volcResourceId}
+            onChange={(e) => handleConfigChange('volcResourceId', e.target.value)}
+            onBlur={handleTextBlur}
+            placeholder="volcengine_short_sentence"
+            helperText="在控制台开通「一句话识别」服务后获取的 Cluster ID（如 volcengine_short_sentence）"
+          />
+        </Box>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1.5, pt: 1, flexWrap: 'wrap' }}>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={handleTestTranscribe}
+            disabled={!config.volcAppId || !config.volcToken || testingTranscribe}
+            startIcon={testingTranscribe ? <CircularProgress size={16} /> : <TranscribeIcon />}
+          >
+            {testingTranscribe ? '识别中...' : '测试识别'}
+          </Button>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={handleTestConnection}
+            disabled={!config.volcAppId || !config.volcToken || testing}
+            startIcon={testing ? <CircularProgress size={16} /> : <CheckIcon />}
+          >
+            {testing ? t('stt.testing') : t('stt.testConnection')}
+          </Button>
+        </Box>
+      </Box>
 
-        {/* 火山引擎配置 */}
-        <ListItem>
-          <Box sx={{ width: '100%', pt: 1, pb: 1 }}>
-            <TextField
-              fullWidth
-              size="small"
-              label="App ID"
-              value={config.volcAppId}
-              onChange={(e) => handleConfigChange('volcAppId', e.target.value)}
-              onBlur={handleTextBlur}
-              placeholder="控制台获取的应用 ID"
-              helperText={
-                <Link
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    if (window.electronAPI?.system) {
-                      window.electronAPI.system.openExternal('https://console.volcengine.com/speech/service/8');
-                    }
-                  }}
-                >
-                  前往火山引擎控制台获取
-                </Link>
-              }
-            />
-          </Box>
-        </ListItem>
-        <Divider />
-        <ListItem>
-          <Box sx={{ width: '100%', pt: 1, pb: 1 }}>
-            <TextField
-              fullWidth
-              size="small"
-              label="Access Token"
-              type="password"
-              value={config.volcToken}
-              onChange={(e) => handleConfigChange('volcToken', e.target.value)}
-              onBlur={handleTextBlur}
-              placeholder="控制台获取的令牌"
-            />
-          </Box>
-        </ListItem>
-        <Divider />
-        <ListItem>
-          <Box sx={{ width: '100%', pt: 1, pb: 1 }}>
-            <TextField
-              fullWidth
-              size="small"
-              label="Cluster ID"
-              value={config.volcResourceId}
-              onChange={(e) => handleConfigChange('volcResourceId', e.target.value)}
-              onBlur={handleTextBlur}
-              placeholder="volcengine_short_sentence"
-              helperText="在控制台开通「一句话识别」服务后获取的 Cluster ID（如 volcengine_short_sentence）"
-            />
-          </Box>
-        </ListItem>
-
-        <Divider />
-
-        {/* 操作按钮 */}
-        <ListItem>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, pt: 1, pb: 1, width: '100%' }}>
-            <Box sx={{ flex: 1 }} />
-            <Button
-              variant="outlined"
-              size="small"
-              onClick={handleTestTranscribe}
-              disabled={!config.volcAppId || !config.volcToken || testingTranscribe}
-              startIcon={testingTranscribe ? <CircularProgress size={16} /> : <TranscribeIcon />}
-            >
-              {testingTranscribe ? '识别中...' : '测试识别'}
-            </Button>
-            <Button
-              variant="outlined"
-              size="small"
-              onClick={handleTestConnection}
-              disabled={!config.volcAppId || !config.volcToken || testing}
-              startIcon={testing ? <CircularProgress size={16} /> : <CheckIcon />}
-            >
-              {testing ? t('stt.testing') : t('stt.testConnection')}
-            </Button>
-          </Box>
-        </ListItem>
-      </List>
-
-      {/* 使用说明 */}
       <Alert severity="info" icon={<InfoIcon />} sx={{ mt: 3 }}>
         <Typography variant="body2" gutterBottom>
           <strong>{t('stt.usageInstructions')}：</strong>

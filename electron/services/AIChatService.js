@@ -172,6 +172,42 @@ const TOOLS = [
   }
 ];
 
+const WRITE_TOOL_NAMES = new Set(['create_note', 'edit_note', 'create_todo', 'add_memory', 'update_memory']);
+
+const ACTION_LABELS = {
+  create_note: '创建笔记',
+  edit_note: '编辑笔记',
+  create_todo: '创建待办',
+  add_memory: '保存记忆',
+  update_memory: '更新记忆'
+};
+
+const getLocalDateKey = (value = new Date()) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getTodoTemporalStatus = (todo) => {
+  if (!todo?.due_date || todo.is_completed) {
+    return { label: todo?.is_completed ? '已完成' : '无截止日期', isOverdue: false, isDueToday: false, isUpcoming: false };
+  }
+
+  const dueKey = String(todo.due_date).substring(0, 10);
+  const todayKey = getLocalDateKey();
+  const dueTime = new Date(`${dueKey}T00:00:00`).getTime();
+  const todayTime = new Date(`${todayKey}T00:00:00`).getTime();
+  const daysUntilDue = Math.round((dueTime - todayTime) / 86400000);
+
+  if (dueKey < todayKey) return { label: `已过期 ${Math.abs(daysUntilDue)} 天`, isOverdue: true, isDueToday: false, isUpcoming: false };
+  if (dueKey === todayKey) return { label: '今天到期', isOverdue: false, isDueToday: true, isUpcoming: false };
+  if (daysUntilDue <= 7) return { label: `${daysUntilDue} 天后到期`, isOverdue: false, isDueToday: false, isUpcoming: true };
+  return { label: '未来待办', isOverdue: false, isDueToday: false, isUpcoming: false };
+};
+
 class AIChatService {
   constructor(aiService, noteDAO, todoDAO, mem0Service) {
     this.aiService = aiService;
@@ -180,6 +216,7 @@ class AIChatService {
     this.mem0Service = mem0Service;
     this.logger = getLogger();
     this._currentNoteGetter = null; // 由 main.js 注入
+    this._pendingActions = new Map();
   }
 
   /** 注入获取当前笔记的函数 */
@@ -187,9 +224,115 @@ class AIChatService {
     this._currentNoteGetter = fn;
   }
 
+  async _createPendingAction(name, args) {
+    const actionId = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const memoryReview = await this._getMemoryReview(name, args);
+    const action = {
+      id: actionId,
+      name,
+      label: ACTION_LABELS[name] || name,
+      args,
+      memoryReview,
+      createdAt: Date.now()
+    };
+    this._pendingActions.set(actionId, action);
+
+    return {
+      requiresConfirmation: true,
+      actionId,
+      name,
+      label: action.label,
+      args,
+      summary: this._summarizeAction(name, args),
+      memoryReview
+    };
+  }
+
+  async _getMemoryReview(name, args = {}) {
+    if (!['add_memory', 'update_memory'].includes(name)) return null;
+    if (!this.mem0Service?.isAvailable() || !args.content?.trim()) return null;
+
+    try {
+      const similar = await this.mem0Service.searchMemories('current_user', args.content.trim(), { limit: 3 });
+      const candidates = (similar || [])
+        .filter(item => item?.content)
+        .map(item => ({
+          id: item.id,
+          content: String(item.content).slice(0, 180),
+          score: item.score,
+          category: item.category,
+          memory_layer: item.memory_layer
+        }));
+
+      if (candidates.length === 0) return null;
+
+      const highSimilarity = candidates.some(item => Number(item.score || 0) >= 0.72);
+      return {
+        level: highSimilarity ? 'warning' : 'info',
+        summary: highSimilarity
+          ? '发现相似记忆，请确认是更新旧记忆还是新增一条'
+          : '找到可能相关的既有记忆',
+        candidates
+      };
+    } catch (error) {
+      return { level: 'info', summary: `相似记忆检查失败：${error.message}`, candidates: [] };
+    }
+  }
+
+  _summarizeAction(name, args = {}) {
+    switch (name) {
+      case 'create_note':
+        return `创建笔记「${args.title || '未命名'}」`;
+      case 'edit_note':
+        return `编辑笔记 #${args.id}${args.title ? `，标题改为「${args.title}」` : ''}`;
+      case 'create_todo':
+        return `创建待办「${args.content || '未命名待办'}」`;
+      case 'add_memory':
+        return `保存记忆「${String(args.content || '').slice(0, 40)}」`;
+      case 'update_memory':
+        return `更新记忆 #${args.id}`;
+      default:
+        return ACTION_LABELS[name] || name;
+    }
+  }
+
+  async executePendingAction(actionId) {
+    const action = this._pendingActions.get(actionId);
+    if (!action) {
+      return { success: false, error: '待确认操作不存在或已过期' };
+    }
+
+    this._pendingActions.delete(actionId);
+    try {
+      const result = await this._executeTool(action.name, action.args, { requireConfirmation: false });
+      const parsed = this._safeJsonParse(result);
+      const success = !(parsed?.error || parsed?.success === false);
+      return {
+        success,
+        error: success ? undefined : parsed.error || '操作执行失败',
+        action,
+        result: parsed
+      };
+    } catch (error) {
+      return { success: false, error: error.message, action };
+    }
+  }
+
+  _safeJsonParse(value) {
+    try {
+      return JSON.parse(value);
+    } catch (_) {
+      return value;
+    }
+  }
+
   // ─── 工具执行器 ───
 
-  async _executeTool(name, args) {
+  async _executeTool(name, args, options = {}) {
+    if (options.requireConfirmation !== false && WRITE_TOOL_NAMES.has(name)) {
+      return JSON.stringify(await this._createPendingAction(name, args));
+    }
+
     switch (name) {
       case 'search_notes': {
         const results = this.noteDAO.findAll({
@@ -260,30 +403,43 @@ class AIChatService {
         else if (args.status === 'pending') opts.status = 'pending';
         if (args.query) opts.search = args.query;
         const results = this.todoDAO.findAll(opts);
-        const todos = (results.todos || results || []).map(t => ({
-          id: t.id,
-          content: t.content,
-          description: t.description,
-          is_completed: t.is_completed,
-          is_important: t.is_important,
-          is_urgent: t.is_urgent,
-          due_date: t.due_date,
-          tags: t.tags
-        }));
+        const todos = (results.todos || results || []).map(t => {
+          const temporal = getTodoTemporalStatus(t);
+          return {
+            id: t.id,
+            content: t.content,
+            description: t.description,
+            is_completed: t.is_completed,
+            is_important: t.is_important,
+            is_urgent: t.is_urgent,
+            due_date: t.due_date,
+            tags: t.tags,
+            timeLabel: temporal.label,
+            isOverdue: temporal.isOverdue,
+            isDueToday: temporal.isDueToday,
+            isUpcoming: temporal.isUpcoming
+          };
+        });
         return JSON.stringify(todos);
       }
 
       case 'get_today_todos': {
-        const today = new Date().toISOString().split('T')[0];
+        const today = getLocalDateKey();
         const results = this.todoDAO.findAll({ due_date: today, limit: 50, page: 1 });
-        const todos = (results.todos || results || []).map(t => ({
-          id: t.id,
-          content: t.content,
-          is_completed: t.is_completed,
-          is_important: t.is_important,
-          is_urgent: t.is_urgent,
-          due_date: t.due_date
-        }));
+        const todos = (results.todos || results || []).map(t => {
+          const temporal = getTodoTemporalStatus(t);
+          return {
+            id: t.id,
+            content: t.content,
+            is_completed: t.is_completed,
+            is_important: t.is_important,
+            is_urgent: t.is_urgent,
+            due_date: t.due_date,
+            timeLabel: temporal.label,
+            isOverdue: temporal.isOverdue,
+            isDueToday: temporal.isDueToday
+          };
+        });
         return JSON.stringify(todos);
       }
 
@@ -409,20 +565,72 @@ class AIChatService {
 - 查看、搜索、添加和更新记忆库条目
 - 写作辅助、翻译、问答等通用任务
 
-## 记忆档案管理（核心强制纪律）
-- 【主动提取】不要死板地等待用户说“帮我记住”或“我喜欢”。在对话的字里行间，你要主动捕捉、提炼并调用 add_memory 随时保存：用户的角色/职业/身份、生活习惯/环境事实、代码/技术栈偏好、当前核心任务与工作流规约。
+## 记忆档案管理
+- 【高价值才保存】只有当信息长期有效、可复用、对未来回答有明显帮助时，才调用 add_memory；临时任务、一次性上下文、当前笔记里已经明确存在的信息不要重复保存。
+- 【先查再写】保存或更新记忆前优先用 search_memory 检查是否已有相似记忆；相似时优先 update_memory，避免重复和冲突。
 - 【多维归类】合理分配 category：如 profile(身份)、preference(偏好要求)、fact(事实结论)、habit(排版风格等习惯)。
-- 【动态刷新】如果聊天中用户的偏好或状态发生了变化，必须马上调用 update_memory 修正或覆盖之前的旧数据，保持记忆的绝对时效性。
-- 【绝不遗忘】你必须学会在每次长对话的重要节点（尤其是总结方案、梳理知识后）留下“记忆档案”，方便未来你自己的再次查询。
+- 【动态刷新】当用户明确更新偏好、身份、工作流或稳定事实时，调用 update_memory 修正旧记忆；不确定时先询问用户。
 
 ## 规则
-- 用简洁友好的中文回复，适当使用 emoji
+- 用简洁友好的中文回复
 - 需要查询用户数据时主动调用工具，不要猜测
-- 创建或编辑笔记、创建待办后告知用户，并附上摘要
-- 编辑笔记前先确认用户意图，说明要修改的内容
+- 创建、编辑笔记/待办/记忆这类写入操作默认只生成待确认计划；拿到工具返回的 requiresConfirmation 后，必须清楚告诉用户等待确认，不要声称已经执行
 - 使用 Markdown 格式回复，善用列表和标题
 - 不确定时如实说明，不编造数据
 - 回复要简明扼要，避免冗余${profileSection}`;
+  }
+
+  _buildContextSection(contextPackage = {}) {
+    const sections = [];
+    const truncate = (text, max = 1800) => {
+      const value = String(text || '').trim();
+      return value.length > max ? `${value.slice(0, max)}…` : value;
+    };
+
+    if (contextPackage.currentNote) {
+      const note = contextPackage.currentNote;
+      sections.push([
+        '### 当前笔记',
+        `ID: ${note.id || '未知'}`,
+        `标题: ${note.title || '未命名'}`,
+        note.timeLabel ? `时间: ${note.timeLabel}` : '',
+        note.stalenessLabel ? `时效性: ${note.stalenessLabel}` : '',
+        note.updated_at ? `最近修改: ${note.updated_at}` : '',
+        note.tags ? `标签: ${note.tags}` : '',
+        `内容:\n${truncate(note.content)}`
+      ].filter(Boolean).join('\n'));
+    }
+
+    if (Array.isArray(contextPackage.relatedNotes) && contextPackage.relatedNotes.length > 0) {
+      sections.push([
+        '### 相关笔记候选',
+        ...contextPackage.relatedNotes.slice(0, 6).map((note, index) =>
+          `${index + 1}. [#${note.id}] ${note.title || '未命名'}（${note.timeLabel || '时间未知'}${note.stalenessLabel ? `，${note.stalenessLabel}` : ''}）：${truncate(note.excerpt || note.content, 360)}`
+        )
+      ].join('\n'));
+    }
+
+    if (Array.isArray(contextPackage.todayTodos) && contextPackage.todayTodos.length > 0) {
+      sections.push([
+        '### 今日/近期待办',
+        ...contextPackage.todayTodos.slice(0, 8).map((todo, index) =>
+          `${index + 1}. [#${todo.id}] ${todo.content}${todo.due_date ? `（截止: ${todo.due_date}，${todo.timeLabel || (todo.isOverdue ? '已过期' : '有截止日期')}）` : ''}`
+        )
+      ].join('\n'));
+    }
+
+    if (Array.isArray(contextPackage.memories) && contextPackage.memories.length > 0) {
+      sections.push([
+        '### 相关长期记忆',
+        ...contextPackage.memories.slice(0, 8).map((memory, index) =>
+          `${index + 1}. ${memory.memory_layer ? `[${memory.memory_layer}] ` : ''}${truncate(memory.content, 260)}${memory.stalenessLabel ? `（${memory.stalenessLabel}）` : ''}${memory.score != null ? ` · 相关度 ${Math.round(memory.score * 100)}%` : ''}`
+        )
+      ].join('\n'));
+    }
+
+    if (sections.length === 0) return '';
+
+    return `\n\n## 本次对话自动上下文\n以下内容由应用按用户选择注入。回答时优先引用这些上下文；如果使用了相关笔记或长期记忆，请说明来源标题、ID 或“长期记忆”。注意时间感知：最近修改的信息优先级更高，旧信息要标注可能过时，过期待办不能当作未来计划。长期记忆代表稳定偏好/事实，但遇到用户当前明确说法时，以当前上下文为准。\n\n${sections.join('\n\n')}`;
   }
 
   // ─── 流式聊天（主方法） ───
@@ -448,18 +656,18 @@ class AIChatService {
       const maxTk = options.maxTokens || config.maxTokens || 4000;
 
       // 构建完整消息列表（v3: _getSystemPrompt 现在是异步的）
-      const systemPrompt = await this._getSystemPrompt();
+      const systemPrompt = `${await this._getSystemPrompt()}${this._buildContextSection(options.contextPackage)}`;
       const fullMessages = [
         { role: 'system', content: systemPrompt },
         ...messages
       ];
 
       // 第一轮调用：可能返回工具调用
-      const result = await this._streamRequest(config, fullMessages, temp, maxTk, onChunk, options.abortSignal);
+      const result = await this._streamRequest(config, fullMessages, temp, maxTk, onChunk, options.abortSignal, options);
 
       // 处理工具调用循环（最多3轮）
       if (result.toolCalls && result.toolCalls.length > 0) {
-        return await this._handleToolCalls(config, fullMessages, result, onChunk, temp, maxTk, 0, options.abortSignal);
+        return await this._handleToolCalls(config, fullMessages, result, onChunk, temp, maxTk, 0, options.abortSignal, options);
       }
 
       return { success: true, fullContent: result.content, usage: result.usage };
@@ -475,7 +683,7 @@ class AIChatService {
 
   // ─── 处理工具调用 ───
 
-  async _handleToolCalls(config, messages, prevResult, onChunk, temp, maxTk, depth, abortSignal) {
+  async _handleToolCalls(config, messages, prevResult, onChunk, temp, maxTk, depth, abortSignal, options = {}) {
     if (depth >= 3) {
       // 防止无限循环
       return { success: true, fullContent: prevResult.content || '', usage: prevResult.usage };
@@ -497,7 +705,9 @@ class AIChatService {
       onChunk({ type: 'tool_start', name: fnName, args });
       this.logger.info('AIChatService', `Executing tool: ${fnName}`, args);
 
-      const toolResult = await this._executeTool(fnName, args);
+      const toolResult = await this._executeTool(fnName, args, {
+        requireConfirmation: options.requireConfirmation !== false
+      });
       onChunk({ type: 'tool_end', name: fnName, result: toolResult });
 
       messages.push({
@@ -508,10 +718,10 @@ class AIChatService {
     }
 
     // 继续调用 AI，让它汇总工具结果
-    const newResult = await this._streamRequest(config, messages, temp, maxTk, onChunk, abortSignal);
+    const newResult = await this._streamRequest(config, messages, temp, maxTk, onChunk, abortSignal, options);
 
     if (newResult.toolCalls && newResult.toolCalls.length > 0) {
-      return await this._handleToolCalls(config, messages, newResult, onChunk, temp, maxTk, depth + 1, abortSignal);
+      return await this._handleToolCalls(config, messages, newResult, onChunk, temp, maxTk, depth + 1, abortSignal, options);
     }
 
     return { success: true, fullContent: newResult.content, usage: newResult.usage };
@@ -519,8 +729,8 @@ class AIChatService {
 
   // ─── 单次流式请求 ───
 
-  async _streamRequest(config, messages, temp, maxTk, onChunk, abortSignal = null) {
-    const { url, headers, body } = this._buildRequest(config, messages, temp, maxTk);
+  async _streamRequest(config, messages, temp, maxTk, onChunk, abortSignal = null, options = {}) {
+    const { url, headers, body } = this._buildRequest(config, messages, temp, maxTk, options);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 120000); // 2分钟超时
@@ -566,7 +776,7 @@ class AIChatService {
 
   // ─── 构建请求 ───
 
-  _buildRequest(config, messages, temp, maxTk) {
+  _buildRequest(config, messages, temp, maxTk, options = {}) {
     const { provider, apiKey, apiUrl } = config;
 
     const providerUrls = {
@@ -587,10 +797,13 @@ class AIChatService {
       messages,
       temperature: temp,
       max_tokens: maxTk,
-      stream: true,
-      tools: TOOLS,
-      tool_choice: 'auto'
+      stream: true
     };
+
+    if (options.disableTools !== true) {
+      body.tools = TOOLS;
+      body.tool_choice = 'auto';
+    }
 
     // 通义千问的流式 API 也用 OpenAI 兼容格式
     if (provider === 'qwen') {

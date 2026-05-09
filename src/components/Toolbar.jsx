@@ -31,7 +31,7 @@ import { useStore } from '../store/useStore'
 import DropdownMenu from './DropdownMenu'
 import { executePluginCommand } from '../api/pluginAPI'
 import { getPluginCommandIcon } from '../utils/pluginCommandUtils.jsx'
-import { createTransitionString, ANIMATIONS } from '../utils/animationConfig'
+import { segmentedButtonSx, segmentedControlSx } from '../styles/commonStyles'
 import { t } from '../utils/i18n'
 import logger from '../utils/logger'
 
@@ -171,14 +171,42 @@ const Toolbar = ({
     }
   };
 
+  const calendarNavButtonSx = {
+    backgroundColor: 'background.paper',
+    border: 1,
+    borderColor: 'divider',
+    transition: 'background-color 180ms cubic-bezier(0.32, 0.72, 0, 1), border-color 180ms cubic-bezier(0.32, 0.72, 0, 1), color 180ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 180ms cubic-bezier(0.32, 0.72, 0, 1)',
+    '&:hover': {
+      backgroundColor: 'primary.main',
+      borderColor: 'primary.main',
+      color: 'primary.contrastText',
+      boxShadow: '0 4px 14px rgba(15,23,42,0.10)'
+    },
+    '&:active': {
+      backgroundColor: 'primary.dark',
+      borderColor: 'primary.dark'
+    }
+  };
+
+  const calendarTodayButtonSx = {
+    backgroundColor: 'primary.main',
+    color: 'primary.contrastText',
+    ml: 1,
+    transition: 'background-color 180ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 180ms cubic-bezier(0.32, 0.72, 0, 1), filter 120ms cubic-bezier(0.32, 0.72, 0, 1)',
+    '&:hover': {
+      backgroundColor: 'primary.dark',
+      boxShadow: '0 4px 14px rgba(15,23,42,0.12)'
+    },
+    '&:active': {
+      filter: 'brightness(0.94)'
+    }
+  };
+
   /** 日历导航按钮组 */
   const CalendarNavButtons = ({ button }) => (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
       <Tooltip title={t('common.previous')}>
-        <IconButton onClick={goToPreviousMonth} size="small"
-          sx={{ backgroundColor: 'background.paper', border: 1, borderColor: 'divider',
-            '&:hover': { backgroundColor: 'primary.main', color: 'primary.contrastText', transform: 'scale(1.05)' },
-            transition: createTransitionString(ANIMATIONS.button) }}>
+        <IconButton onClick={goToPreviousMonth} size="small" sx={calendarNavButtonSx}>
           <ChevronLeft />
         </IconButton>
       </Tooltip>
@@ -191,18 +219,12 @@ const Toolbar = ({
         </Typography>
       </Box>
       <Tooltip title={t('common.next')}>
-        <IconButton onClick={goToNextMonth} size="small"
-          sx={{ backgroundColor: 'background.paper', border: 1, borderColor: 'divider',
-            '&:hover': { backgroundColor: 'primary.main', color: 'primary.contrastText', transform: 'scale(1.05)' },
-            transition: createTransitionString(ANIMATIONS.button) }}>
+        <IconButton onClick={goToNextMonth} size="small" sx={calendarNavButtonSx}>
           <ChevronRight />
         </IconButton>
       </Tooltip>
       <Tooltip title={t('common.today')}>
-        <IconButton onClick={goToToday} size="small" color="primary"
-          sx={{ backgroundColor: 'primary.main', color: 'primary.contrastText',
-            '&:hover': { backgroundColor: 'primary.dark', transform: 'scale(1.1)' },
-            transition: createTransitionString(ANIMATIONS.button), ml: 1 }}>
+        <IconButton onClick={goToToday} size="small" color="primary" sx={calendarTodayButtonSx}>
           <Today />
         </IconButton>
       </Tooltip>
@@ -442,11 +464,7 @@ const Toolbar = ({
             .map((button, index) => {
               if (button.type === 'calendarViewMode') {
                 return (
-                  <Box key={index} sx={{
-                    display: 'flex', alignItems: 'center', gap: '3px',
-                    bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)',
-                    borderRadius: '12px', p: '3px',
-                  }}>
+                  <Box key={index} sx={segmentedControlSx}>
                     {button.options.map((option) => {
                       const isActive = (calendarViewMode || 'todos') === option.value;
                       return (
@@ -461,35 +479,7 @@ const Toolbar = ({
                               onCalendarViewModeChange(option.value);
                             }
                           }}
-                          sx={{
-                            px: 1.5, py: 0.4, minWidth: 0, fontSize: '0.78rem', fontWeight: 600,
-                            borderRadius: '9px', textTransform: 'none', lineHeight: 1.5,
-                            letterSpacing: '0.01em',
-                            transition: 'all 0.25s cubic-bezier(.4,0,.2,1)',
-                            ...(isActive ? {
-                              bgcolor: (theme) => theme.palette.mode === 'dark'
-                                ? 'rgba(255,255,255,0.13)'
-                                : 'primary.main',
-                              color: (theme) => theme.palette.mode === 'dark'
-                                ? '#fff'
-                                : 'primary.contrastText',
-                              boxShadow: (theme) => theme.palette.mode === 'dark'
-                                ? '0 1px 4px rgba(0,0,0,0.3)'
-                                : `0 2px 8px ${theme.palette.primary.main}33`,
-                              '&:hover': {
-                                bgcolor: (theme) => theme.palette.mode === 'dark'
-                                  ? 'rgba(255,255,255,0.18)'
-                                  : 'primary.dark',
-                              },
-                            } : {
-                              color: 'text.secondary',
-                              bgcolor: 'transparent',
-                              '&:hover': {
-                                bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
-                                color: 'text.primary',
-                              },
-                            }),
-                          }}
+                          sx={segmentedButtonSx(isActive)}
                         >
                           {option.label}
                         </Button>
@@ -500,11 +490,7 @@ const Toolbar = ({
               }
               if (button.type === 'viewToggle') {
                 return (
-                  <Box key={index} sx={{
-                    display: 'flex', alignItems: 'center', gap: '3px',
-                    bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)',
-                    borderRadius: '12px', p: '3px',
-                  }}>
+                  <Box key={index} sx={segmentedControlSx}>
                     {button.options.map((option) => {
                       const isActive = todoViewMode === option.value;
                       return (
@@ -514,35 +500,7 @@ const Toolbar = ({
                           disableRipple
                           variant={isActive ? 'contained' : 'text'}
                           onClick={() => onTodoViewModeChange && onTodoViewModeChange(option.value)}
-                          sx={{
-                            px: 1.5, py: 0.4, minWidth: 0, fontSize: '0.78rem', fontWeight: 600,
-                            borderRadius: '9px', textTransform: 'none', lineHeight: 1.5,
-                            letterSpacing: '0.01em',
-                            transition: 'all 0.25s cubic-bezier(.4,0,.2,1)',
-                            ...(isActive ? {
-                              bgcolor: (theme) => theme.palette.mode === 'dark'
-                                ? 'rgba(255,255,255,0.13)'
-                                : 'primary.main',
-                              color: (theme) => theme.palette.mode === 'dark'
-                                ? '#fff'
-                                : 'primary.contrastText',
-                              boxShadow: (theme) => theme.palette.mode === 'dark'
-                                ? '0 1px 4px rgba(0,0,0,0.3)'
-                                : `0 2px 8px ${theme.palette.primary.main}33`,
-                              '&:hover': {
-                                bgcolor: (theme) => theme.palette.mode === 'dark'
-                                  ? 'rgba(255,255,255,0.18)'
-                                  : 'primary.dark',
-                              },
-                            } : {
-                              color: 'text.secondary',
-                              bgcolor: 'transparent',
-                              '&:hover': {
-                                bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
-                                color: 'text.primary',
-                              },
-                            }),
-                          }}
+                          sx={segmentedButtonSx(isActive)}
                         >
                           {option.label}
                         </Button>

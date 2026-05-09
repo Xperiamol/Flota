@@ -7,6 +7,7 @@ const { EventEmitter } = require('events');
 const fs = require('fs');
 const crypto = require('crypto');
 const zlib = require('zlib');
+const { encryptValue, decryptValue } = require('../utils/secureValue');
 
 let uuidv4;
 try { uuidv4 = require('uuid').v4; } catch (_) { uuidv4 = null; }
@@ -65,7 +66,7 @@ class STTService extends EventEmitter {
       const config = {
         enabled: g('stt_enabled') === true || g('stt_enabled') === 'true',
         volcAppId: g('stt_volc_appid'),
-        volcToken: g('stt_volc_token'),
+        volcToken: decryptValue(g('stt_volc_token')),
         volcResourceId: g('stt_volc_resource_id', 'volcengine_short_sentence')
       };
       return { success: true, data: config };
@@ -84,7 +85,7 @@ class STTService extends EventEmitter {
 
       this.settingDAO.set('stt_enabled', enabled, 'boolean', 'STT功能开关');
       this.settingDAO.set('stt_volc_appid', volcAppId || '', 'string', '火山引擎 App ID');
-      this.settingDAO.set('stt_volc_token', volcToken || '', 'string', '火山引擎 Access Token');
+      this.settingDAO.set('stt_volc_token', encryptValue(volcToken), 'string', '火山引擎 Access Token');
       this.settingDAO.set('stt_volc_resource_id', volcResourceId || 'volcengine_short_sentence', 'string', '火山引擎 Cluster ID');
 
       // 触发配置更改事件

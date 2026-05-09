@@ -177,6 +177,28 @@ const MarkdownToolbar = ({ onInsert, onBlockFormat, disabled = false, viewMode, 
   const [colorAnchor, setColorAnchor] = React.useState(null)
   const [headingAnchor, setHeadingAnchor] = React.useState(null)
 
+  // 订阅 WYSIWYG editor 状态变化（光标移动、选区变化），让 active 高亮即时刷新
+  const [, forceTick] = React.useState(0)
+  React.useEffect(() => {
+    if (!editor || editorMode !== 'wysiwyg') return
+    const handler = () => forceTick((v) => v + 1)
+    editor.on('selectionUpdate', handler)
+    editor.on('transaction', handler)
+    editor.on('focus', handler)
+    return () => {
+      editor.off('selectionUpdate', handler)
+      editor.off('transaction', handler)
+      editor.off('focus', handler)
+    }
+  }, [editor, editorMode])
+
+  // 当前光标处的标题级别（0 表示正文）
+  const activeHeadingLevel = React.useMemo(() => {
+    if (!editor || editorMode !== 'wysiwyg') return null
+    for (let lv = 1; lv <= 6; lv++) if (editor.isActive('heading', { level: lv })) return lv
+    return 0
+  }, [editor, editorMode])
+
   const toolbarOrder = useStore((s) => s.toolbarOrder) || DEFAULT_TOOLBAR_ORDER
 
   // 自动追加新增的工具栏项（兼容旧保存配置）
@@ -246,12 +268,24 @@ const MarkdownToolbar = ({ onInsert, onBlockFormat, disabled = false, viewMode, 
     // AI 动作项不渲染到工具栏
     if (def.aiAction) return null
 
+    // 工具栏 id → TipTap 节点/标记名（用于 active 状态高亮）
+    const ACTIVE_NAME = {
+      bold: 'bold', italic: 'italic', strike: 'strike', inlineCode: 'code', highlight: 'highlight',
+      bulletList: 'bulletList', orderedList: 'orderedList', taskList: 'taskList', quote: 'blockquote',
+      link: 'link',
+    }
+    const isActive = editorMode === 'wysiwyg' && editor && ACTIVE_NAME[id] ? editor.isActive(ACTIVE_NAME[id]) : false
+    const activeSx = isActive ? {
+      bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(96,165,250,0.18)' : 'rgba(59,130,246,0.12)',
+      color: 'primary.main',
+    } : {}
+
     // 内联格式（粗体、斜体、删除线等）
     if (def.inline) {
       const Icon = def.icon
       return (
         <Tooltip key={id} title={def.label} placement="bottom">
-          <span><IconButton size="small" disabled={disabled} onClick={() => insertText(...def.inline)} sx={btnSx}><Icon /></IconButton></span>
+          <span><IconButton size="small" disabled={disabled} onClick={() => insertText(...def.inline)} sx={{ ...btnSx, ...activeSx }}><Icon /></IconButton></span>
         </Tooltip>
       )
     }
@@ -261,7 +295,7 @@ const MarkdownToolbar = ({ onInsert, onBlockFormat, disabled = false, viewMode, 
       const Icon = def.icon
       return (
         <Tooltip key={id} title={def.label} placement="bottom">
-          <span><IconButton size="small" disabled={disabled} onClick={() => applyBlock(def.block)} sx={btnSx}><Icon /></IconButton></span>
+          <span><IconButton size="small" disabled={disabled} onClick={() => applyBlock(def.block)} sx={{ ...btnSx, ...activeSx }}><Icon /></IconButton></span>
         </Tooltip>
       )
     }
@@ -281,9 +315,12 @@ const MarkdownToolbar = ({ onInsert, onBlockFormat, disabled = false, viewMode, 
       case 'heading':
         return (
           <React.Fragment key={id}>
-            <Tooltip title="标题" placement="bottom">
-              <IconButton size="small" disabled={disabled} onClick={(e) => setHeadingAnchor(e.currentTarget)} sx={menuBtnSx}>
-                <Box component="span" sx={{ fontSize: 13, fontWeight: 700, lineHeight: 1, fontFamily: 'inherit' }}>H</Box>
+            <Tooltip title={activeHeadingLevel ? `当前：标题 ${activeHeadingLevel}` : '标题'} placement="bottom">
+              <IconButton size="small" disabled={disabled} onClick={(e) => setHeadingAnchor(e.currentTarget)}
+                sx={{ ...menuBtnSx, ...(activeHeadingLevel ? activeSx : {}) }}>
+                <Box component="span" sx={{ fontSize: 13, fontWeight: 700, lineHeight: 1, fontFamily: 'inherit' }}>
+                  {activeHeadingLevel ? `H${activeHeadingLevel}` : 'H'}
+                </Box>
                 <DropdownIcon sx={{ fontSize: '14px !important', ml: -0.3 }} />
               </IconButton>
             </Tooltip>
@@ -301,14 +338,17 @@ const MarkdownToolbar = ({ onInsert, onBlockFormat, disabled = false, viewMode, 
             </Menu>
           </React.Fragment>
         )
-      case 'codeBlock':
+      case 'codeBlock': {
+        const cbActive = editorMode === 'wysiwyg' && editor?.isActive('codeBlock')
         return (
           <Tooltip key={id} title="代码块" placement="bottom">
-            <span><IconButton size="small" disabled={disabled} onClick={() => insertText('```\n', '\n```', '代码块')} sx={btnSx}>
+            <span><IconButton size="small" disabled={disabled} onClick={() => insertText('```\n', '\n```', '代码块')}
+              sx={{ ...btnSx, ...(cbActive ? activeSx : {}) }}>
               <CodeBlockIcon />
             </IconButton></span>
           </Tooltip>
         )
+      }
       case 'image':
         return <ImageUploadButton key={id} onImageInsert={(text, a, b) => insertText(text, a, b)} disabled={disabled} sx={btnSx} />
       case 'audio':

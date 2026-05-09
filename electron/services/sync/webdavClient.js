@@ -5,7 +5,19 @@
  */
 
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
+const { app } = require('electron');
 const ConcurrencyLimiter = require('./utils/ConcurrencyLimiter');
+
+// #N7：限流计数器持久化路径（重启后恢复，避免短时间内多次启动绕过限流）
+function getRateLimitStatePath() {
+  try {
+    return path.join(app.getPath('userData'), 'webdav-rate-limit.json');
+  } catch (_) {
+    return null;
+  }
+}
 
 /**
  * WebDAV 客户端类
@@ -33,6 +45,60 @@ class WebDAVClient {
 
     // 最后一次请求时间
     this.lastRequestTime = 0;
+
+    // #N7：429 长退避状态（指数退避，至少 60s，上限 5min）
+    this.rateLimitedUntil = 0;
+    this.consecutive429 = 0;
+
+    // #N7：从磁盘恢复限流状态（防止短时间内重启绕过 30min 窗口）
+    this._loadRateLimitState();
+  }
+
+  /**
+   * #N7：从磁盘恢复限流状态
+   * @private
+   */
+  _loadRateLimitState() {
+    try {
+      const p = getRateLimitStatePath();
+      if (!p || !fs.existsSync(p)) return;
+      const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+      const now = Date.now();
+      const windowAge = now - (data.requestWindowStart || 0);
+      // 仅当上次窗口未超过 30 分钟时恢复
+      if (windowAge >= 0 && windowAge < 30 * 60 * 1000) {
+        this.requestCount = Number.isFinite(data.requestCount) ? data.requestCount : 0;
+        this.requestWindowStart = data.requestWindowStart;
+      }
+      // 恢复 429 退避截止时间
+      if (data.rateLimitedUntil && data.rateLimitedUntil > now) {
+        this.rateLimitedUntil = data.rateLimitedUntil;
+        this.consecutive429 = Number.isFinite(data.consecutive429) ? data.consecutive429 : 1;
+      }
+    } catch (e) {
+      // 损坏文件忽略
+    }
+  }
+
+  /**
+   * #N7：保存限流状态到磁盘（异步，不阻塞）
+   * @private
+   */
+  _saveRateLimitState() {
+    try {
+      const p = getRateLimitStatePath();
+      if (!p) return;
+      const payload = JSON.stringify({
+        requestCount: this.requestCount,
+        requestWindowStart: this.requestWindowStart,
+        rateLimitedUntil: this.rateLimitedUntil,
+        consecutive429: this.consecutive429,
+        savedAt: Date.now(),
+      });
+      // 自查修正：用同步写避免多次并发 writeFile 竞态导致内容丢失
+      // 内容很小（几十字节），同步 I/O 开销可忽略
+      fs.writeFileSync(p, payload, 'utf8');
+    } catch (_) {}
   }
 
   /**
@@ -43,6 +109,14 @@ class WebDAVClient {
    */
   async request(options) {
     return this.limiter.run(async () => {
+      // #N7：检查 429 长退避（指数退避，避免持续触发 429）
+      const nowCheck = Date.now();
+      if (this.rateLimitedUntil > nowCheck) {
+        const waitMs = this.rateLimitedUntil - nowCheck;
+        console.warn(`[WebDAV] 仍处于 429 退避期，等待 ${Math.ceil(waitMs / 1000)} 秒...`);
+        await this.sleep(waitMs);
+      }
+
       // 应用请求间隔
       const now = Date.now();
       const timeSinceLastRequest = now - this.lastRequestTime;
@@ -72,6 +146,9 @@ class WebDAVClient {
         this.requestWindowStart = Date.now();
       }
 
+      // #N7：每次请求前持久化（保证重启后窗口能恢复）
+      this._saveRateLimitState();
+
       // 执行带重试的请求
       let lastError;
       for (let attempt = 0; attempt < this.retryAttempts; attempt++) {
@@ -87,9 +164,26 @@ class WebDAVClient {
           });
 
           this.lastRequestTime = Date.now();
+          // #N7：成功则清零连续 429 计数
+          if (this.consecutive429 > 0) {
+            this.consecutive429 = 0;
+            this.rateLimitedUntil = 0;
+            this._saveRateLimitState();
+          }
           return response;
         } catch (error) {
           lastError = error;
+
+          // #N7：命中 429 则进入指数长退避（60s → 120s → 240s，上限 300s）
+          let rateLimitWaitMs = 0;
+          if (error.response && error.response.status === 429) {
+            this.consecutive429++;
+            const backoffSec = Math.min(60 * Math.pow(2, this.consecutive429 - 1), 300);
+            this.rateLimitedUntil = Date.now() + backoffSec * 1000;
+            rateLimitWaitMs = backoffSec * 1000;
+            this._saveRateLimitState();
+            console.warn(`[WebDAV] 命中 429，进入 ${backoffSec}s 退避（连续第 ${this.consecutive429} 次）`);
+          }
 
           // 判断是否可重试
           const isRetriable = this.isRetriableError(error);
@@ -99,8 +193,8 @@ class WebDAVClient {
             throw this.normalizeError(error);
           }
 
-          // 指数退避
-          const backoffTime = Math.min(1000 * Math.pow(2, attempt), 8000);
+          // 429 必须在当前 retry loop 中也执行长退避，不能只影响下一次 request
+          const backoffTime = rateLimitWaitMs || Math.min(1000 * Math.pow(2, attempt), 8000);
           console.warn(`[WebDAV] 请求失败 (${attempt + 1}/${this.retryAttempts})，${backoffTime}ms 后重试:`, error.message);
           await this.sleep(backoffTime);
         }
@@ -188,13 +282,16 @@ class WebDAVClient {
 
   /**
    * 测试连接
+   * 注意：URL 必须以 `/` 结尾，否则坚果云会返回 301 重定向到带斜杠的版本，
+   * 而 axios 跟随重定向时**不会**带上 Authorization 头，从而导致 401 假性失败。
    * @returns {Promise<boolean>} 是否连接成功
    */
   async testConnection() {
     try {
+      const url = this.baseUrl.endsWith('/') ? this.baseUrl : `${this.baseUrl}/`;
       const response = await this.request({
         method: 'PROPFIND',
-        url: this.baseUrl,
+        url,
         headers: {
           'Depth': '0',
           'Content-Type': 'application/xml',

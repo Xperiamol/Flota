@@ -280,8 +280,11 @@ class TodoService extends EventEmitter {
     if (todo.repeat_type && todo.repeat_type !== 'none' && todo.due_date) {
       const todayKey = RepeatUtils.todayKey();
 
-      // Guard: due_date > today 表示下一周期尚未到来，禁止提前完成
-      const dueDateKey = String(todo.due_date).substring(0, 10);
+      // 归一化为本地朴素时间，避免 UTC 'Z' 字符串的日期被错误判读
+      // （例如 2026-05-08T18:00:00Z 在 +8 时区其实是 5.9 02:00，
+      //  按 UTC substring(0,10) 是 5.8，会被误判为已逾期/正常周期）
+      const naiveDueDate = RepeatUtils.toLocalNaive(todo.due_date);
+      const dueDateKey = String(naiveDueDate).substring(0, 10);
       if (dueDateKey > todayKey) return todo;
 
       let completions = RepeatUtils.parseCompletions(todo.completions);
@@ -290,7 +293,7 @@ class TodoService extends EventEmitter {
       if (isDoneToday) {
         // Uncheck: remove today from completions, reset due_date to today (preserve time part)
         completions = completions.filter(d => d !== todayKey);
-        const timePart = todo.due_date.length > 10 ? todo.due_date.substring(10) : '';
+        const timePart = naiveDueDate.length > 10 ? naiveDueDate.substring(10) : '';
         return this.todoDAO.update(id, {
           completions: JSON.stringify(completions),
           due_date: todayKey + timePart
@@ -301,7 +304,7 @@ class TodoService extends EventEmitter {
         // GC old completions (keep 90 days)
         completions = RepeatUtils.gcCompletions(completions, 90);
         // 逾期修正：如果 due_date < 今天，从今天开始推进，避免推进后仍落在过去
-        const baseDueDate = RepeatUtils.adjustOverdueDueDate(todo.due_date);
+        const baseDueDate = RepeatUtils.adjustOverdueDueDate(naiveDueDate);
         const nextDueDate = RepeatUtils.calculateNextDueDate(
           baseDueDate, todo.repeat_type, todo.repeat_interval, todo.repeat_days
         );

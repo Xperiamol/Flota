@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
 	Box,
 	Typography,
@@ -40,6 +40,7 @@ import { useStore } from '../store/useStore'
 import { getDisplayCategories, filterPlugins } from './pluginUtils'
 import PluginCard from './PluginCard'
 import PluginDetailDrawer from './PluginDetailDrawer'
+import { createSoftGlassCardSx, emptyStateSx, modernSurfaceSx } from '../styles/commonStyles'
 
 const PluginStore = () => {
 	const pluginStoreFilters = useStore((state) => state.pluginStoreFilters)
@@ -403,14 +404,22 @@ const PluginStore = () => {
 	}
 
 	const renderEmptyState = (message) => (
-		<Box sx={{ py: 8, textAlign: 'center', color: 'text.secondary' }}>
-			<Typography variant="body1">{message}</Typography>
+		<Box sx={(muiTheme) => ({ ...emptyStateSx(muiTheme), mx: 1, my: 1 })}>
+			<Typography variant="body1" sx={{ fontWeight: 650, color: 'text.primary' }}>{message}</Typography>
+			<Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+				试试调整搜索关键词或切换分类
+			</Typography>
 		</Box>
 	)
 
 	const renderLocalDev = () => (
 		<Box>
-			<Box sx={{ py: 3, px: 2, mb: 3, bgcolor: 'background.paper', borderRadius: 2 }}>
+			<Box sx={(muiTheme) => ({
+				...createSoftGlassCardSx(muiTheme.palette.primary.main)(muiTheme),
+				py: 3,
+				px: 2.5,
+				mb: 3,
+			})}>
 				<Typography variant="h6" sx={{ mb: 2 }}>
 					本地开发模式
 				</Typography>
@@ -516,7 +525,21 @@ const PluginStore = () => {
 
 	return (
 		<Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-			<Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: 3, px: 1 }}>
+			<Stack
+				direction={{ xs: 'column', sm: 'row' }}
+				spacing={1.5}
+				alignItems={{ xs: 'stretch', sm: 'center' }}
+				sx={(muiTheme) => ({
+					...modernSurfaceSx(muiTheme),
+					mb: 3,
+					mx: 1,
+					px: 1.5,
+					py: 1.25,
+					position: 'sticky',
+					top: 0,
+					zIndex: 2,
+				})}
+			>
 				<TextField
 					placeholder="搜索插件"
 					size="small"

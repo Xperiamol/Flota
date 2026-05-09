@@ -6,10 +6,6 @@ import {
     Alert,
     LinearProgress,
     Chip,
-    Card,
-    CardContent,
-    CardActions,
-    Link,
     Dialog,
     DialogTitle,
     DialogContent,
@@ -26,6 +22,7 @@ import {
     ContentCopy as CopyIcon
 } from '@mui/icons-material';
 import mcpAPI from '../api/mcpAPI';
+import { settingsFieldGroupSx, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../styles/commonStyles';
 
 export default function MCPSettings({ enabled, onEnabledChange }) {
     const [installed, setInstalled] = useState(false);
@@ -122,6 +119,8 @@ export default function MCPSettings({ enabled, onEnabledChange }) {
                     setStatusMessage(`下载中... ${data.percent}%`);
                 } else if (data.status === 'extracting') {
                     setStatusMessage('正在解压...');
+                } else if (data.status === 'retrying') {
+                    setStatusMessage('下载失败，正在重试...');
                 }
             });
 
@@ -186,89 +185,62 @@ export default function MCPSettings({ enabled, onEnabledChange }) {
 
     return (
         <Box>
-            {/* 状态卡片 */}
-            <Card variant="outlined" sx={(theme) => ({
-                mb: 2,
-                borderRadius: 1,
-                borderColor: theme.palette.divider,
-                bgcolor: theme.palette.mode === 'dark'
-                    ? 'rgba(255,255,255,0.02)'
-                    : 'rgba(0,0,0,0.01)',
-            })}>
-                <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                        <CodeIcon color="primary" fontSize="large" />
-                        <Box sx={{ flex: 1 }}>
-                            <Typography variant="h6">
-                                Model Context Protocol Server
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                                允许其他 AI 应用（如 Claude Desktop）调用 Flota 功能
-                            </Typography>
-                        </Box>
-                        <Chip
-                            icon={installed ? <CheckCircleIcon /> : <InfoIcon />}
-                            label={installed ? '已安装' : '未安装'}
-                            color={installed ? 'success' : 'default'}
-                            size="small"
-                        />
+            <Box sx={settingsSectionSx}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                    <CodeIcon color="primary" fontSize="large" />
+                    <Box sx={{ flex: 1 }}>
+                        <Typography variant="h6" sx={sectionTitleSx}>Model Context Protocol Server</Typography>
+                        <Typography variant="caption" sx={sectionDescriptionSx}>
+                            允许其他 AI 应用（如 Claude Desktop）调用 Flota 功能
+                        </Typography>
                     </Box>
+                    <Chip
+                        icon={installed ? <CheckCircleIcon /> : <InfoIcon />}
+                        label={installed ? '已安装' : '未安装'}
+                        color={installed ? 'success' : 'default'}
+                        size="small"
+                    />
+                </Box>
 
-                    {/* 安装信息 */}
-                    {installed && installInfo && (
-                        <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
-                            <Typography variant="caption" display="block" gutterBottom>
-                                <StorageIcon fontSize="small" sx={{ verticalAlign: 'middle', mr: 0.5 }} />
-                                <strong>版本:</strong> {installInfo.version}
-                            </Typography>
-                            <Typography variant="caption" display="block" gutterBottom>
-                                <strong>大小:</strong> {installInfo.size}
-                            </Typography>
-                            <Typography variant="caption" display="block" sx={{ wordBreak: 'break-all' }}>
-                                <strong>路径:</strong> {installInfo.path}
-                            </Typography>
-                        </Box>
-                    )}
-
-                    {/* 安装进度 */}
-                    {installing && (
-                        <Box sx={{ mt: 2 }}>
-                            <Typography variant="body2" gutterBottom>
-                                {statusMessage || `正在下载并安装... ${progress}%`}
-                            </Typography>
-                            <LinearProgress variant="determinate" value={progress} />
-                            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                                下载 78MB，请保持网络连接稳定
-                            </Typography>
-                        </Box>
-                    )}
-                </CardContent>
-
-                <CardActions sx={{ justifyContent: 'space-between', px: 2, pb: 2 }}>
-                    <Box>
-                        {!installed ? (
-                            <Button
-                                variant="contained"
-                                startIcon={<DownloadIcon />}
-                                onClick={handleInstallClick}
-                                disabled={installing}
-                            >
-                                {installing ? '安装中...' : '下载并安装 (~104MB)'}
-                            </Button>
-                        ) : (
-                            <Button
-                                variant="outlined"
-                                color="error"
-                                startIcon={<DeleteIcon />}
-                                onClick={handleUninstall}
-                                disabled={loading}
-                            >
-                                卸载
-                            </Button>
-                        )}
+                {installed && installInfo && (
+                    <Box sx={settingsFieldGroupSx}>
+                        <Typography variant="caption" display="block" gutterBottom>
+                            <StorageIcon fontSize="small" sx={{ verticalAlign: 'middle', mr: 0.5 }} />
+                            <strong>版本:</strong> {installInfo.version}
+                        </Typography>
+                        <Typography variant="caption" display="block" gutterBottom>
+                            <strong>大小:</strong> {installInfo.size}
+                        </Typography>
+                        <Typography variant="caption" display="block" sx={{ wordBreak: 'break-all' }}>
+                            <strong>路径:</strong> {installInfo.path}
+                        </Typography>
                     </Box>
-                </CardActions>
-            </Card>
+                )}
+
+                {installing && (
+                    <Box sx={settingsFieldGroupSx}>
+                        <Typography variant="body2" gutterBottom>
+                            {statusMessage || `正在下载并安装... ${progress}%`}
+                        </Typography>
+                        <LinearProgress variant="determinate" value={progress} />
+                        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                            下载 78MB，请保持网络连接稳定
+                        </Typography>
+                    </Box>
+                )}
+
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', pt: 1 }}>
+                    {!installed ? (
+                        <Button variant="contained" startIcon={<DownloadIcon />} onClick={handleInstallClick} disabled={installing}>
+                            {installing ? '安装中...' : '下载并安装 (~104MB)'}
+                        </Button>
+                    ) : (
+                        <Button variant="outlined" color="error" startIcon={<DeleteIcon />} onClick={handleUninstall} disabled={loading}>
+                            卸载
+                        </Button>
+                    )}
+                </Box>
+            </Box>
 
             {/* 使用说明 */}
             {installed && (

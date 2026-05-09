@@ -200,13 +200,14 @@ class SettingsService extends EventEmitter {
         if (errorMsg) return { success: false, error: errorMsg };
       }
       
+      const oldValue = this.cache.get(key);
       const setting = this.settingDAO.set(key, value, type, description);
       
       // 更新缓存
       this.cache.set(key, setting.value);
       
       // 发送设置变更事件
-      this.emit('setting-changed', { key, value: setting.value, oldValue: this.cache.get(key) });
+      this.emit('setting-changed', { key, value: setting.value, oldValue });
       
       return {
         success: true,
@@ -255,6 +256,7 @@ class SettingsService extends EventEmitter {
       // 更新缓存
       for (const [key, setting] of Object.entries(result)) {
         this.cache.set(key, setting.value);
+        this.emit('setting-changed', { key, value: setting.value, oldValue: oldValues[key] });
       }
       
       // 发送批量设置变更事件
@@ -526,6 +528,7 @@ class SettingsService extends EventEmitter {
     const { dialog, app } = require('electron');
     const path = require('path');
     const fs = require('fs');
+    const { validateImagePath } = require('../utils/ipcValidator');
     
     try {
       const result = await dialog.showOpenDialog({
@@ -543,7 +546,7 @@ class SettingsService extends EventEmitter {
         return { success: false, error: '用户取消选择' };
       }
 
-      const srcPath = result.filePaths[0];
+      const srcPath = validateImagePath(result.filePaths[0], { maxSizeBytes: 20 * 1024 * 1024 });
       const ext = path.extname(srcPath).toLowerCase();
       const wallpaperDir = path.join(app.getPath('userData'), 'wallpaper');
       

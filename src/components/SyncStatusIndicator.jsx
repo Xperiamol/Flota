@@ -61,6 +61,16 @@ const SyncStatusIndicator = () => {
       }));
     });
 
+    const removeProgressListener = window.electronAPI?.sync?.onSyncProgress?.(() => {
+      setModules(prev => ({
+        ...prev,
+        notes: prev.notes.enabled ? { ...prev.notes, syncing: true } : prev.notes,
+        images: prev.images.enabled ? { ...prev.images, syncing: true } : prev.images,
+        settings: prev.settings.enabled ? { ...prev.settings, syncing: true } : prev.settings,
+        todos: prev.todos.provider === 'nutcloud' && prev.todos.enabled ? { ...prev.todos, syncing: true } : prev.todos,
+      }));
+    });
+
     const removeCompleteListener = window.electronAPI?.sync?.onSyncComplete?.((result) => {
       const now = new Date();
       setModules(prev => ({
@@ -146,6 +156,7 @@ const SyncStatusIndicator = () => {
 
     return () => {
       removeStartListener?.();
+      removeProgressListener?.();
       removeCompleteListener?.();
       removeErrorListener?.();
       clearInterval(interval);

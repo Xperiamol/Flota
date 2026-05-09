@@ -1,13 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { useTranslation } from '../utils/i18n';
 import {
     Box,
     Typography,
     Paper,
-    Tabs,
-    Tab,
     Switch,
-    FormControlLabel,
     Button,
     TextField,
     Alert,
@@ -28,10 +24,7 @@ import {
     useTheme
 } from '@mui/material';
 import {
-    Settings as SettingsIcon,
-    Palette as PaletteIcon,
     GetApp as ImportIcon,
-    Keyboard as KeyboardIcon,
     Brightness4,
     Brightness7,
     Computer,
@@ -41,12 +34,6 @@ import {
     Delete,
     Restore,
     Warning as WarningIcon,
-    Info as InfoIcon,
-    Cloud as CloudIcon,
-    AutoAwesome as AIIcon,
-    Memory as MemoryIcon,
-    CalendarToday as CalendarIcon,
-    Wifi as WifiIcon,
     Code as CodeIcon,
     Visibility as VisibilityIcon,
     Language as LanguageIcon,
@@ -74,7 +61,9 @@ import {
 import shortcutManager from '../utils/ShortcutManager';
 import { useError } from './ErrorProvider';
 import { ALL_TOOLBAR_ITEMS, DEFAULT_TOOLBAR_ORDER, DEFAULT_FLOATING_ORDER } from './MarkdownToolbar';
-import { PATTERN_STYLES, generatePatternCSS, hexToRgb } from '../utils/patternStyles';
+import { CONTEXT_MENU_ITEM_LABELS, DEFAULT_CONTEXT_MENU_ITEMS } from './WYSIWYGEditor';
+import { PATTERN_STYLES, hexToRgb } from '../utils/patternStyles';
+import { sectionTitleSx, sectionDescriptionSx, settingsRowSx, settingsSectionSx } from '../styles/commonStyles';
 
 function TabPanel({ children, value, index, ...other }) {
     return (
@@ -86,7 +75,7 @@ function TabPanel({ children, value, index, ...other }) {
             {...other}
         >
             {value === index && (
-                <Box sx={{ p: 3 }}>
+                <Box sx={{ p: 3, maxWidth: 980, mx: 'auto' }}>
                     {children}
                 </Box>
             )}
@@ -96,10 +85,21 @@ function TabPanel({ children, value, index, ...other }) {
 
 function SettingRow({ primary, secondary, action }) {
     return (
-        <ListItem sx={{ py: 1.5, display: 'flex', alignItems: 'center', gap: 2 }}>
+        <ListItem
+            sx={(theme) => ({
+                ...settingsRowSx(theme),
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2,
+            })}
+        >
             <ListItemText
                 primary={primary}
                 secondary={secondary}
+                slotProps={{
+                    primary: { sx: { fontWeight: 650, letterSpacing: '-0.01em' } },
+                    secondary: { sx: { mt: 0.25 } },
+                }}
                 sx={{ flex: '1 1 auto', minWidth: 0, mr: 1 }}
             />
             <Box sx={{ flex: '0 0 auto' }}>
@@ -110,11 +110,12 @@ function SettingRow({ primary, secondary, action }) {
 }
 
 /* ── 编辑器设置面板（指针拖拽） ── */
-function EditorSettingsPanel({ aiPanelMode, setAiPanelMode, toolbarOrder, setToolbarOrder, floatingPanelItems, setFloatingPanelItems }) {
+function EditorSettingsPanel({ aiPanelMode, setAiPanelMode, toolbarOrder, setToolbarOrder, floatingPanelItems, setFloatingPanelItems, contextMenuItems, setContextMenuItems }) {
     const allItemIds = Object.keys(ALL_TOOLBAR_ITEMS)
 
     const [localToolbar, setLocalToolbar] = React.useState(toolbarOrder || DEFAULT_TOOLBAR_ORDER)
     const [localFloating, setLocalFloating] = React.useState(floatingPanelItems || DEFAULT_FLOATING_ORDER)
+    const enabledContextItems = contextMenuItems || DEFAULT_CONTEXT_MENU_ITEMS
 
     /* ── 指针拖拽状态 ── */
     const [drag, setDrag] = React.useState(null)         // { id, source } | null
@@ -142,11 +143,30 @@ function EditorSettingsPanel({ aiPanelMode, setAiPanelMode, toolbarOrder, setToo
     const toolbarIds = localToolbar.filter(id => id !== '|')
     const recycleIds = allItemIds.filter(id => !toolbarIds.includes(id) && !localFloating.includes(id))
 
+    const persistEditorSettings = React.useCallback((updates) => {
+        const payload = Object.fromEntries(Object.entries(updates).map(([key, value]) => [
+            key,
+            {
+                value,
+                type: value === null ? 'json' : Array.isArray(value) ? 'array' : typeof value,
+            },
+        ]))
+        const request = window.electronAPI?.settings?.setMultiple?.(payload)
+        request?.catch?.((error) => {
+            console.error('Failed to persist editor settings:', error)
+        })
+    }, [])
+
     const save = React.useCallback((tb, fp) => {
         setToolbarOrder(tb)
         const isDefault = JSON.stringify(fp) === JSON.stringify(DEFAULT_FLOATING_ORDER)
-        setFloatingPanelItems(isDefault ? null : fp)
-    }, [setToolbarOrder, setFloatingPanelItems])
+        const nextFloating = isDefault ? null : fp
+        setFloatingPanelItems(nextFloating)
+        persistEditorSettings({
+            toolbarOrder: tb,
+            floatingPanelItems: nextFloating,
+        })
+    }, [persistEditorSettings, setToolbarOrder, setFloatingPanelItems])
 
     /* ── 区域检测 ── */
     const getZoneAtPoint = React.useCallback((x, y) => {
@@ -288,6 +308,27 @@ function EditorSettingsPanel({ aiPanelMode, setAiPanelMode, toolbarOrder, setToo
         setLocalFloating(DEFAULT_FLOATING_ORDER)
         setToolbarOrder(null)
         setFloatingPanelItems(null)
+        setContextMenuItems(null)
+        persistEditorSettings({
+            toolbarOrder: null,
+            floatingPanelItems: null,
+            contextMenuItems: null,
+        })
+    }
+
+    const toggleContextItem = (id) => {
+        const next = enabledContextItems.includes(id)
+            ? enabledContextItems.filter(item => item !== id)
+            : DEFAULT_CONTEXT_MENU_ITEMS.filter(item => item === id || enabledContextItems.includes(item))
+        const isDefault = JSON.stringify(next) === JSON.stringify(DEFAULT_CONTEXT_MENU_ITEMS)
+        const nextItems = isDefault ? null : next
+        setContextMenuItems(nextItems)
+        persistEditorSettings({ contextMenuItems: nextItems })
+    }
+
+    const changeAiPanelMode = (mode) => {
+        setAiPanelMode(mode)
+        persistEditorSettings({ aiPanelMode: mode })
     }
 
     const aiModeChips = [
@@ -343,9 +384,8 @@ function EditorSettingsPanel({ aiPanelMode, setAiPanelMode, toolbarOrder, setToo
                         width: 32, height: 32, borderRadius: '6px',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         bgcolor: 'primary.main', color: 'primary.contrastText',
-                        boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.26)',
                         '& .MuiSvgIcon-root': { fontSize: 16 },
-                        transform: 'scale(1.1)',
                     }}>
                         {Icon ? <Icon /> : <Box sx={{ fontSize: 11, fontWeight: 700 }}>{def.label?.[0]}</Box>}
                     </Box>
@@ -381,7 +421,7 @@ function EditorSettingsPanel({ aiPanelMode, setAiPanelMode, toolbarOrder, setToo
                     <Chip key={o.value} label={o.label}
                         variant={aiPanelMode === o.value ? 'filled' : 'outlined'}
                         color={aiPanelMode === o.value ? 'primary' : 'default'}
-                        onClick={() => setAiPanelMode(o.value)} size="small" />
+                        onClick={() => changeAiPanelMode(o.value)} size="small" />
                 ))}
             </Box>
 
@@ -393,6 +433,29 @@ function EditorSettingsPanel({ aiPanelMode, setAiPanelMode, toolbarOrder, setToo
             </Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
                 拖拽按钮在三个区域间移动 · 工具栏内可拖拽排序
+            </Typography>
+
+            <Typography variant="subtitle2" color="text.secondary" sx={labelSx}>
+                🖱️ 右键菜单
+            </Typography>
+            <Box sx={zoneSx('context')}>
+                {DEFAULT_CONTEXT_MENU_ITEMS.map(id => {
+                    const enabled = enabledContextItems.includes(id)
+                    return (
+                        <Chip
+                            key={id}
+                            size="small"
+                            label={CONTEXT_MENU_ITEM_LABELS[id] || id}
+                            color={enabled ? 'primary' : 'default'}
+                            variant={enabled ? 'filled' : 'outlined'}
+                            onClick={() => toggleContextItem(id)}
+                            sx={{ fontWeight: 600 }}
+                        />
+                    )
+                })}
+            </Box>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75, mb: 2 }}>
+                点击启用/隐藏右键菜单项；危险操作只会在对应上下文中显示。
             </Typography>
 
             {/* ── 工具栏 ── */}
@@ -455,10 +518,10 @@ function cleanSeps(arr) {
 }
 
 const Settings = () => {
-    const { showError, showSuccess } = useError();
+    const { showError } = useError();
     const muiTheme = useTheme();
     const isDark = muiTheme.palette.mode === 'dark';
-    const { theme, setTheme, primaryColor, setPrimaryColor, setUserAvatar, setUserName, titleBarStyle, setTitleBarStyle, editorMode, setEditorMode, language, setLanguage, defaultMinibarMode, setDefaultMinibarMode, maskOpacity, setMaskOpacity, christmasMode, setChristmasMode, aiPanelMode, setAiPanelMode, toolbarOrder, setToolbarOrder, floatingPanelItems, setFloatingPanelItems, backgroundPattern, setBackgroundPattern, patternOpacity, setPatternOpacity, wallpaperPath, setWallpaperPath } = useStore();
+    const { theme, setTheme, primaryColor, setPrimaryColor, setUserAvatar, setUserName, titleBarStyle, setTitleBarStyle, editorMode, setEditorMode, language, setLanguage, setDefaultMinibarMode, maskOpacity, setMaskOpacity, christmasMode, setChristmasMode, aiPanelMode, setAiPanelMode, toolbarOrder, setToolbarOrder, floatingPanelItems, setFloatingPanelItems, contextMenuItems, setContextMenuItems, backgroundPattern, setBackgroundPattern, patternOpacity, setPatternOpacity, wallpaperPath, setWallpaperPath } = useStore();
     const settingsTabValue = useStore((state) => state.settingsTabValue);
     const [settings, setSettings] = useState({
         autoLaunch: false,
@@ -476,14 +539,17 @@ const Settings = () => {
     const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
     const [appVersion, setAppVersion] = useState('');
     const [appPlatform, setAppPlatform] = useState('unknown');
+    const [selectingWallpaper, setSelectingWallpaper] = useState(false);
 
     useEffect(() => {
         // 加载设置
         loadSettings();
         loadShortcuts();
         // 动态获取应用版本号
-        window.electronAPI?.getVersion?.().then(v => setAppVersion(v)).catch(() => {});
-        window.electronAPI?.system?.getPlatform?.().then(p => setAppPlatform(p || 'unknown')).catch(() => {});
+        const versionRequest = window.electronAPI?.getVersion?.();
+        versionRequest?.then?.(v => setAppVersion(v))?.catch?.(() => {});
+        const platformRequest = window.electronAPI?.system?.getPlatform?.();
+        platformRequest?.then?.(p => setAppPlatform(p || 'unknown'))?.catch?.(() => {});
     }, []);
 
     const handleCopyDebugInfo = async () => {
@@ -599,6 +665,9 @@ const Settings = () => {
         },
         titleBarStyle: {
             syncGlobalState: setTitleBarStyle
+        },
+        editorMode: {
+            syncGlobalState: setEditorMode
         },
         userName: {
             syncGlobalState: setUserName
@@ -736,26 +805,60 @@ const Settings = () => {
             await window.electronAPI.settings.set('backgroundPattern', id);
         } catch {
             setBackgroundPattern(prev);
+            showSnackbar('背景样式切换失败', 'error');
         }
     };
 
     const handleSelectWallpaper = async () => {
-        const result = await window.electronAPI?.settings?.selectWallpaper?.();
-        if (!result?.success || !result.data) return;
-        const url = result.data;
+        try {
+            setSelectingWallpaper(true);
+            const result = await window.electronAPI?.settings?.selectWallpaper?.();
+            if (!result?.success || !result.data) {
+                if (result?.error && result.error !== '用户取消选择') {
+                    showSnackbar(result.error, 'error');
+                }
+                return;
+            }
+            const url = result.data;
+            const prevBg = backgroundPattern;
+            const prevPath = wallpaperPath;
+            // 先更新 store（立即生效），再写后端
+            setBackgroundPattern('custom');
+            setWallpaperPath(url);
+            try {
+                await window.electronAPI.settings.setMultiple({
+                    backgroundPattern: 'custom',
+                    wallpaperPath: url,
+                });
+                showSnackbar('壁纸已更新', 'success');
+            } catch {
+                setBackgroundPattern(prevBg);
+                setWallpaperPath(prevPath);
+                showSnackbar('壁纸保存失败', 'error');
+            }
+        } catch (error) {
+            showSnackbar(error?.message || '选择壁纸失败', 'error');
+        } finally {
+            setSelectingWallpaper(false);
+        }
+    };
+
+    const handleClearWallpaper = async () => {
         const prevBg = backgroundPattern;
         const prevPath = wallpaperPath;
-        // 先更新 store（立即生效），再写后端
-        setBackgroundPattern('custom');
-        setWallpaperPath(url);
+        const nextPattern = backgroundPattern === 'custom' ? 'none' : backgroundPattern;
+        setBackgroundPattern(nextPattern);
+        setWallpaperPath('');
         try {
             await window.electronAPI.settings.setMultiple({
-                backgroundPattern: 'custom',
-                wallpaperPath: url,
+                backgroundPattern: nextPattern,
+                wallpaperPath: '',
             });
+            showSnackbar('壁纸已移除', 'success');
         } catch {
             setBackgroundPattern(prevBg);
             setWallpaperPath(prevPath);
+            showSnackbar('移除壁纸失败', 'error');
         }
     };
 
@@ -894,6 +997,11 @@ const Settings = () => {
         { value: 'medium', label: '中度' },
         { value: 'heavy', label: '重度' },
     ];
+    const isMacOS =
+        typeof navigator !== 'undefined' &&
+        String(navigator.userAgentData?.platform || Reflect.get(navigator, 'platform') || '')
+            .toLowerCase()
+            .includes('mac');
     const titleBarOptions = [
         { value: 'mac', label: t('settings.titleBarMac') },
         { value: 'windows', label: t('settings.titleBarWindows') },
@@ -912,12 +1020,92 @@ const Settings = () => {
         };
     };
 
+    const settingsSurfaceSx = settingsSectionSx(muiTheme);
+    const backgroundMode = backgroundPattern === 'custom'
+        ? 'wallpaper'
+        : backgroundPattern === 'none'
+            ? 'none'
+            : 'pattern';
+    const backgroundModeOptions = [
+        { value: 'none', label: '无背景' },
+        { value: 'pattern', label: '几何花纹' },
+        { value: 'wallpaper', label: '自定义壁纸' },
+    ];
+    const patternEntries = Object.entries(PATTERN_STYLES);
+    const fallbackPatternId = patternEntries[0]?.[0] || 'dots';
+    const activePatternId = backgroundMode === 'pattern' && PATTERN_STYLES[backgroundPattern]
+        ? backgroundPattern
+        : fallbackPatternId;
+    const backgroundEffectLabel = backgroundMode === 'wallpaper' ? '壁纸显现' : '花纹强度';
+    const effectSliderMin = backgroundMode === 'wallpaper' ? 0.15 : 0.2;
+    const effectSliderMax = backgroundMode === 'wallpaper' ? 1 : 2;
+    const effectSliderStep = 0.05;
+    const displayEffectValue = backgroundMode === 'wallpaper'
+        ? Math.round(Math.max(0, Math.min(1, patternOpacity)) * 100)
+        : Math.round(patternOpacity * 100);
+    const backgroundPanelRadius = 1.25;
+    const backgroundPanelSx = {
+        borderRadius: backgroundPanelRadius,
+        border: '1px solid',
+        borderColor: 'divider',
+        bgcolor: isDark ? 'rgba(15,23,42,0.18)' : 'rgba(248,250,252,0.72)',
+    };
+
+    const buildPatternPreviewStyle = (style) => {
+        const rgb = hexToRgb(primaryColor);
+        const previewCss = style.css
+            .replace(/rgba\(99,\s*102,\s*241,\s*([\d.]+)\)/g, (_, a) =>
+                `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${(parseFloat(a) * 4).toFixed(2)})`
+            );
+        const previewStyle = {};
+        previewCss.split(';').forEach(rule => {
+            const colonIdx = rule.indexOf(':');
+            if (colonIdx === -1) return;
+            const prop = rule.slice(0, colonIdx).trim();
+            const val = rule.slice(colonIdx + 1).trim();
+            if (prop && val) {
+                previewStyle[prop.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = val;
+            }
+        });
+        return previewStyle;
+    };
+
+    const handleBackgroundModeChange = async (mode) => {
+        if (mode === 'none') {
+            await applyBackground('none');
+            return;
+        }
+        if (mode === 'pattern') {
+            await applyBackground(activePatternId);
+            return;
+        }
+        if (wallpaperPath) {
+            await applyBackground('custom');
+            return;
+        }
+        await handleSelectWallpaper();
+    };
+
     return (
-        <Box sx={{ height: '100%', display: 'flex', flexDirection: 'row' }}>
+        <Box
+            sx={{
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'row',
+                background: isDark
+                    ? 'radial-gradient(circle at top right, rgba(99,102,241,0.10), transparent 32%), transparent'
+                    : 'radial-gradient(circle at top right, rgba(99,102,241,0.08), transparent 34%), transparent',
+            }}
+        >
             {/* 内容区域 */}
             <Box sx={{ flex: 1, overflow: 'auto' }}>
                 {/* 通用设置 */}
                 <TabPanel value={settingsTabValue} index={0}>
+                    <Paper elevation={0} sx={{ ...settingsSurfaceSx, p: 2 }}>
+                    <Typography variant="h6" sx={sectionTitleSx}>通用设置</Typography>
+                    <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
+                        应用启动、语言与窗口行为
+                    </Typography>
                     <List disablePadding>
                         <SettingRow
                             primary={t('settings.autoLaunch')}
@@ -947,10 +1135,16 @@ const Settings = () => {
                                 getKey={o => o.code} getLabel={o => o.nativeName} getIcon={() => <LanguageIcon />} />}
                         />
                     </List>
+                    </Paper>
                 </TabPanel>
 
                 {/* 外观设置 */}
                 <TabPanel value={settingsTabValue} index={1}>
+                    <Paper elevation={0} sx={{ ...settingsSurfaceSx, p: 2 }}>
+                    <Typography variant="h6" sx={sectionTitleSx}>外观与个性化</Typography>
+                    <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
+                        主题、头像、背景和界面显示方式
+                    </Typography>
                     {/* 主题 */}
                     <List disablePadding>
                         <SettingRow
@@ -998,7 +1192,7 @@ const Settings = () => {
                                             handleSettingChange('userName', e.target.value);
                                             setUserName(e.target.value);
                                         }}
-                                        InputProps={{ disableUnderline: true }}
+                                        slotProps={{ input: { disableUnderline: true } }}
                                         sx={{ '& .MuiInput-input': { fontSize: '1rem', fontWeight: 500 } }}
                                     />
                                     <Typography variant="caption" color="text.secondary">
@@ -1054,108 +1248,182 @@ const Settings = () => {
                     <Box sx={{ px: 2, mb: 2 }}>
                         <Typography variant="subtitle2" gutterBottom>主题壁纸</Typography>
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                            为应用添加几何花纹或自定义图片背景
+                            把背景模式拆开管理，花纹和照片壁纸分别预览与调节，减少误操作
                         </Typography>
+                        <Box sx={{ mb: 2 }}>
+                            <ChipSelector
+                                options={backgroundModeOptions}
+                                value={backgroundMode}
+                                onChange={handleBackgroundModeChange}
+                            />
+                        </Box>
 
-                        {/* 花纹/壁纸选择网格 — 直接读写 zustand store，无本地副本 */}
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
-                            {/* 无 */}
-                            <Tooltip title="无背景">
-                                <Box
-                                    onClick={() => applyBackground('none')}
-                                    sx={{
-                                        width: 56, height: 56, borderRadius: 1, cursor: 'pointer',
-                                        border: backgroundPattern === 'none' ? '2px solid' : '1px solid',
-                                        borderColor: backgroundPattern === 'none' ? 'primary.main' : 'divider',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        bgcolor: isDark ? 'rgba(30,30,30,0.6)' : 'rgba(255,255,255,0.8)',
-                                        '&:hover': { borderColor: 'primary.main' }
-                                    }}
-                                >
-                                    <Typography variant="caption" color="text.secondary">无</Typography>
-                                </Box>
-                            </Tooltip>
+                        {backgroundMode === 'none' && (
+                            <Box
+                                sx={{
+                                    ...backgroundPanelSx,
+                                    px: 1.5,
+                                    py: 1.25,
+                                    bgcolor: isDark ? 'rgba(15,23,42,0.24)' : 'rgba(248,250,252,0.88)',
+                                }}
+                            >
+                                <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                                    当前不使用背景
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    适合专注写作。若想增强个性化，可以切换到几何花纹或自定义壁纸。
+                                </Typography>
+                            </Box>
+                        )}
 
-                            {/* 花纹样式 */}
-                            {Object.entries(PATTERN_STYLES).map(([id, style]) => {
-                                const rgb = hexToRgb(primaryColor);
-                                const previewCss = style.css
-                                    .replace(/rgba\(99,\s*102,\s*241,\s*([\d.]+)\)/g, (_, a) =>
-                                        `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${(parseFloat(a) * 4).toFixed(2)})`
-                                    );
-                                const previewStyle = {};
-                                previewCss.split(';').forEach(rule => {
-                                    const colonIdx = rule.indexOf(':');
-                                    if (colonIdx === -1) return;
-                                    const prop = rule.slice(0, colonIdx).trim();
-                                    const val = rule.slice(colonIdx + 1).trim();
-                                    if (prop && val) {
-                                        previewStyle[prop.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = val;
-                                    }
-                                });
-                                return (
-                                    <Tooltip key={id} title={style.name}>
+                        {backgroundMode === 'pattern' && (
+                            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 1.25, mb: 2 }}>
+                                {patternEntries.map(([id, style]) => {
+                                    const selected = backgroundPattern === id;
+                                    return (
                                         <Box
+                                            key={id}
                                             onClick={() => applyBackground(id)}
                                             sx={{
-                                                width: 56, height: 56, borderRadius: 1, cursor: 'pointer',
-                                                border: backgroundPattern === id ? '2px solid' : '1px solid',
-                                                borderColor: backgroundPattern === id ? 'primary.main' : 'divider',
-                                                bgcolor: isDark ? 'rgba(30,30,30,0.6)' : 'rgba(255,255,255,0.8)',
-                                                '&:hover': { borderColor: 'primary.main' }
+                                                borderRadius: backgroundPanelRadius,
+                                                border: '1px solid',
+                                                borderColor: selected ? 'primary.main' : 'divider',
+                                                bgcolor: isDark ? 'rgba(15,23,42,0.28)' : 'rgba(255,255,255,0.88)',
+                                                cursor: 'pointer',
+                                                overflow: 'hidden',
+                                                transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+                                                boxShadow: selected ? '0 0 0 1px rgba(59,130,246,0.18) inset' : 'none',
+                                                '&:hover': { borderColor: 'primary.main' },
                                             }}
-                                            style={previewStyle}
-                                        />
-                                    </Tooltip>
-                                );
-                            })}
+                                        >
+                                            <Box
+                                                sx={{
+                                                    height: 72,
+                                                    bgcolor: isDark ? 'rgba(30,41,59,0.5)' : 'rgba(248,250,252,0.95)',
+                                                }}
+                                                style={buildPatternPreviewStyle(style)}
+                                            />
+                                            <Box sx={{ px: 1.25, py: 1 }}>
+                                                <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                                                    {style.name}
+                                                </Typography>
+                                            </Box>
+                                        </Box>
+                                    );
+                                })}
+                            </Box>
+                        )}
 
-                            {/* 自定义图片 — 点击选图，切到其他模式用「无」清除 */}
-                            <Tooltip title={backgroundPattern === 'custom' ? '重新选择图片' : '自定义图片'}>
+                        {backgroundMode === 'wallpaper' && (
+                            <Box
+                                sx={{
+                                    ...backgroundPanelSx,
+                                    border: '1px solid',
+                                    borderColor: backgroundPattern === 'custom' ? 'primary.main' : 'divider',
+                                    mb: 2,
+                                    px: 1.5,
+                                    pt: 1.5,
+                                    pb: 1.25,
+                                    bgcolor: isDark ? 'rgba(15,23,42,0.24)' : 'rgba(255,255,255,0.88)',
+                                }}
+                            >
                                 <Box
-                                    onClick={handleSelectWallpaper}
                                     sx={{
-                                        width: 56, height: 56, borderRadius: 1, cursor: 'pointer',
-                                        border: backgroundPattern === 'custom' ? '2px solid' : '1px solid',
-                                        borderColor: backgroundPattern === 'custom' ? 'primary.main' : 'divider',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        bgcolor: isDark ? 'rgba(30,30,30,0.6)' : 'rgba(255,255,255,0.8)',
+                                        height: 164,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        borderRadius: 1,
+                                        bgcolor: isDark ? 'rgba(30,41,59,0.6)' : 'rgba(241,245,249,0.95)',
                                         overflow: 'hidden',
-                                        '&:hover': { borderColor: 'primary.main' }
+                                        mb: 1.25,
                                     }}
                                 >
                                     {wallpaperPath ? (
-                                        <Box component="img" src={wallpaperPath}
-                                            sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                        <Box
+                                            component="img"
+                                            src={wallpaperPath}
+                                            alt="当前壁纸"
+                                            sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                        />
                                     ) : (
-                                        <ImageIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+                                        <Box sx={{ textAlign: 'center', color: 'text.secondary' }}>
+                                            <ImageIcon sx={{ fontSize: 28, mb: 1 }} />
+                                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                                还没有选择壁纸
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary">
+                                                建议选择较暗或留白较多的图片，内容更易读
+                                            </Typography>
+                                        </Box>
                                     )}
                                 </Box>
-                            </Tooltip>
-                        </Box>
+                                <Box>
+                                    <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                                        {wallpaperPath ? '当前已使用自定义壁纸' : '选择一张壁纸'}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.25 }}>
+                                        壁纸只作为底层氛围背景，内容可读性主要受下方“背景遮罩”和“壁纸显现”影响。
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                        <Button
+                                            variant="contained"
+                                            size="small"
+                                            startIcon={<PhotoCamera />}
+                                            onClick={handleSelectWallpaper}
+                                            disabled={selectingWallpaper}
+                                        >
+                                            {wallpaperPath ? '重新选择' : '选择图片'}
+                                        </Button>
+                                        {wallpaperPath && (
+                                            <Button
+                                                variant="outlined"
+                                                size="small"
+                                                startIcon={<Delete />}
+                                                onClick={handleClearWallpaper}
+                                            >
+                                                移除壁纸
+                                            </Button>
+                                        )}
+                                    </Box>
+                                </Box>
+                            </Box>
+                        )}
 
-                        {/* 强度滑块 — 直接读写 store，onCommit 时才写后端 */}
-                        {backgroundPattern !== 'none' && (
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                <Typography variant="caption" color="text.secondary" sx={{ minWidth: 48 }}>
-                                    强度
-                                </Typography>
+                        {backgroundMode !== 'none' && (
+                            <Box
+                                sx={{
+                                    ...backgroundPanelSx,
+                                    px: 1.5,
+                                    py: 1.25,
+                                }}
+                            >
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 1 }}>
+                                    <Box>
+                                        <Typography variant="caption" sx={{ fontWeight: 700, display: 'block' }}>
+                                            {backgroundEffectLabel}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary">
+                                            {backgroundMode === 'wallpaper' ? '降低显现能减少干扰，适合文字阅读。' : '提高强度会让花纹更明显。'}
+                                        </Typography>
+                                    </Box>
+                                    <Typography variant="caption" color="text.secondary" sx={{ minWidth: 36, textAlign: 'right' }}>
+                                        {displayEffectValue}%
+                                    </Typography>
+                                </Box>
                                 <Slider
                                     size="small"
-                                    value={patternOpacity}
-                                    min={0.1}
-                                    max={2}
-                                    step={0.1}
+                                    value={Math.max(effectSliderMin, Math.min(effectSliderMax, patternOpacity))}
+                                    min={effectSliderMin}
+                                    max={effectSliderMax}
+                                    step={effectSliderStep}
                                     onChange={(_, v) => setPatternOpacity(v)}
                                     onChangeCommitted={(_, v) => {
                                         setPatternOpacity(v);
                                         window.electronAPI?.settings?.set('patternOpacity', v);
                                     }}
-                                    sx={{ flex: 1 }}
+                                    sx={{ px: 0.5 }}
                                 />
-                                <Typography variant="caption" color="text.secondary" sx={{ minWidth: 32, textAlign: 'right' }}>
-                                    {(patternOpacity * 100).toFixed(0)}%
-                                </Typography>
                             </Box>
                         )}
                     </Box>
@@ -1170,14 +1438,16 @@ const Settings = () => {
                             action={<ChipSelector options={maskOpacityOptions} value={maskOpacity}
                                 onChange={v => handleSettingChange('maskOpacity', v)} />}
                         />
-                        <SettingRow
-                            primary={t('settings.titleBarStyle')}
-                            secondary={t('settings.titleBarStyleDesc')}
-                            action={(
-                                <ChipSelector options={titleBarOptions} value={titleBarStyle}
-                                    onChange={v => handleSettingChange('titleBarStyle', v)} />
-                            )}
-                        />
+                        {!isMacOS && (
+                            <SettingRow
+                                primary={t('settings.titleBarStyle')}
+                                secondary={t('settings.titleBarStyleDesc')}
+                                action={(
+                                    <ChipSelector options={titleBarOptions} value={titleBarStyle}
+                                        onChange={v => handleSettingChange('titleBarStyle', v)} />
+                                )}
+                            />
+                        )}
                         <SettingRow
                             primary="圣诞模式"
                             secondary="来点惊喜如何？"
@@ -1189,12 +1459,19 @@ const Settings = () => {
                             )}
                         />
                     </List>
+                    </Paper>
                 </TabPanel>
 
                 {/* 快捷键设置 */}
                 <TabPanel value={settingsTabValue} index={2}>
-                    <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Typography variant="h6">{t('settings.shortcuts')}</Typography>
+                    <Paper elevation={0} sx={settingsSurfaceSx}>
+                    <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
+                        <Box>
+                            <Typography variant="h6" sx={sectionTitleSx}>{t('settings.shortcuts')}</Typography>
+                            <Typography variant="caption" sx={sectionDescriptionSx}>
+                                管理全局快捷键和输入行为
+                            </Typography>
+                        </Box>
                         <Button
                             variant="outlined"
                             size="small"
@@ -1218,12 +1495,9 @@ const Settings = () => {
                                     key={categoryKey}
                                     variant="outlined"
                                     sx={(theme) => ({
-                                        mb: 2, p: 0, overflow: 'hidden',
-                                        borderRadius: 1,
-                                        borderColor: theme.palette.divider,
-                                        bgcolor: theme.palette.mode === 'dark'
-                                            ? 'rgba(255,255,255,0.02)'
-                                            : 'rgba(0,0,0,0.01)',
+                                        ...settingsRowSx(theme),
+                                        p: 0,
+                                        overflow: 'hidden',
                                     })}
                                 >
                                     {/* 分类标题栏 */}
@@ -1233,7 +1507,7 @@ const Settings = () => {
                                             ? 'rgba(255,255,255,0.03)'
                                             : 'rgba(0,0,0,0.02)',
                                         borderBottom: '1px solid',
-                                        borderColor: 'divider',
+                                        borderColor: theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.12)' : 'rgba(15,23,42,0.08)',
                                         display: 'flex', alignItems: 'baseline', gap: 1,
                                     })}>
                                         <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
@@ -1288,6 +1562,7 @@ const Settings = () => {
                             );
                         });
                     })()}
+                    </Paper>
                 </TabPanel>
 
                 {/* AI 功能设置 */}
@@ -1317,11 +1592,12 @@ const Settings = () => {
 
                 {/* 数据管理 */}
                 <TabPanel value={settingsTabValue} index={8}>
-                    <Box sx={{ mb: 4 }}>
-                        <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
+                    <Paper elevation={0} sx={settingsSurfaceSx}>
+                    <Box sx={{ mb: 3 }}>
+                        <Typography variant="h6" sx={sectionTitleSx}>
                             本地备份与恢复
                         </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
                             将所有数据（笔记、待办、图片、音频）打包为 ZIP 备份文件，或从备份恢复
                         </Typography>
                         <Box sx={{ display: 'flex', gap: 2 }}>
@@ -1357,20 +1633,20 @@ const Settings = () => {
                         </Box>
                     </Box>
 
-                    <Divider sx={{ my: 4 }} />
+                    <Divider sx={{ my: 3 }} />
 
-                    <Box sx={{ mb: 4 }}>
-                        <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
+                    <Box sx={{ mb: 3 }}>
+                        <Typography variant="h6" sx={sectionTitleSx}>
                             Obsidian 导入导出
                         </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
                             从 Obsidian 导入笔记或导出笔记到 Obsidian 格式(.md)
 
                         </Typography>
                         <ObsidianImportExport />
                     </Box>
 
-                    <Divider sx={{ my: 4 }} />
+                    <Divider sx={{ my: 3 }} />
 
                     <List disablePadding>
                         <SettingRow
@@ -1393,6 +1669,7 @@ const Settings = () => {
                             )}
                         />
                     </List>
+                    </Paper>
                 </TabPanel>
 
                 {/* MCP 服务 */}
@@ -1405,15 +1682,20 @@ const Settings = () => {
 
                 {/* 编辑器设置 */}
                 <TabPanel value={settingsTabValue} index={10}>
+                    <Paper elevation={0} sx={settingsSurfaceSx}>
+                    <Typography variant="h6" sx={sectionTitleSx}>编辑器</Typography>
+                    <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
+                        管理编辑模式、浮动面板和工具栏顺序
+                    </Typography>
                     <List disablePadding sx={{ mb: 1 }}>
                         <SettingRow
                             primary={t('settings.editorMode')}
                             secondary={t('settings.editorModeDesc')}
                             action={<ChipSelector options={editorModeOptions} value={editorMode}
-                                onChange={setEditorMode} getIcon={o => o.icon} />}
+                                onChange={(value) => handleSettingChange('editorMode', value)} getIcon={o => o.icon} />}
                         />
                     </List>
-                    <Alert severity="info" sx={{ mx: 2, mb: 3 }}>
+                    <Alert severity="info" sx={{ mb: 3 }}>
                         <Typography variant="caption">
                             {t('settings.editorWarning')}
                         </Typography>
@@ -1426,12 +1708,15 @@ const Settings = () => {
                         setToolbarOrder={setToolbarOrder}
                         floatingPanelItems={floatingPanelItems}
                         setFloatingPanelItems={setFloatingPanelItems}
+                        contextMenuItems={contextMenuItems}
+                        setContextMenuItems={setContextMenuItems}
                     />
+                    </Paper>
                 </TabPanel>
 
                 {/* 关于 */}
                 <TabPanel value={settingsTabValue} index={11}>
-                    <Box sx={{ textAlign: 'center', py: 4 }}>
+                    <Paper elevation={0} sx={{ ...settingsSurfaceSx, textAlign: 'center' }}>
                         <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
                             <img
                                 src={isDark ? './about_darkmode.png' : './about_lightmode.png'}
@@ -1526,7 +1811,7 @@ const Settings = () => {
                                 </Box>
                             ))}
                         </Box>
-                    </Box>
+                    </Paper>
                 </TabPanel>
             </Box>
 

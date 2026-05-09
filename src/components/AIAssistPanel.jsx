@@ -1,12 +1,14 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Box, Paper, IconButton, TextField, CircularProgress, Tooltip, Fade, ClickAwayListener, Portal } from '@mui/material'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import CloseIcon from '@mui/icons-material/Close'
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
 import AddIcon from '@mui/icons-material/Add'
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import { useStore } from '../store/useStore'
 import { ALL_TOOLBAR_ITEMS, DEFAULT_FLOATING_ORDER, execWYSIWYGCommand } from './MarkdownToolbar'
+import { buildContextPackageFromNotes, truncateText } from '../utils/aiContextUtils'
 
 /**
  * 浮动面板 — 选中文字后浮现，提供改写/摘要/翻译/续写/自由提问 + 自定义格式工具
@@ -17,6 +19,8 @@ import { ALL_TOOLBAR_ITEMS, DEFAULT_FLOATING_ORDER, execWYSIWYGCommand } from '.
 const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
   const aiPanelMode = useStore((s) => s.aiPanelMode) || 'selection'
   const floatingPanelItems = useStore((s) => s.floatingPanelItems) || DEFAULT_FLOATING_ORDER
+  const notes = useStore((s) => s.notes)
+  const selectedNoteId = useStore((s) => s.selectedNoteId)
   const [visible, setVisible] = useState(false)
   const [selectedText, setSelectedText] = useState('')
   const [position, setPosition] = useState({ top: 0, left: 0 })
@@ -204,9 +208,37 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
         { role: 'system', content: '你是一个专业的写作助手。直接输出结果，不要包含额外的解释或前缀。' },
         { role: 'user', content: prompt + selectedText },
       ]
-      const res = await window.electronAPI.ai.chat(messages, {})
-      if (res?.success && res.data?.content) {
-        setResult(res.data.content)
+      const [todoResult, memoryResult] = await Promise.allSettled([
+        window.electronAPI?.todos?.getAll?.({ includeCompleted: false, limit: 80 }),
+        window.electronAPI?.mem0?.search?.({
+          userId: 'current_user',
+          query: truncateText(selectedText, 260),
+          options: { limit: 3 }
+        })
+      ])
+      const todos = todoResult.status === 'fulfilled'
+        ? (Array.isArray(todoResult.value?.data) ? todoResult.value.data : Array.isArray(todoResult.value) ? todoResult.value : [])
+        : []
+      const memories = memoryResult.status === 'fulfilled' && Array.isArray(memoryResult.value?.results)
+        ? memoryResult.value.results
+        : []
+      const contextPackage = buildContextPackageFromNotes({
+        notes,
+        todos,
+        memories,
+        selectedNoteId,
+        query: selectedText,
+        contextEnabled: { currentNote: true, relatedNotes: true, todos: true, memories: true }
+      })
+      const res = await window.electronAPI.ai.chatStream(messages, {
+        requestId: `assist_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+        contextPackage,
+        requireConfirmation: true,
+        disableTools: true,
+      })
+      const content = res?.fullContent || res?.data?.content
+      if (res?.success && content) {
+        setResult(content)
       } else {
         setError(res?.error || '调用失败')
       }
@@ -215,7 +247,7 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
     } finally {
       setLoading(false)
     }
-  }, [selectedText])
+  }, [notes, selectedNoteId, selectedText])
 
   const handleCustomSubmit = useCallback(() => {
     if (!customPrompt.trim()) return
@@ -265,6 +297,12 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
   // 复制结果
   const copyResult = useCallback(() => {
     if (result) navigator.clipboard?.writeText(result)
+  }, [result])
+
+  const continueWithResult = useCallback(() => {
+    if (!result) return
+    setCustomPrompt(`基于上面的结果继续优化：\n\n${result}\n\n`)
+    setShowCustom(true)
   }, [result])
 
   // ── 拖动逻辑 ──
@@ -431,6 +469,11 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
                 <Tooltip title="复制" arrow>
                   <IconButton size="small" onClick={copyResult} sx={{ p: '4px' }}>
                     <ContentCopyIcon sx={{ fontSize: 18 }} />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="继续追问/优化" arrow>
+                  <IconButton size="small" onClick={continueWithResult} sx={{ p: '4px' }}>
+                    <AutoAwesomeIcon sx={{ fontSize: 18 }} />
                   </IconButton>
                 </Tooltip>
                 <Tooltip title="关闭" arrow>

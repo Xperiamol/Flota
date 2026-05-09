@@ -18,7 +18,7 @@ import {
   ListItemText,
 } from '@mui/material';
 import { Sync, CheckCircle } from '@mui/icons-material';
-import { spacing, combo } from '../styles/commonStyles';
+import { spacing, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../styles/commonStyles';
 
 const CalendarSyncSettings = () => {
   const [config, setConfig] = useState({
@@ -131,9 +131,12 @@ const CalendarSyncSettings = () => {
 
   return (
     <Box>
-      <Typography variant="h6" sx={{ mb: 2 }}>
-        CalDAV 日历同步
-      </Typography>
+      <Box sx={settingsSectionSx}>
+        <Typography variant="h6" sx={sectionTitleSx}>CalDAV 日历同步</Typography>
+        <Typography variant="caption" sx={sectionDescriptionSx}>
+          配置私有或第三方 CalDAV 日历服务
+        </Typography>
+      </Box>
 
       {message && (
         <Alert severity={message.type} sx={{ mb: 2 }} onClose={() => setMessage(null)}>
@@ -141,7 +144,7 @@ const CalendarSyncSettings = () => {
         </Alert>
       )}
 
-      <Box sx={{ mb: 3 }}>
+      <Box sx={settingsSectionSx}>
         <FormControlLabel
           control={
             <Switch
@@ -158,7 +161,7 @@ const CalendarSyncSettings = () => {
         )}
       </Box>
 
-      <Box sx={combo.section}>
+      <Box sx={settingsSectionSx}>
         <Typography variant="subtitle2" sx={spacing.mb1}>服务器配置</Typography>
         <TextField
           fullWidth
@@ -198,7 +201,7 @@ const CalendarSyncSettings = () => {
       </Box>
 
       {calendars.length > 0 && (
-        <Box sx={combo.section}>
+        <Box sx={settingsSectionSx}>
           <Typography variant="subtitle2" sx={spacing.mb1}>选择日历</Typography>
           <List disablePadding>
             {calendars.map((cal, index) => (
@@ -213,7 +216,7 @@ const CalendarSyncSettings = () => {
                   sx={{
                     border: '1px solid',
                     borderColor: config.calendarUrl === cal.url ? 'primary.main' : 'divider',
-                    borderRadius: 1,
+                    borderRadius: '12px',
                   }}
                 >
                   <ListItemText
@@ -228,7 +231,7 @@ const CalendarSyncSettings = () => {
         </Box>
       )}
 
-      <Box sx={combo.section}>
+      <Box sx={settingsSectionSx}>
         <Typography variant="subtitle2" sx={spacing.mb1}>同步选项</Typography>
         <FormControl fullWidth sx={spacing.mb2} size="small">
           <InputLabel>同步方向</InputLabel>

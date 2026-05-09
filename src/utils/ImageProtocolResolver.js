@@ -52,7 +52,7 @@ class ImageProtocolResolver {
    * @param {string} appUrl - app://images/xxx.png
    */
   async resolveAppProtocol(appUrl) {
-    const relativePath = appUrl.replace('app://', '');
+    const [relativePath] = appUrl.replace('app://', '').split('?');
     
     // 检查缓存
     if (this.cache.has(relativePath)) {
@@ -71,8 +71,9 @@ class ImageProtocolResolver {
     try {
       const base64Data = await requestPromise;
       
-      // 缓存结果
-      this.cache.set(relativePath, base64Data);
+      if (!this.isPlaceholderImage(base64Data)) {
+        this.cache.set(relativePath, base64Data);
+      }
       
       return base64Data;
     } finally {
@@ -101,8 +102,9 @@ class ImageProtocolResolver {
     try {
       const base64Data = await requestPromise;
       
-      // 缓存结果
-      this.cache.set(relativePath, base64Data);
+      if (!this.isPlaceholderImage(base64Data)) {
+        this.cache.set(relativePath, base64Data);
+      }
       
       return base64Data;
     } finally {
@@ -168,7 +170,11 @@ class ImageProtocolResolver {
         </text>
       </svg>
     `;
-    return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }
+
+  isPlaceholderImage(src) {
+    return typeof src === 'string' && src.startsWith('data:image/svg+xml');
   }
 
   /**

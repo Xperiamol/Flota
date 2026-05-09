@@ -1,3 +1,4 @@
+const fs = require('fs')
 const path = require('path')
 const { app } = require('electron')
 
@@ -35,6 +36,44 @@ function validatePath(inputPath, { allowedRoots } = {}) {
   if (!safe) {
     throw new Error('路径不在允许范围内')
   }
+  return normalized
+}
+
+/**
+ * 校验用户主动选择的图片文件路径。
+ * 允许读取白名单目录外的图片，但要求：
+ * 1. 必须是存在的本地文件
+ * 2. 扩展名在允许范围内
+ * 3. 文件大小不能异常大
+ */
+function validateImagePath(inputPath, { maxSizeBytes = 10 * 1024 * 1024 } = {}) {
+  if (typeof inputPath !== 'string' || !inputPath.trim()) {
+    throw new Error('路径不能为空')
+  }
+
+  const normalized = path.resolve(inputPath)
+  const ext = path.extname(normalized).toLowerCase()
+  const allowedExts = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'])
+
+  if (!allowedExts.has(ext)) {
+    throw new Error('仅支持 jpg/jpeg/png/gif/bmp/webp 图片')
+  }
+
+  let stats
+  try {
+    stats = fs.statSync(normalized)
+  } catch {
+    throw new Error('图片文件不存在')
+  }
+
+  if (!stats.isFile()) {
+    throw new Error('目标不是文件')
+  }
+
+  if (stats.size > maxSizeBytes) {
+    throw new Error('图片文件过大')
+  }
+
   return normalized
 }
 
@@ -137,6 +176,7 @@ function validateObject(value, name) {
 
 module.exports = {
   validatePath,
+  validateImagePath,
   validateRelativePath,
   validateString,
   validateId,
