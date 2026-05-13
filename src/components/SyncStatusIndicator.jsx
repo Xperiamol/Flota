@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   IconButton,
@@ -22,9 +22,9 @@ import {
   StickyNote2 as NoteIcon,
   Image as ImageIcon,
   Settings as SettingsIcon,
-  CheckBox as TodoIcon
+  CheckBox as TodoIcon,
+  AttachFile as AttachFileIcon
 } from '@mui/icons-material';
-import { scrollbar } from '../styles/commonStyles';
 import { useStore } from '../store/useStore';
 import { useTranslation } from '../utils/i18n';
 
@@ -41,6 +41,7 @@ const SyncStatusIndicator = () => {
   const [modules, setModules] = useState({
     notes: { enabled: false, syncing: false, lastSync: null, error: null },
     images: { enabled: false, syncing: false, lastSync: null, error: null },
+    attachments: { enabled: false, syncing: false, lastSync: null, error: null },
     settings: { enabled: false, syncing: false, lastSync: null, error: null },
     todos: { enabled: false, syncing: false, lastSync: null, error: null, provider: null }
   });
@@ -56,6 +57,7 @@ const SyncStatusIndicator = () => {
         ...prev,
         notes: prev.notes.enabled ? { ...prev.notes, syncing: true } : prev.notes,
         images: prev.images.enabled ? { ...prev.images, syncing: true } : prev.images,
+        attachments: prev.attachments.enabled ? { ...prev.attachments, syncing: true } : prev.attachments,
         settings: prev.settings.enabled ? { ...prev.settings, syncing: true } : prev.settings,
         todos: prev.todos.provider === 'nutcloud' && prev.todos.enabled ? { ...prev.todos, syncing: true } : prev.todos,
       }));
@@ -66,6 +68,7 @@ const SyncStatusIndicator = () => {
         ...prev,
         notes: prev.notes.enabled ? { ...prev.notes, syncing: true } : prev.notes,
         images: prev.images.enabled ? { ...prev.images, syncing: true } : prev.images,
+        attachments: prev.attachments.enabled ? { ...prev.attachments, syncing: true } : prev.attachments,
         settings: prev.settings.enabled ? { ...prev.settings, syncing: true } : prev.settings,
         todos: prev.todos.provider === 'nutcloud' && prev.todos.enabled ? { ...prev.todos, syncing: true } : prev.todos,
       }));
@@ -77,6 +80,7 @@ const SyncStatusIndicator = () => {
         ...prev,
         notes: prev.notes.enabled ? { ...prev.notes, syncing: false, lastSync: now, error: null } : prev.notes,
         images: prev.images.enabled ? { ...prev.images, syncing: false, lastSync: now, error: null } : prev.images,
+        attachments: prev.attachments.enabled ? { ...prev.attachments, syncing: false, lastSync: now, error: null } : prev.attachments,
         settings: prev.settings.enabled ? { ...prev.settings, syncing: false, lastSync: now, error: null } : prev.settings,
         todos: prev.todos.provider === 'nutcloud' && prev.todos.enabled ? { ...prev.todos, syncing: false, lastSync: now, error: null } : prev.todos,
       }));
@@ -92,6 +96,7 @@ const SyncStatusIndicator = () => {
         ...prev,
         notes: prev.notes.enabled ? { ...prev.notes, syncing: false, error: error.message } : prev.notes,
         images: prev.images.enabled ? { ...prev.images, syncing: false, error: error.message } : prev.images,
+        attachments: prev.attachments.enabled ? { ...prev.attachments, syncing: false, error: error.message } : prev.attachments,
         settings: prev.settings.enabled ? { ...prev.settings, syncing: false, error: error.message } : prev.settings,
         todos: prev.todos.provider === 'nutcloud' && prev.todos.enabled ? { ...prev.todos, syncing: false, error: error.message } : prev.todos,
       }));
@@ -214,6 +219,12 @@ const SyncStatusIndicator = () => {
           lastSync: v3.lastSyncTime ? new Date(v3.lastSyncTime) : null,
           error: v3.enabled && syncCategories.includes('images') ? v3.lastError : null
         },
+        attachments: {
+          enabled: v3.enabled && syncCategories.includes('attachments'),
+          syncing: v3.enabled && syncCategories.includes('attachments') && v3.status === 'syncing',
+          lastSync: v3.lastSyncTime ? new Date(v3.lastSyncTime) : null,
+          error: v3.enabled && syncCategories.includes('attachments') ? v3.lastError : null
+        },
         settings: {
           enabled: v3.enabled && syncCategories.includes('settings'),
           syncing: v3.enabled && syncCategories.includes('settings') && v3.status === 'syncing',
@@ -314,6 +325,7 @@ const SyncStatusIndicator = () => {
     const enabledModules = [];
     if (modules.notes.enabled) enabledModules.push({ name: t('cloudSync.notes'), ...modules.notes });
     if (modules.images.enabled) enabledModules.push({ name: t('cloudSync.images'), ...modules.images });
+    if (modules.attachments.enabled) enabledModules.push({ name: t('cloudSync.attachments'), ...modules.attachments });
     if (modules.settings.enabled) enabledModules.push({ name: t('cloudSync.settings'), ...modules.settings });
     if (modules.todos.enabled) enabledModules.push({ name: t('cloudSync.todos'), ...modules.todos });
     
@@ -347,7 +359,7 @@ const SyncStatusIndicator = () => {
                 ? `${t('cloudSync.lastSync')}: ${new Date(module.lastSync).toLocaleTimeString(language)}`
                 : t('cloudSync.waitingFirstSync')
           }
-          secondaryTypographyProps={{ component: 'div' }}
+          slotProps={{ secondary: { component: 'div' } }}
         />
         <Chip
           label={module.syncing ? t('cloudSync.syncing') : module.error ? t('cloudSync.error') : t('cloudSync.ready')}
@@ -386,20 +398,22 @@ const SyncStatusIndicator = () => {
         onClose={() => setAnchorEl(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-        PaperProps={{
-          sx: (theme) => ({
-            backdropFilter: 'blur(20px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-            backgroundColor: theme.palette.mode === 'dark'
-              ? 'rgba(30, 41, 59, 0.85)'
-              : 'rgba(255, 255, 255, 0.85)',
-            border: `1px solid ${theme.palette.divider}`,
-            borderRadius: '8px',
-            maxHeight: '80vh'
-          })
+        slotProps={{
+          paper: {
+            sx: (theme) => ({
+              backdropFilter: 'blur(20px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+              backgroundColor: theme.palette.mode === 'dark'
+                ? 'rgba(30, 41, 59, 0.85)'
+                : 'rgba(255, 255, 255, 0.85)',
+              border: `1px solid ${theme.palette.divider}`,
+              borderRadius: '8px',
+              maxHeight: '80vh'
+            })
+          }
         }}
       >
-        <Box sx={{ p: 2, minWidth: 320, maxHeight: '70vh', overflow: 'auto', ...scrollbar.auto }}>
+        <Box sx={{ p: 2, minWidth: 320, maxHeight: '70vh', overflow: 'auto' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
             <Typography variant="h6">{t('cloudSync.syncStatus')}</Typography>
             <IconButton
@@ -415,6 +429,7 @@ const SyncStatusIndicator = () => {
           <List dense disablePadding>
             {renderModuleStatus(modules.notes, <NoteIcon />, t('cloudSync.notes'))}
             {renderModuleStatus(modules.images, <ImageIcon />, t('cloudSync.images'))}
+            {renderModuleStatus(modules.attachments, <AttachFileIcon />, t('cloudSync.attachments'))}
             {renderModuleStatus(modules.settings, <SettingsIcon />, t('cloudSync.settings'))}
             {modules.todos.enabled && (
               <>
@@ -432,7 +447,7 @@ const SyncStatusIndicator = () => {
                           ? `${t('cloudSync.lastSync')}: ${new Date(modules.todos.lastSync).toLocaleTimeString(language)}`
                           : t('cloudSync.waitingFirstSync')
                     }
-                    secondaryTypographyProps={{ component: 'div' }}
+                    slotProps={{ secondary: { component: 'div' } }}
                   />
                   <Chip
                     label={modules.todos.syncing ? t('cloudSync.syncing') : modules.todos.error ? t('cloudSync.error') : t('cloudSync.ready')}

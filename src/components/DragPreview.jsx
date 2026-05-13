@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Box, Typography } from '@mui/material';
 import { keyframes, useTheme } from '@mui/material/styles';
 import NoteIcon from '@mui/icons-material/Note';
 import ChecklistIcon from '@mui/icons-material/Checklist';
 import LaunchIcon from '@mui/icons-material/Launch';
 import { useStore } from '../store/useStore';
+import { isPlaceholderOnlyPreview, stripMarkdownToPreviewText } from '../utils/markdownTextUtils'
 
 // 优雅的浮动动画 - 更轻柔的幅度
 const elegantFloat = keyframes`
@@ -103,10 +104,11 @@ const DragPreview = ({
       }
       if (draggedItem.content) {
         if (draggedItem.note_type === 'whiteboard') return '白板笔记';
-        const clean = draggedItem.content.replace(/!\[.*?\]\(.*?\)/g, '【图片】').replace(/[#*`>\[\]\(\)]/g, '').replace(/\n/g, ' ').trim();
+        const clean = stripMarkdownToPreviewText(draggedItem.content)
+        if (isPlaceholderOnlyPreview(clean)) return '';
         if (clean) return clean.substring(0, 9) + (clean.length > 9 ? '...' : '');
       }
-      return '无标题笔记';
+      return '';
     } else if (draggedItemType === 'todo') {
       if (Array.isArray(draggedItem)) {
         return `多选待办 (${draggedItem.length}项)`;
@@ -132,21 +134,7 @@ const DragPreview = ({
       }
 
       // Simple markdown stripper logic identical to NoteList
-      let clean = content
-        .replace(/!\[[^\]]*\]\([^)]+\)/g, '【图片】')
-        .replace(/\{color:[^}]+\}(.+?)\{\/color\}/g, '$1')
-        .replace(/==(?:\{[^}]+\})?(.+?)==/g, '$1')
-        .replace(/\+\+(.+?)\+\+/g, '$1')
-        .replace(/<[^>]+>/g, '')
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-        .replace(/^#{1,6}\s+/gm, '')
-        .replace(/^[-*]\s+/gm, '')
-        .replace(/^\d+[.)]\s+/gm, '')
-        .replace(/^>\s+/gm, '')
-        .replace(/```[\s\S]*?```/g, '【代码】')
-        .replace(/[*_~`]/g, '')
-        .replace(/\n{2,}/g, '\n').trim()
-        .replace(/\n/g, ' ');
+      let clean = stripMarkdownToPreviewText(content)
       
       // If the title is just the start of the content, skip the first 9 chars for the subtitle
       const hasRealTitle = draggedItem.title && draggedItem.title !== '无标题' && draggedItem.title !== 'Untitled';
@@ -164,6 +152,9 @@ const DragPreview = ({
     }
     return '';
   };
+
+  const itemTitle = getItemTitle();
+  const itemSubtitle = getItemSubtitle();
 
   return (
     <>
@@ -246,21 +237,23 @@ const DragPreview = ({
                {draggedItemType === 'note' && draggedItem?.note_type === 'whiteboard' && (
                  <NoteIcon sx={{ fontSize: 13, color: 'text.disabled', flexShrink: 0 }} />
                )}
-               <Typography 
-                 variant={draggedItemType === 'note' ? "subtitle2" : "body2"} 
-                 sx={{ 
-                   fontWeight: draggedItemType === 'note' ? 500 : 400,
-                   fontSize: draggedItemType === 'note' ? '0.875rem' : '0.875rem',
-                   color: isDarkMode ? 'rgba(255, 255, 255, 0.95)' : 'rgba(0, 0, 0, 0.87)',
-                   overflow: 'hidden',
-                   textOverflow: 'ellipsis',
-                   whiteSpace: 'nowrap',
-                   lineHeight: 1.3,
-                   flex: 1
-                 }}
-               >
-                 {getItemTitle()}
-               </Typography>
+               {itemTitle && (
+                 <Typography 
+                   variant={draggedItemType === 'note' ? "subtitle2" : "body2"} 
+                   sx={{ 
+                     fontWeight: draggedItemType === 'note' ? 500 : 400,
+                     fontSize: draggedItemType === 'note' ? '0.875rem' : '0.875rem',
+                     color: isDarkMode ? 'rgba(255, 255, 255, 0.95)' : 'rgba(0, 0, 0, 0.87)',
+                     overflow: 'hidden',
+                     textOverflow: 'ellipsis',
+                     whiteSpace: 'nowrap',
+                     lineHeight: 1.3,
+                     flex: 1
+                   }}
+                 >
+                   {itemTitle}
+                 </Typography>
+               )}
             </Box>
             
             {(draggedItemType === 'note' || Array.isArray(draggedItem)) ? (
@@ -277,7 +270,7 @@ const DragPreview = ({
                   mt: 0.5,
                 }}
               >
-                {getItemSubtitle()}
+                {itemSubtitle}
               </Typography>
             ) : (
                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5, flexWrap: 'nowrap', overflow: 'hidden' }}>
@@ -295,9 +288,9 @@ const DragPreview = ({
                         draggedItem.priority === 'low' ? '低优先级' : '优先级'}
                      </Box>
                   )}
-                  {getItemSubtitle() && (
+                  {itemSubtitle && (
                      <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {getItemSubtitle()}
+                        {itemSubtitle}
                      </Typography>
                   )}
                </Box>

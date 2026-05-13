@@ -23,7 +23,6 @@ import {
   List as ListIcon,
   CheckCircle as CheckCircleIcon
 } from '@mui/icons-material';
-import { scrollbar } from '../styles/commonStyles';
 import TimeZoneUtils from '../utils/timeZoneUtils';
 import {
   getPriorityColor,
@@ -707,7 +706,7 @@ const FocusModeView = ({
                 </Typography>
               </Box>
               
-              <Box sx={{ maxHeight: 'calc(60vh - 60px)', overflowX: 'hidden', overflowY: 'auto', ...scrollbar.auto }}>
+              <Box sx={{ maxHeight: 'calc(60vh - 60px)', overflowX: 'hidden', overflowY: 'auto' }}>
                 <List sx={{ py: 1, overflowX: 'hidden', width: '100%' }}>
                   {focusCandidates.length === 0 ? (
                     <ListItem>

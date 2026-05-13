@@ -117,7 +117,7 @@ const PluginDetailDrawer = ({
             <List dense>
               {permissions.map((permission) => (
                 <ListItem key={permission} disableGutters>
-                  <ListItemText primary={permission} primaryTypographyProps={{ variant: 'body2' }}
+                  <ListItemText primary={permission} slotProps={{ primary: { variant: 'body2' } }}
                     secondary={permissionDescriptions[permission] || '自定义权限'} />
                 </ListItem>
               ))}

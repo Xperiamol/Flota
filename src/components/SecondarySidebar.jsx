@@ -12,7 +12,9 @@ import {
   IconButton,
   Checkbox,
   Menu,
-  MenuItem
+  MenuItem,
+  TextField,
+  InputAdornment
 } from '@mui/material';
 import {
   Settings as SettingsIcon,
@@ -28,14 +30,38 @@ import {
   Code as CodeIcon,
   EditNote as EditNoteIcon,
   DeleteOutline as DeleteIcon,
-  SelectAll as SelectAllIcon
+  SelectAll as SelectAllIcon,
+  Search as SearchIcon,
+  Notes as NotesIcon,
+  AddTask as AddTaskIcon,
+  Brush as WhiteboardIcon,
+  RestartAlt as ResetIcon,
+  Tag as TagIcon
 } from '@mui/icons-material';
-import { scrollbar } from '../styles/commonStyles';
 import { useStore } from '../store/useStore';
 import NoteList from './NoteList';
 import TodoList from './TodoList';
 import MyDayPanel from './MyDayPanel';
 import { t } from '../utils/i18n';
+
+const DEFAULT_TIMELINE_TYPES = ['note', 'whiteboard', 'todo'];
+
+const normalizeTimelineTypes = (types) => {
+  if (!Array.isArray(types) || types.length === 0) return DEFAULT_TIMELINE_TYPES;
+  const raw = new Set(types);
+  if (raw.has('note') && raw.has('todo') && raw.has('voice')) return DEFAULT_TIMELINE_TYPES;
+
+  const next = [];
+  if (raw.has('note') || raw.has('voice')) next.push('note');
+  if (raw.has('whiteboard')) next.push('whiteboard');
+  if (raw.has('todo')) next.push('todo');
+  return next.length ? next : DEFAULT_TIMELINE_TYPES;
+};
+
+const isDefaultTimelineTypes = (types) => {
+  const normalized = normalizeTimelineTypes(types);
+  return DEFAULT_TIMELINE_TYPES.every((type) => normalized.includes(type)) && normalized.length === DEFAULT_TIMELINE_TYPES.length;
+};
 
 const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, onShowCompletedChange, viewMode, showCompleted, onMultiSelectChange, onMultiSelectRefChange, todoRefreshTrigger, todoSortBy, onTodoSortByChange, showDeleted, selectedDate, calendarRefreshTrigger, onTodoUpdated }) => {
   const theme = useTheme();
@@ -52,6 +78,12 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
   const aiSwitchConv = useStore((state) => state.aiSwitchConv);
   const aiDeleteConv = useStore((state) => state.aiDeleteConv);
   const aiNewChat = useStore((state) => state.aiNewChat);
+  const notesAll = useStore((state) => state.notes);
+  const timelineFilter = useStore((state) => state.timelineFilter);
+  const setTimelineFilter = useStore((state) => state.setTimelineFilter);
+  const toggleTimelineType = useStore((state) => state.toggleTimelineType);
+  const toggleTimelineTag = useStore((state) => state.toggleTimelineTag);
+  const resetTimelineFilter = useStore((state) => state.resetTimelineFilter);
   const [aiContextMenu, setAiContextMenu] = useState(null);
   const [aiMultiSelectMode, setAiMultiSelectMode] = useState(false);
   const [aiSelectedConvIds, setAiSelectedConvIds] = useState([]);
@@ -198,6 +230,233 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
             onMultiSelectRefChange={onMultiSelectRefChange}
           />
         );
+      case 'timeline': {
+        const allTags = Array.from(new Set(
+          (notesAll || [])
+            .filter((n) => !n.is_deleted)
+            .flatMap((n) => Array.isArray(n.tags) ? n.tags : [])
+            .filter(Boolean)
+        )).sort()
+
+        const typeOptions = [
+          { id: 'note', label: '笔记', icon: <NotesIcon fontSize="small" /> },
+          { id: 'whiteboard', label: '白板', icon: <WhiteboardIcon fontSize="small" /> },
+          { id: 'todo', label: '待办', icon: <AddTaskIcon fontSize="small" /> }
+        ]
+        const normalizedTypes = normalizeTimelineTypes(timelineFilter.types)
+        const dateOptions = [
+          { id: 'all', label: '全部' },
+          { id: 'today', label: '今天' },
+          { id: 'week', label: '本周' },
+          { id: 'month', label: '本月' }
+        ]
+        const quickOptions = [
+          { id: 'all', label: '全部' },
+          { id: 'open', label: '未处理' },
+          { id: 'media', label: '有媒体' },
+          { id: 'inbox', label: '待整理' }
+        ]
+
+        const filterActive =
+          timelineFilter.search.trim() ||
+          timelineFilter.tags.length > 0 ||
+          timelineFilter.dateRange !== 'all' ||
+          !isDefaultTimelineTypes(timelineFilter.types) ||
+          !timelineFilter.showCompleted ||
+          timelineFilter.showFuture ||
+          (timelineFilter.quickMode || 'all') !== 'all'
+
+        const filterSectionSx = (themeObj) => ({
+          p: 1.25,
+          borderRadius: '16px',
+          border: '1px solid',
+          borderColor: themeObj.palette.mode === 'dark' ? 'rgba(148,163,184,0.14)' : 'rgba(15,23,42,0.07)',
+          bgcolor: themeObj.palette.mode === 'dark' ? 'rgba(15,23,42,0.34)' : 'rgba(255,255,255,0.58)',
+          boxShadow: themeObj.palette.mode === 'dark'
+            ? '0 10px 26px rgba(0,0,0,0.12)'
+            : '0 10px 26px rgba(15,23,42,0.045)'
+        })
+
+        const sectionTitleSx = {
+          fontSize: 12,
+          fontWeight: 700,
+          color: 'text.secondary',
+          mb: 1
+        }
+
+        return (
+          <Box
+            sx={(themeObj) => ({
+              p: 1.5,
+              display: 'flex',
+              flexDirection: 'column',
+              height: '100%',
+              backgroundColor: themeObj.palette.mode === 'dark'
+                ? 'rgba(15,23,42,0.42)'
+                : 'rgba(248,251,255,0.72)',
+              backdropFilter: 'blur(16px) saturate(160%)',
+              WebkitBackdropFilter: 'blur(16px) saturate(160%)',
+              gap: 1.25
+            })}
+          >
+            <Stack direction="row" alignItems="center" justifyContent="space-between">
+              <Box>
+                <Typography sx={{ fontSize: 15, fontWeight: 750, lineHeight: 1.3 }}>筛选</Typography>
+                <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 0.25 }}>
+                  {filterActive ? '已应用筛选条件' : '查看完整时间轴'}
+                </Typography>
+              </Box>
+              {filterActive && (
+                <IconButton size="small" onClick={resetTimelineFilter} title="重置筛选">
+                  <ResetIcon fontSize="small" />
+                </IconButton>
+              )}
+            </Stack>
+
+            <TextField
+              fullWidth
+              size="small"
+              value={timelineFilter.search}
+              onChange={(event) => setTimelineFilter({ search: event.target.value })}
+              placeholder="搜索笔记 / 白板 / 待办 / 标签"
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon color="action" fontSize="small" />
+                    </InputAdornment>
+                  )
+                }
+              }}
+            />
+
+            <Box sx={filterSectionSx}>
+              <Typography sx={sectionTitleSx}>快捷视图</Typography>
+              <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', rowGap: 0.75 }}>
+                {quickOptions.map((opt) => {
+                  const active = (timelineFilter.quickMode || 'all') === opt.id
+                  return (
+                    <Chip
+                      key={opt.id}
+                      label={opt.label}
+                      size="small"
+                      color={active ? 'primary' : 'default'}
+                      variant={active ? 'filled' : 'outlined'}
+                      onClick={() => setTimelineFilter({ quickMode: opt.id })}
+                      sx={{ borderRadius: '10px', fontWeight: active ? 650 : 500 }}
+                    />
+                  )
+                })}
+              </Stack>
+            </Box>
+
+            <Box sx={filterSectionSx}>
+              <Typography sx={sectionTitleSx}>只看</Typography>
+              <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', rowGap: 0.75 }}>
+                {typeOptions.map((opt) => {
+                  const active = normalizedTypes.includes(opt.id)
+                  return (
+                    <Chip
+                      key={opt.id}
+                      icon={opt.icon}
+                      label={opt.label}
+                      size="small"
+                      color={active ? 'primary' : 'default'}
+                      variant={active ? 'filled' : 'outlined'}
+                      onClick={() => toggleTimelineType(opt.id)}
+                      sx={{ borderRadius: '10px', fontWeight: 650 }}
+                    />
+                  )
+                })}
+              </Stack>
+            </Box>
+
+            <Box sx={filterSectionSx}>
+              <Typography sx={sectionTitleSx}>时间范围</Typography>
+              <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', rowGap: 0.75 }}>
+                {dateOptions.map((opt) => {
+                  const active = timelineFilter.dateRange === opt.id
+                  return (
+                    <Chip
+                      key={opt.id}
+                      label={opt.label}
+                      size="small"
+                      color={active ? 'primary' : 'default'}
+                      variant={active ? 'filled' : 'outlined'}
+                      onClick={() => setTimelineFilter({ dateRange: opt.id })}
+                      sx={{ borderRadius: '10px' }}
+                    />
+                  )
+                })}
+              </Stack>
+              <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 1 }}>
+                <Checkbox
+                  size="small"
+                  checked={timelineFilter.showCompleted}
+                  onChange={(event) => setTimelineFilter({ showCompleted: event.target.checked })}
+                  sx={{ p: 0.25 }}
+                />
+                <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>显示已完成待办</Typography>
+              </Stack>
+              <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 0.5 }}>
+                <Checkbox
+                  size="small"
+                  checked={timelineFilter.showFuture === true}
+                  onChange={(event) => setTimelineFilter({ showFuture: event.target.checked })}
+                  sx={{ p: 0.25 }}
+                />
+                <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>显示未来内容</Typography>
+              </Stack>
+            </Box>
+
+            <Box sx={{ ...filterSectionSx(theme), flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+              <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+                <TagIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+                <Typography sx={{ ...sectionTitleSx, mb: 0, flex: 1 }}>标签</Typography>
+                {timelineFilter.tags.length > 0 && (
+                  <Chip
+                    label={`已选 ${timelineFilter.tags.length}`}
+                    size="small"
+                    sx={{ height: 20, fontSize: 11, borderRadius: '7px' }}
+                  />
+                )}
+              </Stack>
+              <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pr: 0.5 }}>
+                {allTags.length === 0 ? (
+                  <Box
+                    sx={(themeObj) => ({
+                      py: 3,
+                      borderRadius: '12px',
+                      textAlign: 'center',
+                      color: 'text.secondary',
+                      bgcolor: themeObj.palette.mode === 'dark' ? 'rgba(148,163,184,0.06)' : 'rgba(15,23,42,0.035)'
+                    })}
+                  >
+                    <Typography sx={{ fontSize: 12 }}>暂无可用标签</Typography>
+                  </Box>
+                ) : (
+                  <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', rowGap: 0.75 }}>
+                    {allTags.map((tag) => {
+                      const active = timelineFilter.tags.includes(tag)
+                      return (
+                        <Chip
+                          key={tag}
+                          label={`#${tag}`}
+                          size="small"
+                          color={active ? 'primary' : 'default'}
+                          variant={active ? 'filled' : 'outlined'}
+                          onClick={() => toggleTimelineTag(tag)}
+                          sx={{ borderRadius: '8px', fontSize: 12 }}
+                        />
+                      )
+                    })}
+                  </Stack>
+                )}
+              </Box>
+            </Box>
+          </Box>
+        )
+      }
       case 'plugins': {
         const categories = pluginStoreCategories && pluginStoreCategories.length > 0
           ? [{ id: 'all', name: t('plugins.allPlugins') }, ...pluginStoreCategories]
@@ -248,7 +507,7 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
               {t('plugins.categories')}
             </Typography>
 
-            <List dense disablePadding sx={{ overflowY: 'auto', ...scrollbar.auto }}>
+            <List dense disablePadding sx={{ overflowY: 'auto' }}>
               {categories.map((category) => (
                 <ListItemButton
                   key={category.id || category}
@@ -304,7 +563,7 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
               {t('settings.settings')}
             </Typography>
 
-            <List dense disablePadding sx={{ overflowY: 'auto', ...scrollbar.auto }}>
+            <List dense disablePadding sx={{ overflowY: 'auto' }}>
               {settingsCategories.map((category) => (
                 <ListItemButton
                   key={category.id}
@@ -358,7 +617,7 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
                 对话历史
               </Typography>
 
-              <List dense disablePadding sx={{ overflowY: 'auto', flex: 1, ...scrollbar.auto }}>
+              <List dense disablePadding sx={{ overflowY: 'auto', flex: 1 }}>
                 {aiConversations.map((conv) => (
                   <ListItemButton
                     key={conv.id}

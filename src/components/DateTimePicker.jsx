@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import {
   Box,
   TextField,
@@ -7,11 +7,9 @@ import {
   Paper,
   Typography,
   Button,
-  Grid,
   Divider,
   useTheme,
-  Fade,
-  ClickAwayListener
+  Fade
 } from '@mui/material';
 import {
   CalendarToday as CalendarIcon,
@@ -22,7 +20,6 @@ import {
 } from '@mui/icons-material';
 import { format, parseISO, isValid, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, startOfWeek, endOfWeek } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
-import TimeZoneUtils from '../utils/timeZoneUtils';
 
 // 自定义日期选择器组件
 const CustomDatePicker = ({ value, onChange, onClose, anchorEl }) => {
@@ -98,8 +95,8 @@ const CustomDatePicker = ({ value, onChange, onClose, anchorEl }) => {
         vertical: 'top',
         horizontal: 'left',
       }}
-      TransitionComponent={Fade}
-      TransitionProps={{ timeout: 200 }}
+      slots={{ transition: Fade }}
+      slotProps={{ transition: { timeout: 200 } }}
     >
       <Paper
         sx={{
@@ -269,8 +266,8 @@ const CustomTimePicker = ({ value, onChange, onClose, anchorEl }) => {
         vertical: 'top',
         horizontal: 'left',
       }}
-      TransitionComponent={Fade}
-      TransitionProps={{ timeout: 200 }}
+      slots={{ transition: Fade }}
+      slotProps={{ transition: { timeout: 200 } }}
     >
       <Paper
         sx={{
@@ -297,10 +294,12 @@ const CustomTimePicker = ({ value, onChange, onClose, anchorEl }) => {
                 const val = Math.max(0, Math.min(23, parseInt(e.target.value, 10) || 0));
                 setHours(val);
               }}
-              inputProps={{
-                min: 0,
-                max: 23,
-                style: { textAlign: 'center', fontSize: '1.25rem', fontWeight: 600 }
+              slotProps={{
+                htmlInput: {
+                  min: 0,
+                  max: 23,
+                  style: { textAlign: 'center', fontSize: '1.25rem', fontWeight: 600 }
+                }
               }}
               sx={{
                 width: 80,
@@ -327,11 +326,13 @@ const CustomTimePicker = ({ value, onChange, onClose, anchorEl }) => {
                 const val = Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0));
                 setMinutes(val);
               }}
-              inputProps={{
-                min: 0,
-                max: 59,
-                step: 5,
-                style: { textAlign: 'center', fontSize: '1.25rem', fontWeight: 600 }
+              slotProps={{
+                htmlInput: {
+                  min: 0,
+                  max: 59,
+                  step: 5,
+                  style: { textAlign: 'center', fontSize: '1.25rem', fontWeight: 600 }
+                }
               }}
               sx={{
                 width: 80,

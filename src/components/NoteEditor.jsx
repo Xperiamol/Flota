@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Box,
   TextField,
@@ -16,17 +16,13 @@ import {
 } from '@mui/material'
 import {
   AutoMode as AutoSaveIcon,
+  AutoAwesome as AIIcon,
   InfoOutlined as RelatedIcon,
   PushPin as PinIcon,
   PushPinOutlined as PinOutlinedIcon,
-  Tag as TagIcon,
-  Edit as EditIcon,
-  Visibility as PreviewIcon,
-  ViewColumn as SplitViewIcon,
   Article as ArticleIcon,
   Brush as WhiteboardIcon,
   WebAsset as WindowIcon,
-  Code as CodeIcon,
   GetApp as GetAppIcon,
   CheckCircle as CheckCircleIcon,
   Error as ErrorIcon,
@@ -36,7 +32,6 @@ import { useStore } from '../store/useStore'
 import { useStandaloneContext } from './StandaloneProvider'
 import { zhCN } from 'date-fns/locale/zh-CN'
 import { parseTags, formatTags } from '../utils/tagUtils'
-import { DEFAULT_SHORTCUTS } from '../utils/shortcutUtils'
 import shortcutManager from '../utils/ShortcutManager'
 import TagInput from './TagInput'
 import MarkdownPreview from './MarkdownPreview'
@@ -53,9 +48,9 @@ import { aiConvertMarkdownToWhiteboard } from '../utils/aiExcalidrawGenerator'
 import { useError } from './ErrorProvider'
 import { useTranslation } from '../utils/i18n'
 import { saveQueue } from '../utils/SaveQueue'
-import { scrollbar } from '../styles/commonStyles'
 import logger from '../utils/logger'
 import { formatRelativeNoteTime } from '../utils/noteDateUtils'
+import { finalizeMarkdownForStorage } from '../markdown/index.js'
 
 const NoteEditor = () => {
   // 检测是否在独立窗口模式下运行
@@ -73,16 +68,19 @@ const NoteEditor = () => {
   const mainStore = useStore()
   const store = standaloneContext || mainStore
   const maskOpacity = useStore((state) => state.maskOpacity)
+  const aiCommandCenterEnabled = useStore((state) => state.aiCommandCenterEnabled)
+  const aiCommandCenterOpen = useStore((state) => state.aiCommandCenterOpen)
+  const setAiCommandCenterEnabled = useStore((state) => state.setAiCommandCenterEnabled)
+  const setAiCommandCenterOpen = useStore((state) => state.setAiCommandCenterOpen)
 
   const { t } = useTranslation()
-  const { showError, showSuccess, showWarning } = useError()
+  const { showError } = useError()
 
   const {
     selectedNoteId,
     notes,
     updateNote,
     togglePinNote,
-    autoSaveNote,
     editorMode,
     minibarMode,
     currentView
@@ -99,7 +97,6 @@ const NoteEditor = () => {
   const [saveErrorMessage, setSaveErrorMessage] = useState('')
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [viewMode, setViewMode] = useState('edit') // 'edit', 'preview', 'split'
-  const [isDragging, setIsDragging] = useState(false)
   const [conversionDialogOpen, setConversionDialogOpen] = useState(false)
   const [pendingNoteType, setPendingNoteType] = useState(null)
   const [whiteboardGetContentFunc, setWhiteboardGetContentFunc] = useState(null)
@@ -114,6 +111,7 @@ const NoteEditor = () => {
   const wysiwygEditorRef = useRef(null)
   // WYSIWYG editor 实例存到 state，避免 ref 在首次渲染时为 null 导致工具栏拿不到
   const [wysiwygEditor, setWysiwygEditor] = useState(null)
+  const [blockSelectActive, setBlockSelectActive] = useState(false)
 
   const currentNote = notes.find(note => note.id === selectedNoteId)
   const selectedNoteIdRef = useRef(selectedNoteId)
@@ -135,8 +133,10 @@ const NoteEditor = () => {
   }
 
   const createSavePayload = (state) => ({
-    title: (state.title || '').trim() || '无标题',
-    content: state.content || '',
+    title: (state.title || '').trim(),
+    content: (state.noteType || 'markdown') === 'markdown'
+      ? finalizeMarkdownForStorage(state.content || '')
+      : (state.content || ''),
     tags: formatTags(parseTags(state.tags || '')),
     note_type: state.noteType || 'markdown'
   })
@@ -187,49 +187,6 @@ const NoteEditor = () => {
 
   // 使用防抖保存 Hook（3秒延迟，避免频繁保存）
   const { debouncedSave, saveNow, cancelSave } = useDebouncedSave(performSave, 3000)
-
-  /**
-   * 可撤销的文本插入辅助函数
-   * 使用 execCommand 或 insertText 保持浏览器原生撤销栈
-   * @param {HTMLTextAreaElement} textarea - textarea 元素
-   * @param {string} text - 要插入的文本
-   * @param {number} selStart - 选区起始位置
-   * @param {number} selEnd - 选区结束位置
-   * @param {number} cursorPos - 插入后光标位置（可选，默认为插入文本末尾）
-   */
-  const insertTextWithUndo = (textarea, text, selStart, selEnd, cursorPos = null) => {
-    if (!textarea) return false
-    
-    textarea.focus()
-    textarea.setSelectionRange(selStart, selEnd)
-    
-    // 尝试使用 execCommand 插入文本（支持撤销）
-    let success = false
-    try {
-      success = document.execCommand('insertText', false, text)
-    } catch (e) {
-      success = false
-    }
-    
-    if (!success) {
-      // 回退方案：直接修改内容
-      const newContent = content.substring(0, selStart) + text + content.substring(selEnd)
-      setContent(newContent)
-    }
-    
-    // 更新状态
-    setHasUnsavedChanges(true)
-    prevStateRef.current.content = textarea.value
-    debouncedSave()
-    
-    // 设置光标位置
-    const finalPos = cursorPos !== null ? cursorPos : selStart + text.length
-    setTimeout(() => {
-      textarea.setSelectionRange(finalPos, finalPos)
-    }, 0)
-    
-    return true
-  }
 
   // 同步 hasUnsavedChanges 到 ref
   useEffect(() => {
@@ -356,9 +313,9 @@ const NoteEditor = () => {
       }
 
       // 如果是新创建的笔记（内容为空），自动聚焦到内容输入框
-      // 支持中文"无标题"和英文"Untitled"
+      const noteTitle = String(currentNote.title || '').trim()
       const isNewNote = !currentNote.content && 
-        (currentNote.title === '无标题' || currentNote.title === 'Untitled' || currentNote.title === '新笔记');
+        (!noteTitle || noteTitle === '无标题' || noteTitle === 'Untitled' || noteTitle === '新笔记')
       if (isNewNote) {
         setTimeout(() => {
           if (contentRef.current) {
@@ -418,14 +375,7 @@ const NoteEditor = () => {
       // 组件卸载时立即保存（使用 ref 拿到最新值，避免闭包过期）
       const noteId = selectedNoteIdRef.current
       if (hasUnsavedChangesRef.current && noteId) {
-        const snapshot = prevStateRef.current
-        const tagsArray = parseTags(snapshot.tags)
-        updateNote(noteId, {
-          title: (snapshot.title || '').trim() || '无标题',
-          content: snapshot.content,
-          tags: formatTags(tagsArray),
-          note_type: snapshot.noteType || 'markdown'
-        }).catch(error => {
+        updateNote(noteId, createSavePayload(prevStateRef.current)).catch(error => {
           console.error('组件卸载时保存失败:', error)
         })
       }
@@ -462,13 +412,7 @@ const NoteEditor = () => {
       // Markdown类型的保存逻辑
       if (hasUnsavedChangesRef.current && selectedNoteId) {
         try {
-          const tagsArray = parseTags(prevStateRef.current.tags)
-          await updateNote(selectedNoteId, {
-            title: prevStateRef.current.title.trim() || '无标题',
-            content: prevStateRef.current.content,
-            tags: formatTags(tagsArray),
-            note_type: prevStateRef.current.noteType
-          })
+          await updateNote(selectedNoteId, createSavePayload(prevStateRef.current))
           logger.log('独立窗口关闭前Markdown保存成功')
           // 通知主进程保存完成
           window.dispatchEvent(new CustomEvent('standalone-save-complete'))
@@ -518,12 +462,12 @@ const NoteEditor = () => {
     if (!selectedNoteId) return
 
     try {
-      const tagsArray = parseTags(tags)
-      const result = ensureUpdateSucceeded(await updateNote(selectedNoteId, {
-        title: title.trim() || '无标题',
+      const result = ensureUpdateSucceeded(await updateNote(selectedNoteId, createSavePayload({
+        title,
         content,
-        tags: formatTags(tagsArray)
-      }))
+        tags,
+        noteType
+      })))
       const persistedSavedAt = getSavedAtFromUpdateResult(result)
       setLastSaved(persistedSavedAt || currentNote?.updated_at || currentNote?.created_at || null)
       setHasUnsavedChanges(false)
@@ -552,7 +496,7 @@ const NoteEditor = () => {
   }
 
   // 处理 wiki 链接点击
-  const handleWikiLinkClick = (wikiTarget, wikiSection) => {
+  const handleWikiLinkClick = (wikiTarget) => {
     // 根据笔记标题查找所有匹配的笔记
     const matchingNotes = notes.filter(note =>
       note.title && note.title.toLowerCase() === wikiTarget.toLowerCase()
@@ -603,7 +547,7 @@ const NoteEditor = () => {
   }
 
   // 处理笔记类型切换
-  const handleNoteTypeChange = (event, newType) => {
+  const handleNoteTypeChange = (newType) => {
     if (newType === null) return
 
     // 如果切换到相同类型，不做任何操作
@@ -745,7 +689,7 @@ const NoteEditor = () => {
       const updateResult = await updateNote(selectedNoteId, {
         content: finalWhiteboardContent,
         note_type: 'whiteboard',
-        title: title.trim() || '无标题',
+        title: title.trim(),
         tags: formatTags(parseTags(tags))
       })
       
@@ -795,7 +739,7 @@ const NoteEditor = () => {
       const updateResult = await updateNote(selectedNoteId, {
         content: whiteboardContentStr,
         note_type: 'whiteboard',
-        title: title.trim() || '无标题',
+        title: title.trim(),
         tags: formatTags(parseTags(tags))
       })
 
@@ -853,7 +797,7 @@ const NoteEditor = () => {
       logger.log('白板转MD: 图片映射:', imageMap)
       
       // 处理图片：将白板中的图片保存为 Markdown 可用的格式
-      let finalMarkdown = markdown
+      let finalMarkdown = finalizeMarkdownForStorage(markdown)
       
       for (const [fileName, imageData] of Object.entries(imageMap)) {
         logger.log('白板转MD: 处理图片:', fileName, imageData)
@@ -883,7 +827,7 @@ const NoteEditor = () => {
             
             // 替换占位符为实际路径
             const placeholder = `{{IMAGE_PLACEHOLDER:${fileName}}}`
-            finalMarkdown = finalMarkdown.replace(placeholder, imagePath)
+            finalMarkdown = finalizeMarkdownForStorage(finalMarkdown.replace(placeholder, imagePath))
           } else {
             console.warn('白板转MD: 无法获取图片数据:', fileName)
             // 移除无法保存的图片占位符
@@ -914,7 +858,7 @@ const NoteEditor = () => {
       await updateNote(selectedNoteId, {
         content: finalMarkdown,
         note_type: 'markdown',
-        title: title.trim() || '无标题',
+        title: title.trim(),
         tags: formatTags(parseTags(tags))
       })
 
@@ -1228,11 +1172,6 @@ const NoteEditor = () => {
     const textarea = contentRef.current?.querySelector('textarea')
     if (!textarea) return
 
-    // 根据鼠标位置计算插入点
-    const rect = textarea.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
-    
     // 使用 caretPositionFromPoint 或 caretRangeFromPoint 获取插入位置
     let position = 0
     if (document.caretPositionFromPoint) {
@@ -1376,7 +1315,7 @@ const NoteEditor = () => {
   }
 
   // 处理鼠标离开编辑器区域
-  const handleMouseLeave = (e) => {
+  const handleMouseLeave = () => {
     if (!isStandaloneMode) return
 
     // 不立即隐藏，给一个延迟让handleMouseMove有机会处理
@@ -1589,7 +1528,7 @@ const NoteEditor = () => {
                 disableElevation
                 disableRipple
                 variant={isActive ? 'contained' : 'text'}
-                onClick={(e) => isActive ? null : handleNoteTypeChange(e, item.value)}
+                onClick={() => isActive ? null : handleNoteTypeChange(item.value)}
                 sx={{
                   px: 1.5, py: 0.4, minWidth: 0, fontSize: '0.78rem', fontWeight: 600,
                   borderRadius: '9px', textTransform: 'none', lineHeight: 1.5,
@@ -1671,6 +1610,25 @@ const NoteEditor = () => {
             </IconButton>
           </Tooltip>
 
+          <Tooltip title={aiCommandCenterOpen ? '关闭 AI 小窗' : '打开 AI 小窗'}>
+            <IconButton
+              onClick={() => {
+                if (!aiCommandCenterEnabled) setAiCommandCenterEnabled(true)
+                setAiCommandCenterOpen(!aiCommandCenterOpen)
+              }}
+              size="small"
+              sx={{
+                borderRadius: '8px',
+                color: aiCommandCenterOpen ? 'primary.main' : 'text.secondary',
+                bgcolor: aiCommandCenterOpen
+                  ? (theme) => theme.palette.mode === 'dark' ? 'rgba(96,165,250,0.14)' : 'rgba(25,118,210,0.09)'
+                  : 'transparent',
+              }}
+            >
+              <AIIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Tooltip>
+
           {/* 白板模式：导出PNG */}
           {noteType === 'whiteboard' && (
             <Tooltip title={t('common.exportPngTooltip')}>
@@ -1737,8 +1695,10 @@ const NoteEditor = () => {
               maxWidth: '100%'     // 确保不超过容器宽度
             }
           }}
-          InputProps={{
-            disableUnderline: true
+          slotProps={{
+            input: {
+              disableUnderline: true
+            }
           }}
         />
 
@@ -1810,6 +1770,8 @@ const NoteEditor = () => {
                 onViewModeChange={editorMode === 'wysiwyg' ? null : setViewMode}
                 editor={wysiwygEditor}
                 editorMode={editorMode}
+                blockSelectActive={blockSelectActive}
+                onToggleBlockSelect={() => wysiwygEditorRef.current?.toggleBlockSelect?.()}
               />
             </Box>
             {/* WYSIWYG 模式: 单一编辑器，无分屏/预览 */}
@@ -1850,6 +1812,7 @@ const NoteEditor = () => {
                   noteId={selectedNoteId}
                   content={content}
                   onEditorReady={setWysiwygEditor}
+                  onBlockSelectModeChange={setBlockSelectActive}
                   onChange={(newContent) => {
                     setContent(newContent)
                     setHasUnsavedChanges(true)
@@ -1898,8 +1861,10 @@ const NoteEditor = () => {
                     onChange={handleContentChange}
                     onKeyDown={handleKeyDown}
                     aria-label={t('common.startWritingMarkdown')}
-                    InputProps={{
-                      disableUnderline: true
+                    slotProps={{
+                      input: {
+                        disableUnderline: true
+                      }
                     }}
                     sx={{
                       flex: 1,
@@ -1915,7 +1880,6 @@ const NoteEditor = () => {
                         overflow: 'auto !important',
                         padding: '16px',
                         boxSizing: 'border-box',
-                        ...scrollbar.default,
                       },
                       // 防止超长无断词文本撑破布局；textarea 本身允许换行，但无空格长串会导致横向溢出
                       '& .MuiInputBase-inputMultiline': {
@@ -1949,7 +1913,6 @@ const NoteEditor = () => {
                       maxWidth: '100%',
                       width: '100%',
                       boxSizing: 'border-box',
-                      ...scrollbar.default,
                     }}
                   />
                 </Box>

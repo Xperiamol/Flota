@@ -464,6 +464,7 @@ const enUS = {
     // Sync status indicator
     notes: 'Notes',
     images: 'Images',
+    attachments: 'Attachments',
     settings: 'Settings',
     todos: 'Todos',
     nutcloud: 'Nutcloud',

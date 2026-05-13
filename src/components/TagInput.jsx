@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   TextField,
   Chip,
@@ -12,11 +12,9 @@ import {
   InputAdornment,
   IconButton,
   CircularProgress,
-  Tooltip,
-  Divider
+  Tooltip
 } from '@mui/material';
-import { scrollbar } from '../styles/commonStyles';
-import { Tag as TagIcon, Clear as ClearIcon, AutoAwesome as AiIcon, KeyboardArrowRight as RightArrowIcon, KeyboardArrowLeft as LeftArrowIcon } from '@mui/icons-material';
+import { Tag as TagIcon, Clear as ClearIcon, AutoAwesome as AiIcon } from '@mui/icons-material';
 import { parseTags, formatTags, validateTags, getTagColor } from '../utils/tagUtils';
 import { usePluginExtensions } from '../hooks/usePluginExtensions';
 import logger from '../utils/logger';
@@ -49,17 +47,13 @@ const TagInput = ({
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestionList, setShowSuggestionList] = useState(false);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
-  const [isLoading, setIsLoading] = useState(false);
   const [executingExtension, setExecutingExtension] = useState(null); // 当前执行的扩展
-  const [isExpanded, setIsExpanded] = useState(false); // 标签是否展开
-  const [showScrollButtons, setShowScrollButtons] = useState(false); // 是否显示滚动按钮
-  const tagsContainerRef = useRef(null); // 标签容器引用
   
   const inputRef = useRef(null);
   const anchorRef = useRef(null);
 
   // 加载 tag-input 扩展点的插件
-  const { extensions, loading: extensionsLoading, executeExtension } = usePluginExtensions(
+  const { extensions, executeExtension } = usePluginExtensions(
     'tag-input',
     {
       currentTags: tags,
@@ -80,8 +74,6 @@ const TagInput = ({
     if (!showSuggestions) return;
     
     try {
-      setIsLoading(true);
-      
       let suggestions = [];
       
       if (getSuggestions) {
@@ -107,8 +99,6 @@ const TagInput = ({
       setSuggestions(filteredSuggestions);
     } catch (error) {
       console.error('获取标签建议失败:', error);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -267,56 +257,13 @@ const TagInput = ({
     }
   };
 
-  // 处理标签容器的滚动
-  const handleTagsScroll = () => {
-    const container = tagsContainerRef.current;
-    if (container) {
-      setShowScrollButtons(container.scrollWidth > container.clientWidth);
-    }
-  };
-
-  // 标签滚动导航
-  const scrollTagsLeft = () => {
-    const container = tagsContainerRef.current;
-    if (container) {
-      container.scrollLeft -= 100; // 向左滚动100px
-    }
-  };
-
-  const scrollTagsRight = () => {
-    const container = tagsContainerRef.current;
-    if (container) {
-      container.scrollLeft += 100; // 向右滚动100px
-    }
-  };
-
-  // 监听标签容器尺寸变化
-  useEffect(() => {
-    const container = tagsContainerRef.current;
-    if (container) {
-      // 初始化滚动状态
-      handleTagsScroll();
-      
-      // 监听窗口大小变化和标签变化
-      const resizeObserver = new ResizeObserver(() => handleTagsScroll());
-      resizeObserver.observe(container);
-      
-      // 监听标签变化
-      handleTagsScroll();
-      
-      return () => {
-        resizeObserver.unobserve(container);
-      };
-    }
-  }, [tags]);
-
 
   return (
     <ClickAwayListener onClickAway={() => setShowSuggestionList(false)}>
       <Box sx={{ position: 'relative', ...sx }}>
         {/* 非内嵌模式：标签显示在输入框上方 */}
         {!inline && tags.length > 0 && (
-          <Box sx={{ mb: 1, display: 'flex', gap: 0.5, overflowX: 'auto', ...scrollbar.auto }}>
+          <Box sx={{ mb: 1, display: 'flex', gap: 0.5, overflowX: 'auto' }}>
             {tags.map((tag, index) => (
               <Chip
                 key={`${tag}-${index}`}
@@ -353,97 +300,94 @@ const TagInput = ({
           error={error}
           helperText={helperText}
           aria-label="输入标签"
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <TagIcon sx={{ color: 'action.active' }} />
-              </InputAdornment>
-            ),
-            // 内嵌模式：标签显示在输入框内部
-            ...(inline && tags.length > 0 && {
+          slotProps={{
+            input: {
               startAdornment: (
-                <InputAdornment position="start" sx={{ maxWidth: 'none', flex: 1 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, width: '100%' }}>
-                    <TagIcon sx={{ color: 'action.active', mr: 0.5, flexShrink: 0 }} />
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        gap: 0.5,
-                        overflowX: 'auto',
-                        overflowY: 'hidden',
-                        flex: 1, // 占用所有剩余空间
-                        minWidth: 0, // 允许缩小到0
-                        ...scrollbar.auto
-                      }}
-                    >
-                      {tags.map((tag, index) => (
-                        <Chip
-                          key={`${tag}-${index}`}
-                          label={tag}
-                          size="small"
-                          onDelete={() => removeTag(tag)}
-                          sx={{
-                            backgroundColor: getTagColor(tag),
-                            color: 'white',
-                            minWidth: 'fit-content',
-                            flexShrink: 0,
-                            '& .MuiChip-deleteIcon': {
-                              color: 'rgba(255, 255, 255, 0.7)',
-                              '&:hover': {
-                                color: 'white'
+                <InputAdornment position="start" {...(inline && tags.length > 0 ? { sx: { maxWidth: 'none', flex: 1 } } : {})}>
+                  {inline && tags.length > 0 ? (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, width: '100%' }}>
+                      <TagIcon sx={{ color: 'action.active', mr: 0.5, flexShrink: 0 }} />
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          gap: 0.5,
+                          overflowX: 'auto',
+                          overflowY: 'hidden',
+                          flex: 1, // 占用所有剩余空间
+                          minWidth: 0 // 允许缩小到0
+                        }}
+                      >
+                        {tags.map((tag, index) => (
+                          <Chip
+                            key={`${tag}-${index}`}
+                            label={tag}
+                            size="small"
+                            onDelete={() => removeTag(tag)}
+                            sx={{
+                              backgroundColor: getTagColor(tag),
+                              color: 'white',
+                              minWidth: 'fit-content',
+                              flexShrink: 0,
+                              '& .MuiChip-deleteIcon': {
+                                color: 'rgba(255, 255, 255, 0.7)',
+                                '&:hover': {
+                                  color: 'white'
+                                }
+                              },
+                              '& .MuiChip-label': {
+                                fontSize: '0.75rem'
                               }
-                            },
-                            '& .MuiChip-label': {
-                              fontSize: '0.75rem'
-                            }
-                          }}
-                        />
-                      ))}
+                            }}
+                          />
+                        ))}
+                      </Box>
                     </Box>
+                  ) : (
+                    <TagIcon sx={{ color: 'action.active' }} />
+                  )}
+                </InputAdornment>
+              ),
+              endAdornment: (
+                <InputAdornment position="end">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    {/* 动态加载的插件扩展按钮 */}
+                    {extensions.map((extension) => {
+                      const isExecuting = executingExtension === extension.commandId;
+                      return (
+                        <Tooltip key={extension.commandId} title={extension.description || extension.title}>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleExtensionClick(extension)}
+                            disabled={disabled || isExecuting || !!executingExtension}
+                            sx={{ p: 0.5 }}
+                            color="primary"
+                          >
+                            {isExecuting ? (
+                              <CircularProgress size={16} />
+                            ) : (
+                              <AiIcon fontSize="small" />
+                            )}
+                          </IconButton>
+                        </Tooltip>
+                      );
+                    })}
+
+                    {/* 清空按钮 */}
+                    {tags.length > 0 && (
+                      <IconButton
+                        size="small"
+                        onClick={clearAllTags}
+                        disabled={disabled}
+                        sx={{ p: 0.5 }}
+                        aria-label="清空标签"
+                      >
+                        <ClearIcon fontSize="small" />
+                      </IconButton>
+                    )}
                   </Box>
                 </InputAdornment>
               )
-            }),
-            endAdornment: (
-              <InputAdornment position="end">
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  {/* 动态加载的插件扩展按钮 */}
-                  {extensions.map((extension) => {
-                    const isExecuting = executingExtension === extension.commandId;
-                    return (
-                      <Tooltip key={extension.commandId} title={extension.description || extension.title}>
-                        <IconButton
-                          size="small"
-                          onClick={() => handleExtensionClick(extension)}
-                          disabled={disabled || isExecuting || !!executingExtension}
-                          sx={{ p: 0.5 }}
-                          color="primary"
-                        >
-                          {isExecuting ? (
-                            <CircularProgress size={16} />
-                          ) : (
-                            <AiIcon fontSize="small" />
-                          )}
-                        </IconButton>
-                      </Tooltip>
-                    );
-                  })}
-                  
-                  {/* 清空按钮 */}
-                  {tags.length > 0 && (
-                    <IconButton
-                      size="small"
-                      onClick={clearAllTags}
-                      disabled={disabled}
-                      sx={{ p: 0.5 }}
-                      aria-label="清空标签"
-                    >
-                      <ClearIcon fontSize="small" />
-                    </IconButton>
-                  )}
-                </Box>
-              </InputAdornment>
-            )
+            }
           }}
           inputRef={anchorRef}
         />

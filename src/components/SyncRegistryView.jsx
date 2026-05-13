@@ -20,6 +20,7 @@ import {
   Image as ImageIcon,
   Tune as TuneIcon,
   Description as DescriptionIcon,
+  AttachFile as AttachFileIcon,
 } from '@mui/icons-material';
 import { iconWithColor, combo, flex, settingsRowSx, spacing } from '../styles/commonStyles';
 
@@ -99,7 +100,7 @@ const SyncRegistryView = ({ onOpenSettings }) => {
       showError(error, '加载同步状态失败');
     }
   };
-  
+
   const buildSyncRegistry = () => {
     const { nutcloud, googleCal, googleCalStatus, caldav, caldavStatus } = backendStatus;
     const nutcloudV3 = nutcloud?.v3;
@@ -141,6 +142,12 @@ const SyncRegistryView = ({ onOpenSettings }) => {
         name: '图片',
         icon: <ImageIcon />,
         category: 'images',
+      }),
+      buildNutcloudCategory({
+        id: 'attachments',
+        name: '附件',
+        icon: <AttachFileIcon />,
+        category: 'attachments',
       }),
       buildNutcloudCategory({
         id: 'settings',

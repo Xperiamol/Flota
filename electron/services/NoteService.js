@@ -19,7 +19,7 @@ class NoteService extends EventEmitter {
     try {
       // 确保noteData存在并设置默认值
       const safeNoteData = {
-        title: noteData?.title || '无标题',
+        title: String(noteData?.title || '').trim(),
         content: noteData?.content || '',
         tags: noteData?.tags || [],
         category: noteData?.category || 'default',
@@ -102,6 +102,10 @@ class NoteService extends EventEmitter {
       } else if (typeof normalizedData.tags !== 'string') {
         normalizedData.tags = '';
       }
+    }
+
+    if (normalizedData.title !== undefined) {
+      normalizedData.title = String(normalizedData.title || '').trim();
     }
 
     try {
@@ -655,7 +659,7 @@ class NoteService extends EventEmitter {
       for (const noteData of data.notes) {
         try {
           await this.createNote({
-            title: noteData.title || '无标题',
+            title: noteData.title || '',
             content: noteData.content || '',
             tags: noteData.tags || '',
             category: noteData.category || 'default'

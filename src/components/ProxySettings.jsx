@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from '../utils/i18n';
 import { useError } from './ErrorProvider';
 import {
@@ -15,17 +15,24 @@ import { CheckCircle, WifiOff } from '@mui/icons-material';
 import { flex, settingsFieldGroupSx, settingsRowSx, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../styles/commonStyles';
 import logger from '../utils/logger';
 
+const DEFAULT_PROXY_CONFIG = {
+  enabled: false,
+  host: '127.0.0.1',
+  port: '7890',
+  protocol: 'http',
+};
+
 const ProxySettings = ({ showSnackbar }) => {
   const { t } = useTranslation();
-  const { showError, showSuccess } = useError();
+  const { showError } = useError();
   const [config, setConfig] = useState({
-    enabled: false,
-    host: '127.0.0.1',
-    port: '7890',
-    protocol: 'http',
+    ...DEFAULT_PROXY_CONFIG,
   });
 
   const [testing, setTesting] = useState(false);
+  const loadedRef = useRef(false);
+  const lastSavedRef = useRef('');
+  const saveTimerRef = useRef(null);
 
   // 加载配置
   useEffect(() => {
@@ -39,6 +46,7 @@ const ProxySettings = ({ showSnackbar }) => {
       if (result.success && result.data) {
         // 确保 protocol 是字符串
         const normalizedConfig = {
+          ...DEFAULT_PROXY_CONFIG,
           ...result.data,
           protocol: typeof result.data.protocol === 'string' 
             ? result.data.protocol 
@@ -46,6 +54,11 @@ const ProxySettings = ({ showSnackbar }) => {
         };
         logger.log('[ProxySettings] 标准化配置:', normalizedConfig);
         setConfig(normalizedConfig);
+        lastSavedRef.current = JSON.stringify(normalizedConfig);
+        loadedRef.current = true;
+      } else if (result.success) {
+        lastSavedRef.current = JSON.stringify(DEFAULT_PROXY_CONFIG);
+        loadedRef.current = true;
       }
     } catch (error) {
       console.error('加载代理配置失败:', error);
@@ -53,29 +66,40 @@ const ProxySettings = ({ showSnackbar }) => {
     }
   };
 
-  // 保存配置
-  const handleSave = async () => {
+  const saveConfig = useCallback(async (configToSave) => {
     try {
-      // 确保发送的数据格式正确
-      const configToSave = {
-        enabled: config.enabled,
-        protocol: typeof config.protocol === 'string' ? config.protocol : 'http',
-        host: config.host,
-        port: config.port
+      const normalized = {
+        enabled: configToSave.enabled,
+        protocol: typeof configToSave.protocol === 'string' ? configToSave.protocol : 'http',
+        host: configToSave.host,
+        port: configToSave.port
       };
-      logger.log('[ProxySettings] 保存配置:', configToSave);
+      logger.log('[ProxySettings] 自动保存配置:', normalized);
       
-      const result = await window.electronAPI.invoke('proxy:save-config', configToSave);
+      const result = await window.electronAPI.invoke('proxy:save-config', normalized);
 
       if (result.success) {
-        if (showSnackbar) showSnackbar(t('proxy.configSaved'), 'success');
+        lastSavedRef.current = JSON.stringify(normalized);
       } else {
         if (showSnackbar) showSnackbar(result.error || t('proxy.saveFailed'), 'error');
       }
     } catch (error) {
       if (showSnackbar) showSnackbar(error.message, 'error');
     }
-  };
+  }, [showSnackbar, t]);
+
+  useEffect(() => {
+    if (!loadedRef.current) return undefined;
+    const serialized = JSON.stringify(config);
+    if (serialized === lastSavedRef.current) return undefined;
+
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveConfig(config);
+    }, 500);
+
+    return () => clearTimeout(saveTimerRef.current);
+  }, [config, saveConfig]);
 
   // 测试代理
   const handleTest = async () => {
@@ -123,7 +147,7 @@ const ProxySettings = ({ showSnackbar }) => {
           <ListItemText
             primary={t('proxy.proxyStatus')}
             secondary={config.enabled ? t('proxy.enabledWithUrl', { url: getProxyUrl() }) : t('proxy.disabled')}
-            primaryTypographyProps={{ sx: { fontWeight: 650 } }}
+            slotProps={{ primary: { sx: { fontWeight: 650 } } }}
           />
           {config.enabled ? <CheckCircle color="success" /> : <WifiOff color="disabled" />}
         </Box>
@@ -131,7 +155,7 @@ const ProxySettings = ({ showSnackbar }) => {
           <ListItemText
             primary={t('proxy.enableProxy')}
             secondary={t('proxy.enableProxyDesc')}
-            primaryTypographyProps={{ sx: { fontWeight: 650 } }}
+            slotProps={{ primary: { sx: { fontWeight: 650 } } }}
           />
           <Switch checked={config.enabled} onChange={(e) => setConfig({ ...config, enabled: e.target.checked })} />
         </Box>
@@ -173,7 +197,6 @@ const ProxySettings = ({ showSnackbar }) => {
           </Box>
         </Box>
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1.5, pt: 1 }}>
-          <Button variant="contained" size="small" onClick={handleSave}>{t('proxy.saveConfig')}</Button>
           <Button variant="outlined" size="small" onClick={handleTest} disabled={!config.enabled || testing}>
             {testing ? t('proxy.testing') : t('proxy.testProxy')}
           </Button>

@@ -652,44 +652,60 @@ class TodoDAO {
   getStats() {
     const db = this.getDB();
     const nowUTC = TimeZoneUtils.nowUTC();
-    const todayStart = new Date(nowUTC);
-    todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date(nowUTC);
-    todayEnd.setHours(23, 59, 59, 999);
+    const todayStart = TimeZoneUtils.todayStartUTC();
+    const todayEnd = TimeZoneUtils.todayEndUTC();
+    const today = new Date();
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const mainTodoWhere = "is_deleted = 0 AND (parent_todo_id IS NULL OR parent_todo_id NOT LIKE '%-%-%-%-%')";
     
-    const totalStmt = db.prepare('SELECT COUNT(*) as count FROM todos WHERE is_deleted = 0');
-    const completedStmt = db.prepare('SELECT COUNT(*) as count FROM todos WHERE is_deleted = 0 AND is_completed = 1');
-    const pendingStmt = db.prepare('SELECT COUNT(*) as count FROM todos WHERE is_deleted = 0 AND is_completed = 0');
+    const totalStmt = db.prepare(`SELECT COUNT(*) as count FROM todos WHERE ${mainTodoWhere}`);
+    const completedStmt = db.prepare(`SELECT COUNT(*) as count FROM todos WHERE ${mainTodoWhere} AND is_completed = 1`);
+    const pendingStmt = db.prepare(`SELECT COUNT(*) as count FROM todos WHERE ${mainTodoWhere} AND is_completed = 0`);
     const overdueStmt = db.prepare(`
       SELECT COUNT(*) as count FROM todos 
-      WHERE is_deleted = 0 AND is_completed = 0 AND due_date < ?
+      WHERE ${mainTodoWhere} AND is_completed = 0 AND due_date < ?
     `);
     const dueTodayStmt = db.prepare(`
       SELECT COUNT(*) as count FROM todos 
-      WHERE is_deleted = 0 AND is_completed = 0 AND due_date >= ? AND due_date <= ?
+      WHERE ${mainTodoWhere} AND is_completed = 0 AND due_date >= ? AND due_date <= ?
+    `);
+    const todayCompletedStmt = db.prepare(`
+      SELECT COUNT(*) as count FROM todos
+      WHERE ${mainTodoWhere}
+        AND is_completed = 1
+        AND completed_at IS NOT NULL
+        AND datetime(completed_at) >= datetime(?)
+        AND datetime(completed_at) <= datetime(?)
+    `);
+    const todayRecurringCompletedStmt = db.prepare(`
+      SELECT COUNT(*) as count FROM todos
+      WHERE ${mainTodoWhere}
+        AND repeat_type IS NOT NULL
+        AND repeat_type != 'none'
+        AND completions LIKE ?
     `);
     const deletedStmt = db.prepare('SELECT COUNT(*) as count FROM todos WHERE is_deleted = 1');
     
     // 获取专注时长统计
-    const totalFocusTimeStmt = db.prepare('SELECT COALESCE(SUM(focus_time_seconds), 0) as total FROM todos WHERE is_deleted = 0');
+    const totalFocusTimeStmt = db.prepare(`SELECT COALESCE(SUM(focus_time_seconds), 0) as total FROM todos WHERE ${mainTodoWhere}`);
     const todayFocusTimeStmt = db.prepare(`
       SELECT COALESCE(SUM(focus_time_seconds), 0) as total FROM todos 
-      WHERE is_deleted = 0 AND DATE(updated_at) = DATE(?)
+      WHERE ${mainTodoWhere} AND DATE(updated_at) = DATE(?)
     `);
     const weekFocusTimeStmt = db.prepare(`
       SELECT COALESCE(SUM(focus_time_seconds), 0) as total FROM todos 
-      WHERE is_deleted = 0 AND updated_at >= datetime(?, '-6 days')
+      WHERE ${mainTodoWhere} AND updated_at >= datetime(?, '-6 days')
     `);
     const monthFocusTimeStmt = db.prepare(`
       SELECT COALESCE(SUM(focus_time_seconds), 0) as total FROM todos 
-      WHERE is_deleted = 0 AND updated_at >= datetime(?, '-29 days')
+      WHERE ${mainTodoWhere} AND updated_at >= datetime(?, '-29 days')
     `);
     
     // 获取按时完成率统计：completed_at <= due_date
     // 比较完整的时间戳，如果due_date只有日期则会是当天00:00:00
     const completedOnTimeStmt = db.prepare(`
       SELECT COUNT(*) as count FROM todos 
-      WHERE is_deleted = 0 AND is_completed = 1 
+      WHERE ${mainTodoWhere} AND is_completed = 1 
       AND due_date IS NOT NULL 
       AND completed_at IS NOT NULL 
       AND completed_at <= due_date
@@ -698,20 +714,29 @@ class TodoDAO {
     // 调试：获取有截止日期的已完成待办总数
     const completedWithDueDateStmt = db.prepare(`
       SELECT COUNT(*) as count FROM todos 
-      WHERE is_deleted = 0 AND is_completed = 1 AND due_date IS NOT NULL
+      WHERE ${mainTodoWhere} AND is_completed = 1 AND due_date IS NOT NULL
     `);
     
     const completed = completedStmt.get().count;
     const completedOnTime = completedOnTimeStmt.get().count;
     const completedWithDueDate = completedWithDueDateStmt.get().count;
+    const overdue = overdueStmt.get(nowUTC).count;
+    const dueToday = dueTodayStmt.get(todayStart, todayEnd).count;
+    const todayCompleted = todayCompletedStmt.get(todayStart, todayEnd).count
+      + todayRecurringCompletedStmt.get(`%${todayKey}%`).count;
+    const todayWorkload = todayCompleted + dueToday + overdue;
     
     return {
       total: totalStmt.get().count,
       completed: completed,
       pending: pendingStmt.get().count,
-      overdue: overdueStmt.get(nowUTC).count,
-      dueToday: dueTodayStmt.get(todayStart.toISOString(), todayEnd.toISOString()).count,
+      overdue,
+      dueToday,
       deleted: deletedStmt.get().count,
+      // 今日完成率 = 今日已完成 / (今日已完成 + 今日到期待处理 + 已逾期待处理)
+      todayCompleted,
+      todayWorkload,
+      todayCompletionRate: todayWorkload > 0 ? Math.round((todayCompleted / todayWorkload) * 100) : null,
       // 按时完成统计
       completedOnTime: completedOnTime,
       completedWithDueDate: completedWithDueDate,

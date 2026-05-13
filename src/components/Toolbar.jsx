@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import {
   Box,
   Toolbar as MuiToolbar,
@@ -12,16 +12,10 @@ import {
 } from '@mui/material'
 import {
   Add as AddIcon,
-  Search as SearchIcon,
-  Settings as SettingsIcon,
   Delete as DeleteIcon,
   Restore as RestoreIcon,
   Menu as MenuIcon,
   Close as CloseIcon,
-  Sort as SortIcon,
-  Schedule as ScheduleIcon,
-  Flag as FlagIcon,
-  AccessTime as AccessTimeIcon,
   ChevronLeft,
   ChevronRight,
   Today,
@@ -64,6 +58,8 @@ const Toolbar = ({
     setSelectedNoteId
   } = useStore()
   const pluginCommands = useStore((state) => state.pluginCommands)
+  const timelineFilter = useStore((state) => state.timelineFilter)
+  const setTimelineFilter = useStore((state) => state.setTimelineFilter)
   const [pluginCommandPending, setPluginCommandPending] = useState(null)
 
   const noteToolbarCommands = useMemo(() => {
@@ -87,7 +83,7 @@ const Toolbar = ({
   const handleCreateNote = useCallback(async () => {
     try {
       const result = await createNote({
-        title: t('notes.untitled'),
+        title: '',
         content: '',
         tags: []
       })
@@ -97,13 +93,13 @@ const Toolbar = ({
     } catch (error) {
       console.error('创建笔记失败:', error)
     }
-  }, [createNote, setSelectedNoteId, t])
+  }, [createNote, setSelectedNoteId])
 
   // 快速输入：创建空白笔记并在独立窗口打开
   const handleQuickInput = useCallback(async () => {
     try {
       const result = await createNote({
-        title: t('notes.untitled'),
+        title: '',
         content: '',
         tags: []
       })
@@ -114,7 +110,7 @@ const Toolbar = ({
     } catch (error) {
       console.error('快速输入失败:', error)
     }
-  }, [createNote, t])
+  }, [createNote])
 
 
   // 其他视图的创建处理函数
@@ -247,6 +243,10 @@ const Toolbar = ({
   const renderPluginCommandIcon = (command) =>
     getPluginCommandIcon(command, { fontSize: 'small', size: 20 })
 
+  const handleTimelineScrollLatest = () => {
+    window.dispatchEvent(new CustomEvent('timeline:scroll-latest'))
+  }
+
   // 根据当前视图获取标题和新建按钮文本
   const viewConfig = useMemo(() => {
     switch (currentView) {
@@ -312,6 +312,14 @@ const Toolbar = ({
               ]
             }
           ]
+        };
+      case 'timeline':
+        return {
+          title: '时间轴',
+          createButtonText: null,
+          createAction: null,
+          showDeletedButton: false,
+          showSidebarToggle: true
         };
       case 'settings':
         return {
@@ -529,6 +537,41 @@ const Toolbar = ({
 
       {/* 右侧按钮组 */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: currentView === 'calendar' ? 0 : 'auto' }}>
+        {currentView === 'timeline' && (
+          <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 1, mr: 1 }}>
+            <Box sx={segmentedControlSx}>
+              {[
+                { value: 'all', label: '全部' },
+                { value: 'today', label: '今天' },
+                { value: 'week', label: '本周' },
+                { value: 'month', label: '本月' },
+              ].map((option) => {
+                const active = (timelineFilter?.dateRange || 'all') === option.value
+                return (
+                  <Button
+                    key={option.value}
+                    disableElevation
+                    disableRipple
+                    variant={active ? 'contained' : 'text'}
+                    onClick={() => setTimelineFilter({ dateRange: option.value })}
+                    sx={segmentedButtonSx(active)}
+                  >
+                    {option.label}
+                  </Button>
+                )
+              })}
+            </Box>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={handleTimelineScrollLatest}
+              sx={{ borderRadius: '10px', height: 32, px: 1.5 }}
+            >
+              最新
+            </Button>
+          </Box>
+        )}
+
         {/* 插件命令按钮 */}
         {[
           { view: 'notes', commands: noteToolbarCommands },

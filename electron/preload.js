@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 // ── IPC 桥工厂 ──
 const inv = (ch) => (...args) => ipcRenderer.invoke(ch, ...args)
@@ -234,7 +234,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   system: {
     getPlatform: inv('system:get-platform'),
     getVersion: inv('system:get-version'),
+    checkForUpdates: inv('system:check-for-updates'),
     getPath: inv('system:get-path'),
+    getStorageUsage: inv('system:get-storage-usage'),
     showOpenDialog: inv('system:show-open-dialog'),
     showSaveDialog: inv('system:show-save-dialog'),
     showMessageBox: inv('system:show-message-box'),
@@ -244,6 +246,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     readText: inv('system:read-text'),
     showNotification: inv('system:show-notification'),
     openExternal: inv('system:open-external'),
+    openPath: inv('system:open-path'),
+    getPathForFile: (file) => webUtils.getPathForFile(file),
   },
 
   // 数据库调试
@@ -301,7 +305,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // 音频相关 API
-  audio: { saveFromBuffer: inv('audio:save-from-buffer') },
+  audio: {
+    saveFromBuffer: inv('audio:save-from-buffer'),
+    resolveSource: inv('audio:resolve-source')
+  },
 
   // 插件商店与插件运行时 API
   pluginStore: {

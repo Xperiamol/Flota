@@ -512,7 +512,7 @@ class ShortcutService {
       
       // 创建空白笔记
       const result = await noteService.createNote({
-        title: '快速笔记',
+        title: '',
         content: '',
         category: '',
         tags: []

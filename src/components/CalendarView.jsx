@@ -1,20 +1,15 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from '../utils/i18n';
-import { scrollbar } from '../styles/commonStyles';
 import {
   Box,
   Typography,
   Paper,
   Chip,
   Tooltip,
-  Grid,
   Fade,
-  IconButton,
-  Checkbox,
-  FormControlLabel
+  IconButton
 } from '@mui/material';
 import {
-  Circle,
   CheckCircle as CheckCircleIcon,
   RadioButtonUnchecked as RadioButtonUncheckedIcon,
   OpenInNew as OpenInNewIcon,
@@ -38,6 +33,7 @@ import { Excalidraw } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import { useError } from './ErrorProvider';
 import { isTodoCompleted, isFutureRecurringTodo, isTodoInDateInstance, isTodoCompletedOnDate } from '../utils/todoDisplayUtils';
+import { stripMarkdownToPreviewText } from '../utils/markdownTextUtils'
 
 // 白板预览组件 - 只读模式
 const WhiteboardPreview = ({ content, theme }) => {
@@ -136,7 +132,7 @@ const WhiteboardPreview = ({ content, theme }) => {
   );
 };
 
-const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, onSelectedDateChange, refreshToken = 0, showCompleted = false, onShowCompletedChange, onTodoUpdated, viewMode = 'todos' }) => {
+const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, onSelectedDateChange, refreshToken = 0, showCompleted = false, onTodoUpdated, viewMode = 'todos' }) => {
   const { t } = useTranslation();
   const { showError } = useError();
   const theme = useTheme();
@@ -144,7 +140,6 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
   const setSelectedNoteId = useStore((state) => state.setSelectedNoteId);
   const setCurrentView = useStore((state) => state.setCurrentView);
   const [todos, setTodos] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [pendingComplete, setPendingComplete] = useState(new Set());
 
   // 获取笔记显示标题：如果有标题则显示标题，否则显示内容前9个字
@@ -158,7 +153,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
       if (note.note_type === 'whiteboard') {
         return t('notes.whiteboardNote')
       }
-      const cleanContent = note.content.replace(/[#*`\n]/g, '').trim()
+      const cleanContent = stripMarkdownToPreviewText(note.content)
       if (cleanContent) {
         return cleanContent.substring(0, 9) + (cleanContent.length > 9 ? '...' : '')
       }
@@ -225,12 +220,6 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
     }
   });
 
-  // 监听 viewMode 变化
-  useEffect(() => {
-    console.log('CalendarView viewMode changed to:', viewMode);
-    console.log('Notes from store:', notes?.length || 0);
-  }, [viewMode, notes]);
-
   // 获取当月的所有Todo
   const loadTodos = async () => {
     try {
@@ -255,14 +244,9 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
 
   // 根据 viewMode 加载不同的数据
   const loadData = async () => {
-    setIsLoading(true);
-    try {
-      // notes 从 store 中获取，不需要加载
-      // 只需要加载 todos
-      await loadTodos();
-    } finally {
-      setIsLoading(false);
-    }
+    // notes 从 store 中获取，不需要加载
+    // 只需要加载 todos
+    await loadTodos();
   };
 
   // 处理todo完成状态切换
@@ -711,8 +695,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                         flexDirection: 'column',
                         gap: 0.5,
                         maxHeight: '72px', // 3行 * 24px高度
-                        pr: 0.5,
-                        ...scrollbar.auto,
+                        pr: 0.5
                       }}
                     >
                       {/* 待办视图 */}
@@ -1274,23 +1257,25 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
         onClose={() => setPreviewNote(null)}
         maxWidth="md"
         fullWidth
-        PaperProps={{
-          sx: {
-            backgroundColor: theme.palette.mode === 'dark'
-              ? 'rgba(30, 41, 59, 0.85)'
-              : 'rgba(255, 255, 255, 0.85)',
-            backdropFilter: 'blur(12px) saturate(150%)',
-            WebkitBackdropFilter: 'blur(12px) saturate(150%)',
-            maxHeight: '80vh',
-            boxShadow: theme.palette.mode === 'dark'
-              ? '0 8px 32px rgba(0, 0, 0, 0.5)'
-              : '0 8px 32px rgba(0, 0, 0, 0.15)'
-          }
-        }}
-        BackdropProps={{
-          sx: {
-            backdropFilter: 'blur(4px)',
-            backgroundColor: 'rgba(0, 0, 0, 0.3)'
+        slotProps={{
+          paper: {
+            sx: {
+              backgroundColor: theme.palette.mode === 'dark'
+                ? 'rgba(30, 41, 59, 0.85)'
+                : 'rgba(255, 255, 255, 0.85)',
+              backdropFilter: 'blur(12px) saturate(150%)',
+              WebkitBackdropFilter: 'blur(12px) saturate(150%)',
+              maxHeight: '80vh',
+              boxShadow: theme.palette.mode === 'dark'
+                ? '0 8px 32px rgba(0, 0, 0, 0.5)'
+                : '0 8px 32px rgba(0, 0, 0, 0.15)'
+            }
+          },
+          backdrop: {
+            sx: {
+              backdropFilter: 'blur(4px)',
+              backgroundColor: 'rgba(0, 0, 0, 0.3)'
+            }
           }
         }}
       >

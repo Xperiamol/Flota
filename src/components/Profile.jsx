@@ -26,22 +26,48 @@ import {
   CalendarMonth as CalendarMonthIcon,
   Tag as TagIcon
 } from '@mui/icons-material';
-import { scrollbar, heroCardSx, createSoftGlassCardSx } from '../styles/commonStyles';
+import { heroCardSx, createSoftGlassCardSx } from '../styles/commonStyles';
 import { useStore } from '../store/useStore';
 import { fetchTodoStats } from '../api/todoAPI';
 import { fetchInstalledPlugins } from '../api/pluginAPI';
 import { useTranslation } from '../utils/i18n';
 import TimeZoneUtils from '../utils/timeZoneUtils';
 import { useError } from './ErrorProvider';
+import UsageWaveCard from './UsageWaveCard';
 import logger from '../utils/logger';
 
 const PROFILE_EASING = 'cubic-bezier(0.32, 0.72, 0, 1)';
 const PROFILE_TRANSITION = `background-color 180ms ${PROFILE_EASING}, border-color 180ms ${PROFILE_EASING}, box-shadow 180ms ${PROFILE_EASING}, color 180ms ${PROFILE_EASING}, filter 180ms ${PROFILE_EASING}`;
 
+const DashboardCardHeader = ({ title, icon: Icon, color = 'text.primary', mb = 2 }) => (
+  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, mb }}>
+    {Icon ? (
+      <Box
+        sx={{
+          width: 28,
+          height: 28,
+          borderRadius: '999px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          bgcolor: 'action.hover',
+          color,
+          flexShrink: 0,
+        }}
+      >
+        <Icon sx={{ fontSize: 17 }} />
+      </Box>
+    ) : null}
+    <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1.02rem', letterSpacing: '-0.01em' }}>
+      {title}
+    </Typography>
+  </Box>
+);
+
 const Profile = () => {
   const { t } = useTranslation();
   const { showError } = useError();
-  const { notes, userAvatar, theme, primaryColor, setCurrentView, userName, christmasMode } = useStore();
+  const { notes, userAvatar, theme, primaryColor, setCurrentView, setSettingsTabValue, setTodoNavigationRequest, userName, christmasMode } = useStore();
   const [todoStats, setTodoStats] = useState(null);
   const [installedPlugins, setInstalledPlugins] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -77,7 +103,10 @@ const Profile = () => {
             overdue: 0,
             dueToday: 0,
             completedOnTime: 0,
-            onTimeRate: 0
+            onTimeRate: 0,
+            todayCompleted: 0,
+            todayWorkload: 0,
+            todayCompletionRate: null
           });
         }
 
@@ -109,23 +138,52 @@ const Profile = () => {
   }), [notes]);
 
   // 计算待办事项统计 - 使用 useMemo 避免重复计算
-  const todoStatsDisplay = useMemo(() => todoStats || {
+  const todoStatsDisplay = useMemo(() => ({
     total: 0,
     completed: 0,
     pending: 0,
     overdue: 0,
     dueToday: 0,
     completedOnTime: 0,
-    onTimeRate: 0
-  }, [todoStats]);
+    completedWithDueDate: 0,
+    onTimeRate: 0,
+    todayCompleted: 0,
+    todayWorkload: 0,
+    todayCompletionRate: null,
+    totalFocusTime: 0,
+    todayFocusTime: 0,
+    weekFocusTime: 0,
+    monthFocusTime: 0,
+    ...(todoStats || {})
+  }), [todoStats]);
 
-  const completionRate = useMemo(() => todoStatsDisplay.total > 0
-    ? Math.round((todoStatsDisplay.completed / todoStatsDisplay.total) * 100)
-    : 0, [todoStatsDisplay.total, todoStatsDisplay.completed]);
+  const todayCompletionRate = Number.isFinite(todoStatsDisplay.todayCompletionRate)
+    ? todoStatsDisplay.todayCompletionRate
+    : null;
+  const todayCompletionLabel = todayCompletionRate == null ? '--' : `${todayCompletionRate}%`;
+  const todayCompletionValueLabel = todoStatsDisplay.todayWorkload > 0
+    ? `${todoStatsDisplay.todayCompleted || 0} / ${todoStatsDisplay.todayWorkload || 0}`
+    : '今日暂无任务';
+  const todayCompletionMetaLabel = todoStatsDisplay.todayWorkload > 0
+    ? `今日负载 ${todoStatsDisplay.todayWorkload || 0}`
+    : '待有今日任务后开始计算';
+  const onTimeRateLabel = todoStatsDisplay.completedWithDueDate > 0
+    ? `${todoStatsDisplay.onTimeRate || 0}%`
+    : '--';
 
   // 处理编辑资料按钮点击
   const handleEditProfile = () => {
+    setSettingsTabValue(1);
     setCurrentView('settings');
+  };
+
+  const handleTodoFilterNavigation = (filterBy) => {
+    setTodoNavigationRequest({
+      filterBy,
+      viewMode: 'focus',
+      showCompleted: false,
+    });
+    setCurrentView('todo');
   };
 
   // 处理头像点击
@@ -166,6 +224,20 @@ const Profile = () => {
   // 卡片样式抽到 commonStyles，这里只绑定主题主色
   const profileHeroSx = heroCardSx;
   const profileCardSx = useMemo(() => createSoftGlassCardSx(primaryColor), [primaryColor]);
+  const clickableCardSx = useMemo(() => ({
+    ...profileCardSx,
+    cursor: 'pointer',
+    transition: `${PROFILE_TRANSITION}, transform 180ms ${PROFILE_EASING}`,
+    '&:hover': {
+      transform: 'translateY(-2px)',
+      boxShadow: theme === 'dark'
+        ? '0 18px 36px rgba(0,0,0,0.28)'
+        : '0 18px 36px rgba(15,23,42,0.12)',
+    },
+    '&:active': {
+      transform: 'translateY(0)',
+    }
+  }), [profileCardSx, theme]);
 
   // 计算笔记活动热力图数据（过去90天）
   const getHeatmapData = () => {
@@ -228,7 +300,11 @@ const Profile = () => {
   // 计算高频词统计
   const getTopWords = () => {
     const wordMap = {};
-    const stopWords = new Set(['的', '了', '是', '在', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '这']);
+    const stopWords = new Set([
+      '的', '了', '是', '在', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很',
+      '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '这', '这个', '那个',
+      '可以', '因为', '所以', '如果', '然后', '已经', '已有', '复制', '链接', '广告', '联系'
+    ]);
 
     notes.forEach(note => {
       if (!note.is_deleted && note.content) {
@@ -251,14 +327,15 @@ const Profile = () => {
       .map(([word, count]) => ({ word, count }));
   };
 
-  const heatmapData = getHeatmapData();
-  const topWords = getTopWords();
-
-  // 计算热力图网格布局（13周 x 7天）
-  const weeks = [];
-  for (let i = 0; i < heatmapData.length; i += 7) {
-    weeks.push(heatmapData.slice(i, i + 7));
-  }
+  const heatmapData = useMemo(() => getHeatmapData(), [notes]);
+  const topWords = useMemo(() => getTopWords(), [notes]);
+  const weeks = useMemo(() => {
+    const chunks = [];
+    for (let i = 0; i < heatmapData.length; i += 7) {
+      chunks.push(heatmapData.slice(i, i + 7));
+    }
+    return chunks;
+  }, [heatmapData]);
 
   if (loading) {
     return (
@@ -365,405 +442,159 @@ const Profile = () => {
         </Alert>
       )}
 
-      {/* 瀑布流布局 - 使用 CSS columns */}
       <Box
         sx={{
           columnCount: {
             xs: 1,
             sm: 2,
             md: 3,
-            lg: 4
+            lg: 4,
           },
           columnGap: 3,
           '& > *': {
             breakInside: 'avoid',
-            marginBottom: 3
+            marginBottom: 3,
           }
         }}
       >
-        {/* 笔记统计卡片 */}
         <Card sx={profileCardSx}>
           <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <NotesIcon sx={{ fontSize: 32, color: primaryColor, mr: 2 }} />
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                笔记统计
-              </Typography>
+            <DashboardCardHeader title="待办事项" icon={CheckCircleIcon} color="success.main" mb={1.25} />
+            <UsageWaveCard
+              title="今日完成率"
+              accentColor={primaryColor}
+              valueLabel={todayCompletionValueLabel}
+              metaLabel={todayCompletionMetaLabel}
+              percent={todayCompletionRate}
+              percentLabel={todayCompletionLabel}
+              compact
+              segments={[
+                { label: '今日到期', value: todoStatsDisplay.dueToday || 0 },
+                { label: '已逾期', value: todoStatsDisplay.overdue || 0 },
+              ]}
+            />
+            <Box sx={{ mt: 1.5 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.75 }}>
+                <Typography variant="caption" color="text.secondary">按时完成率</Typography>
+                <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                  {onTimeRateLabel}
+                </Typography>
+              </Box>
+              <LinearProgress
+                variant="determinate"
+                value={todoStatsDisplay.completedWithDueDate > 0 ? todoStatsDisplay.onTimeRate || 0 : 0}
+                sx={{
+                  height: 7,
+                  borderRadius: 999,
+                  bgcolor: 'grey.200',
+                  '& .MuiLinearProgress-bar': {
+                    bgcolor: 'info.main',
+                    borderRadius: 999,
+                  }
+                }}
+              />
             </Box>
-            <Typography variant="h3" sx={{ mb: 2, fontWeight: 600, color: primaryColor }}>
+          </CardContent>
+        </Card>
+
+        <Card sx={clickableCardSx} onClick={() => handleTodoFilterNavigation('today')}>
+          <CardContent>
+            <DashboardCardHeader title="今日待办" icon={TodayIcon} color="info.main" />
+            <Typography variant="h3" sx={{ mb: 1.25, fontWeight: 600, color: 'info.main' }}>
+              {todoStatsDisplay.dueToday}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              今日到期待处理
+            </Typography>
+            <Chip
+              label={todoStatsDisplay.dueToday > 0 ? '点击查看今日筛选' : '点击查看今日列表'}
+              size="small"
+              color={todoStatsDisplay.dueToday > 0 ? 'info' : 'success'}
+              variant={todoStatsDisplay.dueToday > 0 ? 'filled' : 'outlined'}
+              sx={{ width: '100%' }}
+            />
+          </CardContent>
+        </Card>
+
+        <Card sx={clickableCardSx} onClick={() => handleTodoFilterNavigation('overdue')}>
+          <CardContent>
+            <DashboardCardHeader title="逾期待办" icon={WarningIcon} color="error.main" />
+            <Typography variant="h3" sx={{ mb: 1.25, fontWeight: 600, color: 'error.main' }}>
+              {todoStatsDisplay.overdue}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              仍需补处理的任务
+            </Typography>
+            <Chip
+              label={todoStatsDisplay.overdue > 0 ? '点击查看逾期筛选' : '点击查看逾期列表'}
+              size="small"
+              color={todoStatsDisplay.overdue > 0 ? 'error' : 'success'}
+              variant={todoStatsDisplay.overdue > 0 ? 'filled' : 'outlined'}
+              sx={{ width: '100%' }}
+            />
+          </CardContent>
+        </Card>
+
+        <Card sx={profileCardSx}>
+          <CardContent>
+            <DashboardCardHeader title="笔记概览" icon={NotesIcon} color={primaryColor} />
+            <Typography variant="h3" sx={{ mb: 1.25, fontWeight: 600, color: primaryColor }}>
               {noteStats.active}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              活跃笔记
+              当前可见笔记
             </Typography>
             <Stack spacing={1}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Typography variant="body2">总笔记数</Typography>
                 <Chip label={noteStats.total} size="small" variant="outlined" />
               </Box>
-              {noteStats.pinned > 0 && (
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography variant="body2">置顶笔记</Typography>
-                  <Chip label={noteStats.pinned} size="small" color="primary" />
-                </Box>
-              )}
-              {noteStats.deleted > 0 && (
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography variant="body2">已删除</Typography>
-                  <Chip label={noteStats.deleted} size="small" color="error" />
-                </Box>
-              )}
-            </Stack>
-          </CardContent>
-        </Card>
-
-        {/* 待办事项统计卡片 */}
-        <Card sx={profileCardSx}>
-          <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <CheckCircleIcon sx={{ fontSize: 32, color: 'success.main', mr: 2 }} />
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                待办事项
-              </Typography>
-            </Box>
-            <Typography variant="h3" sx={{ mb: 2, fontWeight: 600, color: 'success.main' }}>
-              {todoStatsDisplay.total}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              总待办数
-            </Typography>
-            <Box sx={{ mb: 2 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                <Typography variant="caption">完成率</Typography>
-                <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                  {completionRate}%
-                </Typography>
-              </Box>
-              <LinearProgress
-                variant="determinate"
-                value={completionRate}
-                sx={{
-                  height: 8,
-                  borderRadius: 4,
-                  bgcolor: 'grey.200',
-                  '& .MuiLinearProgress-bar': {
-                    bgcolor: 'success.main',
-                    borderRadius: 4
-                  }
-                }}
-              />
-            </Box>
-            <Box sx={{ mb: 2 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                <Typography variant="caption">按时完成率</Typography>
-                <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                  {todoStatsDisplay.onTimeRate || 0}%
-                </Typography>
-              </Box>
-              <LinearProgress
-                variant="determinate"
-                value={todoStatsDisplay.onTimeRate || 0}
-                sx={{
-                  height: 8,
-                  borderRadius: 4,
-                  bgcolor: 'grey.200',
-                  '& .MuiLinearProgress-bar': {
-                    bgcolor: 'info.main',
-                    borderRadius: 4
-                  }
-                }}
-              />
-            </Box>
-            <Stack spacing={1}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="body2">已完成</Typography>
-                <Chip label={todoStatsDisplay.completed} size="small" color="success" />
+                <Typography variant="body2">置顶笔记</Typography>
+                <Chip label={noteStats.pinned} size="small" color="primary" variant={noteStats.pinned > 0 ? 'filled' : 'outlined'} />
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="body2">按时完成</Typography>
-                <Chip label={todoStatsDisplay.completedOnTime || 0} size="small" color="info" />
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="body2">进行中</Typography>
-                <Chip label={todoStatsDisplay.pending} size="small" color="warning" />
+                <Typography variant="body2">已删除</Typography>
+                <Chip label={noteStats.deleted} size="small" color="error" variant={noteStats.deleted > 0 ? 'filled' : 'outlined'} />
               </Box>
             </Stack>
           </CardContent>
         </Card>
 
-        {/* 待办专注时长卡片 */}
         <Card sx={profileCardSx}>
           <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <TrendingUpIcon sx={{ fontSize: 32, color: 'primary.main', mr: 2 }} />
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                专注时长
-              </Typography>
-            </Box>
-            <Typography variant="h3" sx={{ mb: 2, fontWeight: 600, color: 'primary.main' }}>
-              {TimeZoneUtils.formatSeconds(todoStatsDisplay.totalFocusTime || 0)}
+            <DashboardCardHeader title="专注时长" icon={TrendingUpIcon} color="primary.main" />
+            <Typography variant="h3" sx={{ mb: 1.25, fontWeight: 600, color: 'primary.main' }}>
+              {TimeZoneUtils.formatSeconds(todoStatsDisplay.todayFocusTime || 0)}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              累计专注时间
+              今日专注
             </Typography>
             <Stack spacing={1}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="body2">今日专注</Typography>
-                <Chip
-                  label={TimeZoneUtils.formatSeconds(todoStatsDisplay.todayFocusTime || 0)}
-                  size="small"
-                  color="primary"
-                  variant={(todoStatsDisplay.todayFocusTime || 0) > 0 ? "filled" : "outlined"}
-                />
+                <Typography variant="body2">本周</Typography>
+                <Chip label={TimeZoneUtils.formatSeconds(todoStatsDisplay.weekFocusTime || 0)} size="small" color="info" variant={(todoStatsDisplay.weekFocusTime || 0) > 0 ? 'filled' : 'outlined'} />
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="body2">本周专注</Typography>
-                <Chip
-                  label={TimeZoneUtils.formatSeconds(todoStatsDisplay.weekFocusTime || 0)}
-                  size="small"
-                  color="info"
-                  variant={(todoStatsDisplay.weekFocusTime || 0) > 0 ? "filled" : "outlined"}
-                />
+                <Typography variant="body2">本月</Typography>
+                <Chip label={TimeZoneUtils.formatSeconds(todoStatsDisplay.monthFocusTime || 0)} size="small" color="secondary" variant={(todoStatsDisplay.monthFocusTime || 0) > 0 ? 'filled' : 'outlined'} />
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="body2">本月专注</Typography>
-                <Chip
-                  label={TimeZoneUtils.formatSeconds(todoStatsDisplay.monthFocusTime || 0)}
-                  size="small"
-                  color="secondary"
-                  variant={(todoStatsDisplay.monthFocusTime || 0) > 0 ? "filled" : "outlined"}
-                />
+                <Typography variant="body2">累计</Typography>
+                <Chip label={TimeZoneUtils.formatSeconds(todoStatsDisplay.totalFocusTime || 0)} size="small" variant="outlined" />
               </Box>
             </Stack>
           </CardContent>
         </Card>
 
-        {/* 今日待办卡片 */}
         <Card sx={profileCardSx}>
           <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <TodayIcon sx={{ fontSize: 32, color: 'info.main', mr: 2 }} />
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                今日待办
-              </Typography>
-            </Box>
-            <Typography variant="h3" sx={{ mb: 2, fontWeight: 600, color: 'info.main' }}>
-              {todoStatsDisplay.dueToday}
-            </Typography>
+            <DashboardCardHeader title="笔记活动热力图" icon={CalendarMonthIcon} color={primaryColor} />
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              今日到期待办
+              过去 90 天的笔记创建与更新
             </Typography>
-            {todoStatsDisplay.dueToday > 0 ? (
-              <Chip
-                label="需要关注"
-                size="small"
-                color="info"
-                variant="filled"
-                sx={{ width: '100%' }}
-              />
-            ) : (
-              <Chip
-                label="暂无待办"
-                size="small"
-                variant="outlined"
-                sx={{ width: '100%' }}
-              />
-            )}
-          </CardContent>
-        </Card>
-
-        {/* 逾期待办卡片 */}
-        <Card sx={profileCardSx}>
-          <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <WarningIcon sx={{ fontSize: 32, color: 'error.main', mr: 2 }} />
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                逾期待办
-              </Typography>
-            </Box>
-            <Typography variant="h3" sx={{ mb: 2, fontWeight: 600, color: 'error.main' }}>
-              {todoStatsDisplay.overdue}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              需要处理的逾期待办
-            </Typography>
-            {todoStatsDisplay.overdue > 0 ? (
-              <Chip
-                label="紧急处理"
-                size="small"
-                color="error"
-                variant="filled"
-                sx={{ width: '100%' }}
-              />
-            ) : (
-              <Chip
-                label="无逾期"
-                size="small"
-                color="success"
-                variant="outlined"
-                sx={{ width: '100%' }}
-              />
-            )}
-          </CardContent>
-        </Card>
-
-        {/* 插件统计卡片 */}
-        <Card sx={profileCardSx}>
-          <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <ExtensionIcon sx={{ fontSize: 32, color: primaryColor, mr: 2 }} />
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                已安装插件
-              </Typography>
-            </Box>
-            <Typography variant="h3" sx={{ mb: 2, fontWeight: 600, color: primaryColor }}>
-              {installedPlugins.length}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              扩展应用功能
-            </Typography>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-              {installedPlugins.slice(0, 3).map((plugin) => (
-                <Chip
-                  key={plugin.id}
-                  label={plugin.manifest?.name || plugin.id}
-                  size="small"
-                  variant="outlined"
-                  sx={{ fontSize: '0.7rem' }}
-                />
-              ))}
-              {installedPlugins.length > 3 && (
-                <Chip
-                  label={`+${installedPlugins.length - 3}`}
-                  size="small"
-                  color="primary"
-                  variant="outlined"
-                />
-              )}
-            </Box>
-          </CardContent>
-        </Card>
-
-        {/* 使用概览卡片 */}
-        <Card sx={profileCardSx}>
-          <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <TrendingUpIcon sx={{ fontSize: 32, color: 'success.main', mr: 2 }} />
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                使用概览
-              </Typography>
-            </Box>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              您的生产力数据
-            </Typography>
-            <Stack spacing={1.5}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="body2">笔记创建</Typography>
-                <Typography variant="h6" sx={{ fontWeight: 600, color: primaryColor }}>
-                  {noteStats.total}
-                </Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="body2">任务完成</Typography>
-                <Typography variant="h6" sx={{ fontWeight: 600, color: 'success.main' }}>
-                  {todoStatsDisplay.completed}
-                </Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="body2">插件使用</Typography>
-                <Typography variant="h6" sx={{ fontWeight: 600, color: primaryColor }}>
-                  {installedPlugins.length}
-                </Typography>
-              </Box>
-            </Stack>
-          </CardContent>
-        </Card>
-
-        {/* 笔记详细信息卡片 */}
-        <Card sx={profileCardSx}>
-          <CardContent>
-            <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, display: 'flex', alignItems: 'center' }}>
-              <NotesIcon sx={{ mr: 1, color: primaryColor }} />
-              笔记详情
-            </Typography>
-            <Stack spacing={1.5}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2" color="text.secondary">总笔记数</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>{noteStats.total}</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2" color="text.secondary">活跃笔记</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>{noteStats.active}</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2" color="text.secondary">置顶笔记</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>{noteStats.pinned}</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2" color="text.secondary">已删除</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>{noteStats.deleted}</Typography>
-              </Box>
-            </Stack>
-          </CardContent>
-        </Card>
-
-        {/* 待办详细信息卡片 */}
-        <Card sx={profileCardSx}>
-          <CardContent>
-            <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, display: 'flex', alignItems: 'center' }}>
-              <CheckCircleIcon sx={{ mr: 1, color: 'success.main' }} />
-              待办详情
-            </Typography>
-            <Stack spacing={1.5}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2" color="text.secondary">总任务数</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>{todoStatsDisplay.total}</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2" color="text.secondary">已完成</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>{todoStatsDisplay.completed}</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2" color="text.secondary">进行中</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>{todoStatsDisplay.pending}</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2" color="text.secondary">今日到期</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>{todoStatsDisplay.dueToday}</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2" color="text.secondary">已逾期</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>{todoStatsDisplay.overdue}</Typography>
-              </Box>
-            </Stack>
-          </CardContent>
-        </Card>
-
-        {/* 笔记活动热力图卡片 */}
-        <Card sx={profileCardSx}>
-          <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <CalendarMonthIcon sx={{ fontSize: 32, color: primaryColor, mr: 2 }} />
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                笔记活动热力图
-              </Typography>
-            </Box>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              过去90天的笔记创建活动
-            </Typography>
-
-            {/* 热力图网格和图例 */}
-            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
-              {/* 热力图网格 */}
-              <Box sx={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 0.5,
-                overflowX: 'auto',
-                overflowY: 'hidden',
-                pb: 1,
-                ...scrollbar.auto
-              }}>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, overflowX: 'auto', overflowY: 'hidden', pb: 1 }}>
                 {weeks.map((week, weekIndex) => (
                   <Box key={weekIndex} sx={{ display: 'flex', gap: 0.5 }}>
                     {week.map((day, dayIndex) => {
@@ -814,8 +645,7 @@ const Profile = () => {
                 ))}
               </Box>
 
-              {/* 图例 */}
-              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5, pt: 0.25 }}>
                 <Typography variant="caption" color="text.secondary">少</Typography>
                 {[0, 1, 2, 3, 4].map(level => {
                   const colors = [
@@ -843,112 +673,72 @@ const Profile = () => {
           </CardContent>
         </Card>
 
-        {/* 高频词统计卡片 */}
         <Card sx={profileCardSx}>
           <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <TagIcon sx={{ fontSize: 32, color: 'info.main', mr: 2 }} />
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                高频词统计
-              </Typography>
-            </Box>
+            <DashboardCardHeader title="高频词" icon={TagIcon} color="info.main" />
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              笔记中最常出现的词汇
+              最近笔记里最常出现的主题词
             </Typography>
-
             {topWords.length > 0 ? (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {topWords.map((item, index) => {
-                  const maxCount = topWords[0]?.count || 1;
-                  const intensity = (item.count / maxCount);
-                  const fontSize = 0.75 + (intensity * 0.5); // 0.75rem - 1.25rem
-                  const opacity = 0.6 + (intensity * 0.4); // 0.6 - 1.0
-
-                  return (
-                    <Tooltip key={item.word} title={`出现 ${item.count} 次`} placement="top">
-                      <Chip
-                        label={item.word}
-                        size="small"
-                        sx={{
-                          fontSize: `${fontSize}rem`,
-                          opacity: opacity,
-                          fontWeight: index < 3 ? 600 : 400,
-                          bgcolor: index < 3 ? 'info.main' : 'default',
-                          color: index < 3 ? 'white' : 'text.primary',
-                          border: '1px solid',
-                          borderColor: index < 3 ? 'transparent' : 'divider',
-                          transition: PROFILE_TRANSITION,
-                          '&:hover': {
-                            bgcolor: index < 3 ? 'info.dark' : 'action.hover',
-                            borderColor: index < 3 ? 'transparent' : 'primary.main',
-                            boxShadow: theme === 'dark'
-                              ? '0 6px 18px rgba(0,0,0,0.22)'
-                              : '0 6px 18px rgba(15,23,42,0.10)'
-                          }
-                        }}
-                      />
-                    </Tooltip>
-                  );
-                })}
+                {topWords.slice(0, 10).map((item, index) => (
+                  <Tooltip key={item.word} title={`出现 ${item.count} 次`} placement="top">
+                    <Chip
+                      label={`${item.word} ${item.count}`}
+                      size="small"
+                      variant={index < 3 ? 'filled' : 'outlined'}
+                      color={index < 3 ? 'info' : 'default'}
+                      sx={{
+                        fontWeight: index < 3 ? 600 : 500,
+                        transition: PROFILE_TRANSITION,
+                        '&:hover': {
+                          boxShadow: theme === 'dark'
+                            ? '0 6px 18px rgba(0,0,0,0.22)'
+                            : '0 6px 18px rgba(15,23,42,0.10)'
+                        }
+                      }}
+                    />
+                  </Tooltip>
+                ))}
               </Box>
             ) : (
-              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
-                暂无数据
+              <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
+                暂无可提炼的高频词
               </Typography>
             )}
+          </CardContent>
+        </Card>
 
-            {/* 词频排行榜 */}
-            {topWords.length > 0 && (
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-                  TOP 5 词频
-                </Typography>
-                <Stack spacing={0.5}>
-                  {topWords.slice(0, 5).map((item, index) => (
-                    <Box
-                      key={item.word}
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                      }}
-                    >
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            fontWeight: 600,
-                            color: index < 3 ? 'info.main' : 'text.secondary',
-                            minWidth: 16
-                          }}
-                        >
-                          {index + 1}
-                        </Typography>
-                        <Typography variant="body2">{item.word}</Typography>
-                      </Box>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <LinearProgress
-                          variant="determinate"
-                          value={(item.count / topWords[0].count) * 100}
-                          sx={{
-                            width: 60,
-                            height: 4,
-                            borderRadius: 2,
-                            bgcolor: 'grey.200',
-                            '& .MuiLinearProgress-bar': {
-                              bgcolor: 'info.main',
-                              borderRadius: 2
-                            }
-                          }}
-                        />
-                        <Typography variant="caption" color="text.secondary" sx={{ minWidth: 24, textAlign: 'right' }}>
-                          {item.count}
-                        </Typography>
-                      </Box>
-                    </Box>
-                  ))}
-                </Stack>
+        <Card sx={profileCardSx}>
+          <CardContent>
+            <DashboardCardHeader title="插件" icon={ExtensionIcon} color={primaryColor} />
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+              已安装 {installedPlugins.length} 个扩展
+            </Typography>
+            {installedPlugins.length > 0 ? (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                {installedPlugins.slice(0, 4).map((plugin) => (
+                  <Chip
+                    key={plugin.id}
+                    label={plugin.manifest?.name || plugin.id}
+                    size="small"
+                    variant="outlined"
+                    sx={{ fontSize: '0.72rem' }}
+                  />
+                ))}
+                {installedPlugins.length > 4 ? (
+                  <Chip
+                    label={`+${installedPlugins.length - 4}`}
+                    size="small"
+                    color="primary"
+                    variant="outlined"
+                  />
+                ) : null}
               </Box>
+            ) : (
+              <Typography variant="body2" color="text.secondary">
+                暂无已安装插件
+              </Typography>
             )}
           </CardContent>
         </Card>

@@ -403,12 +403,14 @@ const SetupWizard = ({
             placeholder="坚果云生成的应用密码"
             helperText="首次配置或更换账号时需要输入完整的坚果云应用密码"
             size="small"
-            InputProps={{
+            slotProps={{
+              input: {
               endAdornment: (
                 <IconButton size="small" onClick={() => setShowPassword((v) => !v)}>
                   {showPassword ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
                 </IconButton>
               ),
+              },
             }}
           />
           <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
@@ -515,6 +517,12 @@ const ManageView = ({
   const hasSavedPassword = !!syncStatus?.config?.hasSavedPassword;
   const autoSync = !!syncStatus?.config?.autoSync;
   const intervalMinutes = Math.round(syncStatus?.config?.autoSyncInterval || 5);
+  const savedBaseUrl = syncStatus?.config?.baseUrl || DEFAULT_BASE_URL;
+  const savedRootPath = syncStatus?.config?.rootPath || DEFAULT_ROOT_PATH;
+  const hasAdvancedChanges = draft.baseUrl !== savedBaseUrl || draft.rootPath !== savedRootPath || !!draft.password;
+  const saveAdvancedIfChanged = () => {
+    if (hasAdvancedChanges) handlers.onSave();
+  };
 
   return (
     <Stack spacing={2}>
@@ -693,6 +701,8 @@ const ManageView = ({
                 label="WebDAV 地址"
                 value={draft.baseUrl}
                 onChange={(e) => setDraft((d) => ({ ...d, baseUrl: e.target.value }))}
+                onBlur={saveAdvancedIfChanged}
+                helperText="修改后离开输入框自动保存"
               />
               <TextField
                 fullWidth
@@ -700,7 +710,8 @@ const ManageView = ({
                 label="远程根目录"
                 value={draft.rootPath}
                 onChange={(e) => setDraft((d) => ({ ...d, rootPath: e.target.value }))}
-                helperText="同步数据保存在 WebDAV 的哪个目录下，建议保持默认"
+                onBlur={saveAdvancedIfChanged}
+                helperText="同步数据保存在 WebDAV 的哪个目录下，修改后会自动保存"
               />
               <TextField
                 fullWidth
@@ -709,15 +720,13 @@ const ManageView = ({
                 label="更新应用密码"
                 value={draft.password}
                 onChange={(e) => setDraft((d) => ({ ...d, password: e.target.value }))}
+                onBlur={saveAdvancedIfChanged}
                 placeholder={hasSavedPassword ? '留空表示继续使用已保存密码' : '请输入完整的应用密码'}
-                helperText={hasSavedPassword ? '留空不会清除旧密码；只有输入新密码才会更新。' : '首次配置必须填写完整的坚果云应用密码。'}
+                helperText={hasSavedPassword ? '留空不会清除旧密码；输入新密码并离开输入框后自动更新。' : '首次配置必须填写完整的坚果云应用密码。'}
               />
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                 <Button size="small" variant="outlined" onClick={handlers.onTest} disabled={loading || testing}>
                   {testing ? '测试中…' : '测试连接'}
-                </Button>
-                <Button size="small" variant="contained" onClick={handlers.onSave} disabled={loading}>
-                  {loading ? '保存中…' : '保存修改'}
                 </Button>
               </Stack>
             </Stack>

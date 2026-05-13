@@ -476,6 +476,7 @@ const zhCN = {
     // 同步状态指示器
     notes: '笔记',
     images: '图片',
+    attachments: '附件',
     settings: '设置',
     todos: '待办',
     nutcloud: '坚果云',

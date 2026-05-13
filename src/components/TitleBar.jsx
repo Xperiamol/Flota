@@ -21,6 +21,8 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
         return '待办事项';
       case 'calendar':
         return '日历';
+      case 'timeline':
+        return 'Flota · 时间轴';
       case 'settings':
         return '设置';
       case 'plugins':

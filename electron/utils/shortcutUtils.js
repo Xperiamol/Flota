@@ -40,6 +40,33 @@ const DEFAULT_SHORTCUTS = {
     type: 'global',
     action: 'new-todo'
   },
+  'panels.aiCommandCenter': {
+    id: 'panels.aiCommandCenter',
+    name: '切换问 AI 窗口',
+    description: '在非输入区域打开或关闭悬浮问 AI 窗口',
+    defaultKey: 'CmdOrCtrl+K',
+    currentKey: 'CmdOrCtrl+K',
+    category: 'panels',
+    type: 'local'
+  },
+  'panels.aiCommandCenterWhileTyping': {
+    id: 'panels.aiCommandCenterWhileTyping',
+    name: '输入时切换问 AI 窗口',
+    description: '即使焦点在输入框中，也可直接打开或关闭悬浮问 AI 窗口',
+    defaultKey: 'CmdOrCtrl+Shift+K',
+    currentKey: 'CmdOrCtrl+Shift+K',
+    category: 'panels',
+    type: 'local'
+  },
+  'panels.commandPalette': {
+    id: 'panels.commandPalette',
+    name: '打开命令面板',
+    description: '打开命令面板并搜索命令',
+    defaultKey: 'CmdOrCtrl+Shift+P',
+    currentKey: 'CmdOrCtrl+Shift+P',
+    category: 'panels',
+    type: 'local'
+  },
   'editor.save': {
     id: 'editor.save',
     name: '保存笔记',
@@ -87,6 +114,10 @@ const SHORTCUT_CATEGORIES = {
   global: {
     name: '全局快捷键',
     description: '在任何地方都可以使用的快捷键'
+  },
+  panels: {
+    name: '面板与导航',
+    description: '控制问 AI、命令面板等应用级浮层与入口'
   },
   editor: {
     name: '编辑器快捷键',

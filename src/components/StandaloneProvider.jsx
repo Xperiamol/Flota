@@ -33,10 +33,7 @@ export const StandaloneProvider = ({ children, windowType, windowData }) => {
         
         // 如果是笔记窗口，加载对应的笔记
         if (windowType === 'note' && windowData.noteId) {
-          console.log('开始加载笔记数据:', windowData.noteId)
-          const result = await store.loadNote(windowData.noteId)
-          console.log('笔记数据加载完成，结果:', result)
-          console.log('当前 store 状态:', { notes: store.notes, selectedNoteId: store.selectedNoteId })
+          await store.loadNote(windowData.noteId)
         }
       }
       setIsLoading(false)

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from '../utils/i18n';
 import {
   Box,
@@ -16,11 +16,9 @@ import {
   ListItem,
   ListItemButton,
   ListItemText,
-  ListItemSecondaryAction,
-  Divider,
   Chip,
 } from '@mui/material';
-import { Sync, CheckCircle, CloudSync, Google as GoogleIcon, LinkOff } from '@mui/icons-material';
+import { Sync, CheckCircle, Google as GoogleIcon, LinkOff } from '@mui/icons-material';
 import { spacing, flex, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../styles/commonStyles';
 
 const GoogleCalendarSettings = () => {
@@ -33,17 +31,14 @@ const GoogleCalendarSettings = () => {
     syncDirection: 'bidirectional',
   });
 
-  const [status, setStatus] = useState(null);
   const [calendars, setCalendars] = useState([]);
   const [syncing, setSyncing] = useState(false);
   const [authorizing, setAuthorizing] = useState(false);
   const [message, setMessage] = useState(null);
-  const [lastSync, setLastSync] = useState(null);
 
   // 加载配置
   useEffect(() => {
     loadConfig();
-    loadStatus();
   }, []);
 
   const loadConfig = async () => {
@@ -58,14 +53,6 @@ const GoogleCalendarSettings = () => {
     }
   };
 
-  const loadStatus = async () => {
-    const result = await window.electronAPI.invoke('google-calendar:get-status');
-    if (result.success) {
-      setStatus(result.data);
-      setLastSync(result.data.lastSync);
-    }
-  };
-
   const loadCalendars = async () => {
     try {
       const result = await window.electronAPI.invoke('google-calendar:list-calendars');
@@ -76,6 +63,20 @@ const GoogleCalendarSettings = () => {
       }
     } catch (error) {
       console.error('加载日历列表失败:', error);
+    }
+  };
+
+  const saveConfigPatch = async (patch) => {
+    const nextConfig = { ...config, ...patch };
+    setConfig(nextConfig);
+
+    try {
+      const result = await window.electronAPI.invoke('google-calendar:save-config', nextConfig);
+      if (!result.success) {
+        setMessage({ type: 'error', text: result.error });
+      }
+    } catch (error) {
+      console.error('保存配置失败:', error);
     }
   };
 
@@ -144,22 +145,6 @@ const GoogleCalendarSettings = () => {
     }
   };
 
-  // 保存配置
-  const handleSave = async () => {
-    try {
-      const result = await window.electronAPI.invoke('google-calendar:save-config', config);
-
-      if (result.success) {
-        setMessage({ type: 'success', text: t('googleCalendar.saveSuccess') });
-        await loadStatus();
-      } else {
-        setMessage({ type: 'error', text: result.error });
-      }
-    } catch (error) {
-      setMessage({ type: 'error', text: error.message });
-    }
-  };
-
   // 立即同步
   const handleSyncNow = async () => {
     setSyncing(true);
@@ -176,7 +161,6 @@ const GoogleCalendarSettings = () => {
             down: result.data.remoteToLocal
           })
         });
-        await loadStatus();
       } else {
         setMessage({ type: 'error', text: result.error });
       }
@@ -189,19 +173,7 @@ const GoogleCalendarSettings = () => {
 
   // 选择日历
   const handleSelectCalendar = async (calendarId) => {
-    setConfig({ ...config, calendarId });
-    // 立即保存以保持与 SyncStatusIndicator 同步
-    try {
-      const result = await window.electronAPI.invoke('google-calendar:save-config', {
-        ...config,
-        calendarId
-      });
-      if (result.success) {
-        await loadStatus();
-      }
-    } catch (error) {
-      console.error('保存配置失败:', error);
-    }
+    await saveConfigPatch({ calendarId });
   };
 
   return (
@@ -298,7 +270,7 @@ const GoogleCalendarSettings = () => {
                         {cal.primary && <Chip label="主日历" size="small" color="primary" />}
                       </Box>
                     }
-                    primaryTypographyProps={{ component: 'div' }}
+                    slotProps={{ primary: { component: 'div' } }}
                     secondary={cal.description || `访问权限: ${cal.accessRole}`}
                   />
                   {config.calendarId === cal.id && <CheckCircle color="primary" />}
@@ -321,19 +293,7 @@ const GoogleCalendarSettings = () => {
               value={config.syncDirection}
               label="同步方向"
               onChange={async (e) => {
-                const newDirection = e.target.value;
-                setConfig({ ...config, syncDirection: newDirection });
-                try {
-                  const result = await window.electronAPI.invoke('google-calendar:save-config', {
-                    ...config,
-                    syncDirection: newDirection
-                  });
-                  if (result.success) {
-                    await loadStatus();
-                  }
-                } catch (error) {
-                  console.error('保存配置失败:', error);
-                }
+                await saveConfigPatch({ syncDirection: e.target.value });
               }}
             >
               <MenuItem value="bidirectional">双向同步</MenuItem>
@@ -348,19 +308,7 @@ const GoogleCalendarSettings = () => {
               value={config.syncInterval}
               label="同步间隔"
               onChange={async (e) => {
-                const newInterval = e.target.value;
-                setConfig({ ...config, syncInterval: newInterval });
-                try {
-                  const result = await window.electronAPI.invoke('google-calendar:save-config', {
-                    ...config,
-                    syncInterval: newInterval
-                  });
-                  if (result.success) {
-                    await loadStatus();
-                  }
-                } catch (error) {
-                  console.error('保存配置失败:', error);
-                }
+                await saveConfigPatch({ syncInterval: e.target.value });
               }}
             >
               <MenuItem value="15">15 分钟</MenuItem>
@@ -376,19 +324,7 @@ const GoogleCalendarSettings = () => {
               <Switch
                 checked={config.enabled}
                 onChange={async (e) => {
-                  const newEnabled = e.target.checked;
-                  setConfig({ ...config, enabled: newEnabled });
-                  try {
-                    const result = await window.electronAPI.invoke('google-calendar:save-config', {
-                      ...config,
-                      enabled: newEnabled
-                    });
-                    if (result.success) {
-                      await loadStatus();
-                    }
-                  } catch (error) {
-                    console.error('保存配置失败:', error);
-                  }
+                  await saveConfigPatch({ enabled: e.target.checked });
                 }}
               />
             }
@@ -400,15 +336,6 @@ const GoogleCalendarSettings = () => {
       {/* 操作按钮 */}
       {config.connected && (
         <Box sx={{ display: 'flex', gap: 2 }}>
-          <Button
-            variant="contained"
-            size="small"
-            startIcon={<CheckCircle />}
-            onClick={handleSave}
-          >
-            保存配置
-          </Button>
-
           <Button
             variant="outlined"
             size="small"

@@ -32,6 +32,7 @@ mcp-build/
 # Local data and configs
 .claude/
 .esdata/
+.dbg/
 
 # OS
 .DS_Store

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Button,
@@ -163,14 +163,16 @@ const RepeatSettings = ({ value = {}, onChange }) => {
           vertical: 'top',
           horizontal: 'left',
         }}
-        TransitionComponent={Fade}
-        PaperProps={{
-          sx: {
-            mt: 1,
-            minWidth: 320,
-            maxWidth: 400,
-            borderRadius: 2,
-            boxShadow: theme.shadows[8],
+        slots={{ transition: Fade }}
+        slotProps={{
+          paper: {
+            sx: {
+              mt: 1,
+              minWidth: 320,
+              maxWidth: 400,
+              borderRadius: 2,
+              boxShadow: theme.shadows[8],
+            }
           }
         }}
       >
@@ -222,7 +224,7 @@ const RepeatSettings = ({ value = {}, onChange }) => {
                   size="small"
                   value={repeatInterval}
                   onChange={(e) => handleIntervalChange(parseInt(e.target.value) || 1)}
-                  inputProps={{ min: 1, max: 365, inputMode: 'numeric' }}
+                  slotProps={{ htmlInput: { min: 1, max: 365, inputMode: 'numeric' } }}
                   sx={{ width: 96 }}
                   aria-label="重复间隔"
                 />

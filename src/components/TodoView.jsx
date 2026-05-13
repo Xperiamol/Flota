@@ -28,7 +28,6 @@ import {
   ListItemText,
   MenuItem
 } from '@mui/material';
-import { scrollbar } from '../styles/commonStyles';
 import MultiSelectToolbar from './MultiSelectToolbar';
 import {
   Add as AddIcon,
@@ -64,6 +63,7 @@ import { ANIMATIONS, createTransitionString } from '../utils/animationConfig';
 import useTodoDrag from '../hooks/useTodoDrag';
 import { useError } from './ErrorProvider';
 import { isTodoCompleted, isTodoOverdue, isFutureRecurringTodo } from '../utils/todoDisplayUtils';
+import { useStore } from '../store/useStore';
 
 const {
   todo: { dialog: todoDialog }
@@ -73,6 +73,8 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
   const { t } = useTranslation();
   const { showError, showSuccess } = useError();
   const theme = useTheme();
+  const todoNavigationRequest = useStore((state) => state.todoNavigationRequest);
+  const consumeTodoNavigationRequest = useStore((state) => state.consumeTodoNavigationRequest);
   const effectiveViewMode = viewMode === 'list' ? 'focus' : viewMode;
   const [todos, setTodos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -165,6 +167,23 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
       loadTodos({ silent: true });
     }
   }, [refreshTrigger, loadTodos]);
+
+  useEffect(() => {
+    if (!todoNavigationRequest) return;
+
+    const nextFilterBy = todoNavigationRequest.filterBy || 'all';
+    setFilterBy(nextFilterBy);
+
+    if (typeof todoNavigationRequest.showCompleted === 'boolean' && onShowCompletedChange) {
+      onShowCompletedChange(todoNavigationRequest.showCompleted);
+    }
+
+    if (todoNavigationRequest.viewMode && onViewModeChange) {
+      onViewModeChange(todoNavigationRequest.viewMode);
+    }
+
+    consumeTodoNavigationRequest();
+  }, [todoNavigationRequest, onShowCompletedChange, onViewModeChange, consumeTodoNavigationRequest]);
 
   // 切换待办事项完成状态 - 支持双击完成
   const handleToggleTodo = async (todo) => {
@@ -520,7 +539,7 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
                       </Box>
                     ) : (
                       <Box
-                        sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', ...scrollbar.auto }}
+                        sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}
                       >
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
                           {quadrant.todos.map(renderTodoItem)}

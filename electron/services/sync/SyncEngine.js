@@ -54,7 +54,7 @@ class SyncEngine extends EventEmitter {
       retryAttempts: config.retryAttempts || 3,
       conflictStrategy: config.conflictStrategy || 'ask',
       enableDebugLog: config.enableDebugLog || false,
-      syncCategories: config.syncCategories || ['notes', 'images', 'settings', 'todos'], // 启用的同步类别
+      syncCategories: config.syncCategories || ['notes', 'images', 'attachments', 'settings', 'todos'], // 启用的同步类别
     };
 
     // WebDAV 客户端
@@ -452,6 +452,7 @@ class SyncEngine extends EventEmitter {
       await this.client.createDirectory(this.config.rootPath + 'images/whiteboard-preview/');
       await this.client.createDirectory(this.config.rootPath + 'wallpaper/');
       await this.client.createDirectory(this.config.rootPath + 'audio/');
+      await this.client.createDirectory(this.config.rootPath + 'attachments/');
       this.log('[Init] 子目录结构创建完成');
     } catch (error) {
       this.log('[Init] 子目录创建失败:', error.message);
@@ -512,6 +513,12 @@ class SyncEngine extends EventEmitter {
     uploadCount += imageCount;
     if (imageCount > 0) {
       this.log(`[Init] ${imageCount} 个图片上传完成`);
+    }
+
+    const attachmentCount = enabledCategories.includes('attachments') ? await this.uploadAllNoteAttachments(localNotes) : 0;
+    uploadCount += attachmentCount;
+    if (attachmentCount > 0) {
+      this.log(`[Init] ${attachmentCount} 个附件上传完成`);
     }
 
     // 5.5 上传白板预览图
@@ -626,6 +633,28 @@ class SyncEngine extends EventEmitter {
       }
     }
 
+    return uploadedCount;
+  }
+
+  async uploadAllNoteAttachments(notes) {
+    const allRefs = new Set();
+    for (const note of Object.values(notes)) {
+      if (!note.content) continue;
+      const refs = this.extractAttachmentReferences(note.content, note.note_type || 'markdown');
+      refs.forEach(ref => allRefs.add(ref));
+    }
+
+    let uploadedCount = 0;
+    for (const relativePath of allRefs) {
+      try {
+        const localPath = path.join(getUserDataPath(), relativePath);
+        if (!fs.existsSync(localPath)) continue;
+        await this.client.uploadBinary(this.config.rootPath + relativePath, fs.readFileSync(localPath));
+        uploadedCount++;
+      } catch (error) {
+        this.log(`[Init Attachments] 上传失败: ${relativePath}, ${error.message}`);
+      }
+    }
     return uploadedCount;
   }
 
@@ -1393,8 +1422,13 @@ class SyncEngine extends EventEmitter {
 
         await this.client.uploadText(task.remotePath, note.content);
 
-        // 上传笔记中引用的图片
-        await this.uploadNoteImages(note.content, note.note_type || 'markdown');
+        const enabledCategories = this.config.syncCategories || [];
+        if (enabledCategories.includes('images')) {
+          await this.uploadNoteImages(note.content, note.note_type || 'markdown');
+        }
+        if (enabledCategories.includes('attachments')) {
+          await this.uploadNoteAttachments(note.content, note.note_type || 'markdown');
+        }
 
         // 白板笔记：同步上传预览图
         if ((note.note_type || 'markdown') === 'whiteboard') {
@@ -1490,11 +1524,7 @@ class SyncEngine extends EventEmitter {
       let success = false;
       for (let attempt = 1; attempt <= 3 && !success; attempt++) {
         try {
-          // 确保云端目录存在
-          const remoteDir = path.dirname(remotePath).replace(/\\/g, '/');
-          if (!await this.client.exists(remoteDir)) {
-            await this.client.createDirectory(remoteDir);
-          }
+          await this.ensureRemoteDirectory(remotePath);
 
           const imageData = fs.readFileSync(localPath);
           await this.client.uploadBinary(remotePath, imageData);
@@ -1517,6 +1547,35 @@ class SyncEngine extends EventEmitter {
     if (failedImages.length > 0) {
       this.emit('imageUploadFailed', { failed: failedImages, total: imageRefs.length });
       this.log(`[Upload Images] ${failedImages.length} 个图片上传失败`);
+    }
+  }
+
+  async uploadNoteAttachments(content, noteType) {
+    if (!content) return;
+    const refs = this.extractAttachmentReferences(content, noteType);
+    if (refs.length === 0) return;
+
+    for (const relativePath of refs) {
+      try {
+        const localPath = path.join(getUserDataPath(), relativePath);
+        if (!fs.existsSync(localPath)) {
+          this.log(`[Upload Attachments] 本地附件不存在，跳过: ${relativePath}`);
+          continue;
+        }
+        const remotePath = this.config.rootPath + relativePath;
+        await this.ensureRemoteDirectory(remotePath);
+        await this.client.uploadBinary(remotePath, fs.readFileSync(localPath));
+        this.log(`[Upload Attachments] 附件上传成功: ${relativePath}`);
+      } catch (error) {
+        this.log(`[Upload Attachments] 附件上传失败: ${relativePath}, ${error.message}`);
+      }
+    }
+  }
+
+  async ensureRemoteDirectory(remotePath) {
+    const remoteDir = path.dirname(remotePath).replace(/\\/g, '/');
+    if (!await this.client.exists(remoteDir)) {
+      await this.client.createDirectory(remoteDir);
     }
   }
 
@@ -1642,8 +1701,13 @@ class SyncEngine extends EventEmitter {
       this.log(`[Download] 笔记元数据: created_at=${noteData.created_at}, title=${noteData.title}`);
       await this.storage.upsertNote(noteData, true);
 
-      // 下载笔记中引用的图片
-      await this.downloadNoteImages(content, noteType);
+      const enabledCategories = this.config.syncCategories || [];
+      if (enabledCategories.includes('images')) {
+        await this.downloadNoteImages(content, noteType);
+      }
+      if (enabledCategories.includes('attachments')) {
+        await this.downloadNoteAttachments(content, noteType);
+      }
 
       // 白板笔记：同步下载预览图
       if (noteType === 'whiteboard') {
@@ -1804,6 +1868,27 @@ class SyncEngine extends EventEmitter {
     }
   }
 
+  async downloadNoteAttachments(content, noteType) {
+    if (!content) return;
+    const refs = this.extractAttachmentReferences(content, noteType);
+    if (refs.length === 0) return;
+
+    for (const relativePath of refs) {
+      try {
+        const localPath = path.join(getUserDataPath(), relativePath);
+        if (fs.existsSync(localPath)) continue;
+        const data = await this.client.downloadBinary(this.config.rootPath + relativePath);
+        if (!data) continue;
+        const localDir = path.dirname(localPath);
+        if (!fs.existsSync(localDir)) fs.mkdirSync(localDir, { recursive: true });
+        fs.writeFileSync(localPath, data);
+        this.log(`[Download Attachments] 附件下载成功: ${relativePath}`);
+      } catch (error) {
+        this.log(`[Download Attachments] 附件下载失败: ${relativePath}, ${error.message}`);
+      }
+    }
+  }
+
   /**
    * 从内容中提取图片引用
    * @private
@@ -1837,7 +1922,7 @@ class SyncEngine extends EventEmitter {
         this.log(`[Extract Images] 解析白板内容失败: ${error.message}`);
       }
     } else {
-      // Markdown 笔记 - 先解析 frontmatter 中的封面/缩略图字段，再匹配正文图片/音频
+      // Markdown 笔记 - 先解析 frontmatter 中的封面/缩略图字段，再匹配正文图片
       // frontmatter 形如：
       //   ---
       //   cover: images/foo.png
@@ -1862,7 +1947,6 @@ class SyncEngine extends EventEmitter {
       const patterns = [
         /!\[.*?\]\((?:app:\/\/)?images\/((?:whiteboard\/)?[^)]+)\)/g,  // Markdown 图片语法
         /src=["'](?:app:\/\/)?images\/((?:whiteboard\/)?[^"']+)["']/g,  // HTML img src
-        /!\[.*?\]\((audio\/[^)]+)\)/g,  // Markdown 音频语法
       ];
 
       for (const pattern of patterns) {
@@ -1870,18 +1954,32 @@ class SyncEngine extends EventEmitter {
         while ((match = pattern.exec(content)) !== null) {
           const captured = match[1];
           if (captured) {
-            // 音频已经包含 "audio/" 前缀，图片需要加 "images/"
-            if (captured.startsWith('audio/')) {
-              imageRefs.add(captured);
-            } else {
-              imageRefs.add(`images/${captured}`);
-            }
+            imageRefs.add(`images/${captured}`);
           }
         }
       }
     }
 
     return Array.from(imageRefs);
+  }
+
+  extractAttachmentReferences(content, noteType) {
+    const refs = new Set();
+    if (noteType === 'whiteboard' || !content) return [];
+
+    const patterns = [
+      /!\[.*?\]\((?:app:\/\/)?(audio\/[^)]+)\)/g,
+      /\[[^\]]+]\((?:app:\/\/)?(attachments\/[^)]+)\)/g,
+    ];
+
+    for (const pattern of patterns) {
+      let match;
+      while ((match = pattern.exec(content)) !== null) {
+        const captured = match[1]?.trim();
+        if (captured && !captured.startsWith('file://')) refs.add(captured);
+      }
+    }
+    return Array.from(refs);
   }
 
   /**

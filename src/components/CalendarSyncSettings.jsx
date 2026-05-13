@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -20,15 +20,19 @@ import {
 import { Sync, CheckCircle } from '@mui/icons-material';
 import { spacing, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../styles/commonStyles';
 
+const DEFAULT_CALDAV_CONFIG = {
+  enabled: false,
+  serverUrl: '',
+  username: '',
+  password: '',
+  calendarUrl: '',
+  syncInterval: '30',
+  syncDirection: 'bidirectional',
+};
+
 const CalendarSyncSettings = () => {
   const [config, setConfig] = useState({
-    enabled: false,
-    serverUrl: '',
-    username: '',
-    password: '',
-    calendarUrl: '',
-    syncInterval: '30',
-    syncDirection: 'bidirectional',
+    ...DEFAULT_CALDAV_CONFIG,
   });
 
   const [status, setStatus] = useState(null);
@@ -37,6 +41,9 @@ const CalendarSyncSettings = () => {
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState(null);
   const [lastSync, setLastSync] = useState(null);
+  const loadedRef = useRef(false);
+  const lastSavedRef = useRef('');
+  const saveTimerRef = useRef(null);
 
   useEffect(() => {
     loadConfig();
@@ -46,7 +53,10 @@ const CalendarSyncSettings = () => {
   const loadConfig = async () => {
     const result = await window.electronAPI.invoke('caldav:get-config');
     if (result.success) {
-      setConfig(result.data);
+      const nextConfig = { ...DEFAULT_CALDAV_CONFIG, ...(result.data || {}) };
+      setConfig(nextConfig);
+      lastSavedRef.current = JSON.stringify(nextConfig);
+      loadedRef.current = true;
     }
   };
 
@@ -87,12 +97,12 @@ const CalendarSyncSettings = () => {
     }
   };
 
-  const handleSave = async () => {
+  const saveConfig = useCallback(async (configToSave) => {
     try {
-      const result = await window.electronAPI.invoke('caldav:save-config', config);
+      const result = await window.electronAPI.invoke('caldav:save-config', configToSave);
 
       if (result.success) {
-        setMessage({ type: 'success', text: '配置已保存' });
+        lastSavedRef.current = JSON.stringify(configToSave);
         await loadStatus();
       } else {
         setMessage({ type: 'error', text: result.error });
@@ -100,7 +110,20 @@ const CalendarSyncSettings = () => {
     } catch (error) {
       setMessage({ type: 'error', text: error.message });
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!loadedRef.current) return undefined;
+    const serialized = JSON.stringify(config);
+    if (serialized === lastSavedRef.current) return undefined;
+
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveConfig(config);
+    }, 600);
+
+    return () => clearTimeout(saveTimerRef.current);
+  }, [config, saveConfig]);
 
   const handleSyncNow = async () => {
     setSyncing(true);
@@ -263,15 +286,6 @@ const CalendarSyncSettings = () => {
       </Box>
 
       <Box sx={{ display: 'flex', gap: 2 }}>
-        <Button
-          variant="contained"
-          size="small"
-          startIcon={<CheckCircle />}
-          onClick={handleSave}
-        >
-          保存配置
-        </Button>
-
         <Button
           variant="outlined"
           size="small"

@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useCallback, useRef } from 'react';
 import DragPreview from './DragPreview';
 import dragManager from '../utils/DragManager';
+import logger from '../utils/logger';
 
 // 创建拖拽动画上下文
 const DragAnimationContext = createContext();
@@ -123,7 +124,7 @@ export const DragAnimationProvider = ({ children }) => {
   const createAnimatedDragHandler = useCallback((itemType, createWindowCallback, customCallbacks = {}) => {
     const enhancedCallbacks = configureDragAnimations({
       onDragStart: (dragData) => {
-        console.log(`开始拖拽${itemType}:`, dragData.item);
+        logger.log(`开始拖拽${itemType}:`, dragData.item);
         if (customCallbacks.onDragStart) {
           customCallbacks.onDragStart(dragData);
         }
@@ -135,7 +136,7 @@ export const DragAnimationProvider = ({ children }) => {
         }
       },
       onDragEnd: (dragData) => {
-        console.log(`拖拽${itemType}结束:`, dragData);
+        logger.log(`拖拽${itemType}结束:`, dragData);
         if (customCallbacks.onDragEnd) {
           customCallbacks.onDragEnd(dragData);
         }
@@ -144,7 +145,7 @@ export const DragAnimationProvider = ({ children }) => {
         try {
           // 传递结束位置用于窗口定位
           await createWindowCallback(dragData.item, dragData.endPosition);
-          console.log(`创建${itemType}独立窗口成功`);
+          logger.log(`创建${itemType}独立窗口成功`);
           if (customCallbacks.onCreateWindow) {
             customCallbacks.onCreateWindow(dragData);
           }

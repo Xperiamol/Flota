@@ -14,16 +14,9 @@ import {
   Divider,
   TextField,
   InputAdornment,
-  Paper,
-  Skeleton,
   Fade,
   Collapse,
   CircularProgress,
-  FormControl,
-  InputLabel,
-  Select,
-  ToggleButtonGroup,
-  ToggleButton,
   Checkbox
 } from '@mui/material';
 import {
@@ -36,19 +29,13 @@ import {
   Search as SearchIcon,
   Clear as ClearIcon,
   Schedule as ScheduleIcon,
-  Warning as WarningIcon,
   Flag as FlagIcon,
   Sort as SortIcon,
   AccessTime as AccessTimeIcon,
-  FlashOn as FlashOnIcon,
-  FilterList as FilterListIcon,
-  ViewList as ViewListIcon,
-  ViewModule as ViewModuleIcon,
   Note as NoteIcon
 } from '@mui/icons-material';
 import { format, isToday, isPast, parseISO } from 'date-fns';
 import { zhCN as dateFnsZhCN } from 'date-fns/locale';
-import { useMultiSelect } from '../hooks/useMultiSelect';
 import { useSearch } from '../hooks/useSearch';
 import { useSearchManager } from '../hooks/useSearchManager';
 import { useMultiSelectManager } from '../hooks/useMultiSelectManager';
@@ -93,7 +80,6 @@ import {
   getPriorityText,
   comparePriority
 } from '../utils/priorityUtils';
-import { createDragHandler } from '../utils/DragManager'
 import { useDragAnimation } from './DragAnimationProvider';
 import {
   fetchTodosByPriority,
@@ -140,13 +126,12 @@ const playChristmasBell = () => {
   createOsc(1567.98, 0.15);
 };
 
-const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewMode, showCompleted, onMultiSelectChange, onMultiSelectRefChange, refreshTrigger, sortBy, onSortByChange, externalTodos, isExternalData = false, onTodoUpdated }) => {
+const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSelectRefChange, refreshTrigger, sortBy, onSortByChange, externalTodos, isExternalData = false, onTodoUpdated }) => {
   const christmasMode = useStore((state) => state.christmasMode);
   const [todos, setTodos] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedTodo, setSelectedTodo] = useState(null);
-  const [filterBy, setFilterBy] = useState('all'); // all, urgent, important, normal, low
   
   // 添加ref防止重复加载
   const isLoadingRef = useRef(false);
@@ -170,7 +155,7 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
   const { filtersVisible, toggleFiltersVisibility } = useFiltersVisibility('todo_filters_visible');
 
   // 使用通用搜索hook
-  const { search: searchTodos, isSearching } = useSearch({
+  const { search: searchTodos } = useSearch({
     searchAPI: searchTodosAPI,
     onSearchResult: (results) => {
       // 直接设置搜索结果，不再应用过滤
@@ -205,11 +190,11 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
       console.error('创建Todo独立窗口失败:', error)
     }
   }, {
-    onDragStart: (dragData) => {
+    onDragStart: () => {
       // 添加Todo拖拽开始时的自定义逻辑
       logger.log('Todo列表拖拽开始，添加视觉反馈');
     },
-    onCreateWindow: (dragData) => {
+    onCreateWindow: () => {
       // Todo独立窗口创建成功后的回调
       logger.log('Todo独立窗口创建成功');
     }
@@ -277,11 +262,6 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
         filtered = filtered.filter(todo => !todo.completed);
       }
 
-      // 按优先级过滤
-      if (filterBy !== 'all') {
-        filtered = filtered.filter(todo => todo.priority === filterBy);
-      }
-
       // 按新的优先级筛选过滤
       if (selectedPriorities.length > 0) {
         filtered = filtered.filter(todo => selectedPriorities.includes(todo.priority));
@@ -322,7 +302,7 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
       setIsRefreshing(false);
       isLoadingRef.current = false;
     }
-  }, [isExternalData, externalTodos, showCompleted, sortBy, filterBy, selectedPriorities, selectedTags, refreshTrigger]);
+  }, [isExternalData, externalTodos, showCompleted, sortBy, selectedPriorities, selectedTags, refreshTrigger]);
 
   // 统一的数据加载effect
   useEffect(() => {
@@ -627,26 +607,27 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
           value={localSearchQuery}
           onChange={(e) => setLocalSearchQuery(e.target.value)}
           aria-label="搜索待办"
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon sx={{ color: 'text.secondary' }} />
-              </InputAdornment>
-            ),
-            endAdornment: (
-              <>
-                {localSearchQuery && (
-                  <InputAdornment position="end">
-                    <IconButton
-                      size="small"
-                      onClick={handleClearSearch}
-                      aria-label="清除搜索"
-                      sx={{ color: 'text.secondary' }}
-                    >
-                      <ClearIcon />
-                    </IconButton>
-                  </InputAdornment>
-                )}
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon sx={{ color: 'text.secondary' }} />
+                </InputAdornment>
+              ),
+              endAdornment: (
+                <>
+                  {localSearchQuery && (
+                    <InputAdornment position="end">
+                      <IconButton
+                        size="small"
+                        onClick={handleClearSearch}
+                        aria-label="清除搜索"
+                        sx={{ color: 'text.secondary' }}
+                      >
+                        <ClearIcon />
+                      </IconButton>
+                    </InputAdornment>
+                  )}
                 {/* 排序按钮 */}
                 <DropdownMenu
                   icon={<SortIcon />}
@@ -675,8 +656,9 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
                 {isRefreshing && (
                   <CircularProgress size={18} sx={{ ml: 1, color: 'text.secondary' }} />
                 )}
-              </>
-            )
+                </>
+              )
+            }
           }}
         />
 
@@ -915,7 +897,7 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
                           ))}
                         </Box>
                       }
-                      secondaryTypographyProps={{ component: 'div' }}
+                      slotProps={{ secondary: { component: 'div' } }}
                     />
 
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -957,13 +939,15 @@ const TodoList = ({ onTodoSelect, onViewModeChange, onShowCompletedChange, viewM
           vertical: 'top',
           horizontal: 'right',
         }}
-        PaperProps={{
-          sx: (theme) => ({
-            backdropFilter: theme?.custom?.glass?.backdropFilter || 'blur(6px)',
-            backgroundColor: theme?.custom?.glass?.background || (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.4)'),
-            border: theme?.custom?.glass?.border || `1px solid ${theme.palette.divider}`,
-            borderRadius: 1
-          })
+        slotProps={{
+          paper: {
+            sx: (theme) => ({
+              backdropFilter: theme?.custom?.glass?.backdropFilter || 'blur(6px)',
+              backgroundColor: theme?.custom?.glass?.background || (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.4)'),
+              border: theme?.custom?.glass?.border || `1px solid ${theme.palette.divider}`,
+              borderRadius: 1
+            })
+          }
         }}
       >
         <MenuItem

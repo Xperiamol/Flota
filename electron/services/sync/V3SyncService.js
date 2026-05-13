@@ -217,7 +217,7 @@ class V3SyncService extends EventEmitter {
       rootPath: config.rootPath || '/Flota/',
       enableDebugLog: config.enableDebugLog || false,
       syncIPCHandler: this.syncIPCHandler,
-      syncCategories: config.syncCategories || ['notes', 'images', 'settings', 'todos'],
+      syncCategories: config.syncCategories || ['notes', 'images', 'attachments', 'settings', 'todos'],
     });
   }
 
@@ -712,7 +712,7 @@ class V3SyncService extends EventEmitter {
       rootPath: '/Flota/',
       enableDebugLog: false,
       credentials: null,
-      syncCategories: ['notes', 'images', 'settings', 'todos'], // 默认同步所有类别
+      syncCategories: ['notes', 'images', 'attachments', 'settings', 'todos'], // 默认同步所有类别
     };
   }
 

@@ -3,6 +3,7 @@ import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer } from
 import { Extension, Mark } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import { Fragment } from '@tiptap/pm/model'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import Highlight from '@tiptap/extension-highlight'
@@ -30,9 +31,9 @@ import LinkOffIcon from '@mui/icons-material/LinkOff'
 import LinkIcon from '@mui/icons-material/Link'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import { urlToWav } from '../utils/audioCodec'
-import { scrollbar } from '../styles/commonStyles'
 import { imageAPI } from '../api/imageAPI'
 import { getImageResolver } from '../utils/ImageProtocolResolver'
+import { RICH_TEXT_EMPTY_LINE_SENTINEL, finalizeMarkdownForStorage, prepareMarkdownForDisplay } from '../markdown/index.js'
 import { useStore } from '../store/useStore'
 import { useError } from './ErrorProvider'
 import AIAssistPanel from './AIAssistPanel'
@@ -41,6 +42,11 @@ import ImagePreviewModal, { canvasToPngBlob } from './ImagePreviewModal'
 const lowlight = createLowlight(common)
 
 export const DEFAULT_CONTEXT_MENU_ITEMS = [
+  'undo', 'redo', 'cut', 'copy', 'paste', 'pastePlain', 'selectAll',
+  'bold', 'italic', 'link', 'blockSelect', 'table',
+]
+
+export const ALL_CONTEXT_MENU_ITEMS = [
   'undo', 'redo', 'cut', 'copy', 'paste', 'pastePlain', 'selectAll',
   'bold', 'italic', 'code', 'link',
   'heading1', 'heading2', 'bulletList', 'orderedList', 'taskList', 'blockquote',
@@ -85,9 +91,17 @@ const rgbToHex = (c) => {
 
 // 加载 markdown 前的预处理：将自定义格式转回 HTML，使 TipTap parser 识别
 // 使用更严格的正则，限制不跨段落，避免误匹配跨行内容
+const getLocalPathFromFileUrl = (fileUrl) => {
+  try {
+    return decodeURIComponent(String(fileUrl).replace(/^file:\/\//i, ''))
+  } catch (_) {
+    return String(fileUrl).replace(/^file:\/\//i, '')
+  }
+}
+
 const preprocessMarkdown = (md) => {
   if (!md) return md
-  return md
+  return prepareMarkdownForDisplay(md)
     // 颜色：限制不跨行、不允许嵌套花括号
     .replace(/\{color:([^}\n]+)\}([^\n]+?)\{\/color\}/g, (_, color, text) =>
       `<span style="color: ${color}">${text}</span>`)
@@ -104,7 +118,9 @@ const preprocessMarkdown = (md) => {
 const postprocessMarkdown = (md) => {
   if (!md) return md
   // 支持多层嵌套引用 > > \[!type\]
-  return md.replace(/^((?:>\s*)+)\\\[!(\w+)\\\]/gm, '$1[!$2]')
+  return finalizeMarkdownForStorage(
+    md.replace(/^((?:>\s*)+)\\\[!(\w+)\\\]/gm, '$1[!$2]')
+  )
 }
 
 // ─── Highlight / Underline 扩展序列化 ─────────────────────────────────────────
@@ -293,6 +309,36 @@ const CalloutDecoration = Extension.create({
             })
             return DecorationSet.create(state.doc, decorations)
           },
+        },
+      }),
+    ]
+  },
+})
+
+const EmptyParagraphPreserver = Extension.create({
+  name: 'emptyParagraphPreserver',
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey('emptyParagraphPreserver'),
+        appendTransaction(_transactions, _oldState, newState) {
+          const emptyTopLevelParagraphs = []
+          newState.doc.descendants((node, pos, parent) => {
+            if (parent !== newState.doc) return
+            if (node.type.name === 'paragraph' && node.content.size === 0) {
+              emptyTopLevelParagraphs.push(pos)
+            }
+          })
+          if (!emptyTopLevelParagraphs.length) return null
+
+          const tr = newState.tr
+          emptyTopLevelParagraphs
+            .sort((a, b) => b - a)
+            .forEach((pos) => {
+              tr.insertText(RICH_TEXT_EMPTY_LINE_SENTINEL, pos + 1)
+            })
+          return tr
         },
       }),
     ]
@@ -734,15 +780,23 @@ const useFloatingMenuPosition = (anchorRect, { containerRef, placement = 'bottom
   return { menuRef, position }
 }
 
-const clampPointToViewportRect = (x, y, rect, width = CONTEXT_MENU_WIDTH, height = 0) => {
+const placePointMenuInRect = (x, y, rect, width = CONTEXT_MENU_WIDTH, height = 0) => {
   const margin = FLOATING_MARGIN
   const minLeft = rect.left + margin
   const minTop = rect.top + margin
   const maxLeft = Math.max(minLeft, rect.right - width - margin)
   const maxTop = Math.max(minTop, rect.bottom - height - margin)
+  const spaceRight = rect.right - margin - x
+  const spaceLeft = x - minLeft
+  const spaceBelow = rect.bottom - margin - y
+  const spaceAbove = y - minTop
+  const preferLeft = spaceRight < width && spaceLeft > spaceRight
+  const preferAbove = height > 0 && spaceBelow < height && spaceAbove > spaceBelow
+  const rawLeft = preferLeft ? x - width : x
+  const rawTop = preferAbove ? y - height : y
   return {
-    left: Math.min(Math.max(x, minLeft), maxLeft),
-    top: Math.min(Math.max(y, minTop), maxTop),
+    left: Math.min(Math.max(rawLeft, minLeft), maxLeft),
+    top: Math.min(Math.max(rawTop, minTop), maxTop),
   }
 }
 
@@ -814,9 +868,7 @@ const LinkBubbleMenu = ({ editor, containerRef }) => {
             }}
             placeholder="https://"
             sx={{
-              minWidth: 240,
-              '& .MuiInputBase-input': { fontSize: 13, py: '4px' },
-              '& .MuiOutlinedInput-root': { borderRadius: '6px' },
+              minWidth: 240
             }}
           />
           <Tooltip title="确定 (Enter)"><IconButton size="small" onClick={applyUrl} sx={{ color: 'primary.main' }}><LinkIcon sx={{ fontSize: 18 }} /></IconButton></Tooltip>
@@ -1218,6 +1270,39 @@ const deleteBlockRanges = (editor, ranges) => {
   return true
 }
 
+const moveTopLevelBlocks = (editor, blocks, movingIds, targetIndex) => {
+  if (!editor || !blocks.length || !movingIds.length) return false
+  const movingIdSet = new Set(movingIds)
+  const movingIndexes = blocks
+    .map((block, index) => (movingIdSet.has(block.id) ? index : -1))
+    .filter(index => index >= 0)
+  if (!movingIndexes.length) return false
+  const movingIndexSet = new Set(movingIndexes)
+
+  const childNodes = []
+  editor.state.doc.forEach((node) => { childNodes.push(node) })
+
+  const movingNodes = movingIndexes.map(index => childNodes[index]).filter(Boolean)
+  if (!movingNodes.length) return false
+
+  const remainingNodes = childNodes.filter((_, index) => !movingIndexSet.has(index))
+  const clampedTarget = Math.max(0, Math.min(targetIndex, remainingNodes.length))
+  const currentStartInRemaining = blocks
+    .slice(0, movingIndexes[0])
+    .filter(block => !movingIdSet.has(block.id)).length
+  if (clampedTarget === currentStartInRemaining) return false
+
+  const nextNodes = [
+    ...remainingNodes.slice(0, clampedTarget),
+    ...movingNodes,
+    ...remainingNodes.slice(clampedTarget),
+  ]
+  const tr = editor.state.tr.replaceWith(0, editor.state.doc.content.size, Fragment.fromArray(nextNodes))
+  editor.view.dispatch(tr.scrollIntoView())
+  editor.view.focus()
+  return true
+}
+
 const insertCalloutBlock = (editor, type = 'note') => {
   return editor.chain().focus().insertContent({
     type: 'blockquote',
@@ -1365,13 +1450,37 @@ const BlockMultiSelectOverlay = ({
 }) => {
   const container = containerRef?.current
   const [toolbarFrame, setToolbarFrame] = useState(null)
-  const blocks = useMemo(
-    () => (active ? getTopLevelBlocks(editor, container) : []),
-    [active, container, editor]
-  )
+  const [dragState, setDragState] = useState(null)
+  const suppressBlockClickRef = useRef(false)
+  const [blocks, setBlocks] = useState([])
   const selectedRanges = blocks.filter((block) => selectedBlocks.includes(block.id))
   const selectedCount = selectedRanges.length
   const allBlockIds = useMemo(() => blocks.map((block) => block.id), [blocks])
+
+  useLayoutEffect(() => {
+    if (!active || !editor || !container) {
+      setBlocks([])
+      return undefined
+    }
+
+    const updateBlocks = () => {
+      setBlocks(getTopLevelBlocks(editor, container))
+    }
+
+    updateBlocks()
+    editor.on('transaction', updateBlocks)
+    editor.on('selectionUpdate', updateBlocks)
+    editor.on('focus', updateBlocks)
+    container.addEventListener('scroll', updateBlocks, { passive: true })
+    window.addEventListener('resize', updateBlocks)
+    return () => {
+      editor.off('transaction', updateBlocks)
+      editor.off('selectionUpdate', updateBlocks)
+      editor.off('focus', updateBlocks)
+      container.removeEventListener('scroll', updateBlocks)
+      window.removeEventListener('resize', updateBlocks)
+    }
+  }, [active, container, editor])
 
   useEffect(() => {
     if (!active) return undefined
@@ -1419,10 +1528,72 @@ const BlockMultiSelectOverlay = ({
   }
   const selectAll = () => setSelectedBlocks(allBlockIds)
   const selectNone = () => setSelectedBlocks([])
+  const getDropIndexFromPointer = (clientY, movingIds) => {
+    const rect = container.getBoundingClientRect()
+    const localY = clientY - rect.top + (container.scrollTop || 0)
+    const movingIdSet = new Set(movingIds)
+    return blocks
+      .filter(block => !movingIdSet.has(block.id))
+      .reduce((index, block) => (localY > block.top + block.height / 2 ? index + 1 : index), 0)
+  }
+  const startDrag = (event, block) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const movingIds = selectedBlocks.includes(block.id) && selectedBlocks.length ? selectedBlocks : [block.id]
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    setDragState({
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      hasMoved: false,
+      movingIds,
+      dropIndex: getDropIndexFromPointer(event.clientY, movingIds),
+    })
+  }
+  const updateDrag = (event) => {
+    if (!dragState || event.pointerId !== dragState.pointerId) return
+    event.preventDefault()
+    setDragState((current) => current
+      ? {
+          ...current,
+          hasMoved: current.hasMoved || Math.hypot(event.clientX - current.startX, event.clientY - current.startY) > 4,
+          dropIndex: getDropIndexFromPointer(event.clientY, current.movingIds),
+        }
+      : current)
+  }
+  const finishDrag = (event) => {
+    if (!dragState || event.pointerId !== dragState.pointerId) return
+    event.preventDefault()
+    event.currentTarget.releasePointerCapture?.(event.pointerId)
+    if (dragState.hasMoved) {
+      suppressBlockClickRef.current = true
+      moveTopLevelBlocks(editor, blocks, dragState.movingIds, dragState.dropIndex)
+      setSelectedBlocks([])
+      window.setTimeout(() => { suppressBlockClickRef.current = false }, 0)
+    }
+    setDragState(null)
+  }
+  const cancelDrag = (event) => {
+    if (dragState?.pointerId === event.pointerId) setDragState(null)
+  }
   const afterAction = () => {
     setSelectedBlocks([])
     onExit()
   }
+  const dropIndicatorTop = (() => {
+    if (!dragState) return null
+    const remainingBlocks = blocks.filter(block => !dragState.movingIds.includes(block.id))
+    const targetBlock = remainingBlocks[dragState.dropIndex]
+    if (targetBlock) return targetBlock.top - 5
+    const lastBlock = remainingBlocks[remainingBlocks.length - 1]
+    return lastBlock ? lastBlock.top + lastBlock.height + 5 : 8
+  })()
+  const blockBounds = blocks.reduce((bounds, block) => ({
+    left: Math.min(bounds.left, block.left),
+    right: Math.max(bounds.right, block.left + block.width),
+  }), { left: Infinity, right: 0 })
+  const dropIndicatorLeft = Number.isFinite(blockBounds.left) ? Math.max(6, blockBounds.left) : 6
+  const dropIndicatorWidth = Math.max(160, blockBounds.right - (Number.isFinite(blockBounds.left) ? blockBounds.left : 0))
 
   return (
     <>
@@ -1470,8 +1641,25 @@ const BlockMultiSelectOverlay = ({
           <BlockSelectActionButton onClick={onExit}>退出</BlockSelectActionButton>
         </Box>
       </Portal>
+      {dropIndicatorTop !== null && (
+        <Box
+          sx={{
+            position: 'absolute',
+            top: dropIndicatorTop,
+            left: dropIndicatorLeft,
+            width: dropIndicatorWidth,
+            height: 3,
+            borderRadius: 999,
+            bgcolor: 'primary.main',
+            boxShadow: '0 0 0 3px rgba(59,130,246,0.14)',
+            pointerEvents: 'none',
+            zIndex: 1520,
+          }}
+        />
+      )}
       {blocks.map((block) => {
         const selected = selectedBlocks.includes(block.id)
+        const dragging = dragState?.movingIds.includes(block.id)
         return (
           <Box key={block.id}>
             {selected && (
@@ -1485,6 +1673,7 @@ const BlockMultiSelectOverlay = ({
                   borderRadius: '10px',
                   bgcolor: 'rgba(59, 130, 246, 0.08)',
                   border: '1px solid rgba(59, 130, 246, 0.24)',
+                  opacity: dragging ? 0.55 : 1,
                   pointerEvents: 'none',
                   zIndex: 20,
                 }}
@@ -1495,7 +1684,15 @@ const BlockMultiSelectOverlay = ({
               type="button"
               aria-label={selected ? '取消选择块' : '选择块'}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={(e) => { e.preventDefault(); toggleBlock(block.id) }}
+              onClick={(e) => {
+                e.preventDefault()
+                if (suppressBlockClickRef.current) return
+                toggleBlock(block.id)
+              }}
+              onPointerDown={(e) => startDrag(e, block)}
+              onPointerMove={updateDrag}
+              onPointerUp={finishDrag}
+              onPointerCancel={cancelDrag}
               sx={{
                 position: 'absolute',
                 top: block.top + Math.max(0, block.height / 2 - 11),
@@ -1510,7 +1707,7 @@ const BlockMultiSelectOverlay = ({
                 boxShadow: '0 6px 18px rgba(15,23,42,0.14)',
                 backdropFilter: 'blur(12px)',
                 WebkitBackdropFilter: 'blur(12px)',
-                cursor: 'pointer',
+                cursor: dragState ? 'grabbing' : 'grab',
                 zIndex: 1510,
                 display: 'flex',
                 alignItems: 'center',
@@ -1533,9 +1730,13 @@ const BlockMultiSelectOverlay = ({
   )
 }
 
-const EditorContextMenu = ({ editor, menu, containerRef, undoBaseline, onEnterBlockSelect, onClose }) => {
+const EditorContextMenu = ({ editor, menu, containerRef, undoBaseline, blockSelectActive, onToggleBlockSelect, onClose }) => {
   const configuredItems = useStore((state) => state.contextMenuItems)
-  const enabledItems = configuredItems || DEFAULT_CONTEXT_MENU_ITEMS
+  const enabledItems = useMemo(() => {
+    if (!configuredItems) return DEFAULT_CONTEXT_MENU_ITEMS
+    const missingDefaults = DEFAULT_CONTEXT_MENU_ITEMS.filter(id => !configuredItems.includes(id))
+    return missingDefaults.length ? [...configuredItems, ...missingDefaults] : configuredItems
+  }, [configuredItems])
   const isEnabled = (id) => enabledItems.includes(id)
   const menuRef = useRef(null)
   const [sizeOffset, setSizeOffset] = useState({ x: 0, y: 0 })
@@ -1598,6 +1799,14 @@ const EditorContextMenu = ({ editor, menu, containerRef, undoBaseline, onEnterBl
   const isTaskList = editor.isActive('taskList')
   const isBlockquote = editor.isActive('blockquote')
   const linkHref = editor.getAttributes('link')?.href || ''
+  const hasBlockTransformContext = Boolean(
+    hasSelection ||
+    editor.isActive('heading') ||
+    isBulletList ||
+    isOrderedList ||
+    isTaskList ||
+    isBlockquote
+  )
   const run = async (fn) => {
     await fn()
     onClose()
@@ -1624,10 +1833,13 @@ const EditorContextMenu = ({ editor, menu, containerRef, undoBaseline, onEnterBl
     if (url) editor.chain().focus().extendMarkRange('link').setLink({ href: url.trim() }).run()
   })
   const showEdit = ['undo', 'redo', 'cut', 'copy', 'paste', 'pastePlain', 'selectAll'].some(isEnabled)
-  const showFormat = ['bold', 'italic', 'code', 'link'].some(isEnabled)
-  const showBlock = [
-    'paragraph', 'heading1', 'heading2', 'bulletList', 'orderedList', 'taskList',
-    'blockquote', 'callout', 'blockSelect', 'copyBlock', 'duplicateBlock', 'deleteBlock',
+  const showFormat = (hasSelection || isLink) && ['bold', 'italic', 'code', 'link'].some(isEnabled)
+  const showBlockTransforms = hasBlockTransformContext && [
+    'paragraph', 'heading1', 'heading2', 'bulletList', 'orderedList', 'taskList', 'blockquote',
+  ].some(isEnabled)
+  const showBlockSelectAction = isEnabled('blockSelect')
+  const showBlockActions = hasSelection && [
+    'copyBlock', 'duplicateBlock', 'deleteBlock', 'callout',
   ].some(isEnabled)
 
   return (
@@ -1679,22 +1891,22 @@ const EditorContextMenu = ({ editor, menu, containerRef, undoBaseline, onEnterBl
           )}
         </>
       )}
-      {showBlock && (
+      {(showBlockTransforms || showBlockSelectAction || showBlockActions) && (
         <>
           {(showEdit || showFormat) && <ContextMenuDivider />}
           <ContextMenuSection>块</ContextMenuSection>
-          {isEnabled('paragraph') && <ContextMenuButton active={editor.isActive('paragraph')} onClick={() => run(async () => editor.chain().focus().setParagraph().run())}>转为正文</ContextMenuButton>}
-          {isEnabled('heading1') && <ContextMenuButton active={editor.isActive('heading', { level: 1 })} onClick={() => run(async () => editor.chain().focus().toggleHeading({ level: 1 }).run())}>转为标题 1</ContextMenuButton>}
-          {isEnabled('heading2') && <ContextMenuButton active={editor.isActive('heading', { level: 2 })} onClick={() => run(async () => editor.chain().focus().toggleHeading({ level: 2 }).run())}>转为标题 2</ContextMenuButton>}
-          {isEnabled('bulletList') && <ContextMenuButton active={isBulletList} onClick={() => run(async () => editor.chain().focus().toggleBulletList().run())}>项目符号列表</ContextMenuButton>}
-          {isEnabled('orderedList') && <ContextMenuButton active={isOrderedList} onClick={() => run(async () => editor.chain().focus().toggleOrderedList().run())}>编号列表</ContextMenuButton>}
-          {isEnabled('taskList') && <ContextMenuButton active={isTaskList} onClick={() => run(async () => editor.chain().focus().toggleTaskList().run())}>任务列表</ContextMenuButton>}
-          {isEnabled('blockquote') && <ContextMenuButton active={isBlockquote} onClick={() => run(async () => editor.chain().focus().toggleBlockquote().run())}>引用</ContextMenuButton>}
-          {isEnabled('callout') && <ContextMenuButton onClick={() => run(async () => insertCalloutBlock(editor, 'note'))}>插入 Callout</ContextMenuButton>}
-          {isEnabled('blockSelect') && <ContextMenuButton onClick={() => run(async () => onEnterBlockSelect?.())}>进入块多选</ContextMenuButton>}
-          {isEnabled('copyBlock') && <ContextMenuButton onClick={() => run(async () => copyCurrentBlock(editor))}>复制当前块</ContextMenuButton>}
-          {isEnabled('duplicateBlock') && <ContextMenuButton onClick={() => run(async () => duplicateCurrentBlock(editor))}>复制一份当前块</ContextMenuButton>}
-          {isEnabled('deleteBlock') && <ContextMenuButton danger onClick={() => run(async () => deleteCurrentBlock(editor))}>删除当前块</ContextMenuButton>}
+          {showBlockTransforms && isEnabled('paragraph') && <ContextMenuButton active={editor.isActive('paragraph')} onClick={() => run(async () => editor.chain().focus().setParagraph().run())}>转为正文</ContextMenuButton>}
+          {showBlockTransforms && isEnabled('heading1') && <ContextMenuButton active={editor.isActive('heading', { level: 1 })} onClick={() => run(async () => editor.chain().focus().toggleHeading({ level: 1 }).run())}>转为标题 1</ContextMenuButton>}
+          {showBlockTransforms && isEnabled('heading2') && <ContextMenuButton active={editor.isActive('heading', { level: 2 })} onClick={() => run(async () => editor.chain().focus().toggleHeading({ level: 2 }).run())}>转为标题 2</ContextMenuButton>}
+          {showBlockTransforms && isEnabled('bulletList') && <ContextMenuButton active={isBulletList} onClick={() => run(async () => editor.chain().focus().toggleBulletList().run())}>项目符号列表</ContextMenuButton>}
+          {showBlockTransforms && isEnabled('orderedList') && <ContextMenuButton active={isOrderedList} onClick={() => run(async () => editor.chain().focus().toggleOrderedList().run())}>编号列表</ContextMenuButton>}
+          {showBlockTransforms && isEnabled('taskList') && <ContextMenuButton active={isTaskList} onClick={() => run(async () => editor.chain().focus().toggleTaskList().run())}>任务列表</ContextMenuButton>}
+          {showBlockTransforms && isEnabled('blockquote') && <ContextMenuButton active={isBlockquote} onClick={() => run(async () => editor.chain().focus().toggleBlockquote().run())}>引用</ContextMenuButton>}
+          {showBlockActions && isEnabled('callout') && <ContextMenuButton onClick={() => run(async () => insertCalloutBlock(editor, 'note'))}>插入 Callout</ContextMenuButton>}
+          {showBlockSelectAction && <ContextMenuButton active={blockSelectActive} onClick={() => run(async () => onToggleBlockSelect?.())}>{blockSelectActive ? '退出块多选' : '进入块多选'}</ContextMenuButton>}
+          {showBlockActions && isEnabled('copyBlock') && <ContextMenuButton onClick={() => run(async () => copyCurrentBlock(editor))}>复制当前块</ContextMenuButton>}
+          {showBlockActions && isEnabled('duplicateBlock') && <ContextMenuButton onClick={() => run(async () => duplicateCurrentBlock(editor))}>复制一份当前块</ContextMenuButton>}
+          {showBlockActions && isEnabled('deleteBlock') && <ContextMenuButton danger onClick={() => run(async () => deleteCurrentBlock(editor))}>删除当前块</ContextMenuButton>}
         </>
       )}
       {isTable && isEnabled('table') && (
@@ -1725,7 +1937,7 @@ const EditorContextMenu = ({ editor, menu, containerRef, undoBaseline, onEnterBl
  * - lastExternalContentRef：记录最近一次从父组件收到/向父组件发出的内容，防止无意义 setContent
  * - editorRef：始终指向当前 editor 实例，供异步回调（粘贴/拖放）使用
  */
-const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, placeholder = '开始输入...' }, ref) => {
+const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, onBlockSelectModeChange, placeholder = '开始输入...' }, ref) => {
   // 用 ref 追踪最新 onChange，避免在 useEditor 回调中因闭包失效而用到旧 handler
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
@@ -1793,6 +2005,8 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, pl
         history: { depth: 50, newGroupDelay: 500 },
         heading: { levels: [1, 2, 3, 4, 5, 6] },
         codeBlock: false, // 由 CodeBlockLowlight 接管
+        link: false,
+        underline: false,
         // 行内代码关闭拼写检查（避免代码标识符被划红线）
         code: { HTMLAttributes: { spellcheck: 'false' } },
       }),
@@ -1802,6 +2016,12 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, pl
       CustomUnderline,
       Link.configure({
         openOnClick: false,
+        protocols: ['file', 'app'],
+        isAllowedUri: (url, ctx) => (
+          /^file:\/\//i.test(url) ||
+          /^app:\/\//i.test(url) ||
+          ctx.defaultValidate(url)
+        ),
         HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
       }),
       // 使用自定义 Image（带 NodeView），序列化方式不变
@@ -1820,14 +2040,17 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, pl
       Typography,
       // Callout 装饰插件（blockquote 中的 [!type] 渲染为彩色卡片）
       CalloutDecoration,
+      // 空段落保护：tiptap-markdown 会丢弃空 paragraph，存储前再剥离该不可见字符。
+      EmptyParagraphPreserver,
       // 核心：Markdown ↔ TipTap 双向序列化
       Markdown.configure({
-        html: false,
+        html: true,
         tightLists: true,
         tightListClass: 'tight',
         bulletListMarker: '-',
         linkify: true,
-        breaks: false,
+        // 保留单换行，避免 WYSIWYG 中可见换行在重新加载时被折叠为空格。
+        breaks: true,
         transformPastedText: true,  // 粘贴纯文本时按 Markdown 解析
         transformCopiedText: true,  // 复制时输出 Markdown
       }),
@@ -1876,6 +2099,38 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, pl
         event.preventDefault()
         safeUndo(editorRef.current, undoBaselineRef.current)
         return true
+      },
+
+      handleClickOn: (_view, _pos, _node, _nodePos, event, direct) => {
+        if (!direct || !event?.target?.closest) return false
+        const link = event.target.closest('a[href]')
+        if (!link) return false
+
+        const href = String(link.getAttribute('href') || '')
+        if (!href) return false
+
+        if (/^file:\/\//i.test(href)) {
+          event.preventDefault()
+          event.stopPropagation()
+          window.electronAPI?.system?.openPath?.(getLocalPathFromFileUrl(href))
+          return true
+        }
+
+        if (/^app:\/\//i.test(href)) {
+          event.preventDefault()
+          event.stopPropagation()
+          window.electronAPI?.system?.openExternal?.(href)
+          return true
+        }
+
+        if (/^(?:attachments|audio)\//i.test(href)) {
+          event.preventDefault()
+          event.stopPropagation()
+          window.electronAPI?.system?.openExternal?.(`app://${href.replace(/^\/+/, '')}`)
+          return true
+        }
+
+        return false
       },
 
       // 图片文件拖放由原生 DOM 监听器（capture 阶段）处理，此处不再重复拦截
@@ -1984,10 +2239,16 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, pl
   // 订阅编辑器状态变化（供 BubbleMenu 等基于 selection 的浮层重渲染）
   useEditorState(editor)
 
-  const enterBlockSelectMode = useCallback(() => {
+  useEffect(() => {
+    onBlockSelectModeChange?.(blockSelectMode)
+  }, [blockSelectMode, onBlockSelectModeChange])
+
+  useEffect(() => () => onBlockSelectModeChange?.(false), [onBlockSelectModeChange])
+
+  const toggleBlockSelectMode = useCallback(() => {
     setContextMenu(null)
     setSelectedBlocks([])
-    setBlockSelectMode(true)
+    setBlockSelectMode((active) => !active)
   }, [])
 
   const exitBlockSelectMode = useCallback(() => {
@@ -2015,7 +2276,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, pl
     if (!container) return
     const rect = container.getBoundingClientRect()
     const maxHeight = Math.max(180, rect.height - FLOATING_MARGIN * 2)
-    const local = clampPointToViewportRect(
+    const local = placePointMenuInRect(
       e.clientX,
       e.clientY,
       rect,
@@ -2033,6 +2294,8 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, pl
     getEditor: () => editor,
     getMarkdown: () => postprocessMarkdown(editor?.storage?.markdown?.getMarkdown?.() ?? ''),
     focus: () => editor?.commands?.focus?.(),
+    toggleBlockSelect: toggleBlockSelectMode,
+    exitBlockSelect: exitBlockSelectMode,
     // 供外层（NoteEditor）的 onDrop 调用，与源码模式保持一致
     // pos 可选：外层若计算了鼠标落点可一并传入
     insertImageFiles: (files, pos) => {
@@ -2051,12 +2314,13 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, pl
         flex: 1,
         overflow: 'auto',
         position: 'relative',
-        ...scrollbar.default,
         '& .ProseMirror': {
           outline: 'none',
           minHeight: '100%',
           padding: '16px',
           fontFamily: '"OPPOSans R", "OPPOSans", system-ui, -apple-system, sans-serif',
+          // 保留多空格（NBSP 之外的普通空格在编辑期间也不被折叠）
+          whiteSpace: 'pre-wrap',
           // 防止超长无断词文本把 flex 布局撑破（导致侧栏/按钮不可点击）
           maxWidth: '100%',
           overflowWrap: 'anywhere',
@@ -2088,6 +2352,34 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, pl
               backgroundColor: (theme) =>
                 theme.palette.mode === 'dark' ? 'rgba(96, 165, 250, 0.35)' : 'rgba(25, 118, 210, 0.25)',
               color: (theme) => theme.palette.text.primary,
+            },
+          },
+          '& a[href^="file://"], & a[href^="app://attachments/"], & a[href^="attachments/"]': {
+            display: 'inline-flex',
+            alignItems: 'center',
+            maxWidth: '100%',
+            px: 1,
+            py: 0.35,
+            mx: 0.25,
+            my: 0.15,
+            borderRadius: '8px',
+            color: 'text.primary',
+            textDecoration: 'none',
+            verticalAlign: 'middle',
+            backgroundColor: (theme) =>
+              theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.12)' : 'rgba(15,23,42,0.055)',
+            boxShadow: (theme) =>
+              `inset 0 0 0 1px ${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)'}`,
+            '&::before': {
+              content: '"📎"',
+              marginRight: '6px',
+              fontSize: '0.9em',
+              lineHeight: 1,
+            },
+            '&:hover': {
+              textDecoration: 'none',
+              backgroundColor: (theme) =>
+                theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.18)' : 'rgba(15,23,42,0.085)',
             },
           },
 
@@ -2221,7 +2513,8 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, pl
         menu={contextMenu}
         containerRef={overlayContainerRef}
         undoBaseline={undoBaselineRef.current}
-        onEnterBlockSelect={enterBlockSelectMode}
+        blockSelectActive={blockSelectMode}
+        onToggleBlockSelect={toggleBlockSelectMode}
         onClose={() => setContextMenu(null)}
       />
       {/* 上下文 Bubble Menus：链接 / 表格 / Callout */}

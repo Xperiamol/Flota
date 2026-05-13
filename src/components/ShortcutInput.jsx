@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Box,
   TextField,
@@ -55,14 +55,11 @@ const ShortcutInput = ({
     e.stopPropagation();
 
     const key = e.key;
-    const code = e.code;
-    
     // 添加按下的键到集合中
     keysPressed.current.add(key);
     
     // 构建快捷键字符串
     const modifiers = [];
-    const specialKeys = [];
     
     if (e.ctrlKey || e.metaKey) {
       modifiers.push('Ctrl');
@@ -143,11 +140,13 @@ const ShortcutInput = ({
           disabled={disabled}
           error={!!error}
           helperText={error}
-          InputProps={{
-            readOnly: true,
-            sx: {
-              cursor: disabled ? 'not-allowed' : 'pointer',
-              backgroundColor: isRecording ? 'action.selected' : 'inherit'
+          slotProps={{
+            input: {
+              readOnly: true,
+              sx: {
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                backgroundColor: isRecording ? 'action.selected' : 'inherit'
+              }
             }
           }}
           sx={{ flex: 1 }}

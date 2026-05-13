@@ -5,17 +5,17 @@ import {
   StickyNote2,
   CheckBox,
   CalendarToday,
+  Timeline,
   Settings,
   Person,
-  Folder,
   Store,
-  MenuBook,
   WavingHand,
   Code,
   AutoAwesome
 } from '@mui/icons-material';
 import { useTheme } from '@mui/material/styles';
 import { useStore } from '../store/useStore';
+import logger from '../utils/logger';
 
 // 业界领先的导航动画曲线：Apple "spring-out" / Linear / Raycast 通用
 // 比 Material Standard (0.4, 0, 0.2, 1) 更跟手、更紧致
@@ -120,7 +120,7 @@ const CHRISTMAS_GREETINGS = [
   '🌟 愿圣诞之光照亮你的心'
 ];
 
-const Sidebar = ({ open = true, onClose }) => {
+const Sidebar = () => {
   const { t } = useTranslation();
   const theme = useTheme();
   const { currentView, setCurrentView, userAvatar, userName, christmasMode } = useStore();
@@ -128,7 +128,6 @@ const Sidebar = ({ open = true, onClose }) => {
   const [avatarHover, setAvatarHover] = useState(false);
   const [avatarClickCount, setAvatarClickCount] = useState(0);
   const [showDevMode, setShowDevMode] = useState(false);
-  const [christmasGreeting, setChristmasGreeting] = useState('');
 
   // 主侧边栏始终显示，不受open prop控制
 
@@ -150,6 +149,12 @@ const Sidebar = ({ open = true, onClose }) => {
       icon: <CalendarToday />,
       label: t('common.calendar'),
       tooltip: t('sidebar.calendarTooltip')
+    },
+    {
+      id: 'timeline',
+      icon: <Timeline />,
+      label: '时间轴',
+      tooltip: '时间轴'
     },
     {
       id: 'plugins',
@@ -193,7 +198,7 @@ const Sidebar = ({ open = true, onClose }) => {
       if (window.electronAPI && window.electronAPI.window && window.electronAPI.window.toggleDevTools) {
         window.electronAPI.window.toggleDevTools().then(result => {
           if (result && result.success) {
-            console.log('开发者工具已切换');
+            logger.log('开发者工具已切换');
           } else if (result && result.error) {
             console.warn('切换开发者工具失败:', result.error);
           }

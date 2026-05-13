@@ -132,7 +132,7 @@ const STTSettings = ({ showSnackbar }) => {
           <ListItemText
             primary={t('stt.speechToTextFeature')}
             secondary={t('stt.speechToTextDesc')}
-            primaryTypographyProps={{ sx: { fontWeight: 650 } }}
+            slotProps={{ primary: { sx: { fontWeight: 650 } } }}
           />
           <Switch
             checked={config.enabled}

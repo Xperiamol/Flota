@@ -12,6 +12,7 @@
 
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import logger from './logger'
 import {
   Button,
   Card,
@@ -480,5 +481,5 @@ export function injectReactBridge(iframeWindow) {
     version: '1.0.0'
   }
 
-  console.log('[React Bridge] 已注入到插件窗口，版本:', '1.0.0')
+  logger.log('[React Bridge] 已注入到插件窗口，版本:', '1.0.0')
 }

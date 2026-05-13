@@ -1,253 +1,603 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Avatar,
   Box,
   Chip,
-  Dialog,
-  DialogContent,
-  InputAdornment,
-  List,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
+  IconButton,
+  Paper,
   TextField,
+  Tooltip,
   Typography,
   alpha
 } from '@mui/material'
 import {
   AutoAwesome as AIIcon,
-  CalendarToday as CalendarIcon,
-  CheckCircle as TodoIcon,
+  Close as CloseIcon,
+  DragIndicator as DragIcon,
+  Add as AddIcon,
   EditNote as NoteIcon,
-  Hub as HubIcon,
-  Search as SearchIcon,
-  TravelExplore as KnowledgeIcon
+  Send as SendIcon,
+  Stop as StopIcon
 } from '@mui/icons-material'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import FloatingGlassSurface from './FloatingGlassSurface'
 import { useStore } from '../store/useStore'
-import { truncateText } from '../utils/aiContextUtils'
+import useAIStream from '../hooks/useAIStream'
+import useDraggableFloatingPanel from '../hooks/useDraggableFloatingPanel'
+import { buildContextPackageFromNotes, truncateText } from '../utils/aiContextUtils'
+import logger from '../utils/logger'
 
-const AI_COMMANDS = [
-  {
-    id: 'direct-ask',
-    title: '直接问 AI',
-    description: '用当前上下文直接提问',
-    hint: '输入任意问题后回车',
-    icon: <AIIcon />,
-    buildPrompt: (query) => query || '请基于当前上下文给我一个简洁建议'
-  },
-  {
-    id: 'ask-current-note',
-    title: '问当前笔记',
-    description: '带上当前笔记上下文，让 AI 直接回答你的问题',
-    hint: '例如：这篇笔记的下一步是什么？',
-    icon: <NoteIcon />,
-    buildPrompt: (query) => `基于当前笔记回答：${query || '这篇笔记的重点和下一步是什么？'}`
-  },
-  {
-    id: 'summarize-note',
-    title: '总结当前笔记',
-    description: '提炼要点、结论和后续行动',
-    hint: '可直接回车',
-    icon: <AIIcon />,
-    buildPrompt: (query) => `请总结当前笔记，输出：核心要点、关键结论、待办事项、潜在风险。${query ? `额外要求：${query}` : ''}`
-  },
-  {
-    id: 'search-knowledge',
-    title: '搜索我的知识库',
-    description: '搜索笔记、记忆和相关上下文',
-    hint: '输入要查找的问题',
-    icon: <KnowledgeIcon />,
-    buildPrompt: (query) => `搜索我的知识库并给出带来源的回答：${query || '最近重要的知识和任务是什么？'}`
-  },
-  {
-    id: 'create-todo',
-    title: '创建待办',
-    description: '生成待确认的待办创建操作',
-    hint: '例如：明天下午整理会议纪要',
-    icon: <TodoIcon />,
-    buildPrompt: (query) => `帮我创建一个待办：${query || '根据当前上下文提取一个最重要的下一步待办'}`
-  },
-  {
-    id: 'extract-todos',
-    title: '从当前笔记提取待办',
-    description: '把会议纪要/计划拆成待确认待办',
-    hint: '可直接回车',
-    icon: <TodoIcon />,
-    buildPrompt: (query) => `请从当前笔记提取待办事项，并逐条生成待确认的创建计划。${query ? `重点关注：${query}` : ''}`
-  },
-  {
-    id: 'summarize-week',
-    title: '总结本周',
-    description: '结合知识库、待办和记忆做周总结',
-    hint: '可补充项目名',
-    icon: <CalendarIcon />,
-    buildPrompt: (query) => `请总结本周的进展、完成事项、遗留风险和下周建议。${query ? `聚焦：${query}` : ''}`
-  },
-  {
-    id: 'related-map',
-    title: '查找关联内容',
-    description: '找出当前笔记相关的笔记、待办和记忆',
-    hint: '可直接回车',
-    icon: <HubIcon />,
-    buildPrompt: (query) => `找出和当前笔记最相关的笔记、待办和记忆，并解释关联原因。${query ? `额外线索：${query}` : ''}`
-  },
+const QUICK_PROMPTS = [
+  { id: 'summarize', label: '总结当前笔记', prompt: '请总结当前笔记，输出：核心要点、关键结论、待办事项、潜在风险。' },
+  { id: 'next-step', label: '下一步建议', prompt: '基于当前笔记，给我 3 条具体可执行的下一步行动建议。' },
+  { id: 'extract-todos', label: '提取待办', prompt: '请从当前笔记提取待办事项，并按优先级排序。' },
+  { id: 'related', label: '关联内容', prompt: '找出和当前笔记最相关的笔记、待办和记忆，并简要说明关联原因。' }
 ]
+
+const mdComponents = {
+  p: ({ children }) => (
+    <Typography component="p" variant="body2" sx={{ my: 0.4, lineHeight: 1.65 }}>
+      {children}
+    </Typography>
+  ),
+  ul: ({ children }) => <Box component="ul" sx={{ pl: 2.5, my: 0.5 }}>{children}</Box>,
+  ol: ({ children }) => <Box component="ol" sx={{ pl: 2.5, my: 0.5 }}>{children}</Box>,
+  li: ({ children }) => (
+    <Typography component="li" variant="body2" sx={{ lineHeight: 1.65 }}>
+      {children}
+    </Typography>
+  ),
+  code: ({ inline, children }) => inline
+    ? (
+      <Box component="code" sx={(theme) => ({
+        px: 0.6,
+        py: 0.15,
+        borderRadius: 0.75,
+        fontSize: '0.78rem',
+        bgcolor: alpha(theme.palette.text.primary, 0.06),
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace'
+      })}>
+        {children}
+      </Box>
+    )
+    : (
+      <Box component="pre" sx={(theme) => ({
+        my: 0.75,
+        p: 1,
+        borderRadius: 1,
+        overflowX: 'auto',
+        bgcolor: alpha(theme.palette.text.primary, 0.05),
+        fontSize: '0.78rem',
+        lineHeight: 1.55,
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace'
+      })}>
+        <code>{children}</code>
+      </Box>
+    )
+}
+
+const PANEL_WIDTH = 400
+const PANEL_BOTTOM_OFFSET = 24
+const PANEL_RIGHT_OFFSET = 24
+const PANEL_ESTIMATED_HEIGHT = 520
+const PANEL_MARGIN = 12
+
+const getDefaultPosition = () => ({
+  x: Math.max(PANEL_MARGIN, window.innerWidth - PANEL_WIDTH - PANEL_RIGHT_OFFSET),
+  y: Math.max(PANEL_MARGIN, window.innerHeight - PANEL_ESTIMATED_HEIGHT - PANEL_BOTTOM_OFFSET)
+})
 
 const AICommandCenter = ({ open, onClose }) => {
   const inputRef = useRef(null)
-  const [query, setQuery] = useState('')
-  const [selectedIndex, setSelectedIndex] = useState(0)
-  const { notes, selectedNoteId, setCurrentView, aiDispatchCommand } = useStore()
+  const scrollRef = useRef(null)
+  const panelRef = useRef(null)
 
-  const currentNote = notes.find(note => String(note.id) === String(selectedNoteId))
+  const {
+    notes,
+    selectedNoteId,
+    userAvatar,
+    aiConversations,
+    aiActiveConvId,
+    aiNoteConversationMap,
+    aiNewChat,
+    aiEnsureNoteChat,
+    aiSwitchConv,
+    aiUpdateConv
+  } = useStore()
+  const noteConversationId = selectedNoteId == null ? null : aiNoteConversationMap?.[String(selectedNoteId)] || null
+  const currentConversationId = noteConversationId || (selectedNoteId == null ? aiActiveConvId : null)
+  const currentConversation = useMemo(
+    () => aiConversations.find((conversation) => conversation.id === currentConversationId) || null,
+    [aiConversations, currentConversationId]
+  )
 
-  const filteredCommands = useMemo(() => {
-    const normalized = query.trim().toLowerCase().replace(/^\/ai\s*/, '')
-    if (!normalized) return AI_COMMANDS
-    const matched = AI_COMMANDS.filter(command => (
-      command.title.toLowerCase().includes(normalized) ||
-      command.description.toLowerCase().includes(normalized)
-    ))
-    return matched.length > 0 ? matched : [AI_COMMANDS[0]]
-  }, [query])
+  const [input, setInput] = useState('')
+  const [messages, setMessages] = useState(() => currentConversation?.messages || [])
+  const [streamContent, setStreamContent] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [position, setPosition] = useState(null)
+
+  const { runStream, cancel } = useAIStream()
+  const { dragging, handleDragStart, restorePosition } = useDraggableFloatingPanel({
+    panelRef,
+    position,
+    setPosition,
+    margin: PANEL_MARGIN,
+    estimatedWidth: PANEL_WIDTH,
+    estimatedHeight: PANEL_ESTIMATED_HEIGHT,
+    persistKey: 'flota.aiCommandCenter.position'
+  })
+
+  const currentNote = useMemo(
+    () => notes.find(note => String(note.id) === String(selectedNoteId)),
+    [notes, selectedNoteId]
+  )
+
+  const previousConversationIdRef = useRef(currentConversationId)
+  useEffect(() => {
+    if (previousConversationIdRef.current !== currentConversationId) {
+      previousConversationIdRef.current = currentConversationId
+      cancel()
+      setMessages(currentConversation?.messages || [])
+      setStreamContent('')
+      setInput('')
+      setLoading(false)
+    }
+  }, [cancel, currentConversation, currentConversationId])
+
+  useEffect(() => {
+    if (!currentConversationId || previousConversationIdRef.current !== currentConversationId || loading) return
+    setMessages(currentConversation?.messages || [])
+  }, [currentConversation, currentConversationId, loading])
+
+  const getConversationTitle = useCallback((nextMessages) => {
+    const firstUserMessage = nextMessages.find((message) => message.role === 'user')
+    if (!firstUserMessage?.content) {
+      return currentNote ? `关于「${truncateText(currentNote.title || '未命名', 18)}」` : '新对话'
+    }
+    const text = firstUserMessage.content.replace(/\n/g, ' ').trim()
+    return text.length > 24 ? `${text.slice(0, 24)}…` : text
+  }, [currentNote])
 
   useEffect(() => {
     if (!open) return
-    setQuery('')
-    setSelectedIndex(0)
-    window.setTimeout(() => inputRef.current?.focus(), 80)
-  }, [open])
+    setPosition(prev => prev || restorePosition(getDefaultPosition()))
+    const timer = window.setTimeout(() => inputRef.current?.focus(), 120)
+    return () => window.clearTimeout(timer)
+  }, [open, restorePosition])
 
   useEffect(() => {
-    setSelectedIndex(0)
-  }, [filteredCommands.length])
+    if (!open) return
+    const node = scrollRef.current
+    if (node) node.scrollTop = node.scrollHeight
+  }, [messages, streamContent, open])
 
-  const runCommand = (command) => {
-    if (!command) return
-    const promptQuery = query.replace(/^\/ai\s*/i, '').trim()
-    setCurrentView('ai')
-    aiDispatchCommand?.(command.buildPrompt(promptQuery), { autoSend: true })
-    onClose()
-  }
+  const buildContextPackage = useCallback((query) => {
+    return buildContextPackageFromNotes({
+      notes,
+      todos: [],
+      memories: [],
+      selectedNoteId,
+      query,
+      contextEnabled: { currentNote: true, relatedNotes: false, todos: false, memories: false }
+    })
+  }, [notes, selectedNoteId])
 
-  useEffect(() => {
-    if (!open) return undefined
-    const handleKeyDown = (event) => {
-      if (event.key === 'ArrowDown') {
-        event.preventDefault()
-        setSelectedIndex(prev => (prev + 1) % Math.max(filteredCommands.length, 1))
-      } else if (event.key === 'ArrowUp') {
-        event.preventDefault()
-        setSelectedIndex(prev => (prev - 1 + Math.max(filteredCommands.length, 1)) % Math.max(filteredCommands.length, 1))
-      } else if (event.key === 'Enter') {
-        event.preventDefault()
-        runCommand(filteredCommands[selectedIndex])
-      } else if (event.key === 'Escape') {
-        event.preventDefault()
-        onClose()
-      }
+  const handleCancel = useCallback(() => {
+    if (loading) cancel()
+  }, [cancel, loading])
+
+  const handleNewChat = useCallback(() => {
+    if (loading) return
+    if (selectedNoteId == null) {
+      aiNewChat()
+      return
+    }
+    aiNewChat({
+      noteId: selectedNoteId,
+      title: currentNote ? `关于「${truncateText(currentNote.title || '未命名', 18)}」` : '新对话'
+    })
+  }, [aiNewChat, currentNote, loading, selectedNoteId])
+
+  const handleSend = useCallback(async (overridePrompt) => {
+    const text = (overridePrompt ?? input).trim()
+    if (!text || loading) return
+
+    let conversationId = currentConversationId
+    if (!conversationId) {
+      conversationId = selectedNoteId == null
+        ? aiNewChat()
+        : aiEnsureNoteChat(selectedNoteId, {
+          title: currentNote ? `关于「${truncateText(currentNote.title || '未命名', 18)}」` : '新对话'
+        })
+    } else {
+      aiSwitchConv(conversationId)
     }
 
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [filteredCommands, onClose, open, selectedIndex])
+    const userMsg = { role: 'user', content: text }
+    const nextMessages = [...messages, userMsg]
+    setMessages(nextMessages)
+    setInput('')
+    setStreamContent('')
+    setLoading(true)
+    aiUpdateConv(conversationId, {
+      messages: nextMessages,
+      title: getConversationTitle(nextMessages),
+      noteId: selectedNoteId == null ? null : String(selectedNoteId),
+      source: selectedNoteId == null ? 'general' : 'note'
+    })
+
+    const apiMessages = nextMessages.map(m => ({ role: m.role, content: m.content }))
+    const contextPackage = buildContextPackage(text)
+
+    try {
+      const { result, content } = await runStream({
+        messages: apiMessages,
+        contextPackage,
+        requestPrefix: 'aicc',
+        options: { requireConfirmation: false },
+        onContent: setStreamContent,
+        onChunkError: (chunk) => setStreamContent(prev => prev + `\n\n⚠️ ${chunk.content}`)
+      })
+
+      const assistantContent = result?.cancelled
+        ? (content || '已停止生成。')
+        : result?.success
+          ? (content || result.fullContent || '')
+          : (content || `❌ ${result?.error || '请求失败'}`)
+
+      const finalMessages = [...nextMessages, {
+        role: 'assistant',
+        content: assistantContent,
+        stopped: Boolean(result?.cancelled)
+      }]
+      setMessages(finalMessages)
+      aiUpdateConv(conversationId, {
+        messages: finalMessages,
+        title: getConversationTitle(finalMessages),
+        noteId: selectedNoteId == null ? null : String(selectedNoteId),
+        source: selectedNoteId == null ? 'general' : 'note'
+      })
+      setStreamContent('')
+    } catch (error) {
+      logger.warn('[AICommandCenter] chatStream failed', error)
+      const errorMessages = [...nextMessages, {
+        role: 'assistant',
+        content: `❌ 发生错误: ${error?.message || '未知错误'}`
+      }]
+      setMessages(errorMessages)
+      aiUpdateConv(conversationId, {
+        messages: errorMessages,
+        title: getConversationTitle(errorMessages),
+        noteId: selectedNoteId == null ? null : String(selectedNoteId),
+        source: selectedNoteId == null ? 'general' : 'note'
+      })
+      setStreamContent('')
+    } finally {
+      setLoading(false)
+      window.setTimeout(() => inputRef.current?.focus(), 30)
+    }
+  }, [aiEnsureNoteChat, aiNewChat, aiSwitchConv, aiUpdateConv, buildContextPackage, currentConversationId, currentNote, getConversationTitle, input, loading, messages, runStream, selectedNoteId])
+
+  const handleKeyDown = (event) => {
+    if (event.key === 'Escape') {
+      event.currentTarget.blur()
+      return
+    }
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      handleSend()
+    }
+  }
+
+  const showQuickPrompts = messages.length === 0 && !loading && !streamContent
+  const resolvedPosition = position || getDefaultPosition()
 
   return (
-    <Dialog
+    <FloatingGlassSurface
+      ref={panelRef}
       open={open}
-      onClose={onClose}
-      maxWidth="sm"
-      fullWidth
-      slotProps={{
-        paper: {
-          sx: (theme) => ({
-            borderRadius: 3,
-            overflow: 'hidden',
-            bgcolor: alpha(theme.palette.background.paper, 0.92),
-            backdropFilter: 'blur(18px) saturate(160%)',
-            WebkitBackdropFilter: 'blur(18px) saturate(160%)',
-            border: `1px solid ${alpha(theme.palette.divider, 0.7)}`,
-          })
-        }
-      }}
+      layer="aiPanel"
+      ariaLabel="问 AI"
+      position={resolvedPosition}
+      width={PANEL_WIDTH}
+      maxWidth={`calc(100vw - ${PANEL_RIGHT_OFFSET * 2}px)`}
+      maxHeight={`min(560px, calc(100vh - ${PANEL_BOTTOM_OFFSET * 2}px))`}
+      sx={{ display: 'flex', flexDirection: 'column' }}
     >
-      <DialogContent sx={{ p: 0 }}>
-        <Box sx={{ px: 2, pt: 2, pb: 1.5, borderBottom: 1, borderColor: 'divider' }}>
-          <TextField
-            inputRef={inputRef}
-            fullWidth
-            placeholder="Cmd+K（非编辑区）/ Cmd+Shift+K 问 AI，或输入 /ai 指令..."
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            variant="standard"
-            slotProps={{
-              input: {
-                disableUnderline: true,
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon color="action" />
-                  </InputAdornment>
-                )
-              }
-            }}
-            sx={{ '& .MuiInputBase-input': { fontSize: 16, py: 1 } }}
+      <Box
+        onMouseDown={handleDragStart}
+        sx={(theme) => ({
+          px: 1.5,
+          py: 0.75,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          boxShadow: `inset 0 -1px 0 ${alpha(theme.palette.common.white, theme.palette.mode === 'dark' ? 0.03 : 0.36)}`,
+          cursor: dragging ? 'grabbing' : 'grab',
+          userSelect: 'none',
+          bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.09 : 0.1)
+        })}
+      >
+        <DragIcon sx={{ fontSize: 15, color: 'text.disabled', opacity: 0.55 }} />
+        <AIIcon sx={{ fontSize: 16, color: 'primary.main' }} />
+        <Typography sx={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>问 AI</Typography>
+        {currentNote && (
+          <Chip
+            size="small"
+            icon={<NoteIcon sx={{ fontSize: 14 }} />}
+            label={truncateText(currentNote.title || '未命名', 18)}
+            variant="outlined"
+            sx={(theme) => ({
+              height: 22,
+              fontSize: 11,
+              borderRadius: 1,
+              bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.08 : 0.18),
+              boxShadow: `inset 0 0 0 1px ${alpha(theme.palette.common.white, theme.palette.mode === 'dark' ? 0.035 : 0.32)}`,
+              borderColor: 'transparent',
+              '& .MuiChip-icon': { ml: 0.5, mr: -0.25 },
+              '& .MuiChip-label': { px: 0.75 }
+            })}
           />
-          {currentNote && (
-            <Chip
+        )}
+        <Box sx={{ flex: 1 }} />
+        <Tooltip title="新建对话">
+          <span>
+            <IconButton
               size="small"
-              label={`当前笔记：${truncateText(currentNote.title || '未命名', 24)}`}
-              icon={<NoteIcon />}
-              sx={{ mt: 1, borderRadius: 3 }}
-              variant="outlined"
-            />
-          )}
-        </Box>
-
-        <List dense disablePadding sx={{ maxHeight: 420, overflow: 'auto', py: 1 }}>
-          {filteredCommands.map((command, index) => (
-            <ListItemButton
-              key={command.id}
-              selected={index === selectedIndex}
-              onClick={() => runCommand(command)}
-              sx={{
-                mx: 1,
-                borderRadius: 2,
-                alignItems: 'flex-start',
-                '&.Mui-selected': {
-                  bgcolor: (theme) => alpha(theme.palette.primary.main, 0.12),
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={handleNewChat}
+              disabled={loading}
+              aria-label="新建对话"
+              sx={(theme) => ({
+                width: 26,
+                height: 26,
+                mr: 0.25,
+                borderRadius: 1,
+                color: 'text.secondary',
+                '&:hover': {
+                  color: 'text.primary',
+                  bgcolor: alpha(theme.palette.text.primary, 0.06)
                 }
-              }}
+              })}
             >
-              <ListItemIcon sx={{ minWidth: 38, color: index === selectedIndex ? 'primary.main' : 'text.secondary', mt: 0.25 }}>
-                {command.icon}
-              </ListItemIcon>
-              <ListItemText
-                primary={(
-                  <Typography variant="body2" sx={{ fontWeight: index === selectedIndex ? 700 : 600 }}>
-                    {command.title}
-                  </Typography>
-                )}
-                secondary={
-                  <Box>
-                    <Typography component="span" variant="caption" color="text.secondary">
-                      {command.description}
-                    </Typography>
-                    <Typography component="span" variant="caption" color="text.disabled" sx={{ display: 'block' }}>
-                      {command.hint}
-                    </Typography>
-                  </Box>
-                }
-              />
-            </ListItemButton>
-          ))}
-          {filteredCommands.length === 0 && (
-            <Typography variant="body2" color="text.secondary" sx={{ px: 3, py: 4, textAlign: 'center' }}>
-              没有匹配的 AI 命令
+              <AddIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          </span>
+        </Tooltip>
+        <IconButton
+          size="small"
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={onClose}
+          aria-label="关闭"
+          sx={(theme) => ({
+            width: 26,
+            height: 26,
+            borderRadius: 1,
+            color: 'text.secondary',
+            '&:hover': {
+              color: 'text.primary',
+              bgcolor: alpha(theme.palette.text.primary, 0.06)
+            }
+          })}
+        >
+          <CloseIcon sx={{ fontSize: 16 }} />
+        </IconButton>
+      </Box>
+
+      <Box
+        ref={scrollRef}
+        sx={(theme) => ({
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          px: 1.5,
+          py: 1.1,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 1,
+          bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.03 : 0.045)
+        })}
+      >
+        {showQuickPrompts && (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ px: 0.25 }}>
+              快速开始
             </Typography>
-          )}
-        </List>
-      </DialogContent>
-    </Dialog>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+              {QUICK_PROMPTS.map((item) => (
+                <Chip
+                  key={item.id}
+                  size="small"
+                  label={item.label}
+                  onClick={() => handleSend(item.prompt)}
+                  sx={(theme) => ({
+                    height: 26,
+                    fontSize: 12,
+                    borderRadius: 1,
+                    bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.08 : 0.16),
+                    color: 'text.primary',
+                    boxShadow: `inset 0 0 0 1px ${alpha(theme.palette.common.white, theme.palette.mode === 'dark' ? 0.03 : 0.3)}`,
+                    '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.06) }
+                  })}
+                />
+              ))}
+            </Box>
+          </Box>
+        )}
+
+        {messages.map((msg, index) => (
+          <ChatBubble key={index} msg={msg} userAvatar={userAvatar} />
+        ))}
+
+        {loading && (
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+            <Avatar sx={(theme) => ({
+              width: 24,
+              height: 24,
+              bgcolor: alpha(theme.palette.primary.main, 0.1),
+              color: theme.palette.primary.main
+            })}>
+              <AIIcon sx={{ fontSize: 14 }} />
+            </Avatar>
+            <Paper elevation={0} sx={(theme) => ({
+              flex: 1,
+              minWidth: 0,
+              px: 1.25,
+              py: 0.75,
+              borderRadius: '8px 8px 8px 2px',
+              bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.08 : 0.16),
+              boxShadow: `inset 0 0 0 1px ${alpha(theme.palette.common.white, theme.palette.mode === 'dark' ? 0.03 : 0.26)}`,
+              fontSize: 13,
+              lineHeight: 1.65
+            })}>
+              {streamContent
+                ? <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{streamContent}</ReactMarkdown>
+                : <TypingDots />}
+            </Paper>
+          </Box>
+        )}
+      </Box>
+
+      <Box sx={(theme) => ({
+        px: 1.25,
+        py: 0.9,
+        boxShadow: `inset 0 1px 0 ${alpha(theme.palette.common.white, theme.palette.mode === 'dark' ? 0.03 : 0.34)}`,
+        display: 'flex',
+        alignItems: 'flex-end',
+        gap: 0.75,
+        bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.08 : 0.1)
+      })}>
+        <TextField
+          inputRef={inputRef}
+          fullWidth
+          multiline
+          maxRows={4}
+          placeholder={currentNote ? `就「${truncateText(currentNote.title || '未命名', 14)}」问点什么…` : '问 AI 任何问题…'}
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          onKeyDown={handleKeyDown}
+          variant="outlined"
+          size="small"
+          slotProps={{
+            input: {
+              sx: {
+                fontSize: 13,
+                borderRadius: 1,
+                bgcolor: (theme) => alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.22 : 0.34),
+                backdropFilter: 'blur(14px)'
+              }
+            }
+          }}
+          sx={{
+            '& .MuiOutlinedInput-notchedOutline': { borderColor: 'transparent' },
+            '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'transparent' },
+            '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: 'transparent' }
+          }}
+        />
+        <IconButton
+          size="small"
+          onClick={loading ? handleCancel : () => handleSend()}
+          disabled={loading ? false : !input.trim()}
+          aria-label={loading ? '停止生成' : '发送'}
+          sx={(theme) => ({
+            width: 32,
+            height: 32,
+            borderRadius: 1,
+            bgcolor: loading
+              ? alpha(theme.palette.error.main, 0.12)
+              : (input.trim() ? theme.palette.primary.main : 'transparent'),
+            color: loading
+              ? theme.palette.error.main
+              : (input.trim() ? theme.palette.primary.contrastText : theme.palette.action.disabled),
+            '&:hover': {
+              bgcolor: loading
+                ? alpha(theme.palette.error.main, 0.2)
+                : (input.trim() ? theme.palette.primary.dark : 'transparent')
+            },
+            transition: 'background-color 140ms ease, color 140ms ease'
+          })}
+        >
+          {loading ? <StopIcon sx={{ fontSize: 16 }} /> : <SendIcon sx={{ fontSize: 16 }} />}
+        </IconButton>
+      </Box>
+    </FloatingGlassSurface>
   )
 }
+
+const ChatBubble = ({ msg, userAvatar }) => {
+  const isUser = msg.role === 'user'
+  return (
+    <Box sx={{
+      display: 'flex',
+      gap: 1,
+      alignItems: 'flex-start',
+      flexDirection: isUser ? 'row-reverse' : 'row'
+    }}>
+      <Avatar
+        src={isUser ? userAvatar : undefined}
+        sx={(theme) => ({
+          width: 24,
+          height: 24,
+          fontSize: 12,
+          bgcolor: isUser ? alpha(theme.palette.text.primary, 0.08) : alpha(theme.palette.primary.main, 0.1),
+          color: isUser ? theme.palette.text.primary : theme.palette.primary.main
+        })}
+      >
+        {isUser ? (userAvatar ? null : '我') : <AIIcon sx={{ fontSize: 14 }} />}
+      </Avatar>
+      <Paper elevation={0} sx={(theme) => ({
+        maxWidth: 'calc(100% - 36px)',
+        minWidth: 0,
+        px: 1.25,
+        py: 0.75,
+        borderRadius: isUser ? '8px 8px 2px 8px' : '8px 8px 8px 2px',
+        bgcolor: isUser
+          ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.12 : 0.08)
+          : alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.08 : 0.14),
+        boxShadow: isUser
+          ? 'none'
+          : `inset 0 0 0 1px ${alpha(theme.palette.common.white, theme.palette.mode === 'dark' ? 0.028 : 0.22)}`,
+        color: 'text.primary',
+        fontSize: 13,
+        lineHeight: 1.65,
+        wordBreak: 'break-word',
+        whiteSpace: 'pre-wrap',
+        userSelect: 'text'
+      })}>
+        {isUser
+          ? <Typography variant="body2" sx={{ fontSize: 13, lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>{msg.content}</Typography>
+          : (
+            <Box sx={{ '& > *:first-of-type': { mt: 0 }, '& > *:last-child': { mb: 0 } }}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{msg.content || ''}</ReactMarkdown>
+            </Box>
+          )}
+      </Paper>
+    </Box>
+  )
+}
+
+const TypingDots = () => (
+  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, py: 0.25 }}>
+    {[0, 1, 2].map((i) => (
+      <Box
+        key={i}
+        sx={(theme) => ({
+          width: 5,
+          height: 5,
+          borderRadius: '50%',
+          bgcolor: alpha(theme.palette.text.primary, 0.35),
+          animation: 'aicc-typing 1.2s infinite ease-in-out',
+          animationDelay: `${i * 0.15}s`,
+          '@keyframes aicc-typing': {
+            '0%, 80%, 100%': { opacity: 0.25, transform: 'translateY(0)' },
+            '40%': { opacity: 1, transform: 'translateY(-2px)' }
+          }
+        })}
+      />
+    ))}
+  </Box>
+)
 
 export default AICommandCenter

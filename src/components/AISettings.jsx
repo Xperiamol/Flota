@@ -177,7 +177,7 @@ const AISettings = ({ showSnackbar }) => {
           <ListItemText
             primary={t('ai.enableAI')}
             secondary={t('ai.enableAIDesc')}
-            primaryTypographyProps={{ sx: { fontWeight: 650 } }}
+            slotProps={{ primary: { sx: { fontWeight: 650 } } }}
           />
           <Switch
             checked={config.enabled}

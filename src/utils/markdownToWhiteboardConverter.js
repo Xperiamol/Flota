@@ -5,6 +5,13 @@
  */
 import logger from './logger';
 
+const AUDIO_EXT = /\.(m4a|mp3|wav|ogg|aac|opus|flac|webm)(?:\?|$)/i
+
+const isAudioRef = (src = '') => {
+  const value = String(src || '').trim().toLowerCase()
+  return value.startsWith('audio/') || value.startsWith('app://audio/') || value.startsWith('data:audio') || AUDIO_EXT.test(value)
+}
+
 /**
  * 解析 Markdown 内容，提取标题、段落、列表、代码块和图片
  * @param {string} content - Markdown 内容
@@ -54,6 +61,14 @@ function parseMarkdown(content) {
     // 识别独立行的图片 ![alt](url)
     const standaloneImageMatch = trimmedLine.match(/^!\[([^\]]*)\]\(([^)]+)\)$/)
     if (standaloneImageMatch) {
+      if (isAudioRef(standaloneImageMatch[2])) {
+        blocks.push({
+          type: 'paragraph',
+          text: '[语音]',
+          fontSize: 16
+        })
+        continue
+      }
       blocks.push({
         type: 'image',
         alt: standaloneImageMatch[1],
@@ -83,12 +98,20 @@ function parseMarkdown(content) {
           })
         }
         
-        // 添加图片
-        blocks.push({
-          type: 'image',
-          alt: match[1],
-          url: match[2]
-        })
+        if (isAudioRef(match[2])) {
+          blocks.push({
+            type: 'paragraph',
+            text: '[语音]',
+            fontSize: 16
+          })
+        } else {
+          // 添加图片
+          blocks.push({
+            type: 'image',
+            alt: match[1],
+            url: match[2]
+          })
+        }
         
         lastIndex = match.index + match[0].length
       }
@@ -561,7 +584,9 @@ export function extractImageUrls(markdownContent) {
   let match
   
   while ((match = imageRegex.exec(markdownContent)) !== null) {
-    urls.push(match[1])
+    if (!isAudioRef(match[1])) {
+      urls.push(match[1])
+    }
   }
   
   return urls

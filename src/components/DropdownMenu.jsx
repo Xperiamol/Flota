@@ -72,22 +72,24 @@ const DropdownMenu = ({
         onClose={handleClose}
         anchorOrigin={anchorOrigin}
         transformOrigin={transformOrigin}
-        PaperProps={{
-          sx: {
-            minWidth: 160,
-            boxShadow: (theme) => theme.shadows[8],
-            '& .MuiMenuItem-root': {
-              fontSize: '0.875rem',
-              minHeight: 40,
-              '&:hover': {
-                backgroundColor: 'action.hover'
-              },
-              '&.Mui-selected': {
-                backgroundColor: 'primary.light',
-                color: 'primary.contrastText',
-                fontWeight: 600,
+        slotProps={{
+          paper: {
+            sx: {
+              minWidth: 160,
+              boxShadow: (theme) => theme.shadows[8],
+              '& .MuiMenuItem-root': {
+                fontSize: '0.875rem',
+                minHeight: 40,
                 '&:hover': {
-                  backgroundColor: 'primary.main'
+                  backgroundColor: 'action.hover'
+                },
+                '&.Mui-selected': {
+                  backgroundColor: 'primary.light',
+                  color: 'primary.contrastText',
+                  fontWeight: 600,
+                  '&:hover': {
+                    backgroundColor: 'primary.main'
+                  }
                 }
               }
             }

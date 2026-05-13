@@ -10,6 +10,8 @@
  * @requires UI Bridge Phase 1 (CSS Variables)
  */
 
+import logger from './logger'
+
 /**
  * Flota Button Component
  * 使用方法：
@@ -262,7 +264,7 @@ class FlotaInput extends HTMLElement {
     return ['value', 'placeholder', 'type', 'disabled', 'error']
   }
 
-  attributeChangedCallback(name, oldValue, newValue) {
+  attributeChangedCallback(name, _oldValue, newValue) {
     if (name === 'value') {
       const input = this.shadowRoot.querySelector('input')
       if (input && input.value !== newValue) {
@@ -613,7 +615,7 @@ export function registerFlotaComponents(windowContext = window) {
     try {
       if (!windowContext.customElements.get(name)) {
         windowContext.customElements.define(name, component)
-        console.log(`[Flota Components] 已注册: ${name}`)
+        logger.log(`[Flota Components] 已注册: ${name}`)
       }
     } catch (error) {
       console.error(`[Flota Components] 注册失败: ${name}`, error)

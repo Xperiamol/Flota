@@ -24,6 +24,16 @@ export const DEFAULT_SHORTCUTS = {
     type: 'global', action: 'quit-app',
   },
 
+  // ── 面板与导航 ──
+  'panels.aiCommandCenter': {
+    id: 'panels.aiCommandCenter', name: '切换问 AI 窗口', description: '在非输入区域打开或关闭悬浮问 AI 窗口',
+    category: 'panels', defaultKey: 'CmdOrCtrl+K', currentKey: 'CmdOrCtrl+K', type: 'local',
+  },
+  'panels.commandPalette': {
+    id: 'panels.commandPalette', name: '打开命令面板', description: '打开命令面板并搜索命令',
+    category: 'panels', defaultKey: 'CmdOrCtrl+Shift+P', currentKey: 'CmdOrCtrl+Shift+P', type: 'local',
+  },
+
   // ── 基础操作 ──
   'basics.undo':      { id: 'basics.undo',      name: '撤销',   category: 'basics', defaultKey: 'Ctrl+Z',       currentKey: 'Ctrl+Z',       type: 'local' },
   'basics.redo':      { id: 'basics.redo',      name: '重做',   category: 'basics', defaultKey: 'Ctrl+Shift+Z', currentKey: 'Ctrl+Shift+Z', type: 'local' },
@@ -53,6 +63,10 @@ export const SHORTCUT_CATEGORIES = {
   global: {
     name: '全局',
     description: '在应用的任何地方都可以使用',
+  },
+  panels: {
+    name: '面板与导航',
+    description: '控制问 AI、命令面板等应用级浮层与入口',
   },
   basics: {
     name: '基础操作',

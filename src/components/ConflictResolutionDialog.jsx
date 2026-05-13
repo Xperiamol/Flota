@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -130,8 +130,10 @@ const ConflictResolutionDialog = ({ open, conflict, onResolve, onCancel }) => {
       onClose={onCancel}
       maxWidth="md"
       fullWidth
-      PaperProps={{
-        sx: { minHeight: '60vh' }
+      slotProps={{
+        paper: {
+          sx: { minHeight: '60vh' }
+        }
       }}
     >
       <DialogTitle>
@@ -153,7 +155,7 @@ const ConflictResolutionDialog = ({ open, conflict, onResolve, onCancel }) => {
 
         <Tabs
           value={selectedTab}
-          onChange={(e, newValue) => setSelectedTab(newValue)}
+          onChange={(_, newValue) => setSelectedTab(newValue)}
           sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
         >
           <Tab

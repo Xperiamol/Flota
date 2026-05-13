@@ -3,7 +3,6 @@
  * 遵循SOLID原则：单一职责、开闭原则、依赖倒置
  */
 
-import { parseShortcut } from './shortcutUtils';
 import logger from './logger';
 
 class ShortcutManager {
@@ -42,11 +41,16 @@ class ShortcutManager {
    */
   async loadShortcuts() {
     try {
+      const { DEFAULT_SHORTCUTS } = await import('./shortcutUtils');
+
       if (window.electronAPI?.settings) {
         const result = await window.electronAPI.settings.get('shortcuts');
         if (result.success && result.data && typeof result.data === 'object' && Object.keys(result.data).length > 0) {
-          this.shortcuts = result.data;
-          logger.log('快捷键配置加载成功:', result.data);
+          const sanitizedShortcuts = Object.fromEntries(
+            Object.entries(result.data).filter(([shortcutId]) => Reflect.has(DEFAULT_SHORTCUTS, shortcutId))
+          );
+          this.shortcuts = { ...DEFAULT_SHORTCUTS, ...sanitizedShortcuts };
+          logger.log('快捷键配置加载成功:', this.shortcuts);
           return;
         } else {
           logger.log('快捷键配置为空或无效，使用默认配置');
@@ -54,17 +58,11 @@ class ShortcutManager {
       } else {
         logger.log('electronAPI不可用，使用默认配置');
       }
-    } catch (error) {
-      console.error('加载快捷键配置时发生错误:', error);
-    }
-    
-    // 统一的默认配置处理
-    try {
-      const { DEFAULT_SHORTCUTS } = await import('./shortcutUtils');
+
       this.shortcuts = DEFAULT_SHORTCUTS;
       logger.log('使用默认快捷键配置');
-    } catch (importError) {
-      console.error('导入默认快捷键配置失败:', importError);
+    } catch (error) {
+      console.error('加载快捷键配置时发生错误:', error);
       this.shortcuts = {};
     }
   }

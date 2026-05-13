@@ -1,0 +1,21 @@
+const AUDIO_MARKDOWN_PATTERN = /!\[[^\]]*\]\((audio\/[^)]+|app:\/\/audio\/[^)]+|[^)]+\.(?:m4a|mp3|wav|ogg|aac|opus|flac|webm)(?:\?[^)]*)?)\)/gi
+
+export const isPlaceholderOnlyPreview = (text = '') => ['【语音】', '【图片】'].includes(String(text || '').trim())
+
+export const stripMarkdownToPreviewText = (content = '') => String(content || '')
+  .replace(AUDIO_MARKDOWN_PATTERN, '【语音】')
+  .replace(/!\[[^\]]*\]\([^)]+\)/g, '【图片】')
+  .replace(/\{color:[^}]+\}(.+?)\{\/color\}/g, '$1')
+  .replace(/==(?:\{[^}]+\})?(.+?)==/g, '$1')
+  .replace(/\+\+(.+?)\+\+/g, '$1')
+  .replace(/<[^>]+>/g, '')
+  .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+  .replace(/^#{1,6}\s+/gm, '')
+  .replace(/^[-*]\s+/gm, '')
+  .replace(/^\d+[.)]\s+/gm, '')
+  .replace(/^>\s+/gm, '')
+  .replace(/```[\s\S]*?```/g, '【代码】')
+  .replace(/[*_~`]/g, '')
+  .replace(/\n{2,}/g, '\n')
+  .trim()
+  .replace(/\n/g, ' ')

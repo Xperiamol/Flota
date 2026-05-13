@@ -191,11 +191,13 @@ const TodoEditDialog = ({ todo, open, onClose, onUpdated }) => {
                   </ListItemIcon>
                   <ListItemText
                     primary={sub.content}
-                    primaryTypographyProps={{
-                      variant: 'body2',
-                      sx: {
-                        textDecoration: sub.is_completed ? 'line-through' : 'none',
-                        opacity: sub.is_completed ? 0.5 : 1
+                    slotProps={{
+                      primary: {
+                        variant: 'body2',
+                        sx: {
+                          textDecoration: sub.is_completed ? 'line-through' : 'none',
+                          opacity: sub.is_completed ? 0.5 : 1
+                        }
                       }
                     }}
                   />

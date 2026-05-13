@@ -1269,7 +1269,7 @@ class PluginManager extends EventEmitter {
 						this.logger.info('[PluginManager] 收到创建笔记请求', { payload })
 						
 						const noteData = {
-							title: payload.title || '新笔记',
+							title: String(payload.title || '').trim(),
 							content: payload.content || '',
 							category: payload.category || '',
 							tags: payload.tags || '',

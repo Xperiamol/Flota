@@ -35,7 +35,7 @@ import {
   CleaningServices as CleanIcon,
   Timeline as TimelineIcon
 } from '@mui/icons-material';
-import { emptyStateSx, scrollbar, settingsFieldGroupSx, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../styles/commonStyles';
+import { emptyStateSx, settingsFieldGroupSx, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../styles/commonStyles';
 
 // ─── 分层配色 ───
 const LAYER_COLORS = {
@@ -439,8 +439,7 @@ const Mem0Settings = () => {
               <Box sx={(theme) => ({
                 maxHeight: 280, overflowY: 'auto',
                 ...settingsFieldGroupSx(theme),
-                p: 0,
-                ...scrollbar.auto
+                p: 0
               })}>
                 <List dense disablePadding>
                   {searchResults.map((memory) => (
@@ -531,8 +530,7 @@ const Mem0Settings = () => {
               <Box sx={(theme) => ({
                 maxHeight: 400, overflowY: 'auto',
                 ...settingsFieldGroupSx(theme),
-                p: 0,
-                ...scrollbar.auto
+                p: 0
               })}>
                 <List dense disablePadding>
                   {memories.map((memory) => (

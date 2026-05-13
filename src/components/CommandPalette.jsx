@@ -1,21 +1,17 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import {
-  Dialog,
-  DialogContent,
-  TextField,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemText,
-  ListItemIcon,
   Box,
-  Typography,
   Chip,
-  Paper,
-  InputAdornment,
+  IconButton,
+  InputBase,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  Typography,
   alpha
 } from '@mui/material'
 import {
+  Close as CloseIcon,
   Search as SearchIcon,
   Extension as ExtensionIcon,
   NoteAdd as NoteAddIcon,
@@ -28,6 +24,33 @@ import {
 import { useStore } from '../store/useStore'
 import { executePluginCommand } from '../api/pluginAPI'
 import { getPluginCommandIcon } from '../utils/pluginCommandUtils.jsx'
+import FloatingGlassSurface from './FloatingGlassSurface'
+import shortcutManager from '../utils/ShortcutManager'
+
+const PALETTE_TOP_OFFSET = 84
+const IS_MAC =
+  typeof navigator !== 'undefined' &&
+  String(
+    navigator.userAgentData?.platform ||
+    Reflect.get(navigator, 'platform') ||
+    ''
+  ).toLowerCase().includes('mac')
+
+const CATEGORY_ORDER = ['笔记', '视图', '系统', '插件']
+
+const formatShortcutDisplay = (shortcut) => {
+  if (!shortcut) return ''
+
+  return shortcut
+    .replace(/CmdOrCtrl/g, IS_MAC ? '⌘' : 'Ctrl')
+    .replace(/Command/g, '⌘')
+    .replace(/Cmd/g, '⌘')
+    .replace(/Ctrl/g, 'Ctrl')
+    .replace(/Alt/g, IS_MAC ? '⌥' : 'Alt')
+    .replace(/Shift/g, IS_MAC ? '⇧' : 'Shift')
+    .replace(/Meta/g, IS_MAC ? '⌘' : 'Win')
+    .replace(/\+/g, IS_MAC ? '' : ' + ')
+}
 
 /**
  * 命令面板组件
@@ -36,6 +59,7 @@ import { getPluginCommandIcon } from '../utils/pluginCommandUtils.jsx'
 const CommandPalette = ({ open, onClose }) => {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [shortcutMap, setShortcutMap] = useState({})
   const inputRef = useRef(null)
   const listRef = useRef(null)
   
@@ -162,6 +186,48 @@ const CommandPalette = ({ open, onClose }) => {
     })
   }, [allCommands, searchQuery])
 
+  const indexedSections = useMemo(() => {
+    const grouped = filteredCommands.reduce((acc, cmd) => {
+      const key = cmd.category || '其他'
+      if (!acc[key]) acc[key] = []
+      acc[key].push(cmd)
+      return acc
+    }, {})
+
+    const orderedKeys = [
+      ...CATEGORY_ORDER.filter((key) => grouped[key]?.length),
+      ...Object.keys(grouped).filter((key) => !CATEGORY_ORDER.includes(key)).sort()
+    ]
+
+    let globalIndex = 0
+    return orderedKeys.map((key) => {
+      const items = grouped[key].map((cmd) => ({
+        ...cmd,
+        globalIndex: globalIndex++
+      }))
+      return { key, items }
+    })
+  }, [filteredCommands])
+
+  useEffect(() => {
+    let active = true
+
+    const loadShortcuts = async () => {
+      await shortcutManager.initialize()
+      if (active) {
+        setShortcutMap({ ...(shortcutManager.shortcuts || {}) })
+      }
+    }
+
+    if (open) {
+      loadShortcuts()
+    }
+
+    return () => {
+      active = false
+    }
+  }, [open])
+
   // 重置状态
   useEffect(() => {
     if (open) {
@@ -223,148 +289,273 @@ const CommandPalette = ({ open, onClose }) => {
     }
   }, [selectedIndex, open])
 
+  const getCommandShortcut = (cmd) => {
+    switch (cmd.id) {
+      case 'new-note':
+        return shortcutMap['global.newNote']?.currentKey || ''
+      case 'view-todos':
+        return shortcutMap['global.newTodo']?.currentKey || ''
+      default:
+        break
+    }
+
+    const pluginShortcut = cmd.plugin?.shortcutBinding?.currentKey ||
+      cmd.plugin?.shortcutBinding?.key ||
+      (typeof cmd.plugin?.shortcut === 'string'
+        ? cmd.plugin.shortcut
+        : cmd.plugin?.shortcut?.current || cmd.plugin?.shortcut?.default || '')
+
+    return pluginShortcut || ''
+  }
+
   return (
-    <Dialog
+    <FloatingGlassSurface
       open={open}
-      onClose={onClose}
-      maxWidth="sm"
-      fullWidth
-      PaperProps={{
-        sx: {
-          borderRadius: 2,
-          maxHeight: '70vh',
-          bgcolor: 'background.paper'
-        }
-      }}
-      TransitionProps={{
-        timeout: 200
-      }}
+      layer="selectionPanel"
+      ariaLabel="命令面板"
+      position={{ y: PALETTE_TOP_OFFSET }}
+      width="min(720px, calc(100vw - 32px))"
+      maxWidth="calc(100vw - 32px)"
+      maxHeight="min(640px, calc(100vh - 120px))"
+      pointerPassthrough={false}
+      onClickAway={onClose}
+      clickAwayDisabled={!open}
+      sx={{ left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column' }}
     >
-      <DialogContent sx={{ p: 0 }}>
-        <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
-          <TextField
+      <Box
+        sx={(theme) => ({
+          px: 1.5,
+          py: 0.9,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          boxShadow: `inset 0 -1px 0 ${alpha(theme.palette.common.white, theme.palette.mode === 'dark' ? 0.03 : 0.36)}`,
+          bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.09 : 0.1)
+        })}
+      >
+        <SearchIcon sx={{ fontSize: 17, color: 'primary.main' }} />
+        <Typography sx={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>命令面板</Typography>
+        <Chip
+          size="small"
+          label={searchQuery.trim() ? '搜索结果' : '全部命令'}
+          sx={(theme) => ({
+            height: 22,
+            fontSize: 11,
+            borderRadius: 1,
+            bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.08 : 0.18),
+            boxShadow: `inset 0 0 0 1px ${alpha(theme.palette.common.white, theme.palette.mode === 'dark' ? 0.035 : 0.32)}`,
+            borderColor: 'transparent'
+          })}
+        />
+        <Box sx={{ flex: 1 }} />
+        <Chip
+          size="small"
+          label={`${filteredCommands.length} 个命令`}
+          sx={(theme) => ({
+            height: 22,
+            fontSize: 11,
+            borderRadius: 1,
+            bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.1),
+            color: 'primary.main',
+            borderColor: 'transparent'
+          })}
+        />
+        <IconButton
+          size="small"
+          onClick={onClose}
+          aria-label="关闭命令面板"
+          sx={(theme) => ({
+            width: 26,
+            height: 26,
+            borderRadius: 1,
+            color: 'text.secondary',
+            '&:hover': {
+              color: 'text.primary',
+              bgcolor: alpha(theme.palette.text.primary, 0.06)
+            }
+          })}
+        >
+          <CloseIcon sx={{ fontSize: 16 }} />
+        </IconButton>
+      </Box>
+
+      <Box sx={{ px: 1.5, py: 1.15 }}>
+        <Box
+          sx={(theme) => ({
+            px: 1.25,
+            py: 0.95,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            borderRadius: 1.5,
+            bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.18 : 0.34),
+            boxShadow: `inset 0 0 0 1px ${alpha(theme.palette.common.white, theme.palette.mode === 'dark' ? 0.04 : 0.42)}`
+          })}
+        >
+          <SearchIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+          <InputBase
             inputRef={inputRef}
-            fullWidth
-            placeholder="搜索命令..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="搜索命令、视图或插件动作..."
             aria-label="搜索命令"
-            variant="outlined"
-            size="small"
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon color="action" />
-                </InputAdornment>
-              )
-            }}
             sx={{
-              '& .MuiOutlinedInput-root': {
-                bgcolor: alpha('#000', 0.02),
-                '&:hover': {
-                  bgcolor: alpha('#000', 0.04)
-                },
-                '&.Mui-focused': {
-                  bgcolor: 'background.paper'
-                }
+              flex: 1,
+              fontSize: 14,
+              '& input::placeholder': {
+                opacity: 1,
+                color: 'text.secondary'
               }
             }}
           />
+          <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+            Esc
+          </Typography>
         </Box>
+      </Box>
 
-        <List
-          ref={listRef}
-          sx={{
-            maxHeight: 'calc(70vh - 100px)',
-            overflow: 'auto',
-            py: 1
-          }}
-        >
-          {filteredCommands.length === 0 ? (
-            <Box sx={{ py: 8, textAlign: 'center' }}>
-              <InfoIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 2 }} />
-              <Typography variant="body2" color="text.secondary">
-                没有找到匹配的命令
-              </Typography>
-            </Box>
-          ) : (
-            filteredCommands.map((cmd, index) => (
-              <ListItem
-                key={cmd.id}
-                data-index={index}
-                disablePadding
+      <Box
+        ref={listRef}
+        sx={(theme) => ({
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          px: 1,
+          pb: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 0.75,
+          bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.03 : 0.045)
+        })}
+      >
+        {filteredCommands.length === 0 ? (
+          <Box sx={{ py: 8, textAlign: 'center' }}>
+            <InfoIcon sx={{ fontSize: 42, color: 'text.disabled', mb: 1.5 }} />
+            <Typography variant="body2" color="text.secondary">
+              没有找到匹配的命令
+            </Typography>
+            <Typography variant="caption" color="text.disabled">
+              试试搜索视图、系统动作或插件名称
+            </Typography>
+          </Box>
+        ) : (
+          indexedSections.map((section) => (
+            <Box key={section.key} sx={{ display: 'flex', flexDirection: 'column', gap: 0.6 }}>
+              <Box
                 sx={{
-                  bgcolor: selectedIndex === index ? alpha('#1976d2', 0.08) : 'transparent',
-                  '&:hover': {
-                    bgcolor: alpha('#1976d2', 0.04)
-                  }
+                  px: 0.6,
+                  pt: 0.5,
+                  pb: 0.15,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  color: 'text.secondary'
                 }}
               >
-                <ListItemButton
-                  onClick={() => cmd.action()}
-                  selected={selectedIndex === index}
-                  sx={{
-                    py: 1.5,
-                    px: 2
-                  }}
-                >
-                  <ListItemIcon sx={{ minWidth: 40 }}>
-                    {cmd.icon}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Typography variant="body1">
+                <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  {section.key}
+                </Typography>
+                <Typography variant="caption" color="text.disabled">
+                  {section.items.length}
+                </Typography>
+              </Box>
+
+              {section.items.map((cmd) => {
+                const shortcut = getCommandShortcut(cmd)
+                const selected = selectedIndex === cmd.globalIndex
+
+                return (
+                  <ListItemButton
+                    key={cmd.id}
+                    data-index={cmd.globalIndex}
+                    onClick={() => cmd.action()}
+                    onMouseEnter={() => setSelectedIndex(cmd.globalIndex)}
+                    selected={selected}
+                    sx={(theme) => ({
+                      px: 1.25,
+                      py: 1,
+                      borderRadius: 1.5,
+                      alignItems: 'center',
+                      gap: 0.6,
+                      bgcolor: selected
+                        ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.09)
+                        : alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.08 : 0.18),
+                      boxShadow: selected
+                        ? `inset 0 0 0 1px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.26 : 0.16)}`
+                        : `inset 0 0 0 1px ${alpha(theme.palette.common.white, theme.palette.mode === 'dark' ? 0.03 : 0.28)}`,
+                      '&:hover': {
+                        bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.18 : 0.1)
+                      }
+                    })}
+                  >
+                    <ListItemIcon sx={{ minWidth: 28, color: selected ? 'primary.main' : 'text.secondary' }}>
+                      {cmd.icon}
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={(
+                        <Typography sx={{ fontSize: 13.5, fontWeight: 600, minWidth: 0 }} noWrap>
                           {cmd.title}
                         </Typography>
-                        {cmd.category && (
-                          <Chip
-                            label={cmd.category}
-                            size="small"
-                            sx={{
-                              height: 20,
-                              fontSize: '0.7rem',
-                              bgcolor: alpha('#1976d2', 0.1),
-                              color: 'primary.main'
-                            }}
-                          />
-                        )}
-                      </Box>
-                    }
-                    secondary={cmd.description}
-                    secondaryTypographyProps={{
-                      variant: 'body2',
-                      color: 'text.secondary',
-                      sx: { mt: 0.5 }
-                    }}
-                  />
-                </ListItemButton>
-              </ListItem>
-            ))
-          )}
-        </List>
+                      )}
+                      secondary={cmd.description}
+                      sx={{ minWidth: 0, my: 0 }}
+                      slotProps={{
+                        secondary: {
+                          variant: 'body2',
+                          color: 'text.secondary',
+                          sx: { mt: 0.2, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }
+                        }
+                      }}
+                    />
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, pl: 1, flexShrink: 0 }}>
+                      {shortcut ? (
+                        <Chip
+                          label={formatShortcutDisplay(shortcut)}
+                          size="small"
+                          sx={(theme) => ({
+                            height: 22,
+                            fontSize: 10.5,
+                            borderRadius: 1,
+                            bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.16 : 0.28),
+                            color: 'text.secondary',
+                            borderColor: 'transparent',
+                            '& .MuiChip-label': { px: 0.8, letterSpacing: IS_MAC ? '0.02em' : 0 }
+                          })}
+                        />
+                      ) : (
+                        <Typography variant="caption" color="text.disabled" sx={{ whiteSpace: 'nowrap' }}>
+                          Enter
+                        </Typography>
+                      )}
+                    </Box>
+                  </ListItemButton>
+                )
+              })}
+            </Box>
+          ))
+        )}
+      </Box>
 
-        <Box
-          sx={{
-            px: 2,
-            py: 1,
-            borderTop: 1,
-            borderColor: 'divider',
-            bgcolor: alpha('#000', 0.02),
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center'
-          }}
-        >
-          <Typography variant="caption" color="text.secondary">
-            ↑↓ 导航 · Enter 执行 · Esc 关闭
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {filteredCommands.length} 个命令
-          </Typography>
-        </Box>
-      </DialogContent>
-    </Dialog>
+      <Box
+        sx={(theme) => ({
+          px: 1.5,
+          py: 0.95,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 2,
+          boxShadow: `inset 0 1px 0 ${alpha(theme.palette.common.white, theme.palette.mode === 'dark' ? 0.03 : 0.34)}`,
+          bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.08 : 0.1)
+        })}
+      >
+        <Typography variant="caption" color="text.secondary">
+          ↑↓ 导航 · Enter 执行 · Esc 关闭
+        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+          支持内置与插件命令
+        </Typography>
+      </Box>
+    </FloatingGlassSurface>
   )
 }
 

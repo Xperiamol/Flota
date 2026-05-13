@@ -1,4 +1,4 @@
-import React, { useEffect, useState, lazy, Suspense, useCallback } from 'react'
+import React, { useEffect, useState, lazy, Suspense, useCallback, useRef } from 'react'
 import ReactDOM from 'react-dom/client'
 import * as MaterialUI from '@mui/material'
 import * as MaterialIcons from '@mui/icons-material'
@@ -43,6 +43,7 @@ import logger from './utils/logger'
 // 懒加载非首屏组件，减少初始bundle大小
 const TodoView = lazy(() => import('./components/TodoView'))
 const CalendarView = lazy(() => import('./components/CalendarView'))
+const TimelineView = lazy(() => import('./components/TimelineView'))
 const Settings = lazy(() => import('./components/Settings'))
 const PluginStore = lazy(() => import('./components/PluginStore'))
 const SecondarySidebar = lazy(() => import('./components/SecondarySidebar'))
@@ -64,17 +65,19 @@ import { subscribePluginEvents, subscribePluginUiRequests, subscribePluginWindow
 import { injectUIBridge } from './utils/pluginUIBridge'
 import themeManager from './utils/pluginThemeManager'
 import { PluginNotificationListener } from './utils/PluginNotificationListener'
+import shortcutManager from './utils/ShortcutManager'
 
 function App() {
-  const { theme, primaryColor, loadNotes, currentView, initializeSettings, setCurrentView, createNote, batchDeleteNotes, batchDeleteTodos, batchCompleteTodos, batchRestoreNotes, batchPermanentDeleteNotes, getAllTags, batchSetTags, selectedNoteId, setSelectedNoteId, updateNoteInList, aiDeleteConv, maskOpacity, christmasMode, backgroundPattern, patternOpacity, wallpaperPath } = useStore()
+  const { theme, primaryColor, loadNotes, currentView, initializeSettings, setCurrentView, createNote, batchDeleteNotes, batchDeleteTodos, batchCompleteTodos, batchRestoreNotes, batchPermanentDeleteNotes, getAllTags, batchSetTags, selectedNoteId, setSelectedNoteId, updateNoteInList, aiDeleteConv, aiCommandCenterEnabled, aiCommandCenterOpen, setAiCommandCenterOpen, maskOpacity, christmasMode, backgroundPattern, patternOpacity, wallpaperPath } = useStore()
   const refreshPluginCommands = useStore((state) => state.refreshPluginCommands)
   const addPluginCommand = useStore((state) => state.addPluginCommand)
   const removePluginCommand = useStore((state) => state.removePluginCommand)
+  const setAppVersion = useStore((state) => state.setAppVersion)
+  const checkForUpdates = useStore((state) => state.checkForUpdates)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [secondarySidebarOpen, setSecondarySidebarOpen] = useState(true)
   const [showDeleted, setShowDeleted] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
-  const [aiCommandCenterOpen, setAiCommandCenterOpen] = useState(false)
 
   // TODO视图相关状态
   const [todoViewMode, setTodoViewMode] = useState('quadrant')
@@ -134,6 +137,7 @@ function App() {
   const [todoRefreshTrigger, setTodoRefreshTrigger] = useState(0)
   const [calendarRefreshTrigger, setCalendarRefreshTrigger] = useState(0)
   const [hasOpenedAI, setHasOpenedAI] = useState(false)
+  const appUpdateCheckedRef = useRef(false)
   const handleTodoDialogClose = () => setSelectedTodo(null)
   const handleTodoUpdated = () => {
     setTodoRefreshTrigger(prev => prev + 1)
@@ -303,28 +307,64 @@ function App() {
 
   // 监听命令面板快捷键
   useEffect(() => {
-    const isEditableTarget = (target) => Boolean(
-      target?.closest?.('input, textarea, [contenteditable="true"], .ProseMirror')
-    )
+    let mounted = true
+
+    const isShortcutMatch = (event, shortcut) => {
+      if (!shortcut) return false
+
+      const parts = shortcut.split('+').map((part) => part.trim()).filter(Boolean)
+      if (parts.length === 0) return false
+
+      const mainKey = parts[parts.length - 1].toLowerCase()
+      const modifiers = parts.slice(0, -1).map((part) => part.toLowerCase())
+      const wantsCtrlOrMeta = modifiers.includes('cmdorctrl')
+      const wantsCtrl = modifiers.includes('ctrl') || modifiers.includes('control')
+      const wantsMeta = modifiers.includes('cmd') || modifiers.includes('command') || modifiers.includes('meta')
+      const wantsAlt = modifiers.includes('alt')
+      const wantsShift = modifiers.includes('shift')
+
+      if (wantsCtrlOrMeta) {
+        if (!(event.ctrlKey || event.metaKey)) return false
+      } else {
+        if (wantsCtrl !== event.ctrlKey) return false
+        if (wantsMeta !== event.metaKey) return false
+      }
+      if (wantsAlt !== event.altKey) return false
+      if (wantsShift !== event.shiftKey) return false
+
+      return event.key.toLowerCase() === mainKey
+    }
 
     const handleKeyDown = (e) => {
-      const key = e.key.toLowerCase()
-      const isMod = e.ctrlKey || e.metaKey
-      if (isMod && e.shiftKey && key === 'k') {
+      const shortcuts = shortcutManager.shortcuts || {}
+      const aiShortcut = shortcuts['panels.aiCommandCenter']?.currentKey
+      const commandPaletteShortcut = shortcuts['panels.commandPalette']?.currentKey
+
+      if (
+        aiCommandCenterEnabled &&
+        isShortcutMatch(e, aiShortcut)
+      ) {
         e.preventDefault()
-        setAiCommandCenterOpen(true)
-      } else if (isMod && !e.shiftKey && key === 'k' && !isEditableTarget(e.target)) {
+        setAiCommandCenterOpen(!aiCommandCenterOpen)
+      } else if (isShortcutMatch(e, commandPaletteShortcut)) {
         e.preventDefault()
-        setAiCommandCenterOpen(true)
-      } else if (isMod && e.shiftKey && key === 'p') {
-        e.preventDefault()
-        setCommandPaletteOpen(true)
+        setCommandPaletteOpen((open) => !open)
       }
     }
 
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
+    const initializeShortcuts = async () => {
+      await shortcutManager.initialize()
+      if (!mounted) return
+      window.addEventListener('keydown', handleKeyDown)
+    }
+
+    initializeShortcuts()
+
+    return () => {
+      mounted = false
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [aiCommandCenterEnabled, aiCommandCenterOpen])
 
   useEffect(() => {
     const unsubscribe = subscribePluginEvents((event) => {
@@ -521,6 +561,17 @@ function App() {
       // 初始化i18n系统
       const { language } = useStore.getState()
       initI18n(language)
+
+      if (!appUpdateCheckedRef.current) {
+        appUpdateCheckedRef.current = true
+        try {
+          const version = await window.electronAPI?.system?.getVersion?.()
+          if (version) setAppVersion(version)
+        } catch (error) {
+          logger.warn('[App] 获取应用版本失败:', error)
+        }
+        checkForUpdates({ silent: true })
+      }
     }
 
     initApp()
@@ -665,7 +716,7 @@ function App() {
     return () => {
       unsubscribe && unsubscribe()
     }
-  }, [])
+  }, [checkForUpdates, initializeSettings, loadNotes, setAppVersion])
 
   // 在插件窗口打开时注入 UI Bridge 和依赖
   useEffect(() => {
@@ -1047,6 +1098,7 @@ function App() {
                       />
                     )}
                     {currentView === 'calendar' && <CalendarView currentDate={calendarCurrentDate} onDateChange={setCalendarCurrentDate} onTodoSelect={setSelectedTodo} selectedDate={selectedDate} onSelectedDateChange={setSelectedDate} refreshToken={calendarRefreshTrigger} showCompleted={calendarShowCompleted} onShowCompletedChange={setCalendarShowCompleted} onTodoUpdated={handleTodoUpdated} viewMode={calendarViewMode} />}
+                    {currentView === 'timeline' && <TimelineView onTodoUpdated={handleTodoUpdated} />}
                     {currentView === 'settings' && <Settings />}
                     {currentView === 'plugins' && (
                       <Box sx={{ p: 3, height: '100%', boxSizing: 'border-box' }}>
@@ -1205,7 +1257,7 @@ function App() {
         />
 
         <AICommandCenter
-          open={aiCommandCenterOpen}
+          open={aiCommandCenterEnabled && aiCommandCenterOpen}
           onClose={() => setAiCommandCenterOpen(false)}
         />
 

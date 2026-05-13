@@ -19,7 +19,6 @@ import {
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useStore } from '../store/useStore'
-import { scrollbar } from '../styles/commonStyles'
 import { buildContextPackageFromNotes, getContextSources, truncateText } from '../utils/aiContextUtils'
 
 // ─── Markdown 渲染（react-markdown + remark-gfm） ───
@@ -46,13 +45,12 @@ const mdComponents = {
       overflow: 'auto', fontSize: '0.82rem', fontFamily: 'monospace',
       lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
       userSelect: 'text',
-      ...scrollbar.auto,
     }}>
       {children}
     </Box>
   ),
   table: ({ children }) => (
-    <Box sx={{ overflowX: 'auto', my: 1, ...scrollbar.auto }}>
+    <Box sx={{ overflowX: 'auto', my: 1 }}>
       <Box component="table" sx={{ borderCollapse: 'collapse', width: '100%', fontSize: '0.85rem' }}>{children}</Box>
     </Box>
   ),
@@ -274,7 +272,7 @@ export default function AIChatView({ onTodoUpdated }) {
     setStreamContent('')
     setToolCalls([])
     setInput('')
-  }, [aiActiveConvId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [aiActiveConvId, aiConversations])
 
   // 自动滚动到底部
   const scrollToBottom = useCallback(() => {
@@ -626,7 +624,6 @@ export default function AIChatView({ onTodoUpdated }) {
       <Box ref={scrollRef} sx={{
         flex: 1, overflow: 'auto', px: 3, py: 2,
         maxWidth: 900, mx: 'auto', width: '100%',
-        ...scrollbar.auto,
         scrollbarGutter: 'stable',
       }}>
         {/* 空状态 */}

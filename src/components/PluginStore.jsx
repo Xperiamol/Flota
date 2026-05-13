@@ -547,12 +547,14 @@ const PluginStore = () => {
 					onChange={handleSearchChange}
 					fullWidth
 					aria-label="搜索插件"
-					InputProps={{
-						startAdornment: (
-							<InputAdornment position="start">
-								<SearchIcon fontSize="small" />
-							</InputAdornment>
-						)
+					slotProps={{
+						input: {
+							startAdornment: (
+								<InputAdornment position="start">
+									<SearchIcon fontSize="small" />
+								</InputAdornment>
+							)
+						}
 					}}
 				/>
 				<Tooltip title="刷新插件列表">

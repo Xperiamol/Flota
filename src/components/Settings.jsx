@@ -19,6 +19,7 @@ import {
     LinearProgress,
     Chip,
     Tooltip,
+    IconButton,
     Portal,
     Slider,
     useTheme
@@ -38,7 +39,10 @@ import {
     Visibility as VisibilityIcon,
     Language as LanguageIcon,
     Image as ImageIcon,
-    ContentCopy as ContentCopyIcon
+    ContentCopy as ContentCopyIcon,
+    Check as CheckIcon,
+    ArrowOutward as ArrowOutwardIcon,
+    Autorenew as AutorenewIcon
 } from '@mui/icons-material';
 import { useStore } from '../store/useStore';
 import ShortcutInput from './ShortcutInput';
@@ -48,6 +52,7 @@ import STTSettings from './STTSettings';
 import Mem0Settings from './Mem0Settings';
 import ProxySettings from './ProxySettings';
 import MCPSettings from './MCPSettings';
+import UsageWaveCard from './UsageWaveCard';
 import ObsidianImportExport from './ObsidianImportExport/ObsidianImportExport';
 import { SUPPORTED_LANGUAGES, t, initI18n } from '../utils/i18n';
 import {
@@ -61,9 +66,10 @@ import {
 import shortcutManager from '../utils/ShortcutManager';
 import { useError } from './ErrorProvider';
 import { ALL_TOOLBAR_ITEMS, DEFAULT_TOOLBAR_ORDER, DEFAULT_FLOATING_ORDER } from './MarkdownToolbar';
-import { CONTEXT_MENU_ITEM_LABELS, DEFAULT_CONTEXT_MENU_ITEMS } from './WYSIWYGEditor';
+import { ALL_CONTEXT_MENU_ITEMS, CONTEXT_MENU_ITEM_LABELS, DEFAULT_CONTEXT_MENU_ITEMS } from './WYSIWYGEditor';
 import { PATTERN_STYLES, hexToRgb } from '../utils/patternStyles';
 import { sectionTitleSx, sectionDescriptionSx, settingsRowSx, settingsSectionSx } from '../styles/commonStyles';
+import logger from '../utils/logger';
 
 function TabPanel({ children, value, index, ...other }) {
     return (
@@ -319,7 +325,7 @@ function EditorSettingsPanel({ aiPanelMode, setAiPanelMode, toolbarOrder, setToo
     const toggleContextItem = (id) => {
         const next = enabledContextItems.includes(id)
             ? enabledContextItems.filter(item => item !== id)
-            : DEFAULT_CONTEXT_MENU_ITEMS.filter(item => item === id || enabledContextItems.includes(item))
+            : ALL_CONTEXT_MENU_ITEMS.filter(item => item === id || enabledContextItems.includes(item))
         const isDefault = JSON.stringify(next) === JSON.stringify(DEFAULT_CONTEXT_MENU_ITEMS)
         const nextItems = isDefault ? null : next
         setContextMenuItems(nextItems)
@@ -439,7 +445,7 @@ function EditorSettingsPanel({ aiPanelMode, setAiPanelMode, toolbarOrder, setToo
                 🖱️ 右键菜单
             </Typography>
             <Box sx={zoneSx('context')}>
-                {DEFAULT_CONTEXT_MENU_ITEMS.map(id => {
+                {ALL_CONTEXT_MENU_ITEMS.map(id => {
                     const enabled = enabledContextItems.includes(id)
                     return (
                         <Chip
@@ -455,7 +461,7 @@ function EditorSettingsPanel({ aiPanelMode, setAiPanelMode, toolbarOrder, setToo
                 })}
             </Box>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75, mb: 2 }}>
-                点击启用/隐藏右键菜单项；危险操作只会在对应上下文中显示。
+                默认仅启用高频编辑项；高级块操作可手动开启，且只会在对应上下文中显示。
             </Typography>
 
             {/* ── 工具栏 ── */}
@@ -517,12 +523,44 @@ function cleanSeps(arr) {
     return result
 }
 
+function formatUsageBytes(bytes) {
+    const value = Number(bytes || 0);
+    if (!Number.isFinite(value) || value <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const exponent = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
+    const display = value / (1024 ** exponent);
+    const fractionDigits = display >= 100 || exponent === 0 ? 0 : display >= 10 ? 1 : 2;
+    return `${display.toFixed(fractionDigits)} ${units[exponent]}`;
+}
+
+function formatUsagePercent(ratio) {
+    if (!Number.isFinite(ratio) || ratio < 0) return '--';
+    const percent = ratio * 100;
+    if (percent > 0 && percent < 0.1) return '<0.1%';
+    if (percent < 10) return `${percent.toFixed(1)}%`;
+    return `${Math.round(percent)}%`;
+}
+
+function buildTopUsageSegments(categories = [], limit = 4) {
+    return [...categories]
+        .sort((a, b) => (b.sizeBytes || 0) - (a.sizeBytes || 0))
+        .filter((item) => (item.sizeBytes || 0) > 0)
+        .slice(0, limit)
+        .map((item) => ({
+            label: item.label,
+            value: formatUsageBytes(item.sizeBytes),
+        }));
+}
+
 const Settings = () => {
     const { showError } = useError();
     const muiTheme = useTheme();
     const isDark = muiTheme.palette.mode === 'dark';
     const { theme, setTheme, primaryColor, setPrimaryColor, setUserAvatar, setUserName, titleBarStyle, setTitleBarStyle, editorMode, setEditorMode, language, setLanguage, setDefaultMinibarMode, maskOpacity, setMaskOpacity, christmasMode, setChristmasMode, aiPanelMode, setAiPanelMode, toolbarOrder, setToolbarOrder, floatingPanelItems, setFloatingPanelItems, contextMenuItems, setContextMenuItems, backgroundPattern, setBackgroundPattern, patternOpacity, setPatternOpacity, wallpaperPath, setWallpaperPath } = useStore();
     const settingsTabValue = useStore((state) => state.settingsTabValue);
+    const appVersion = useStore((state) => state.appVersion);
+    const updateInfo = useStore((state) => state.appUpdateInfo);
+    const checkForUpdates = useStore((state) => state.checkForUpdates);
     const [settings, setSettings] = useState({
         autoLaunch: false,
         userAvatar: '',
@@ -537,20 +575,36 @@ const Settings = () => {
     const [importProgress, setImportProgress] = useState(0);
     const [importStatus, setImportStatus] = useState('');
     const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
-    const [appVersion, setAppVersion] = useState('');
     const [appPlatform, setAppPlatform] = useState('unknown');
     const [selectingWallpaper, setSelectingWallpaper] = useState(false);
+    const [localUsage, setLocalUsage] = useState(null);
+    const [localUsageLoading, setLocalUsageLoading] = useState(false);
+    const [localUsageError, setLocalUsageError] = useState('');
 
     useEffect(() => {
         // 加载设置
         loadSettings();
         loadShortcuts();
-        // 动态获取应用版本号
-        const versionRequest = window.electronAPI?.getVersion?.();
-        versionRequest?.then?.(v => setAppVersion(v))?.catch?.(() => {});
         const platformRequest = window.electronAPI?.system?.getPlatform?.();
         platformRequest?.then?.(p => setAppPlatform(p || 'unknown'))?.catch?.(() => {});
+        loadLocalUsage();
     }, []);
+
+    const handleCheckForUpdates = async () => { await checkForUpdates({ silent: false }); };
+
+    const loadLocalUsage = async () => {
+        setLocalUsageLoading(true);
+        try {
+            const data = await window.electronAPI?.system?.getStorageUsage?.();
+            setLocalUsage(data || null);
+            setLocalUsageError('');
+        } catch (error) {
+            console.error('Failed to load local storage usage:', error);
+            setLocalUsageError(error?.message || '本地使用量读取失败');
+        } finally {
+            setLocalUsageLoading(false);
+        }
+    };
 
     const handleCopyDebugInfo = async () => {
         const debugInfo = [
@@ -610,7 +664,6 @@ const Settings = () => {
         try {
             // 如果ShortcutManager已经初始化且有配置，直接使用
             if (shortcutManager.isInitialized && shortcutManager.shortcuts && Object.keys(shortcutManager.shortcuts).length > 0) {
-                console.log('使用已初始化的快捷键配置');
                 setShortcuts(shortcutManager.shortcuts);
                 return;
             }
@@ -884,7 +937,7 @@ const Settings = () => {
                     throw new Error(result.error || '更新快捷键失败');
                 }
 
-                console.log(`快捷键 ${shortcutId} 已成功更新并保存`);
+                logger.log(`快捷键 ${shortcutId} 已成功更新并保存`);
             }
         } catch (error) {
             console.error(`保存快捷键 ${shortcutId} 失败:`, error);
@@ -1594,6 +1647,29 @@ const Settings = () => {
                 <TabPanel value={settingsTabValue} index={8}>
                     <Paper elevation={0} sx={settingsSurfaceSx}>
                     <Box sx={{ mb: 3 }}>
+                        <UsageWaveCard
+                            title="本地使用量"
+                            subtitle="统计 Flota 在当前设备上的本地占用，便于判断是否需要清理图片、音频和插件数据。"
+                            valueLabel={formatUsageBytes(localUsage?.totalBytes)}
+                            metaLabel={
+                                localUsage?.diskTotalBytes
+                                    ? `占所在磁盘 ${formatUsagePercent(localUsage.usageRatio)} · 可用 ${formatUsageBytes(localUsage.diskAvailableBytes)}`
+                                    : `数据目录：${localUsage?.userDataPath || '读取中'}`
+                            }
+                            percent={Number.isFinite(localUsage?.usageRatio) ? localUsage.usageRatio * 100 : null}
+                            percentLabel={formatUsagePercent(localUsage?.usageRatio)}
+                            segments={buildTopUsageSegments(localUsage?.categories)}
+                            hint="统计范围包含数据库、图片与壁纸、音频、插件、同步缓存和日志状态文件。"
+                            loading={localUsageLoading}
+                            error={localUsageError}
+                            onRefresh={loadLocalUsage}
+                            refreshLabel="刷新统计"
+                        />
+                    </Box>
+
+                    <Divider sx={{ my: 3 }} />
+
+                    <Box sx={{ mb: 3 }}>
                         <Typography variant="h6" sx={sectionTitleSx}>
                             本地备份与恢复
                         </Typography>
@@ -1724,9 +1800,40 @@ const Settings = () => {
                                 style={{ maxWidth: '100%', width: 360, borderRadius: 12 }}
                             />
                         </Box>
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 4 }}>
-                            {t('about.version')}{appVersion ? ` ${appVersion}` : ''}
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, mb: 4 }}>
+                            <Typography variant="body2" color="text.secondary">
+                                {t('about.version')}{` v${appVersion || 'unknown'}`}
+                            </Typography>
+                            {updateInfo.checking ? (
+                                <Tooltip title="正在检查更新">
+                                    <span>
+                                        <IconButton size="small" disabled sx={{ color: 'text.secondary' }}>
+                                            <AutorenewIcon sx={{ fontSize: 16, animation: 'spin 1s linear infinite', '@keyframes spin': { from: { transform: 'rotate(0deg)' }, to: { transform: 'rotate(360deg)' } } }} />
+                                        </IconButton>
+                                    </span>
+                                </Tooltip>
+                            ) : updateInfo.hasUpdate ? (
+                                <Tooltip title={`发现新版本 v${updateInfo.latestVersion}，点击跳转下载`}>
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => window.electronAPI?.system?.openExternal?.(updateInfo.downloadUrl)}
+                                        sx={{ color: 'warning.main' }}
+                                    >
+                                        <ArrowOutwardIcon sx={{ fontSize: 16 }} />
+                                    </IconButton>
+                                </Tooltip>
+                            ) : (
+                                <Tooltip title={updateInfo.error ? `检查失败，点击重试` : '已是最新版本，点击手动检查更新'}>
+                                    <IconButton
+                                        size="small"
+                                        onClick={handleCheckForUpdates}
+                                        sx={{ color: updateInfo.error ? 'text.secondary' : 'success.main' }}
+                                    >
+                                        <CheckIcon sx={{ fontSize: 16 }} />
+                                    </IconButton>
+                                </Tooltip>
+                            )}
+                        </Box>
 
                         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1.5, flexWrap: 'wrap' }}>
                             <Button

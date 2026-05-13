@@ -37,7 +37,8 @@ import {
   InsertLink as WikiLinkIcon,
   DataObject as CodeBlockIcon,
   Checklist as MeetingTodoIcon,
-  Email as FollowupEmailIcon
+  Email as FollowupEmailIcon,
+  SelectAll as BlockSelectIcon
 } from '@mui/icons-material'
 import ImageUploadButton from './ImageUploadButton'
 import AudioRecordButton from './AudioRecordButton'
@@ -56,6 +57,7 @@ const ALL_TOOLBAR_ITEMS = {
   orderedList:{ group: 'list', label: '有序列表', icon: NumberListIcon, block: '1. ' },
   taskList:   { group: 'list', label: '任务列表', icon: TaskListIcon, block: '- [ ] ' },
   quote:      { group: 'list', label: '引用', icon: QuoteIcon, block: '> ' },
+  blockSelect:{ group: 'list', label: '块多选', icon: BlockSelectIcon, type: 'blockSelect' },
   link:       { group: 'insert', label: '链接', icon: LinkIcon, inline: ['[', '](url)', '链接文本'] },
   table:      { group: 'insert', label: '表格', icon: TableIcon, insert: '| 列1 | 列2 | 列3 |\n|-----|-----|-----|\n| 内容1 | 内容2 | 内容3 |\n' },
   codeBlock:  { group: 'insert', label: '代码块', type: 'codeBlock' },
@@ -79,7 +81,7 @@ const ALL_TOOLBAR_ITEMS = {
 const DEFAULT_TOOLBAR_ORDER = [
   'heading', '|',
   'bold', 'italic', 'strike', 'inlineCode', 'highlight', '|',
-  'bulletList', 'orderedList', 'taskList', 'quote', '|',
+  'bulletList', 'orderedList', 'taskList', 'quote', 'blockSelect', '|',
   'link', 'table', 'codeBlock', 'divider', 'image', 'audio', '|',
   'wikiLink', 'colorText', 'callout', 'clearFormat',
 ]
@@ -171,7 +173,17 @@ function execWYSIWYGCommand(editor, def) {
   }
 }
 
-const MarkdownToolbar = ({ onInsert, onBlockFormat, disabled = false, viewMode, onViewModeChange, editor = null, editorMode = 'markdown' }) => {
+const MarkdownToolbar = ({
+  onInsert,
+  onBlockFormat,
+  disabled = false,
+  viewMode,
+  onViewModeChange,
+  editor = null,
+  editorMode = 'markdown',
+  blockSelectActive = false,
+  onToggleBlockSelect,
+}) => {
   const [calloutAnchor, setCalloutAnchor] = React.useState(null)
 
   const [colorAnchor, setColorAnchor] = React.useState(null)
@@ -249,6 +261,10 @@ const MarkdownToolbar = ({ onInsert, onBlockFormat, disabled = false, viewMode, 
     setCalloutAnchor(null)
   }
   const handleColorSelect = (colorName) => { insertText(`@${colorName}{`, '}', '文本'); setColorAnchor(null) }
+  const toggleAnchor = (setAnchor) => (event) => {
+    const anchor = event.currentTarget
+    setAnchor((current) => (current ? null : anchor))
+  }
 
   // Shared styles
   const btnSx = {
@@ -258,11 +274,11 @@ const MarkdownToolbar = ({ onInsert, onBlockFormat, disabled = false, viewMode, 
     '& .MuiSvgIcon-root': { fontSize: 18 },
   }
   const menuBtnSx = { ...btnSx, width: 'auto', px: 0.5, gap: 0 }
-  const Sep = () => <Box sx={{ width: '1px', height: 20, mx: 0.5, bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }} />
+  const Sep = ({ id }) => <Box key={id} sx={{ width: '1px', height: 20, mx: 0.5, bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }} />
 
   // 渲染单个工具栏项
-  const renderItem = (id) => {
-    if (id === '|') return <Sep key={`sep-${Math.random()}`} />
+  const renderItem = (id, index) => {
+    if (id === '|') return <Sep key={`sep-${index}`} id={`sep-${index}`} />
     const def = ALL_TOOLBAR_ITEMS[id]
     if (!def) return null
     // AI 动作项不渲染到工具栏
@@ -316,7 +332,7 @@ const MarkdownToolbar = ({ onInsert, onBlockFormat, disabled = false, viewMode, 
         return (
           <React.Fragment key={id}>
             <Tooltip title={activeHeadingLevel ? `当前：标题 ${activeHeadingLevel}` : '标题'} placement="bottom">
-              <IconButton size="small" disabled={disabled} onClick={(e) => setHeadingAnchor(e.currentTarget)}
+              <IconButton size="small" disabled={disabled} onClick={toggleAnchor(setHeadingAnchor)}
                 sx={{ ...menuBtnSx, ...(activeHeadingLevel ? activeSx : {}) }}>
                 <Box component="span" sx={{ fontSize: 13, fontWeight: 700, lineHeight: 1, fontFamily: 'inherit' }}>
                   {activeHeadingLevel ? `H${activeHeadingLevel}` : 'H'}
@@ -332,7 +348,7 @@ const MarkdownToolbar = ({ onInsert, onBlockFormat, disabled = false, viewMode, 
                 { level: 0, label: '正文', sx: { fontSize: '0.85rem', fontWeight: 400 } }
               ].map(h => (
                 <MenuItem key={h.level} onClick={() => { applyBlock(h.level === 0 ? '' : '#'.repeat(h.level) + ' '); setHeadingAnchor(null) }}>
-                  <ListItemText primaryTypographyProps={{ sx: h.sx }}>{h.label}</ListItemText>
+                  <ListItemText slotProps={{ primary: { sx: h.sx } }}>{h.label}</ListItemText>
                 </MenuItem>
               ))}
             </Menu>
@@ -349,6 +365,15 @@ const MarkdownToolbar = ({ onInsert, onBlockFormat, disabled = false, viewMode, 
           </Tooltip>
         )
       }
+      case 'blockSelect':
+        if (editorMode !== 'wysiwyg') return null
+        return (
+          <Tooltip key={id} title={blockSelectActive ? '退出块多选' : '块多选'} placement="bottom">
+            <span><IconButton size="small" disabled={disabled || !editor} onClick={onToggleBlockSelect} sx={{ ...btnSx, ...(blockSelectActive ? activeSx : {}) }}>
+              <BlockSelectIcon />
+            </IconButton></span>
+          </Tooltip>
+        )
       case 'image':
         return <ImageUploadButton key={id} onImageInsert={(text, a, b) => insertText(text, a, b)} disabled={disabled} sx={btnSx} />
       case 'audio':
@@ -384,7 +409,7 @@ const MarkdownToolbar = ({ onInsert, onBlockFormat, disabled = false, viewMode, 
       case 'colorMenu':
         return (
           <Tooltip key={id} title="彩色文本" placement="bottom">
-            <span><IconButton size="small" disabled={disabled} onClick={(e) => setColorAnchor(e.currentTarget)} sx={menuBtnSx}>
+            <span><IconButton size="small" disabled={disabled} onClick={toggleAnchor(setColorAnchor)} sx={menuBtnSx}>
               <ColorIcon /><DropdownIcon sx={{ fontSize: '14px !important', ml: -0.3 }} />
             </IconButton></span>
           </Tooltip>
@@ -392,7 +417,7 @@ const MarkdownToolbar = ({ onInsert, onBlockFormat, disabled = false, viewMode, 
       case 'calloutMenu':
         return (
           <Tooltip key={id} title="提示框" placement="bottom">
-            <span><IconButton size="small" disabled={disabled} onClick={(e) => setCalloutAnchor(e.currentTarget)} sx={menuBtnSx}>
+            <span><IconButton size="small" disabled={disabled} onClick={toggleAnchor(setCalloutAnchor)} sx={menuBtnSx}>
               <CalloutIcon /><DropdownIcon sx={{ fontSize: '14px !important', ml: -0.3 }} />
             </IconButton></span>
           </Tooltip>
@@ -436,7 +461,7 @@ const MarkdownToolbar = ({ onInsert, onBlockFormat, disabled = false, viewMode, 
         flexWrap: 'wrap', minHeight: 40,
       }}
     >
-      {effectiveOrder.map((id, i) => renderItem(id))}
+      {effectiveOrder.map((id, index) => renderItem(id, index))}
 
       {/* ── 编辑/预览模式切换 ── */}
       {viewMode && onViewModeChange && (

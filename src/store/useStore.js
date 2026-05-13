@@ -17,12 +17,35 @@ import {
 import { fetchInstalledPlugins } from '../api/pluginAPI'
 import { normalizeTags } from '../utils/tagUtils'
 import { searchNotesAPI } from '../api/searchAPI'
+import logger from '../utils/logger'
 
 const IS_MACOS =
     typeof navigator !== 'undefined' &&
     String(navigator.userAgentData?.platform || Reflect.get(navigator, 'platform') || '')
         .toLowerCase()
         .includes('mac')
+
+const DEFAULT_TIMELINE_TYPES = ['note', 'whiteboard', 'todo']
+const DEFAULT_APP_UPDATE_INFO = {
+    checking: false,
+    checked: false,
+    latestVersion: '',
+    downloadUrl: 'https://github.com/Xperiamol/Flota/releases',
+    hasUpdate: false,
+    error: '',
+}
+
+const normalizeTimelineTypes = (types) => {
+    if (!Array.isArray(types) || types.length === 0) return DEFAULT_TIMELINE_TYPES
+    const raw = new Set(types)
+    if (raw.has('note') && raw.has('todo') && raw.has('voice')) return DEFAULT_TIMELINE_TYPES
+
+    const next = []
+    if (raw.has('note') || raw.has('voice')) next.push('note')
+    if (raw.has('whiteboard')) next.push('whiteboard')
+    if (raw.has('todo')) next.push('todo')
+    return next.length ? next : DEFAULT_TIMELINE_TYPES
+}
 
 const useStore = create(
     persist(
@@ -63,8 +86,11 @@ const useStore = create(
                 // AI 聊天对话状态
                 aiConversations: [], // [{id, title, messages, createdAt, updatedAt}]
                 aiActiveConvId: null,
+                aiNoteConversationMap: {},
                 aiMessageMultiSelectRequest: null,
                 aiCommandRequest: null,
+                aiCommandCenterEnabled: true,
+                aiCommandCenterOpen: false,
                 // 工具栏按钮排序（null = 使用默认排序）
                 toolbarOrder: null,
                 // 浮动面板自定义格式项（null = 不显示额外格式项）
@@ -84,9 +110,23 @@ const useStore = create(
 
                 // 设置页面相关状态
                 settingsTabValue: 0, // 设置页面当前选中的标签页
+                appVersion: '',
+                appUpdateInfo: DEFAULT_APP_UPDATE_INFO,
 
                 // 筛选器相关设置
                 filtersDefaultVisible: true, // 筛选器默认是否显示
+                todoNavigationRequest: null, // { filterBy, viewMode, showCompleted }
+
+                // 时间轴筛选器状态（对齐手机端 TagFilterDrawer）
+                timelineFilter: {
+                    search: '',
+                    types: ['note', 'whiteboard', 'todo'], // 可选：note / whiteboard / todo
+                    tags: [],
+                    dateRange: 'all', // all | today | week | month
+                    showCompleted: true,
+                    showFuture: false,
+                    quickMode: 'all' // all | open | media | inbox
+                },
 
                 // 主题相关 actions
                 toggleTheme: () => set((state) => ({
@@ -119,19 +159,61 @@ const useStore = create(
                 setAiPanelMode: (mode) => set({ aiPanelMode: mode }),
 
                 // AI 聊天对话管理
-                aiNewChat: () => {
+                aiNewChat: (options = {}) => {
+                    const noteId = options.noteId == null ? null : String(options.noteId)
                     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
-                    const newConv = { id, title: '新对话', messages: [], createdAt: Date.now(), updatedAt: Date.now() }
+                    const newConv = {
+                        id,
+                        title: options.title || '新对话',
+                        messages: [],
+                        createdAt: Date.now(),
+                        updatedAt: Date.now(),
+                        noteId,
+                        source: noteId ? 'note' : 'general'
+                    }
                     set(state => ({
-                        aiConversations: [newConv, ...state.aiConversations].slice(0, 50),
-                        aiActiveConvId: id
+                        aiConversations: [newConv, ...state.aiConversations],
+                        aiActiveConvId: options.activate === false ? state.aiActiveConvId : id,
+                        aiNoteConversationMap: noteId
+                            ? { ...state.aiNoteConversationMap, [noteId]: id }
+                            : state.aiNoteConversationMap
                     }))
                     return id
                 },
+                aiEnsureNoteChat: (noteId, options = {}) => {
+                    if (noteId == null) {
+                        const activeId = get().aiActiveConvId
+                        if (activeId) return activeId
+                        return get().aiNewChat(options)
+                    }
+                    const noteKey = String(noteId)
+                    const state = get()
+                    const mappedId = state.aiNoteConversationMap?.[noteKey]
+                    const mappedConversation = mappedId
+                        ? state.aiConversations.find((conversation) => conversation.id === mappedId)
+                        : null
+                    if (mappedConversation) {
+                        if (options.activate !== false) set({ aiActiveConvId: mappedConversation.id })
+                        return mappedConversation.id
+                    }
+                    const latestForNote = state.aiConversations.find((conversation) => String(conversation.noteId || '') === noteKey)
+                    if (latestForNote) {
+                        set((currentState) => ({
+                            aiActiveConvId: options.activate === false ? currentState.aiActiveConvId : latestForNote.id,
+                            aiNoteConversationMap: { ...currentState.aiNoteConversationMap, [noteKey]: latestForNote.id }
+                        }))
+                        return latestForNote.id
+                    }
+                    return get().aiNewChat({ ...options, noteId: noteKey, activate: options.activate !== false })
+                },
                 aiDeleteConv: (id) => set(state => {
                     const updated = state.aiConversations.filter(c => c.id !== id)
+                    const aiNoteConversationMap = Object.fromEntries(
+                        Object.entries(state.aiNoteConversationMap || {}).filter(([, convId]) => convId !== id)
+                    )
                     return {
                         aiConversations: updated,
+                        aiNoteConversationMap,
                         aiActiveConvId: state.aiActiveConvId === id
                             ? (updated[0]?.id || null)
                             : state.aiActiveConvId
@@ -160,6 +242,13 @@ const useStore = create(
                     }
                 }),
                 aiClearCommandRequest: () => set({ aiCommandRequest: null }),
+                setAiCommandCenterEnabled: (enabled) => set((state) => ({
+                    aiCommandCenterEnabled: Boolean(enabled),
+                    aiCommandCenterOpen: Boolean(enabled) ? state.aiCommandCenterOpen : false
+                })),
+                setAiCommandCenterOpen: (open) => set((state) => ({
+                    aiCommandCenterOpen: Boolean(open) && state.aiCommandCenterEnabled
+                })),
 
                 setToolbarOrder: (order) => set({ toolbarOrder: order }),
 
@@ -368,7 +457,7 @@ const useStore = create(
                                         const whiteboardData = JSON.parse(contentToUse)
                                         const elementCount = whiteboardData.elements?.length || 0
                                         stateUpdate.whiteboardElementCounts = elementCount
-                                        console.log(`[Store] 更新白板元素数量缓存: noteId=${id}, count=${elementCount}`)
+                                        logger.log(`[Store] 更新白板元素数量缓存: noteId=${id}, count=${elementCount}`)
                                     } catch (error) {
                                         console.warn('Failed to parse whiteboard content for element count:', error)
                                     }
@@ -597,8 +686,108 @@ const useStore = create(
 
                 setCurrentView: (view) => set({ currentView: view }),
 
+                setTodoNavigationRequest: (request) => set({
+                    todoNavigationRequest: request ? {
+                        filterBy: request.filterBy || 'all',
+                        viewMode: request.viewMode || 'focus',
+                        showCompleted: typeof request.showCompleted === 'boolean' ? request.showCompleted : false,
+                    } : null
+                }),
+
+                consumeTodoNavigationRequest: () => {
+                    const request = get().todoNavigationRequest
+                    if (request) {
+                        set({ todoNavigationRequest: null })
+                    }
+                    return request || null
+                },
+
+                setAppVersion: (version) => set({ appVersion: String(version || '') }),
+
+                checkForUpdates: async ({ silent = false } = {}) => {
+                    if (!window.electronAPI?.system?.checkForUpdates) return null
+                    const previous = get().appUpdateInfo || DEFAULT_APP_UPDATE_INFO
+                    set({
+                        appUpdateInfo: {
+                            ...previous,
+                            checking: true,
+                            error: silent ? '' : previous.error,
+                        }
+                    })
+                    try {
+                        const result = await window.electronAPI.system.checkForUpdates()
+                        if (!result?.success || !result?.data?.latestVersion) {
+                            throw new Error(result?.error || '未获取到最新版本号')
+                        }
+                        set({
+                            appVersion: String(result.data.currentVersion || get().appVersion || ''),
+                            appUpdateInfo: {
+                                checking: false,
+                                checked: true,
+                                latestVersion: result.data.latestVersion,
+                                downloadUrl: result.data.downloadUrl || DEFAULT_APP_UPDATE_INFO.downloadUrl,
+                                hasUpdate: Boolean(result.data.hasUpdate),
+                                error: '',
+                            }
+                        })
+                        return result
+                    } catch (error) {
+                        const message = String(error?.message || '')
+                        const friendlyMessage = message.includes("No handler registered for 'system:check-for-updates'")
+                            ? '更新检查模块已更新，请重启应用后再试'
+                            : (error?.message || '检查更新失败')
+                        set({
+                            appUpdateInfo: {
+                                checking: false,
+                                checked: false,
+                                latestVersion: '',
+                                downloadUrl: DEFAULT_APP_UPDATE_INFO.downloadUrl,
+                                hasUpdate: false,
+                                error: silent ? '' : friendlyMessage,
+                            }
+                        })
+                        return { success: false, error: friendlyMessage }
+                    }
+                },
+
                 // 筛选器相关 actions
                 setFiltersDefaultVisible: (visible) => set({ filtersDefaultVisible: visible }),
+
+                // 时间轴筛选器 actions
+                setTimelineFilter: (partial) => set((state) => ({
+                    timelineFilter: {
+                        ...state.timelineFilter,
+                        ...(typeof partial === 'function' ? partial(state.timelineFilter) : partial)
+                    }
+                })),
+                toggleTimelineType: (type) => set((state) => {
+                    const cur = normalizeTimelineTypes(state.timelineFilter.types)
+                    const next = cur.includes(type)
+                        ? cur.filter((t) => t !== type)
+                        : [...cur, type]
+                    return { timelineFilter: { ...state.timelineFilter, types: next.length ? next : cur } }
+                }),
+                toggleTimelineTag: (tag) => set((state) => {
+                    const cur = state.timelineFilter.tags
+                    return {
+                        timelineFilter: {
+                            ...state.timelineFilter,
+                            tags: cur.includes(tag) ? cur.filter((t) => t !== tag) : [...cur, tag]
+                        }
+                    }
+                }),
+                resetTimelineFilter: () => set((state) => ({
+                    timelineFilter: {
+                        ...state.timelineFilter,
+                        search: '',
+                        tags: [],
+                        dateRange: 'all',
+                        types: ['note', 'whiteboard', 'todo'],
+                        showCompleted: true,
+                        showFuture: false,
+                        quickMode: 'all'
+                    }
+                })),
 
                 // 用户头像相关 actions
                 setUserAvatar: (avatar) => set({ userAvatar: avatar }),
@@ -731,8 +920,10 @@ const useStore = create(
                 christmasMode: state.christmasMode,
                 editorMode: state.editorMode,
                 aiPanelMode: state.aiPanelMode,
-                aiConversations: (state.aiConversations || []).slice(0, 50),
+                aiCommandCenterEnabled: state.aiCommandCenterEnabled,
+                aiConversations: state.aiConversations || [],
                 aiActiveConvId: state.aiActiveConvId,
+                aiNoteConversationMap: state.aiNoteConversationMap || {},
                 toolbarOrder: state.toolbarOrder,
                 floatingPanelItems: state.floatingPanelItems,
                 contextMenuItems: state.contextMenuItems,

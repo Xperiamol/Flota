@@ -42,30 +42,6 @@ export const flex = {
   flexAuto: { flex: 1, overflow: 'auto' }
 };
 
-// ========== 文本样式 ==========
-export const text = {
-  // 标题样式组合（复用场景：section title + margin）
-  sectionTitle: { mb: 1 },
-  subsectionTitle: { mb: 1.5, fontWeight: 700 },
-  caption: { display: 'block', mb: 2 },
-  captionBlock: { display: 'block' }
-};
-
-// ========== 容器尺寸 ==========
-export const container = {
-  fullWidth: { width: '100%' },
-  fullHeight: { height: '100%' },
-  maxWidth1200: { width: '100%', maxWidth: '1200px', mx: 'auto' },
-  textCenter: { textAlign: 'center' }
-};
-
-// ========== 图标尺寸（统一 icon fontSize） ==========
-export const iconSize = {
-  small: { fontSize: 20 },
-  medium: { fontSize: 24 },
-  large: { fontSize: 28 }
-};
-
 // ========== 颜色组合（icon + color 常见组合） ==========
 export const iconWithColor = {
   disabled: { fontSize: 20, color: 'text.disabled' },
@@ -73,14 +49,6 @@ export const iconWithColor = {
   primary: { fontSize: 20, color: 'primary.main' },
   error: { fontSize: 20, color: 'error.main' },
   success: { fontSize: 20, color: 'success.main' }
-};
-
-// ========== 输入框尺寸 ==========
-export const input = {
-  width60: { width: 60 },
-  minWidth80: { minWidth: 80 },
-  minWidth160: { minWidth: 160 },
-  minWidth200: { minWidth: 200 }
 };
 
 // ========== 组合样式（常用场景预设） ==========
@@ -97,54 +65,6 @@ export const combo = {
   
   // 位置布局
   relative: { position: 'relative' }
-};
-
-// ========== 滚动条样式 ==========
-const scrollbarBase = {
-  scrollbarWidth: 'thin',
-  scrollbarColor: 'rgba(150, 150, 150, 0.2) transparent',
-  '&::-webkit-scrollbar': {
-    width: 6,
-    height: 6
-  },
-  '&::-webkit-scrollbar-track': {
-    backgroundColor: 'transparent'
-  },
-  '&::-webkit-scrollbar-thumb': {
-    backgroundColor: 'rgba(150, 150, 150, 0.2)',
-    borderRadius: 3,
-    transition: 'background-color 0.2s ease'
-  },
-  '&::-webkit-scrollbar-thumb:hover': {
-    backgroundColor: 'rgba(150, 150, 150, 0.4)'
-  },
-  '&::-webkit-scrollbar-thumb:active': {
-    backgroundColor: 'rgba(150, 150, 150, 0.5)'
-  }
-};
-
-export const scrollbar = {
-  default: scrollbarBase,
-  auto: {
-    overflow: 'auto',
-    ...scrollbarBase
-  },
-  hidden: {
-    scrollbarWidth: 'none',
-    '&::-webkit-scrollbar': {
-      display: 'none'
-    }
-  }
-};
-
-// ========== 合并样式辅助函数 ==========
-/**
- * 合并多个样式对象
- * @param  {...Object} styles - 样式对象
- * @returns {Object} 合并后的样式
- */
-export const mergeStyles = (...styles) => {
-  return Object.assign({}, ...styles);
 };
 
 // ========== 卡片样式（soft-glass + linear accent） ==========

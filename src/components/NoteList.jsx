@@ -14,7 +14,6 @@ import {
   Divider,
   TextField,
   InputAdornment,
-  Paper,
   Skeleton,
   Fade,
   Collapse,
@@ -47,7 +46,6 @@ import {
 import { useStore } from '../store/useStore'
 import { zhCN as dateFnsZhCN } from 'date-fns/locale/zh-CN'
 import { createTodo } from '../api/todoAPI'
-import { useMultiSelect } from '../hooks/useMultiSelect'
 import { useSearch } from '../hooks/useSearch'
 import { useSearchManager } from '../hooks/useSearchManager'
 import { useMultiSelectManager } from '../hooks/useMultiSelectManager'
@@ -61,12 +59,12 @@ const {
   filters: { placeholder }
 } = zhCN;
 import MultiSelectToolbar from './MultiSelectToolbar'
-import { createDragHandler } from '../utils/DragManager'
 import { useDragAnimation } from './DragAnimationProvider'
 import { ANIMATIONS, createTransitionString } from '../utils/animationConfig'
 import { useError } from './ErrorProvider'
 import logger from '../utils/logger'
 import { formatRelativeNoteTime } from '../utils/noteDateUtils'
+import { stripMarkdownToPreviewText } from '../utils/markdownTextUtils'
 
 const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefChange }) => {
   const { t } = useTranslation()
@@ -75,7 +73,6 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
   const {
     notes,
     selectedNoteId,
-    searchQuery,
     isLoading,
     setSelectedNoteId,
     setSearchQuery,
@@ -95,7 +92,6 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
   const [selectedTagFilters, setSelectedTagFilters] = useState([])
   const [permanentDeleteConfirm, setPermanentDeleteConfirm] = useState(false)
   const [batchPermanentDeleteConfirm, setBatchPermanentDeleteConfirm] = useState(false)
-  const [isRefreshing, setIsRefreshing] = useState(false)
   const [confirmDialog, setConfirmDialog] = useState({ 
     open: false, 
     type: '', // 'restore' | 'delete'
@@ -127,11 +123,11 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
       showError(error, '打开独立窗口失败')
     }
   }, {
-    onDragStart: (dragData) => {
+    onDragStart: () => {
       // 添加拖拽开始时的自定义逻辑
       logger.log('笔记拖拽开始，添加视觉反馈');
     },
-    onCreateWindow: (dragData) => {
+    onCreateWindow: () => {
       // 独立窗口创建成功后的回调
       logger.log('笔记独立窗口创建成功');
     }
@@ -198,7 +194,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
   }, [showDeleted, loadNotes])
 
   // 使用通用搜索hook
-  const { search: searchNotes, isSearching } = useSearch({
+  const { search: searchNotes } = useSearch({
     searchAPI: searchNotesAPI,
     onSearchResult: (results, query) => {
       // 通过store更新notes状态
@@ -265,10 +261,10 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
     try {
       const sourceTitle = selectedNote.title && selectedNote.title !== '无标题' && selectedNote.title !== 'Untitled'
         ? selectedNote.title
-        : t('notes.untitled')
+        : ''
 
       const duplicated = await createNote({
-        title: `${sourceTitle} ${t('notes.copySuffix')}`,
+        title: sourceTitle ? `${sourceTitle} ${t('notes.copySuffix')}` : '',
         content: selectedNote.content || '',
         tags: Array.isArray(selectedNote.tags) ? selectedNote.tags.join(',') : (selectedNote.tags || ''),
         note_type: selectedNote.note_type || 'markdown',
@@ -484,22 +480,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
       }
     }
 
-    // Handle markdown notes — strip all markup, keep readable text
-    let clean = content
-      .replace(/!\[[^\]]*\]\([^)]+\)/g, '【图片】')   // ![alt](path) → 【图片】
-      .replace(/\{color:[^}]+\}(.+?)\{\/color\}/g, '$1') // {color:x}text{/color} → text
-      .replace(/==(?:\{[^}]+\})?(.+?)==/g, '$1')       // =={c}text== → text
-      .replace(/\+\+(.+?)\+\+/g, '$1')                 // ++text++ → text
-      .replace(/<[^>]+>/g, '')                          // strip any HTML tags
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')          // [text](url) → text
-      .replace(/^#{1,6}\s+/gm, '')                      // heading markers
-      .replace(/^[-*]\s+/gm, '')                        // unordered list markers
-      .replace(/^\d+[.)]\s+/gm, '')                     // ordered list markers
-      .replace(/^>\s+/gm, '')                           // blockquote markers
-      .replace(/```[\s\S]*?```/g, '【代码】')            // code blocks
-      .replace(/[*_~`]/g, '')                           // remaining inline markers
-      .replace(/\n{2,}/g, '\n').trim()                  // collapse blank lines
-      .replace(/\n/g, ' ')                              // single line
+    const clean = stripMarkdownToPreviewText(content)
 
     if (skipChars > 0) {
       const remaining = clean.substring(skipChars).trim()
@@ -612,27 +593,29 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
           value={localSearchQuery}
           onChange={(e) => setLocalSearchQuery(e.target.value)}
           aria-label="搜索笔记"
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon color="action" />
-              </InputAdornment>
-            ),
-            endAdornment: (
-              <>
-                {localSearchQuery && (
-                  <InputAdornment position="end">
-                    <IconButton size="small" onClick={handleClearSearch} aria-label="清除搜索">
-                      <ClearIcon />
-                    </IconButton>
-                  </InputAdornment>
-                )}
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon color="action" />
+                </InputAdornment>
+              ),
+              endAdornment: (
+                <>
+                  {localSearchQuery && (
+                    <InputAdornment position="end">
+                      <IconButton size="small" onClick={handleClearSearch} aria-label="清除搜索">
+                        <ClearIcon />
+                      </IconButton>
+                    </InputAdornment>
+                  )}
                 <FilterToggleButton
                   filtersVisible={filtersVisible}
                   onToggle={toggleFiltersVisibility}
                 />
-              </>
-            )
+                </>
+              )
+            }
           }}
         />
 
@@ -734,7 +717,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
               </Box>
             ) : (
               <List sx={{ py: 0, px: 2 }}>
-                {filteredNotes.map((note, index) => (
+                {filteredNotes.map((note) => (
                   <React.Fragment key={note.id}>
                     <ListItem
                       disablePadding
@@ -863,8 +846,10 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                               </Typography>
                             </Box>
                           }
-                          primaryTypographyProps={{ component: 'div' }}
-                          secondaryTypographyProps={{ component: 'div' }}
+                          slotProps={{
+                            primary: { component: 'div' },
+                            secondary: { component: 'div' }
+                          }}
                         />
                         {/* 菜单按钮 - 绝对定位在右上角 */}
                         {!multiSelect.isMultiSelectMode && (
@@ -915,13 +900,15 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
         onClose={handleMenuClose}
         transformOrigin={{ horizontal: 'right', vertical: 'top' }}
         anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-        PaperProps={{
-          sx: (theme) => ({
-            backdropFilter: theme?.custom?.glass?.backdropFilter || 'blur(6px)',
-            backgroundColor: theme?.custom?.glass?.background || (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.4)'),
-            border: theme?.custom?.glass?.border || `1px solid ${theme.palette.divider}`,
-            borderRadius: 1
-          })
+        slotProps={{
+          paper: {
+            sx: (theme) => ({
+              backdropFilter: theme?.custom?.glass?.backdropFilter || 'blur(6px)',
+              backgroundColor: theme?.custom?.glass?.background || (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.4)'),
+              border: theme?.custom?.glass?.border || `1px solid ${theme.palette.divider}`,
+              borderRadius: 1
+            })
+          }
         }}
       >
         {

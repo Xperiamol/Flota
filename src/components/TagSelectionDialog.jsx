@@ -131,8 +131,10 @@ const TagSelectionDialog = ({
       onClose={handleCancel}
       maxWidth="sm"
       fullWidth
-      PaperProps={{
-        sx: { minHeight: 400 }
+      slotProps={{
+        paper: {
+          sx: { minHeight: 400 }
+        }
       }}
     >
       <DialogTitle sx={{ pb: 1 }}>
@@ -170,19 +172,21 @@ const TagSelectionDialog = ({
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           aria-label="搜索标签"
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon color="action" />
-              </InputAdornment>
-            ),
-            endAdornment: searchQuery && (
-              <InputAdornment position="end">
-                <IconButton size="small" onClick={handleClearSearch} aria-label="清除搜索">
-                  <ClearIcon />
-                </IconButton>
-              </InputAdornment>
-            )
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon color="action" />
+                </InputAdornment>
+              ),
+              endAdornment: searchQuery && (
+                <InputAdornment position="end">
+                  <IconButton size="small" onClick={handleClearSearch} aria-label="清除搜索">
+                    <ClearIcon />
+                  </IconButton>
+                </InputAdornment>
+              )
+            }
           }}
           sx={{ mb: 2 }}
         />

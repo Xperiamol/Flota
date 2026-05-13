@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Box, IconButton, Modal, Typography } from '@mui/material'
+import { Box, Fade, IconButton, Modal, Typography } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import ZoomInIcon from '@mui/icons-material/ZoomIn'
 import ZoomOutIcon from '@mui/icons-material/ZoomOut'
@@ -25,6 +25,7 @@ export const canvasToPngBlob = (canvas) => new Promise((resolve, reject) => {
 })
 
 const ImagePreviewModal = ({ src, alt = '预览', onClose }) => {
+  const [visible, setVisible] = useState(Boolean(src))
   const [zoom, setZoom] = useState(1)
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
@@ -58,6 +59,7 @@ const ImagePreviewModal = ({ src, alt = '预览', onClose }) => {
   }, [])
 
   useEffect(() => {
+    setVisible(Boolean(src))
     resetView()
   }, [src, resetView])
 
@@ -82,19 +84,12 @@ const ImagePreviewModal = ({ src, alt = '预览', onClose }) => {
       return
     }
 
-    if (zoomRef.current > 1 && (Math.abs(event.deltaX) > 0 || Math.abs(event.deltaY) > 0)) {
-      suppressNextClick()
-      setPosition((prev) => ({
-        x: prev.x - event.deltaX,
-        y: prev.y - event.deltaY,
-      }))
-      return
-    }
-
-    zoomBy(event.deltaY < 0 ? 0.1 : -0.1)
-  }, [suppressNextClick, zoomBy])
+    suppressNextClick()
+    setZoom((prev) => clampImageZoom(prev * Math.exp(-event.deltaY * 0.0018)))
+  }, [suppressNextClick])
 
   useEffect(() => {
+    if (!src) return undefined
     const handleGestureStart = (event) => {
       event.preventDefault()
       event.stopPropagation()
@@ -120,14 +115,12 @@ const ImagePreviewModal = ({ src, alt = '预览', onClose }) => {
     window.addEventListener('gesturestart', handleGestureStart, { passive: false, capture: true })
     window.addEventListener('gesturechange', handleGestureChange, { passive: false, capture: true })
     window.addEventListener('gestureend', handleGestureEnd, { passive: false, capture: true })
-    document.addEventListener('wheel', handleWheel, { passive: false, capture: true })
 
     return () => {
       window.removeEventListener('wheel', handleWheel, true)
       window.removeEventListener('gesturestart', handleGestureStart, true)
       window.removeEventListener('gesturechange', handleGestureChange, true)
       window.removeEventListener('gestureend', handleGestureEnd, true)
-      document.removeEventListener('wheel', handleWheel, true)
     }
   }, [handleWheel, src, suppressNextClick])
 
@@ -231,125 +224,138 @@ const ImagePreviewModal = ({ src, alt = '预览', onClose }) => {
   }
 
   const close = () => {
-    resetView()
-    onClose?.()
+    setVisible(false)
   }
 
   if (!src) return null
 
   return (
-    <Modal open onClose={close} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <Box
-        ref={modalRef}
-        sx={{
-          position: 'relative',
-          width: '100vw',
-          height: '100vh',
-          outline: 'none',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'hidden',
-          cursor: zoom > 1 ? (dragging ? 'grabbing' : 'grab') : 'default',
-          touchAction: 'none',
+    <Modal
+      open={visible}
+      closeAfterTransition
+      onClose={close}
+      sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+    >
+      <Fade
+        in={visible}
+        timeout={160}
+        onExited={() => {
+          resetView()
+          onClose?.()
         }}
-        onClick={(event) => {
-          if (suppressNextClickRef.current) {
-            event.stopPropagation()
-            return
-          }
-          close()
-        }}
-        onMouseMove={handleMouseMove}
-        onMouseUp={() => setDragging(false)}
-        onMouseLeave={() => setDragging(false)}
       >
         <Box
+          ref={modalRef}
           sx={{
-            position: 'absolute',
-            top: 16,
-            right: 16,
+            position: 'relative',
+            width: '100vw',
+            height: '100vh',
+            outline: 'none',
             display: 'flex',
-            gap: 1,
-            backgroundColor: 'rgba(0, 0, 0, 0.6)',
-            borderRadius: 2,
-            padding: '4px 8px',
-            zIndex: 10,
-          }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <IconButton size="small" onClick={() => zoomBy(-0.25)} sx={{ color: 'white' }} title="缩小">
-            <ZoomOutIcon />
-          </IconButton>
-          <Typography
-            sx={{ color: 'white', lineHeight: '32px', minWidth: 60, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.8 } }}
-            onClick={resetView}
-            title="点击重置"
-          >
-            {Math.round(zoom * 100)}%
-          </Typography>
-          <IconButton size="small" onClick={() => zoomBy(0.25)} sx={{ color: 'white' }} title="放大">
-            <ZoomInIcon />
-          </IconButton>
-          <IconButton size="small" onClick={close} sx={{ color: 'white' }} title="关闭 (Esc)">
-            <CloseIcon />
-          </IconButton>
-        </Box>
-
-        {zoom > 1 && (
-          <Typography
-            sx={{
-              position: 'absolute',
-              bottom: 16,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              color: 'rgba(255, 255, 255, 0.7)',
-              backgroundColor: 'rgba(0, 0, 0, 0.5)',
-              padding: '4px 12px',
-              borderRadius: 2,
-              fontSize: 12,
-              zIndex: 10,
-            }}
-          >
-            拖动查看 · 滚轮/双指缩放 · 点击背景关闭
-          </Typography>
-        )}
-
-        <img
-          src={src}
-          alt={alt}
-          draggable={false}
-          style={{
-            maxWidth: '95vw',
-            maxHeight: '90vh',
-            width: 'auto',
-            height: 'auto',
-            objectFit: 'contain',
-            transformOrigin: 'center center',
-            transform: `scale(${zoom}) translate(${position.x / zoom}px, ${position.y / zoom}px)`,
-            transition: dragging ? 'none' : 'transform 0.2s ease',
-            borderRadius: 8,
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
-            cursor: zoom > 1 ? (dragging ? 'grabbing' : 'grab') : 'zoom-in',
-            userSelect: 'none',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+            cursor: zoom > 1 ? (dragging ? 'grabbing' : 'grab') : 'default',
             touchAction: 'none',
           }}
           onClick={(event) => {
-            event.stopPropagation()
-            if (suppressNextClickRef.current) return
-            if (zoom <= 1) setZoom(2)
+            if (suppressNextClickRef.current) {
+              event.stopPropagation()
+              return
+            }
+            close()
           }}
-          onDoubleClick={(event) => {
-            event.stopPropagation()
-            if (zoom > 1) resetView()
-          }}
-          onMouseDown={handleMouseDown}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-          onTouchCancel={handleTouchEnd}
-        />
-      </Box>
+          onMouseMove={handleMouseMove}
+          onMouseUp={() => setDragging(false)}
+          onMouseLeave={() => setDragging(false)}
+        >
+          <Box
+            sx={{
+              position: 'absolute',
+              top: 16,
+              right: 16,
+              display: 'flex',
+              gap: 1,
+              backgroundColor: 'rgba(0, 0, 0, 0.6)',
+              borderRadius: 2,
+              padding: '4px 8px',
+              zIndex: 10,
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <IconButton size="small" onClick={() => zoomBy(-0.25)} sx={{ color: 'white' }} title="缩小">
+              <ZoomOutIcon />
+            </IconButton>
+            <Typography
+              sx={{ color: 'white', lineHeight: '32px', minWidth: 60, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.8 } }}
+              onClick={resetView}
+              title="点击重置"
+            >
+              {Math.round(zoom * 100)}%
+            </Typography>
+            <IconButton size="small" onClick={() => zoomBy(0.25)} sx={{ color: 'white' }} title="放大">
+              <ZoomInIcon />
+            </IconButton>
+            <IconButton size="small" onClick={close} sx={{ color: 'white' }} title="关闭 (Esc)">
+              <CloseIcon />
+            </IconButton>
+          </Box>
+
+          {zoom > 1 && (
+            <Typography
+              sx={{
+                position: 'absolute',
+                bottom: 16,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                color: 'rgba(255, 255, 255, 0.7)',
+                backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                padding: '4px 12px',
+                borderRadius: 2,
+                fontSize: 12,
+                zIndex: 10,
+              }}
+            >
+              拖动查看 · 滚轮/双指缩放 · 点击背景关闭
+            </Typography>
+          )}
+
+          <img
+            src={src}
+            alt={alt}
+            draggable={false}
+            style={{
+              maxWidth: '95vw',
+              maxHeight: '90vh',
+              width: 'auto',
+              height: 'auto',
+              objectFit: 'contain',
+              transformOrigin: 'center center',
+              transform: `scale(${zoom}) translate(${position.x / zoom}px, ${position.y / zoom}px)`,
+              transition: dragging ? 'none' : 'transform 0.2s ease',
+              borderRadius: 8,
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+              cursor: zoom > 1 ? (dragging ? 'grabbing' : 'grab') : 'zoom-in',
+              userSelect: 'none',
+              touchAction: 'none',
+            }}
+            onClick={(event) => {
+              event.stopPropagation()
+              if (suppressNextClickRef.current) return
+              if (zoom <= 1) setZoom(2)
+            }}
+            onDoubleClick={(event) => {
+              event.stopPropagation()
+              if (zoom > 1) resetView()
+            }}
+            onMouseDown={handleMouseDown}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onTouchCancel={handleTouchEnd}
+          />
+        </Box>
+      </Fade>
     </Modal>
   )
 }

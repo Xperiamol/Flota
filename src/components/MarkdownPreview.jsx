@@ -1,8 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Box, Typography } from '@mui/material'
-import { scrollbar } from '../styles/commonStyles'
 import { getImageResolver } from '../utils/ImageProtocolResolver'
-import { createMarkdownRenderer } from '../markdown/index.js'
+import { createMarkdownRenderer, prepareMarkdownForDisplay } from '../markdown/index.js'
 import { urlToWav } from '../utils/audioCodec'
 import { useError } from './ErrorProvider'
 import ImagePreviewModal, { canvasToPngBlob } from './ImagePreviewModal'
@@ -14,7 +13,7 @@ const ALLOWED_TAGS = new Set([
   'A', 'ABBR', 'B', 'BLOCKQUOTE', 'BR', 'CODE', 'DEL', 'DIV', 'EM', 'H1', 'H2',
   'H3', 'H4', 'H5', 'H6', 'HR', 'I', 'IMG', 'INPUT', 'LI', 'MARK', 'OL', 'P',
   'PRE', 'S', 'SPAN', 'STRONG', 'SUMMARY', 'TABLE', 'TBODY', 'TD', 'TH', 'THEAD',
-  'TR', 'UL', 'DETAILS'
+  'TR', 'U', 'UL', 'DETAILS'
 ])
 
 const ALLOWED_ATTRS = new Set([
@@ -25,7 +24,15 @@ const ALLOWED_ATTRS = new Set([
 
 const isSafeUrl = (value) => {
   if (!value) return true
-  return /^(https?:|mailto:|app:|data:image\/|#|\/(?!\/))/i.test(value)
+  return /^(https?:|mailto:|app:|file:|data:image\/|#|\/(?!\/))/i.test(value)
+}
+
+const getLocalPathFromFileUrl = (fileUrl) => {
+  try {
+    return decodeURIComponent(String(fileUrl).replace(/^file:\/\//i, ''))
+  } catch (_) {
+    return String(fileUrl).replace(/^file:\/\//i, '')
+  }
 }
 
 const sanitizeStyle = (style) => {
@@ -82,7 +89,13 @@ const sanitizeMarkdownHtml = (html) => {
   return template.innerHTML
 }
 
-const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
+const MarkdownPreview = ({
+  content,
+  sx,
+  onWikiLinkClick,
+  onTagClick,
+  showAudioTranscription = true
+}) => {
   const { showSuccess, showError } = useError()
   const [renderedHTML, setRenderedHTML] = useState('')
   const previewRef = useRef(null)
@@ -115,17 +128,17 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
         }
       }
     })
-  }, [onWikiLinkClick, onTagClick, renderedHTML])
+  }, [onWikiLinkClick, onTagClick])
 
   // 渲染 Markdown 内容
   useEffect(() => {
-    if (!content || content.trim() === '') {
+    if (!content) {
       setRenderedHTML('')
       return
     }
 
     try {
-      const html = sanitizeMarkdownHtml(md.render(content))
+      const html = sanitizeMarkdownHtml(md.render(prepareMarkdownForDisplay(content)))
       setRenderedHTML(html)
     } catch (error) {
       console.error('Markdown 渲染失败:', error)
@@ -161,9 +174,20 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
         return
       }
 
-      // 处理外部链接 - 用外部浏览器打开
-      if (target.tagName === 'A' && target.href) {
-        const href = target.href
+      const link = target.closest?.('a[href]')
+      if (link?.href) {
+        const href = link.href
+        if (href.startsWith('file://')) {
+          e.preventDefault()
+          window.electronAPI?.system?.openPath?.(getLocalPathFromFileUrl(href))
+          return
+        }
+        if (href.startsWith('app://')) {
+          e.preventDefault()
+          window.electronAPI?.system?.openExternal?.(href)
+          return
+        }
+        // 处理外部链接 - 用外部浏览器打开
         if (href.startsWith('http://') || href.startsWith('https://')) {
           e.preventDefault()
           window.electronAPI?.system?.openExternal?.(href)
@@ -183,10 +207,10 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
 
   // 处理图片加载
   useEffect(() => {
-    const loadImages = async () => {
-      const previewElement = previewRef.current
-      if (!previewElement) return
+    const previewElement = previewRef.current
+    if (!previewElement) return undefined
 
+    const loadImages = async () => {
       const images = previewElement.querySelectorAll('img')
       const resolver = getImageResolver()
 
@@ -286,46 +310,48 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
             wrapper.appendChild(audio)
             wrapper.appendChild(playerRow)
 
-            // 转文字按钮
-            const sttRow = document.createElement('div')
-            sttRow.style.cssText = 'margin-top:8px;display:flex;align-items:center;gap:8px;'
+            if (showAudioTranscription) {
+              // 转文字按钮
+              const sttRow = document.createElement('div')
+              sttRow.style.cssText = 'margin-top:8px;display:flex;align-items:center;gap:8px;'
 
-            const sttBtn = document.createElement('button')
-            sttBtn.textContent = '🗣 转文字'
-            sttBtn.style.cssText = 'border:1px solid var(--md-audio-btn-border, rgba(0,0,0,.15));background:var(--md-audio-btn-bg,rgba(0,0,0,.04));border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer;color:inherit;transition:background .2s;'
-            sttBtn.onmouseenter = () => { sttBtn.style.background = 'var(--md-audio-btn-hover,rgba(0,0,0,.08))' }
-            sttBtn.onmouseleave = () => { sttBtn.style.background = 'var(--md-audio-btn-bg,rgba(0,0,0,.04))' }
+              const sttBtn = document.createElement('button')
+              sttBtn.textContent = '🗣 转文字'
+              sttBtn.style.cssText = 'border:1px solid var(--md-audio-btn-border, rgba(0,0,0,.15));background:var(--md-audio-btn-bg,rgba(0,0,0,.04));border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer;color:inherit;transition:background .2s;'
+              sttBtn.onmouseenter = () => { sttBtn.style.background = 'var(--md-audio-btn-hover,rgba(0,0,0,.08))' }
+              sttBtn.onmouseleave = () => { sttBtn.style.background = 'var(--md-audio-btn-bg,rgba(0,0,0,.04))' }
 
-            const sttResult = document.createElement('div')
-            sttResult.style.cssText = 'font-size:13px;line-height:1.6;color:inherit;opacity:.85;display:none;margin-top:6px;white-space:pre-wrap;'
+              const sttResult = document.createElement('div')
+              sttResult.style.cssText = 'font-size:13px;line-height:1.6;color:inherit;opacity:.85;display:none;margin-top:6px;white-space:pre-wrap;'
 
-            sttBtn.onclick = async () => {
-              sttBtn.disabled = true
-              sttBtn.textContent = '⏳ 转文字中…'
-              try {
-                const sttSrc = originalSrc.replace(/^app:\/\//, '')
-                const sttArg = /\.webm$/i.test(sttSrc) ? await urlToWav(appSrc) : sttSrc
-                const result = await window.electronAPI.stt.transcribe(sttArg)
-                if (result?.success && result?.data?.text) {
-                  sttResult.textContent = result.data.text
-                  sttResult.style.display = 'block'
-                  sttBtn.textContent = '🗣 重新转文字'
-                } else {
+              sttBtn.onclick = async () => {
+                sttBtn.disabled = true
+                sttBtn.textContent = '⏳ 转文字中…'
+                try {
+                  const sttSrc = originalSrc.replace(/^app:\/\//, '')
+                  const sttArg = /\.webm$/i.test(sttSrc) ? await urlToWav(appSrc) : sttSrc
+                  const result = await window.electronAPI.stt.transcribe(sttArg)
+                  if (result?.success && result?.data?.text) {
+                    sttResult.textContent = result.data.text
+                    sttResult.style.display = 'block'
+                    sttBtn.textContent = '🗣 重新转文字'
+                  } else {
+                    sttBtn.textContent = '❌ 转文字失败'
+                    setTimeout(() => { sttBtn.textContent = '🗣 转文字' }, 2000)
+                  }
+                } catch (err) {
+                  console.error('转文字失败:', err)
                   sttBtn.textContent = '❌ 转文字失败'
                   setTimeout(() => { sttBtn.textContent = '🗣 转文字' }, 2000)
+                } finally {
+                  sttBtn.disabled = false
                 }
-              } catch (err) {
-                console.error('转文字失败:', err)
-                sttBtn.textContent = '❌ 转文字失败'
-                setTimeout(() => { sttBtn.textContent = '🗣 转文字' }, 2000)
-              } finally {
-                sttBtn.disabled = false
               }
-            }
 
-            sttRow.appendChild(sttBtn)
-            wrapper.appendChild(sttRow)
-            wrapper.appendChild(sttResult)
+              sttRow.appendChild(sttBtn)
+              wrapper.appendChild(sttRow)
+              wrapper.appendChild(sttResult)
+            }
 
             if (img.parentNode) {
               img.parentNode.replaceChild(wrapper, img)
@@ -369,7 +395,8 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
     if (renderedHTML) {
       loadImages()
     }
-  }, [renderedHTML])
+    return undefined
+  }, [renderedHTML, showAudioTranscription])
 
   // 处理图片右键复制
   useEffect(() => {
@@ -533,6 +560,27 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
         '& a:hover': {
           textDecorationThickness: '2px',
         },
+        '& a[href^="file://"], & a[href^="app://attachments/"], & a[href^="attachments/"]': {
+          display: 'inline-flex',
+          alignItems: 'center',
+          maxWidth: '100%',
+          px: 1,
+          py: 0.4,
+          borderRadius: 1,
+          bgcolor: 'action.hover',
+          color: 'text.primary',
+          textDecoration: 'none',
+          verticalAlign: 'middle',
+          '&::before': {
+            content: '"📎"',
+            mr: 0.5,
+            fontSize: '0.9em'
+          },
+          '&:hover': {
+            bgcolor: 'action.selected',
+            textDecoration: 'none'
+          }
+        },
         '& ul, & ol': {
           paddingLeft: 2,
           marginBottom: 1
@@ -585,8 +633,7 @@ const MarkdownPreview = ({ content, sx, onWikiLinkClick, onTagClick }) => {
           tableLayout: 'auto',
           overflowX: 'auto',
           display: 'block',
-          whiteSpace: 'nowrap',
-          ...scrollbar.auto
+          whiteSpace: 'nowrap'
         },
         '& th, & td': {
           border: '1px solid',
