@@ -409,9 +409,16 @@ const useStore = create(
                     }
                 },
 
-                createNote: async (noteData) => {
+                createNote: async (noteData = {}) => {
                     try {
-                        const result = await createNoteAPI(noteData)
+                        const payloadToCreate = {
+                            title: '',
+                            content: '',
+                            tags: [],
+                            note_type: 'markdown',
+                            ...noteData
+                        }
+                        const result = await createNoteAPI(payloadToCreate)
                         const payload = result?.data || result
                         if (result?.success || payload) {
                             const newNote = {

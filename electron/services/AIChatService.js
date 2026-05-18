@@ -30,7 +30,7 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'get_current_note',
-      description: '获取用户当前正在编辑的笔记的完整内容。',
+      description: '获取用户当前正在编辑的笔记完整内容与类型信息。编辑前应先确认 note_type；白板笔记的 content 必须保持为完整有效的白板 JSON，不能拼接普通文本。',
       parameters: { type: 'object', properties: {} }
     }
   },
@@ -55,13 +55,13 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'edit_note',
-      description: '编辑已有的笔记。可以修改标题、内容、标签或分类，只需提供要修改的字段。',
+      description: '编辑已有的笔记。可以修改标题、内容、标签或分类，只需提供要修改的字段。禁止通过该工具修改 whiteboard 笔记的 content；白板内容只能由前端白板 AI 生成/插入能力处理。',
       parameters: {
         type: 'object',
         properties: {
           id: { type: 'number', description: '笔记ID' },
           title: { type: 'string', description: '新标题（可选）' },
-          content: { type: 'string', description: '新内容（Markdown格式，可选）' },
+          content: { type: 'string', description: '新内容。仅用于普通 Markdown 笔记；whiteboard 笔记禁止传 content（可选）' },
           tags: { type: 'string', description: '新标签，用逗号分隔（可选）' },
           category: { type: 'string', description: '新分类名称（可选）' }
         },
@@ -326,6 +326,12 @@ class AIChatService {
     }
   }
 
+  _validateNoteContentUpdate(existing, nextContent) {
+    if (nextContent === undefined) return null;
+    if ((existing?.note_type || 'markdown') !== 'whiteboard') return null;
+    return '白板内容不能通过 edit_note 直接修改，请使用白板 AI 生成/插入能力';
+  }
+
   // ─── 工具执行器 ───
 
   async _executeTool(name, args, options = {}) {
@@ -344,6 +350,7 @@ class AIChatService {
           id: n.id,
           title: n.title,
           content: n.content?.substring(0, 500),
+          note_type: n.note_type || 'markdown',
           tags: n.tags,
           category: n.category,
           updated_at: n.updated_at
@@ -359,6 +366,7 @@ class AIChatService {
               id: note.id,
               title: note.title,
               content: note.content,
+              note_type: note.note_type || 'markdown',
               tags: note.tags,
               category: note.category
             });
@@ -387,6 +395,14 @@ class AIChatService {
         const existing = this.noteDAO.findById(args.id);
         if (!existing) {
           return JSON.stringify({ error: `未找到ID为 ${args.id} 的笔记` });
+        }
+        const contentError = this._validateNoteContentUpdate(existing, args.content);
+        if (contentError) {
+          return JSON.stringify({
+            success: false,
+            error: contentError,
+            note_type: existing.note_type || 'markdown'
+          });
         }
         const updateData = {};
         if (args.title !== undefined) updateData.title = args.title;
@@ -575,6 +591,7 @@ class AIChatService {
 - 用简洁友好的中文回复
 - 需要查询用户数据时主动调用工具，不要猜测
 - 创建、编辑笔记/待办/记忆这类写入操作默认只生成待确认计划；拿到工具返回的 requiresConfirmation 后，必须清楚告诉用户等待确认，不要声称已经执行
+- 当前笔记类型为 whiteboard 时，不要调用 edit_note 修改 content；白板内容生成/插入由应用前端的白板 AI 能力处理
 - 使用 Markdown 格式回复，善用列表和标题
 - 不确定时如实说明，不编造数据
 - 回复要简明扼要，避免冗余${profileSection}`;
@@ -593,6 +610,7 @@ class AIChatService {
         '### 当前笔记',
         `ID: ${note.id || '未知'}`,
         `标题: ${note.title || '未命名'}`,
+        `类型: ${note.note_type || 'markdown'}`,
         note.timeLabel ? `时间: ${note.timeLabel}` : '',
         note.stalenessLabel ? `时效性: ${note.stalenessLabel}` : '',
         note.updated_at ? `最近修改: ${note.updated_at}` : '',

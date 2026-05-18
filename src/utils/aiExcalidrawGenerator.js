@@ -1,871 +1,411 @@
 /**
- * AI Excalidraw 生成器 — Mermaid 中间格式方案
- * AI 输出 Mermaid 语法（极少 token）→ 本地解析 + 自动布局 → Excalidraw 元素
- * 速度比直接生成 JSON 快 5-10 倍
+ * AI 白板图表生成器（Composition IR 架构）
+ *
+ * 流程：
+ *   1) AI 规划画布：输出 outline（描述这张画布上要有哪些区块/自由要素）
+ *   2) 对每个需要 DSL 的区块（block.kind ∈ 已注册类型），AI 单独产出 DSL
+ *   3) 组装 IR → 渲染成 Excalidraw 元素
+ *
+ * 兼容点：
+ *   - 单一图表场景仍然成立（outline 只产出 1 个 block）
+ *   - AI 可输出 freeform.graph (nodes/edges) 直接表示自由结构
+ *   - 支持便签/标注/分组框/跨区连接，无需为每种新画法都写代码
  */
 import logger from './logger'
+import { computeOffset, DIAGRAM_THEME } from './diagrams/shared'
+import { renderMermaidNative } from './diagrams/mermaidNative'
+import { renderMindmap } from './diagrams/mindmap'
+import { renderGantt } from './diagrams/gantt'
+import { renderFishbone } from './diagrams/fishbone'
+import { renderTimeline, renderQuadrant, renderPie } from './diagrams/extras'
+import { renderComposition } from './diagrams/compositionRenderer'
+import { IR_VERSION, KNOWN_BLOCK_KINDS, getBlockTier, validateIR, wrapSingleBlockAsIR } from './diagrams/composition'
 
-// ─── 工具函数 ────────────────────────────────────────
+// ─── 已注册图表类型元信息（供 AI 选用）─────────────
+//
+// 每个类型显式标注 tier：
+//   tier 1 — 官方 Mermaid 原生矢量（flowchart/sequence/class/state/er）
+//   tier 2 — 自研矢量渲染（mindmap/fishbone/gantt/timeline/quadrant/pie）
+//   tier 3 — 官方 Mermaid 图片快照（architecture，目前唯一）
 
-function generateId() {
-  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+const BLOCK_TYPES = {
+  flowchart: { label: '流程图', tier: 1, use: '步骤流程、分支决策', dslHint: 'flowchart TD\n  A[开始] --> B{判断}\n  B -->|是| C[执行]' },
+  sequence: { label: '时序图', tier: 1, use: '多角色交互、API 调用', dslHint: 'sequenceDiagram\n  participant 用户\n  participant 服务\n  用户->>服务: 请求' },
+  class: { label: '类图', tier: 1, use: '面向对象建模', dslHint: 'classDiagram\n  class Order {\n    +id\n    +submit()\n  }' },
+  state: { label: '状态图', tier: 1, use: '状态机、UI 状态切换', dslHint: 'stateDiagram-v2\n  [*] --> 待处理\n  待处理 --> 进行中: 受理' },
+  er: { label: 'ER 图', tier: 1, use: '数据库表设计、实体关系', dslHint: 'erDiagram\n  CUSTOMER ||--o{ ORDER : 下单' },
+
+  mindmap: { label: '思维导图', tier: 2, use: '主题归纳、知识树', dslHint: 'mindmap\n  root((中心))\n    分支A\n      子节点' },
+  gantt: { label: '甘特图', tier: 2, use: '项目排期、依赖关系', dslHint: 'gantt\n  title 计划\n  dateFormat YYYY-MM-DD\n  section 阶段一\n  任务A :a1, 2025-01-01, 3d' },
+  fishbone: { label: '鱼骨图', tier: 2, use: '根因分析', dslHint: 'fishbone\nproblem: 项目延期\nbone: 人\n  - 招聘困难\nbone: 流程\n  - 评审冗长' },
+  timeline: { label: '时间轴', tier: 2, use: '历史事件/里程碑', dslHint: 'timeline\n  title 项目里程碑\n  2024-01 : 启动\n  2024-03 : 原型完成' },
+  quadrant: { label: '四象限', tier: 2, use: '二维定位/优先级矩阵', dslHint: 'quadrantChart\n  title 重要紧急\n  x-axis 不重要 --> 重要\n  y-axis 不紧急 --> 紧急\n  "需求评审": [0.7, 0.8]' },
+  pie: { label: '饼图', tier: 2, use: '占比构成', dslHint: 'pie title 销售构成\n  "服装" : 45\n  "鞋类" : 25' },
+
+  architecture: {
+    label: '架构图',
+    tier: 3,
+    use: '技术架构、系统分层、平台能力地图（图片快照，不可拆元素编辑）',
+    dslHint: 'block-beta\ncolumns 1\naccess["接入层\\nWeb站点 / App / API网关"]\nplatform["平台技术层\\n云原生 / 大数据平台 / AI大模型 / 推荐引擎"]\ndata["数据与基础设施层\\nMySQL / Redis / MQ / 对象存储 / 网络"]\naccess --> platform\nplatform --> data',
+  },
 }
 
-function seed() {
-  return Math.floor(Math.random() * 2000000000)
+// ─── Stage A：画布规划（outline） ───────────────────
+
+const buildOutlineMessages = (userRequest) => {
+  const tierLabel = (t) => (t === 1 ? '★Tier1 原生可编辑' : t === 2 ? '☆Tier2 自研可编辑' : '◐Tier3 图片快照（不可拆图元）')
+  const blockList = Object.entries(BLOCK_TYPES).map(([k, v]) => `- ${k} (${v.label} | ${tierLabel(v.tier || getBlockTier(k))}): ${v.use}`).join('\n')
+  return [
+    {
+      role: 'system',
+      content: `你是 Flota 白板规划师，负责为用户素材设计一张完整的画布。
+你不是单选一种图，而是规划"由哪些区块/便签/分组/连接线组合成"。
+
+可选区块类型 (block)（带能力分层 tier）：
+${blockList}
+
+类型选择优先级（重要）：
+- 优先选 Tier1：原生可编辑、视觉最佳，能用就用
+- 其次选 Tier2：自研可编辑，覆盖 Tier1 不擅长的语义（如 思维导图/鱼骨/时间轴/四象限/饼图/甘特）
+- 仅当用户**明确**要求架构图/分层架构/能力地图/技术栈分层时，才使用 Tier3 (architecture)
+  Tier3 是图片快照，不可拆图元编辑，用户只能改 DSL 重画。不要为了"看起来高大上"滥用 Tier3。
+
+也可以使用：
+- freeform：自由节点边图，给一个 graph: { nodes:[{id,label}], edges:[{from,to,label?}] }
+- group：分组框（包住 children id 列表，画带标题的虚线圆角框）
+- sticky：便签便条 (color: yellow|pink|green|blue)
+- callout：文字标注/说明气泡
+- text：纯文字标题
+
+返回严格 JSON，禁止任何 Markdown 标记：
+{
+  "title": "<整张画布的标题，可选>",
+  "nodes": [
+    {
+      "id": "n1",
+      "kind": "block" | "freeform" | "group" | "sticky" | "callout" | "text",
+      "blockType": "<仅当 kind=block 时填，从可选区块类型里选一个>",
+      "summary": "<这个区块要画什么的中文说明，不要在 outline 阶段写 DSL>",
+      "graph": { "nodes":[...], "edges":[...] }, // 仅当 kind=freeform 时填
+      "children": ["n2","n3"], // 仅 group
+      "text": "...", // sticky/callout/text 必填
+      "color": "yellow", // sticky 可选
+      "title": "...", // group 标题
+      "layout": { "region": "left" | "right" | "top" | "bottom" | "center" | "absolute", "x": 0, "y": 0 }
+    }
+  ],
+  "connectors": [
+    { "from": "n1", "to": "n2", "label": "触发", "dashed": false }
+  ]
 }
 
-// 颜色面板 — 按层级自动分配
-const PALETTE = [
-  { bg: '#a5d8ff', stroke: '#1971c2' }, // 蓝
-  { bg: '#b2f2bb', stroke: '#2f9e44' }, // 绿
-  { bg: '#ffec99', stroke: '#f08c00' }, // 橙
-  { bg: '#ffc9c9', stroke: '#e03131' }, // 红
-  { bg: '#d0bfff', stroke: '#9c36b5' }, // 紫
-  { bg: '#c3fae8', stroke: '#0ca678' }, // 青
-  { bg: '#ffd8a8', stroke: '#e8590c' }, // 深橙
-  { bg: '#eebefa', stroke: '#ae3ec9' }, // 粉紫
-]
+规划原则：
+1. 单一主题/单一图表 → 只输出 1 个 block 节点；不要为简单需求强行拼装
+2. 复合主题（如"项目作战图：流程+排期+根因"）→ 多 block + group 包裹 + connector 串联
+3. 节点 id 用 n1/n2/... 短字符串，禁止重复
+4. 已注册类型优先用 block；只有没合适类型时才用 freeform
+5. layout.region 默认按"主图 center / 辅图 left|right / 标题 top / 注解 bottom"安排
+6. 不要在 outline 里写 DSL，只写 summary。DSL 在下一阶段单独生成
+7. 禁止生成"图表规范/Mermaid 介绍"等元信息节点`,
+    },
+    { role: 'user', content: userRequest },
+  ]
+}
 
-// ─── AI Prompt（要求输出 Mermaid）────────────────────
+const safeJsonExtract = (text) => {
+  if (!text) return null
+  let s = String(text).trim()
+  s = s.replace(/^```[\w-]*\s*/i, '').replace(/```\s*$/i, '').trim()
+  const start = s.indexOf('{')
+  const end = s.lastIndexOf('}')
+  if (start === -1 || end <= start) return null
+  try { return JSON.parse(s.slice(start, end + 1)) } catch (e) {
+    logger.warn('[outline] JSON 解析失败:', e.message)
+    return null
+  }
+}
 
-const MERMAID_SYSTEM_PROMPT = `你是一个图表助手。根据用户输入生成 Mermaid 语法。
+const planComposition = async (userRequest) => {
+  const res = await window.electronAPI.ai.chat(
+    buildOutlineMessages(userRequest),
+    { temperature: 0.3, maxTokens: 1500 },
+  )
+  if (!res?.success || !res.data?.content) {
+    throw new Error(res?.error || '画布规划失败')
+  }
+  const parsed = safeJsonExtract(res.data.content)
+  if (!parsed) throw new Error('画布规划返回格式错误')
+  return parsed
+}
 
-规则：
-1. 只输出 Mermaid 代码，不要任何解释或 markdown 代码块标记
-2. 支持的图表类型：
-   - 流程图: graph TD 或 graph LR
-   - 思维导图: mindmap
-   - 时序图: sequenceDiagram
-3. 流程图节点形状：
-   - [矩形]  (圆角)  {菱形}  ((圆形))  >旗帜]
-4. 流程图连线：--> 或 -->|标签|
-5. 思维导图用缩进表示层级
-6. 时序图参与者用 participant 声明，消息用 ->> 或 -->> 表示
-7. 节点文本要简洁，每个节点不超过15字
-8. 根据内容性质自动选择最合适的图表类型
-9. 生成高质量、结构清晰的图表`
+// ─── Stage B：为每个 block 生成具体 DSL ─────────────
 
-// ─── Mermaid 解析器 ──────────────────────────────────
+const buildDslMessages = (blockType, summary) => {
+  const def = BLOCK_TYPES[blockType]
+  if (!def) throw new Error(`未知 block 类型: ${blockType}`)
+  const extraRules = blockType === 'architecture'
+    ? '\n5. 必须使用 Mermaid 官方 block-beta 语法，第一行必须是 block-beta\n6. 只允许使用 columns、块定义、箭头连接这类官方 block-beta 语法，禁止自定义 DSL\n7. 尽量按分层结构输出 3-5 个主块，每个块里概括一层能力，中文内容写在 ["..."] 标签里\n8. 优先生成适合技术架构/能力地图的分层块图，不要退化成流程图或思维导图\n9. 控制文本密度，单个块内最多 3-6 个短语，用 / 或换行分隔'
+    : ''
+  return [
+    {
+      role: 'system',
+      content: `你是 ${def.label} 生成专家。根据简要说明，输出严格符合 ${blockType} DSL 语法的代码。
 
-/**
- * 解析 Mermaid 流程图语法
- * 支持: graph TD/LR/BT/RL, 节点声明, 边, 子图
- */
-function parseFlowchart(lines) {
-  const nodes = new Map()  // id -> { label, shape }
-  const edges = []
-  let direction = 'TD'
+要求：
+1. 只输出 DSL 代码本身，禁止任何解释、Markdown 代码块标记、前后说明
+2. 节点文字必须贴近真实素材内容，禁止生成"图表规范/类型说明"等元信息
+3. 节点文字简洁，每个节点不超过 20 个字
+4. 控制规模：4-12 个核心元素${extraRules}
 
-  // 第一行: graph TD / graph LR 等
-  const dirLine = lines[0]?.trim() || ''
-  const dirMatch = dirLine.match(/^graph\s+(TD|TB|LR|RL|BT)/i)
-  if (dirMatch) direction = dirMatch[1].toUpperCase()
-  if (direction === 'TB') direction = 'TD'
+DSL 示例：
+${def.dslHint}`,
+    },
+    { role: 'user', content: summary },
+  ]
+}
 
-  // 解析节点形状
-  function parseNodeDef(raw) {
-    raw = raw.trim()
-    let id, label, shape
+const stripCodeFence = (text) => String(text || '').trim()
+  .replace(/^```[\w-]*\s*\n?/i, '')
+  .replace(/\n?```\s*$/i, '')
+  .trim()
 
-    // A[label] / A(label) / A{label} / A((label)) / A>label] / A([label]) / A[[label]]
-    const patterns = [
-      { re: /^(\w+)\(\((.+?)\)\)$/, shape: 'ellipse' },
-      { re: /^(\w+)\((.+?)\)$/, shape: 'rounded' },
-      { re: /^(\w+)\{(.+?)\}$/, shape: 'diamond' },
-      { re: /^(\w+)>(.+?)\]$/, shape: 'flag' },
-      { re: /^(\w+)\[(.+?)\]$/, shape: 'rect' },
-    ]
+const generateDsl = async (blockType, summary) => {
+  const res = await window.electronAPI.ai.chat(
+    buildDslMessages(blockType, summary),
+    { temperature: 0.4 },
+  )
+  if (!res?.success || !res.data?.content) {
+    throw new Error(`${blockType} DSL 生成失败`)
+  }
+  return stripCodeFence(res.data.content)
+}
 
-    for (const p of patterns) {
-      const m = raw.match(p.re)
-      if (m) {
-        id = m[1]
-        label = m[2].replace(/^["']|["']$/g, '')
-        shape = p.shape
-        break
+// ─── 把 outline 填充成可渲染的 IR ────────────────────
+
+const materializeIR = async (outline) => {
+  const ir = {
+    version: IR_VERSION,
+    title: outline.title || '',
+    canvas: {},
+    nodes: [],
+    connectors: outline.connectors || [],
+  }
+  // 并行产 DSL
+  const dslJobs = []
+  const dslFailures = []
+  let dslBlockCount = 0
+  for (const node of outline.nodes || []) {
+    if (node.kind === 'block') {
+      dslBlockCount += 1
+      if (!KNOWN_BLOCK_KINDS.has(node.blockType)) {
+        logger.warn(`[outline] 未知 blockType=${node.blockType}，降级为 mindmap`)
+        node.blockType = 'mindmap'
       }
-    }
-
-    if (!id) {
-      // 纯 ID，无形状声明
-      id = raw.replace(/^["']|["']$/g, '')
-      label = id
-      shape = 'rect'
-    }
-
-    return { id, label, shape }
-  }
-
-  function ensureNode(raw) {
-    const def = parseNodeDef(raw)
-    if (!nodes.has(def.id)) {
-      nodes.set(def.id, { label: def.label, shape: def.shape })
-    } else if (def.label !== def.id) {
-      // 更新 label（如果之前只有 ID）
-      nodes.get(def.id).label = def.label
-      nodes.get(def.id).shape = def.shape
-    }
-    return def.id
-  }
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim()
-    if (!line || line.startsWith('graph ') || line.startsWith('%%') || line === 'end' || line.startsWith('subgraph')) continue
-
-    // 尝试匹配边: A --> B, A -->|label| B, A -- text --> B
-    // 支持链式: A --> B --> C
-    const edgePattern = /^(.+?)(\s*-+->|--[->]|=+=>|-.->)\s*(?:\|([^|]*)\|\s*)?(.+)$/
-    const m = line.match(edgePattern)
-    if (m) {
-      const leftRaw = m[1].trim()
-      const edgeLabel = m[3]?.trim() || ''
-      const rightPart = m[4].trim()
-
-      const fromId = ensureNode(leftRaw)
-
-      // 右边可能是链式: B --> C
-      const chainMatch = rightPart.match(/^(.+?)(\s*-+->|--[->]|=+=>|-.->)\s*(?:\|([^|]*)\|\s*)?(.+)$/)
-      if (chainMatch) {
-        const midId = ensureNode(chainMatch[1].trim())
-        edges.push({ from: fromId, to: midId, label: edgeLabel })
-        // 递归处理剩余部分（简化：只处理一级链）
-        const toId = ensureNode(chainMatch[4].trim())
-        edges.push({ from: midId, to: toId, label: chainMatch[3]?.trim() || '' })
-      } else {
-        const toId = ensureNode(rightPart)
-        edges.push({ from: fromId, to: toId, label: edgeLabel })
-      }
-      continue
-    }
-
-    // 独立节点声明
-    if (/^\w+[\[\(\{>]/.test(line)) {
-      ensureNode(line)
+      dslJobs.push(generateDsl(node.blockType, node.summary || node.title || node.id).then((dsl) => {
+        ir.nodes.push({
+          id: node.id,
+          kind: 'block',
+          blockType: node.blockType,
+          tier: getBlockTier(node.blockType),
+          dsl,
+          layout: node.layout || { region: 'center' },
+        })
+      }).catch((err) => {
+        logger.warn(`[outline] block ${node.id} DSL 失败:`, err.message)
+        dslFailures.push({
+          id: node.id,
+          blockType: node.blockType,
+          message: err.message || 'DSL 生成失败',
+        })
+      }))
+    } else if (node.kind === 'freeform') {
+      ir.nodes.push({
+        id: node.id,
+        kind: 'freeform',
+        graph: node.graph || { nodes: [], edges: [] },
+        layout: node.layout || { region: 'center' },
+      })
+    } else if (node.kind === 'group') {
+      ir.nodes.push({
+        id: node.id,
+        kind: 'group',
+        title: node.title || '',
+        children: node.children || [],
+        color: node.color,
+        layout: node.layout || {},
+      })
+    } else if (node.kind === 'sticky' || node.kind === 'callout' || node.kind === 'text') {
+      ir.nodes.push({
+        id: node.id,
+        kind: node.kind,
+        text: node.text || '',
+        color: node.color,
+        fontSize: node.fontSize,
+        layout: node.layout || {},
+      })
     }
   }
+  await Promise.all(dslJobs)
 
-  return { type: 'flowchart', direction, nodes, edges }
+  if (dslFailures.length > 0) {
+    const failedIds = new Set(dslFailures.map(item => item.id))
+    const hasRenderableNode = ir.nodes.some((node) => {
+      if (!node || node.kind === 'group') return false
+      if (node.kind === 'freeform') return Array.isArray(node.graph?.nodes) && node.graph.nodes.length > 0
+      if (node.kind === 'sticky' || node.kind === 'callout' || node.kind === 'text') return Boolean(String(node.text || '').trim())
+      return true
+    })
+
+    if (dslFailures.length === dslBlockCount && !hasRenderableNode) {
+      throw new Error(`所有图表区块 DSL 生成失败: ${dslFailures.map(item => `${item.id}(${item.blockType})`).join(', ')}`)
+    }
+
+    ir.connectors = (ir.connectors || []).filter((connector) =>
+      !failedIds.has(connector?.from) && !failedIds.has(connector?.to)
+    )
+    ir.warnings = dslFailures.map(item => `区块 ${item.id}(${item.blockType}) 未生成: ${item.message}`)
+  }
+
+  if (!ir.nodes.some(node => node && node.kind !== 'group')) {
+    throw new Error('画布没有可渲染内容')
+  }
+
+  validateIR(ir)
+  return ir
 }
 
-/**
- * 解析 Mermaid 思维导图语法
- * mindmap
- *   root(Central Topic)
- *     Branch 1
- *       Leaf 1
- *     Branch 2
- */
-function parseMindmap(lines) {
-  const tree = { label: 'Root', children: [], depth: -1 }
-  const stack = [tree]
+// ─── 兼容旧路径：单一图表快路径 ─────────────────────
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    if (!line.trim() || line.trim() === 'mindmap') continue
+const wrapPlain = (elements) => ({ elements, files: {} })
 
-    // 计算缩进深度（空格数 / 2 或 tab 数）
-    const indent = line.search(/\S/)
-    if (indent < 0) continue
-
-    const raw = line.trim()
-    // 提取标签（去掉可选的形状标记）
-    let label = raw
-    const shapeMatch = raw.match(/^(?:\w+)?\(?\(?(.+?)\)?\)?$/)
-    if (shapeMatch) label = shapeMatch[1]
-    // 清理：去掉 root((xxx)) 等标记
-    label = label.replace(/^\(\((.+)\)\)$/, '$1').replace(/^\((.+)\)$/, '$1').replace(/^\[(.+)\]$/, '$1')
-
-    const node = { label, children: [], depth: indent }
-
-    // 找到合适的父节点
-    while (stack.length > 1 && stack[stack.length - 1].depth >= indent) {
-      stack.pop()
-    }
-    stack[stack.length - 1].children.push(node)
-    stack.push(node)
-  }
-
-  return { type: 'mindmap', tree }
+const SIMPLE_RENDERERS = {
+  architecture: async (dsl, off) => {
+    const r = await renderMermaidNative(dsl, off)
+    return { elements: r.elements, files: r.files || {} }
+  },
+  flowchart: async (dsl, off) => {
+    const r = await renderMermaidNative(dsl, off)
+    return { elements: r.elements, files: r.files || {} }
+  },
+  sequence: async (dsl, off) => {
+    const r = await renderMermaidNative(dsl, off)
+    return { elements: r.elements, files: r.files || {} }
+  },
+  class: async (dsl, off) => {
+    const r = await renderMermaidNative(dsl, off)
+    return { elements: r.elements, files: r.files || {} }
+  },
+  state: async (dsl, off) => {
+    const r = await renderMermaidNative(dsl, off)
+    return { elements: r.elements, files: r.files || {} }
+  },
+  er: async (dsl, off) => {
+    const r = await renderMermaidNative(dsl, off)
+    return { elements: r.elements, files: r.files || {} }
+  },
+  mindmap: (dsl, off) => Promise.resolve(wrapPlain(renderMindmap(dsl, off))),
+  gantt: (dsl, off) => Promise.resolve(wrapPlain(renderGantt(dsl, off))),
+  fishbone: (dsl, off) => Promise.resolve(wrapPlain(renderFishbone(dsl, off))),
+  timeline: (dsl, off) => Promise.resolve(wrapPlain(renderTimeline(dsl, off))),
+  quadrant: (dsl, off) => Promise.resolve(wrapPlain(renderQuadrant(dsl, off))),
+  pie: (dsl, off) => Promise.resolve(wrapPlain(renderPie(dsl, off))),
 }
 
-/**
- * 解析 Mermaid 时序图语法
- * sequenceDiagram
- *   participant A as Alice
- *   participant B as Bob
- *   A->>B: Hello
- *   B-->>A: Hi
- */
-function parseSequenceDiagram(lines) {
-  const participants = [] // { id, label }
-  const messages = []     // { from, to, label, isDashed }
-  const seen = new Set()
+const isSingleBlockOutline = (outline) =>
+  Array.isArray(outline?.nodes) &&
+  outline.nodes.length === 1 &&
+  outline.nodes[0].kind === 'block'
 
-  function ensureParticipant(id, label) {
-    if (!seen.has(id)) {
-      seen.add(id)
-      participants.push({ id, label: label || id })
-    }
-  }
+// ─── 对外主入口 ────────────────────────────────────
 
-  for (const raw of lines) {
-    const line = raw.trim()
-    if (!line || line === 'sequenceDiagram' || line.startsWith('%%')) continue
+export async function aiGenerateExcalidrawElements(description, existingElements = []) {
+  const offsets = computeOffset(existingElements)
+  logger.log('[aiExcalidrawGenerator] 输入:', description, 'offset:', offsets)
+  const looksLikeArchitecture = /架构图|技术架构|系统架构|架构设计|分层架构|能力地图/.test(String(description || ''))
 
-    // participant / actor 声明
-    const pMatch = line.match(/^(?:participant|actor)\s+(\w+)(?:\s+as\s+(.+))?$/i)
-    if (pMatch) {
-      ensureParticipant(pMatch[1], pMatch[2]?.trim() || pMatch[1])
-      continue
-    }
-
-    // Note / activate / deactivate / loop / end / alt / else — 跳过
-    if (/^(Note|activate|deactivate|loop|end|alt|else|opt|par|rect|critical|break)/i.test(line)) continue
-
-    // 消息: A->>B: text, A-->>B: text, A->>+B, A-)B: text 等
-    const mMatch = line.match(/^(\w+)\s*(-?->>?\+?-?|-->>?\+?-?)\s*(\w+)\s*:\s*(.*)$/)
-    if (mMatch) {
-      const from = mMatch[1]
-      const arrow = mMatch[2]
-      const to = mMatch[3]
-      const label = mMatch[4].trim()
-      ensureParticipant(from)
-      ensureParticipant(to)
-      messages.push({ from, to, label, isDashed: arrow.startsWith('--') })
-    }
-  }
-
-  return { type: 'sequence', participants, messages }
-}
-
-/**
- * 从 AI 回复中提取 Mermaid 代码
- */
-function extractMermaid(text) {
-  let code = text.trim()
-  // 去掉 markdown 代码块
-  code = code.replace(/^```(?:mermaid)?\s*\n?/i, '').replace(/\n?```\s*$/i, '')
-  return code.trim()
-}
-
-/**
- * 解析 Mermaid 文本为图结构
- */
-function parseMermaid(code) {
-  const lines = code.split('\n')
-  const firstLine = lines[0]?.trim().toLowerCase() || ''
-
+  let outline
   try {
-    if (firstLine.startsWith('mindmap')) {
-      return parseMindmap(lines)
-    }
-    if (firstLine.startsWith('sequencediagram')) {
-      return parseSequenceDiagram(lines)
-    }
-    // 默认当flowchart处理
-    const result = parseFlowchart(lines)
-    if (result.nodes.size === 0) throw new Error('解析结果为空')
-    return result
+    outline = await planComposition(description)
   } catch (e) {
-    logger.log('[aiExcalidrawGenerator] Mermaid 解析失败，使用 fallback:', e.message)
-    return fallbackParse(code)
-  }
-}
-
-/**
- * Fallback 解析：用正则从任意文本中提取节点和关系
- */
-function fallbackParse(code) {
-  const nodes = new Map()
-  const edges = []
-  let nodeId = 0
-  const labelToId = new Map()
-
-  function getOrCreate(label) {
-    label = label.trim().replace(/^["'\[\(\{]+|["'\]\)\}]+$/g, '')
-    if (!label) return null
-    if (labelToId.has(label)) return labelToId.get(label)
-    const id = `fb_${nodeId++}`
-    labelToId.set(label, id)
-    nodes.set(id, { label, shape: 'rect' })
-    return id
-  }
-
-  // 尝试提取所有 A --> B 模式
-  const arrowRe = /(\S+(?:\s+\S+)?)\s*-+>+\s*(?:\|([^|]*)\|\s*)?(\S+(?:\s+\S+)?)/g
-  let m
-  while ((m = arrowRe.exec(code)) !== null) {
-    const fromId = getOrCreate(m[1])
-    const toId = getOrCreate(m[3])
-    if (fromId && toId) edges.push({ from: fromId, to: toId, label: m[2]?.trim() || '' })
-  }
-
-  // 如果还是空，将每行当独立节点
-  if (nodes.size === 0) {
-    for (const line of code.split('\n')) {
-      const text = line.trim()
-      if (text && text.length < 60) getOrCreate(text)
+    if (looksLikeArchitecture) {
+      logger.warn('[aiExcalidrawGenerator] 架构图规划失败，直接尝试官方 block-beta:', e.message)
+      const dsl = await generateDsl('architecture', description)
+      return SIMPLE_RENDERERS.architecture(dsl, offsets)
     }
+    logger.warn('[aiExcalidrawGenerator] 规划失败，回退单 mindmap:', e.message)
+    const dsl = await generateDsl('mindmap', description)
+    return wrapPlain(renderMindmap(dsl, offsets))
   }
 
-  return { type: 'flowchart', direction: 'TD', nodes, edges }
-}
-
-// ─── 自动布局引擎 ────────────────────────────────────
-
-const NODE_W = 160
-const NODE_H = 60
-const GAP_X = 80
-const GAP_Y = 80
-
-/**
- * 流程图分层布局（Sugiyama 简化版）
- */
-function layoutFlowchart(graph, offsetX = 100, offsetY = 100) {
-  const { nodes, edges, direction } = graph
-  const isHorizontal = direction === 'LR' || direction === 'RL'
-  const isReversed = direction === 'BT' || direction === 'RL'
-
-  // 构建邻接表和入度
-  const adj = new Map()
-  const inDeg = new Map()
-  for (const [id] of nodes) {
-    adj.set(id, [])
-    inDeg.set(id, 0)
-  }
-  for (const e of edges) {
-    if (adj.has(e.from)) adj.get(e.from).push(e.to)
-    inDeg.set(e.to, (inDeg.get(e.to) || 0) + 1)
-  }
-
-  // BFS 拓扑分层
-  const layers = []
-  const layerOf = new Map()
-  const queue = []
-  for (const [id] of nodes) {
-    if ((inDeg.get(id) || 0) === 0) queue.push(id)
-  }
-  // 处理无入度的为第0层
-  if (queue.length === 0 && nodes.size > 0) {
-    // 有环？取第一个为起点
-    queue.push(nodes.keys().next().value)
-  }
-
-  const visited = new Set()
-  while (queue.length > 0) {
-    const batch = [...queue]
-    queue.length = 0
-    const layer = []
-    for (const id of batch) {
-      if (visited.has(id)) continue
-      visited.add(id)
-      layerOf.set(id, layers.length)
-      layer.push(id)
-      for (const next of (adj.get(id) || [])) {
-        const newDeg = (inDeg.get(next) || 1) - 1
-        inDeg.set(next, newDeg)
-        if (newDeg <= 0 && !visited.has(next)) queue.push(next)
+  // 单区块场景走快路径，避免不必要的 IR 编排开销
+  if (isSingleBlockOutline(outline)) {
+    const node = outline.nodes[0]
+    const blockType = KNOWN_BLOCK_KINDS.has(node.blockType) ? node.blockType : 'mindmap'
+    const dsl = await generateDsl(blockType, node.summary || description)
+    logger.log(`[aiExcalidrawGenerator] 单块路径 type=${blockType}`)
+    try {
+      return await SIMPLE_RENDERERS[blockType](dsl, offsets)
+    } catch (err) {
+      if (blockType === 'architecture') {
+        logger.warn('[aiExcalidrawGenerator] 官方架构图渲染失败:', err.message)
+        throw err
       }
-    }
-    if (layer.length > 0) layers.push(layer)
-  }
-
-  // 补充未访问节点
-  for (const [id] of nodes) {
-    if (!visited.has(id)) {
-      layers.push([id])
-      layerOf.set(id, layers.length - 1)
-      visited.add(id)
+      logger.warn(`[aiExcalidrawGenerator] ${blockType} 渲染失败，回退 mindmap:`, err.message)
+      const fb = await generateDsl('mindmap', description)
+      return wrapPlain(renderMindmap(fb, offsets))
     }
   }
 
-  if (isReversed) layers.reverse()
-
-  // Barycenter 排序：减少层间边交叉
-  const adjAll = new Map()
-  for (const [id] of nodes) adjAll.set(id, [])
-  for (const e of edges) {
-    if (adjAll.has(e.from)) adjAll.get(e.from).push(e.to)
-    if (adjAll.has(e.to)) adjAll.get(e.to).push(e.from)
+  // 多区块/复合路径：组装 IR 渲染
+  let ir
+  try {
+    ir = await materializeIR(outline)
+  } catch (e) {
+    logger.warn('[aiExcalidrawGenerator] IR 物化失败，回退单 mindmap:', e.message)
+    const dsl = await generateDsl('mindmap', description)
+    return wrapPlain(renderMindmap(dsl, offsets))
   }
-  for (let pass = 0; pass < 4; pass++) {
-    for (let li = 1; li < layers.length; li++) {
-      const prevLayer = layers[li - 1]
-      const prevPos = new Map()
-      prevLayer.forEach((id, idx) => prevPos.set(id, idx))
-      layers[li].sort((a, b) => {
-        const neighborsA = (adjAll.get(a) || []).filter(n => prevPos.has(n))
-        const neighborsB = (adjAll.get(b) || []).filter(n => prevPos.has(n))
-        const baryA = neighborsA.length > 0 ? neighborsA.reduce((s, n) => s + prevPos.get(n), 0) / neighborsA.length : Infinity
-        const baryB = neighborsB.length > 0 ? neighborsB.reduce((s, n) => s + prevPos.get(n), 0) / neighborsB.length : Infinity
-        return baryA - baryB
-      })
-    }
+  logger.log('[aiExcalidrawGenerator] IR 节点数:', ir.nodes.length, 'connectors:', ir.connectors.length)
+  try {
+    const result = await renderComposition(ir, offsets)
+    if (Array.isArray(result)) return { ...wrapPlain(result), warnings: ir.warnings || [] }
+    return { elements: result.elements || [], files: result.files || {}, warnings: ir.warnings || [] }
+  } catch (err) {
+    logger.error('[aiExcalidrawGenerator] IR 渲染失败:', err)
+    const firstBlock = ir.nodes.find((n) => n.kind === 'block')
+    if (firstBlock) return SIMPLE_RENDERERS[firstBlock.blockType](firstBlock.dsl, offsets)
+    throw err
   }
-
-  // 分配坐标
-  const positions = new Map()
-  for (let li = 0; li < layers.length; li++) {
-    const layer = layers[li]
-    const totalSpan = layer.length * (isHorizontal ? NODE_H : NODE_W) + (layer.length - 1) * (isHorizontal ? GAP_Y : GAP_X)
-    const startCross = -totalSpan / 2
-
-    for (let ni = 0; ni < layer.length; ni++) {
-      const id = layer[ni]
-      const mainPos = li * ((isHorizontal ? NODE_W : NODE_H) + (isHorizontal ? GAP_X : GAP_Y))
-      const crossPos = startCross + ni * ((isHorizontal ? NODE_H : NODE_W) + (isHorizontal ? GAP_Y : GAP_X))
-
-      if (isHorizontal) {
-        positions.set(id, { x: offsetX + mainPos, y: offsetY + crossPos + totalSpan / 2 })
-      } else {
-        positions.set(id, { x: offsetX + crossPos + totalSpan / 2, y: offsetY + mainPos })
-      }
-    }
-  }
-
-  return positions
 }
 
 /**
- * 思维导图树形布局
- */
-function layoutMindmap(tree, offsetX = 400, offsetY = 100) {
-  const positions = new Map()
-  let idCounter = 0
-  const nodeList = [] // { id, label, depth, parentId }
-  const edgeList = []
-
-  function flatten(node, parentId, depth) {
-    const id = `mm_${idCounter++}`
-    nodeList.push({ id, label: node.label, depth })
-    if (parentId) edgeList.push({ from: parentId, to: id, label: '' })
-    for (const child of node.children) {
-      flatten(child, id, depth + 1)
-    }
-    return id
-  }
-
-  // 先将第一层children作为 roots
-  if (tree.children.length === 1) {
-    flatten(tree.children[0], null, 0)
-  } else if (tree.children.length > 0) {
-    const rootId = `mm_${idCounter++}`
-    nodeList.push({ id: rootId, label: tree.children[0]?.label || 'Root', depth: 0 })
-    for (const child of tree.children.slice(tree.children.length > 1 ? 0 : 1)) {
-      flatten(child, rootId, 1)
-    }
-  }
-
-  // 按 depth 分组
-  const depthGroups = new Map()
-  for (const n of nodeList) {
-    if (!depthGroups.has(n.depth)) depthGroups.set(n.depth, [])
-    depthGroups.get(n.depth).push(n)
-  }
-
-  // 水平布局：depth => x 层级
-  const MW = 180, MH = 50, MGX = 100, MGY = 30
-  for (const [depth, group] of depthGroups) {
-    const x = offsetX + depth * (MW + MGX)
-    const totalH = group.length * MH + (group.length - 1) * MGY
-    const startY = offsetY + (depth === 0 ? totalH / 2 : 0) - totalH / 2
-    for (let i = 0; i < group.length; i++) {
-      positions.set(group[i].id, { x, y: startY + i * (MH + MGY) })
-    }
-  }
-
-  // 构建 nodes Map
-  const nodesMap = new Map()
-  for (const n of nodeList) {
-    nodesMap.set(n.id, { label: n.label, shape: n.depth === 0 ? 'rounded' : 'rect' })
-  }
-
-  return { positions, nodes: nodesMap, edges: edgeList }
-}
-
-// ─── 图结构 → Excalidraw 元素 ────────────────────────
-
-function makeBase(type) {
-  return {
-    id: generateId(),
-    type,
-    angle: 0,
-    strokeColor: '#1e1e1e',
-    backgroundColor: 'transparent',
-    fillStyle: 'solid',
-    strokeWidth: 1,
-    strokeStyle: 'solid',
-    roughness: 1,
-    opacity: 100,
-    groupIds: [],
-    frameId: null,
-    roundness: type === 'arrow' || type === 'line' ? { type: 2 } : { type: 3 },
-    seed: seed(),
-    version: 1,
-    versionNonce: seed(),
-    isDeleted: false,
-    boundElements: null,
-    updated: Date.now(),
-    link: null,
-    locked: false,
-  }
-}
-
-function shapeTypeMap(shape) {
-  switch (shape) {
-    case 'diamond': return 'diamond'
-    case 'ellipse': case 'circle': return 'ellipse'
-    default: return 'rectangle'
-  }
-}
-
-function measureText(text, fontSize = 16) {
-  // 粗略估算：每个字符 0.6em 宽，中文约 1em
-  const chars = [...text]
-  let w = 0
-  for (const ch of chars) {
-    w += ch.charCodeAt(0) > 255 ? fontSize : fontSize * 0.6
-  }
-  return { width: Math.max(w + 24, 80), height: fontSize * 1.5 + 16 }
-}
-
-/**
- * 将图结构转为 Excalidraw 元素数组
- */
-function graphToElements(nodesMap, edges, positions, isHorizontal = false) {
-  const elements = []
-
-  // 预计算每个节点的实际尺寸
-  const nodeSizes = new Map()
-  for (const [id, node] of nodesMap) {
-    const measured = measureText(node.label, 16)
-    const w = Math.max(NODE_W, measured.width)
-    const h = NODE_H
-    nodeSizes.set(id, { w, h })
-  }
-
-  let colorIdx = 0
-  const nodeColorCache = new Map()
-
-  // 1. 生成节点（shape + text）
-  for (const [id, node] of nodesMap) {
-    const pos = positions.get(id)
-    if (!pos) continue
-    const { w, h } = nodeSizes.get(id)
-
-    // 分配颜色
-    if (!nodeColorCache.has(id)) {
-      nodeColorCache.set(id, PALETTE[colorIdx % PALETTE.length])
-      colorIdx++
-    }
-    const color = nodeColorCache.get(id)
-    const shapeType = shapeTypeMap(node.shape)
-
-    // 形状元素
-    const shapeEl = {
-      ...makeBase(shapeType),
-      x: pos.x,
-      y: pos.y,
-      width: w,
-      height: h,
-      strokeColor: color.stroke,
-      backgroundColor: color.bg,
-      roundness: node.shape === 'rounded'
-        ? { type: 3 }
-        : shapeType === 'rectangle' ? { type: 3 } : (shapeType === 'diamond' ? null : { type: 2 }),
-    }
-    elements.push(shapeEl)
-
-    // 文本元素（居中）
-    const fontSize = 16
-    const textEl = {
-      ...makeBase('text'),
-      x: pos.x + w / 2 - measureText(node.label, fontSize).width / 2 + 12,
-      y: pos.y + h / 2 - fontSize * 0.75,
-      width: measureText(node.label, fontSize).width,
-      height: fontSize * 1.5,
-      text: node.label,
-      fontSize,
-      fontFamily: 1,
-      textAlign: 'center',
-      verticalAlign: 'middle',
-      baseline: fontSize,
-      containerId: null,
-      originalText: node.label,
-      lineHeight: 1.25,
-      strokeColor: '#1e1e1e',
-      backgroundColor: 'transparent',
-      roundness: null,
-    }
-    elements.push(textEl)
-  }
-
-  // 2. 生成箭头
-  for (const edge of edges) {
-    const fromPos = positions.get(edge.from)
-    const toPos = positions.get(edge.to)
-    if (!fromPos || !toPos) continue
-
-    const fromSize = nodeSizes.get(edge.from) || { w: NODE_W, h: NODE_H }
-    const toSize = nodeSizes.get(edge.to) || { w: NODE_W, h: NODE_H }
-
-    // 计算起点和终点（从节点边缘出发）
-    let sx, sy, ex, ey
-    if (isHorizontal) {
-      sx = fromPos.x + fromSize.w
-      sy = fromPos.y + fromSize.h / 2
-      ex = toPos.x
-      ey = toPos.y + toSize.h / 2
-    } else {
-      sx = fromPos.x + fromSize.w / 2
-      sy = fromPos.y + fromSize.h
-      ex = toPos.x + toSize.w / 2
-      ey = toPos.y
-    }
-
-    const dx = ex - sx
-    const dy = ey - sy
-
-    const arrowEl = {
-      ...makeBase('arrow'),
-      x: sx,
-      y: sy,
-      width: Math.abs(dx),
-      height: Math.abs(dy),
-      points: [[0, 0], [dx, dy]],
-      strokeColor: '#868e96',
-      lastCommittedPoint: null,
-      startBinding: null,
-      endBinding: null,
-      startArrowhead: null,
-      endArrowhead: 'arrow',
-    }
-    elements.push(arrowEl)
-
-    // 边标签
-    if (edge.label) {
-      const labelEl = {
-        ...makeBase('text'),
-        x: sx + dx / 2 - 20,
-        y: sy + dy / 2 - 10,
-        width: 80,
-        height: 20,
-        text: edge.label,
-        fontSize: 14,
-        fontFamily: 1,
-        textAlign: 'center',
-        verticalAlign: 'middle',
-        baseline: 14,
-        containerId: null,
-        originalText: edge.label,
-        lineHeight: 1.25,
-        strokeColor: '#495057',
-        backgroundColor: 'transparent',
-        roundness: null,
-      }
-      elements.push(labelEl)
-    }
-  }
-
-  return elements
-}
-
-// ─── 时序图布局 + 渲染 ─────────────────────────────
-
-function layoutAndRenderSequence(graph, offsetX = 100, offsetY = 100) {
-  const { participants, messages } = graph
-  const elements = []
-  const PART_W = 120
-  const PART_H = 40
-  const PART_GAP = 60
-  const MSG_GAP = 50
-  const totalH = (messages.length + 2) * MSG_GAP + PART_H * 2
-
-  // 参与者位置
-  const partPos = new Map()
-  participants.forEach((p, i) => {
-    const x = offsetX + i * (PART_W + PART_GAP)
-    partPos.set(p.id, x)
-  })
-
-  // 上方参与者方框 + 生命线
-  let colorIdx = 0
-  for (const p of participants) {
-    const x = partPos.get(p.id)
-    const color = PALETTE[colorIdx++ % PALETTE.length]
-
-    // 顶部方框
-    elements.push({
-      ...makeBase('rectangle'),
-      x: x, y: offsetY,
-      width: PART_W, height: PART_H,
-      strokeColor: color.stroke, backgroundColor: color.bg,
-    })
-    elements.push({
-      ...makeBase('text'),
-      x: x + PART_W / 2 - measureText(p.label, 14).width / 2 + 12,
-      y: offsetY + PART_H / 2 - 10,
-      width: measureText(p.label, 14).width, height: 20,
-      text: p.label, fontSize: 14, fontFamily: 1, textAlign: 'center',
-      verticalAlign: 'middle', baseline: 14, containerId: null,
-      originalText: p.label, lineHeight: 1.25,
-      strokeColor: '#1e1e1e', backgroundColor: 'transparent', roundness: null,
-    })
-
-    // 生命线（虚线）
-    const lifelineX = x + PART_W / 2
-    elements.push({
-      ...makeBase('line'),
-      x: lifelineX, y: offsetY + PART_H,
-      width: 0, height: totalH - PART_H * 2,
-      points: [[0, 0], [0, totalH - PART_H * 2]],
-      strokeColor: '#adb5bd', strokeStyle: 'dashed',
-      startArrowhead: null, endArrowhead: null,
-    })
-  }
-
-  // 消息箭头
-  messages.forEach((msg, i) => {
-    const fromX = partPos.get(msg.from)
-    const toX = partPos.get(msg.to)
-    if (fromX == null || toX == null) return
-
-    const y = offsetY + PART_H + (i + 1) * MSG_GAP
-    const sx = (fromX < toX ? fromX : fromX) + PART_W / 2
-    const ex = (toX < fromX ? toX : toX) + PART_W / 2
-    const dx = ex - sx
-
-    elements.push({
-      ...makeBase('arrow'),
-      x: sx, y: y,
-      width: Math.abs(dx), height: 0,
-      points: [[0, 0], [dx, 0]],
-      strokeColor: msg.isDashed ? '#868e96' : '#495057',
-      strokeStyle: msg.isDashed ? 'dashed' : 'solid',
-      lastCommittedPoint: null,
-      startBinding: null, endBinding: null,
-      startArrowhead: null, endArrowhead: 'arrow',
-    })
-
-    // 消息标签
-    if (msg.label) {
-      const labelW = measureText(msg.label, 13).width
-      elements.push({
-        ...makeBase('text'),
-        x: sx + dx / 2 - labelW / 2 + 12,
-        y: y - 18,
-        width: labelW, height: 16,
-        text: msg.label, fontSize: 13, fontFamily: 1, textAlign: 'center',
-        verticalAlign: 'middle', baseline: 13, containerId: null,
-        originalText: msg.label, lineHeight: 1.25,
-        strokeColor: '#495057', backgroundColor: 'transparent', roundness: null,
-      })
-    }
-  })
-
-  return elements
-}
-
-// ─── 主流程：AI → Mermaid → 解析 → 布局 → 元素 ─────
-
-const MERMAID_PROMPT_CONVERT = `请将以下 Markdown 笔记内容转换为 Mermaid 图表（选择最合适的图表类型：流程图 graph TD/LR、思维导图 mindmap 或时序图 sequenceDiagram），要求结构清晰、层级合理：
-
-`
-
-const MERMAID_PROMPT_GENERATE = `请根据以下描述生成 Mermaid 图表（选择最合适的图表类型：流程图 graph TD/LR、思维导图 mindmap 或时序图 sequenceDiagram），要求结构清晰：
-
-`
-
-/**
- * 使用 AI 将 Markdown 内容转换为 Excalidraw 白板数据
- * AI 输出 Mermaid → 本地解析布局 → Excalidraw 元素
+ * 把整篇 Markdown 转白板（用于"内容转白板"按钮）
  */
 export async function aiConvertMarkdownToWhiteboard(markdownContent) {
-  logger.log('[aiExcalidrawGenerator] 开始 AI Mermaid 转换，内容长度:', markdownContent?.length)
-
-  const messages = [
-    { role: 'system', content: MERMAID_SYSTEM_PROMPT },
-    { role: 'user', content: MERMAID_PROMPT_CONVERT + markdownContent },
-  ]
-
-  const res = await window.electronAPI.ai.chat(messages, {})
-  if (!res?.success || !res.data?.content) {
-    throw new Error(res?.error || 'AI 调用失败')
-  }
-
-  const mermaidCode = extractMermaid(res.data.content)
-  logger.log('[aiExcalidrawGenerator] AI 返回 Mermaid:\n', mermaidCode)
-
-  const elements = mermaidToElements(mermaidCode)
-  logger.log('[aiExcalidrawGenerator] 生成元素数量:', elements.length)
-
+  const result = await aiGenerateExcalidrawElements(markdownContent, [])
+  const elements = Array.isArray(result) ? result : (result.elements || [])
+  const fileMap = Array.isArray(result) ? {} : (result.files || {})
   return JSON.stringify({
     type: 'excalidraw',
     version: 2,
     source: 'Flota-local',
     elements,
     appState: {
-      viewBackgroundColor: '#ffffff',
+      viewBackgroundColor: DIAGRAM_THEME.canvas,
       currentItemFontFamily: 1,
       gridSize: null,
     },
-    fileMap: {},
+    fileMap,
   })
 }
 
 /**
- * 使用 AI 基于描述和现有白板数据生成新元素
- * @param {string} description - 用户描述
- * @param {Array} existingElements - 现有白板元素
- * @returns {Promise<Array>} 新生成的 Excalidraw 元素数组
+ * 调试导出
  */
-export async function aiGenerateExcalidrawElements(description, existingElements = []) {
-  // 计算偏移量，避免与现有内容重叠
-  let offsetX = 100, offsetY = 100
-  if (existingElements.length > 0) {
-    const maxX = Math.max(...existingElements.map(e => (e.x ?? 0) + (e.width ?? 0)))
-    const maxY = Math.max(...existingElements.map(e => (e.y ?? 0) + (e.height ?? 0)))
-    // 放在现有内容右侧或下方
-    offsetX = maxX + 150
-    offsetY = 100
-  }
-
-  logger.log('[aiExcalidrawGenerator] AI Mermaid 生成，描述:', description)
-
-  const messages = [
-    { role: 'system', content: MERMAID_SYSTEM_PROMPT },
-    { role: 'user', content: MERMAID_PROMPT_GENERATE + description },
-  ]
-
-  const res = await window.electronAPI.ai.chat(messages, {})
-  if (!res?.success || !res.data?.content) {
-    throw new Error(res?.error || 'AI 调用失败')
-  }
-
-  const mermaidCode = extractMermaid(res.data.content)
-  logger.log('[aiExcalidrawGenerator] AI 返回 Mermaid:\n', mermaidCode)
-
-  return mermaidToElements(mermaidCode, offsetX, offsetY)
-}
-
-/**
- * Mermaid 代码 → Excalidraw 元素（完整流水线）
- */
-function mermaidToElements(mermaidCode, offsetX = 100, offsetY = 100) {
-  const graph = parseMermaid(mermaidCode)
-
-  if (graph.type === 'mindmap') {
-    const { positions, nodes, edges } = layoutMindmap(graph.tree, offsetX, offsetY)
-    return graphToElements(nodes, edges, positions, true)
-  }
-
-  if (graph.type === 'sequence') {
-    return layoutAndRenderSequence(graph, offsetX, offsetY)
-  }
-
-  // flowchart
-  const isHorizontal = graph.direction === 'LR' || graph.direction === 'RL'
-  const positions = layoutFlowchart(graph, offsetX, offsetY)
-  return graphToElements(graph.nodes, graph.edges, positions, isHorizontal)
+export const __debug = {
+  planComposition,
+  generateDsl,
+  materializeIR,
+  BLOCK_TYPES,
+  wrapSingleBlockAsIR,
 }

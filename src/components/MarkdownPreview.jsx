@@ -660,13 +660,6 @@ const MarkdownPreview = ({
             opacity: 0.9
           }
         },
-        '& a': {
-          color: 'primary.main',
-          textDecoration: 'none',
-          '&:hover': {
-            textDecoration: 'underline'
-          }
-        },
         '& hr': {
           border: 'none',
           borderTop: '1px solid',

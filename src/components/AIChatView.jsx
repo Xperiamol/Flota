@@ -20,6 +20,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useStore } from '../store/useStore'
 import { buildContextPackageFromNotes, getContextSources, truncateText } from '../utils/aiContextUtils'
+import { handleWhiteboardAIRequest } from '../utils/whiteboardAI'
 
 // ─── Markdown 渲染（react-markdown + remark-gfm） ───
 
@@ -248,7 +249,7 @@ const ChatMessage = React.memo(({ msg, theme, userAvatar, onExecuteAction, execu
 
 export default function AIChatView({ onTodoUpdated }) {
   const theme = useTheme()
-  const { userAvatar, notes, selectedNoteId, setSelectedNoteId, aiConversations, aiActiveConvId, aiNewChat, aiUpdateConv, aiCommandRequest, aiClearCommandRequest, loadNotes } = useStore()
+  const { userAvatar, notes, selectedNoteId, setSelectedNoteId, aiConversations, aiActiveConvId, aiNewChat, aiUpdateConv, aiCommandRequest, aiClearCommandRequest, loadNotes, updateNote } = useStore()
 
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -264,6 +265,7 @@ export default function AIChatView({ onTodoUpdated }) {
   const inputRef = useRef(null)
   const chunkListenerRef = useRef(null)
   const activeRequestIdRef = useRef(null)
+  const cancelRequestedRef = useRef(false)
 
   // 切换对话时加载消息
   useEffect(() => {
@@ -336,9 +338,11 @@ export default function AIChatView({ onTodoUpdated }) {
 
     const requestId = `${currentId}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
     activeRequestIdRef.current = requestId
+    cancelRequestedRef.current = false
 
     // 构建发送给 API 的消息（只含 role + content）
     const apiMessages = newMessages.map(m => ({ role: m.role, content: m.content }))
+    const currentNote = notes.find(note => String(note.id) === String(selectedNoteId))
     let todoContext = []
     let memoryContext = []
     if (contextEnabled.todos) {
@@ -365,6 +369,27 @@ export default function AIChatView({ onTodoUpdated }) {
     const contextPackage = buildContextPackage(text, todoContext, memoryContext)
 
     try {
+      const whiteboardResult = await handleWhiteboardAIRequest({
+        note: currentNote,
+        prompt: text,
+        messages: newMessages,
+        updateNote,
+        loadNotes,
+      })
+
+      if (whiteboardResult) {
+        const finalMessages = [...newMessages, {
+          role: 'assistant',
+          content: whiteboardResult.content,
+          contextSources: getContextSources(contextPackage)
+        }]
+        setMessages(finalMessages)
+        setStreamContent('')
+        setToolCalls([])
+        aiUpdateConv(currentId, { messages: finalMessages, title: getConversationTitle(finalMessages) })
+        return
+      }
+
       // 注册 chunk 监听
       if (chunkListenerRef.current) chunkListenerRef.current()
       let currentContent = ''
@@ -416,8 +441,9 @@ export default function AIChatView({ onTodoUpdated }) {
       })
 
       // 将流式结果添加为完整助手消息
+      const stoppedByUser = Boolean(result.cancelled && cancelRequestedRef.current)
       const assistantContent = result.cancelled
-        ? (currentContent || '已停止生成。')
+        ? (currentContent || (stoppedByUser ? '已停止生成。' : '❌ 生成已中断，请重试'))
         : result.success
         ? (currentContent || result.fullContent || '')
         : (currentContent || `❌ ${result.error}`)
@@ -427,7 +453,7 @@ export default function AIChatView({ onTodoUpdated }) {
         content: assistantContent,
         toolCalls: currentToolCalls.length > 0 ? currentToolCalls : undefined,
         contextSources: getContextSources(contextPackage),
-        stopped: Boolean(result.cancelled)
+        stopped: stoppedByUser
       }]
       setMessages(finalMessages)
       setStreamContent('')
@@ -450,15 +476,17 @@ export default function AIChatView({ onTodoUpdated }) {
         chunkListenerRef.current = null
       }
       activeRequestIdRef.current = null
+      cancelRequestedRef.current = false
       setLoading(false)
       inputRef.current?.focus()
     }
-  }, [input, loading, messages, aiActiveConvId, aiNewChat, aiUpdateConv, buildContextPackage, contextEnabled.todos, contextEnabled.memories])
+  }, [input, loading, messages, aiActiveConvId, aiNewChat, aiUpdateConv, buildContextPackage, contextEnabled.todos, contextEnabled.memories, loadNotes, notes, selectedNoteId, updateNote])
 
   const handleCancel = useCallback(async () => {
     const requestId = activeRequestIdRef.current
     if (!loading || !requestId) return
 
+    cancelRequestedRef.current = true
     try {
       await window.electronAPI?.ai?.cancelStream?.(requestId)
     } catch (_) {

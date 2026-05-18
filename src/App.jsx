@@ -78,6 +78,7 @@ function App() {
   const [secondarySidebarOpen, setSecondarySidebarOpen] = useState(true)
   const [showDeleted, setShowDeleted] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+  const [aiCommandCenterPortalContainer, setAiCommandCenterPortalContainer] = useState(null)
 
   // TODO视图相关状态
   const [todoViewMode, setTodoViewMode] = useState('quadrant')
@@ -149,6 +150,21 @@ function App() {
       setHasOpenedAI(true)
     }
   }, [currentView])
+
+  useEffect(() => {
+    const syncNoteEditorFullscreen = () => {
+      const fullscreenElement = document.fullscreenElement
+      setAiCommandCenterPortalContainer(
+        fullscreenElement?.getAttribute?.('data-flota-note-editor') === 'true'
+          ? fullscreenElement
+          : null
+      )
+    }
+
+    syncNoteEditorFullscreen()
+    document.addEventListener('fullscreenchange', syncNoteEditorFullscreen)
+    return () => document.removeEventListener('fullscreenchange', syncNoteEditorFullscreen)
+  }, [])
 
   // 永久删除确认状态
   const [permanentDeleteConfirm, setPermanentDeleteConfirm] = useState(false)
@@ -1259,6 +1275,7 @@ function App() {
         <AICommandCenter
           open={aiCommandCenterEnabled && aiCommandCenterOpen}
           onClose={() => setAiCommandCenterOpen(false)}
+          portalContainer={aiCommandCenterPortalContainer}
         />
 
         <Suspense fallback={null}>

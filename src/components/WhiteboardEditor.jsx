@@ -1,20 +1,812 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { Box, Alert, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField } from '@mui/material'
-import { AutoAwesome as AIIcon, Undo as UndoIcon } from '@mui/icons-material'
+import {
+  Box,
+  Alert,
+  CircularProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  TextField,
+  Typography,
+} from '@mui/material'
+import { alpha } from '@mui/material/styles'
 import { Excalidraw, exportToSvg, THEME } from '@excalidraw/excalidraw'
 import { useStore } from '../store/useStore'
 import { useStandaloneContext } from './StandaloneProvider'
 import { useDebouncedSave } from '../hooks/useDebouncedSave'
-import { aiGenerateExcalidrawElements } from '../utils/aiExcalidrawGenerator'
+import {
+  WHITEBOARD_AI_GENERATE_EVENT,
+  buildWhiteboardContent,
+  generateWhiteboardElementsByAction,
+  parseWhiteboardContent,
+  summarizeWhiteboardElementsForAI,
+} from '../utils/whiteboardAI'
 import { canvasToPngBlob } from './ImagePreviewModal'
 import '@excalidraw/excalidraw/index.css'
 import logger from '../utils/logger'
+import { renderMermaidNative } from '../utils/diagrams/mermaidNative'
+
+const createExcalidrawGlassTokens = ({ isDark, accent }) => {
+  const islandBg = isDark
+    ? alpha('#1e293b', 0.55)
+    : alpha('#ffffff', 0.62)
+  const islandBorder = isDark
+    ? `1px solid ${alpha('#ffffff', 0.08)}`
+    : `1px solid ${alpha('#0f172a', 0.08)}`
+  const islandShadow = isDark
+    ? `0 8px 24px ${alpha('#000000', 0.18)}, inset 0 1px 0 ${alpha('#ffffff', 0.04)}`
+    : `0 8px 22px ${alpha('#0f172a', 0.05)}, inset 0 1px 0 ${alpha('#ffffff', 0.52)}`
+  const islandBlur = 'blur(18px) saturate(180%)'
+
+  const buttonBg = isDark
+    ? alpha('#ffffff', 0.04)
+    : alpha('#ffffff', 0.34)
+  const buttonHoverBg = isDark
+    ? alpha('#ffffff', 0.08)
+    : alpha('#ffffff', 0.56)
+  const buttonPressedBg = isDark
+    ? alpha('#ffffff', 0.11)
+    : alpha('#ffffff', 0.7)
+  const buttonBorder = isDark
+    ? alpha('#ffffff', 0.08)
+    : alpha('#0f172a', 0.08)
+  const buttonShadow = isDark
+    ? `0 2px 8px ${alpha('#000000', 0.12)}, inset 0 1px 0 ${alpha('#ffffff', 0.03)}`
+    : `0 2px 8px ${alpha('#0f172a', 0.04)}, inset 0 1px 0 ${alpha('#ffffff', 0.45)}`
+  const buttonPressedShadow = isDark
+    ? `0 1px 4px ${alpha('#000000', 0.12)}, inset 0 1px 0 ${alpha('#ffffff', 0.02)}`
+    : `0 1px 4px ${alpha('#0f172a', 0.035)}, inset 0 1px 0 ${alpha('#ffffff', 0.4)}`
+  const toolbarButtonHoverBg = isDark
+    ? alpha('#ffffff', 0.08)
+    : alpha('#ffffff', 0.72)
+  const toolbarButtonPressedBg = isDark
+    ? alpha('#ffffff', 0.12)
+    : alpha('#ffffff', 0.84)
+  const toolbarButtonBorder = isDark
+    ? alpha('#ffffff', 0.06)
+    : alpha('#ffffff', 0.72)
+  const toolbarButtonShadow = isDark
+    ? `0 2px 6px ${alpha('#000000', 0.1)}`
+    : `0 2px 8px ${alpha('#0f172a', 0.035)}`
+  const bottomButtonBg = isDark
+    ? alpha('#ffffff', 0.035)
+    : alpha('#ffffff', 0.28)
+  const bottomButtonHoverBg = isDark
+    ? alpha('#ffffff', 0.06)
+    : alpha('#ffffff', 0.44)
+  const bottomButtonPressedBg = isDark
+    ? alpha('#ffffff', 0.09)
+    : alpha('#ffffff', 0.56)
+  const bottomButtonBorder = isDark
+    ? alpha('#ffffff', 0.06)
+    : alpha('#ffffff', 0.5)
+  const bottomButtonShadow = isDark
+    ? `0 1px 4px ${alpha('#000000', 0.08)}`
+    : `0 1px 4px ${alpha('#0f172a', 0.025)}`
+  const menuBg = isDark
+    ? alpha('#1e293b', 0.64)
+    : alpha('#ffffff', 0.74)
+  const menuBorder = isDark
+    ? `1px solid ${alpha('#ffffff', 0.08)}`
+    : `1px solid ${alpha('#ffffff', 0.62)}`
+  const menuShadow = isDark
+    ? `0 10px 28px ${alpha('#000000', 0.18)}, inset 0 1px 0 ${alpha('#ffffff', 0.04)}`
+    : `0 10px 24px ${alpha('#0f172a', 0.06)}, inset 0 1px 0 ${alpha('#ffffff', 0.56)}`
+  const menuItemHoverBg = isDark
+    ? alpha('#ffffff', 0.07)
+    : alpha('#ffffff', 0.72)
+  const menuItemDangerBg = isDark
+    ? alpha('#ef4444', 0.14)
+    : alpha('#ef4444', 0.08)
+  const toolIconActiveBg = isDark
+    ? alpha(accent, 0.18)
+    : alpha(accent, 0.12)
+  const toolIconActiveBorder = alpha(accent, isDark ? 0.38 : 0.24)
+  const toolIconActiveShadow = isDark
+    ? `0 3px 10px ${alpha(accent, 0.14)}, inset 0 1px 0 ${alpha('#ffffff', 0.03)}`
+    : `0 3px 10px ${alpha(accent, 0.1)}, inset 0 1px 0 ${alpha('#ffffff', 0.4)}`
+  const selectedSurface = alpha(accent, isDark ? 0.28 : 0.14)
+  const selectedSurfaceHover = alpha(accent, isDark ? 0.36 : 0.2)
+
+  return {
+    islandBg,
+    islandBorder,
+    islandShadow,
+    islandBlur,
+    buttonBg,
+    buttonHoverBg,
+    buttonPressedBg,
+    buttonBorder,
+    buttonShadow,
+    buttonPressedShadow,
+    toolbarButtonHoverBg,
+    toolbarButtonPressedBg,
+    toolbarButtonBorder,
+    toolbarButtonShadow,
+    bottomButtonBg,
+    bottomButtonHoverBg,
+    bottomButtonPressedBg,
+    bottomButtonBorder,
+    bottomButtonShadow,
+    menuBg,
+    menuBorder,
+    menuShadow,
+    menuItemHoverBg,
+    menuItemDangerBg,
+    toolIconActiveBg,
+    toolIconActiveBorder,
+    toolIconActiveShadow,
+    selectedSurface,
+    selectedSurfaceHover,
+  }
+}
+
+const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
+  const accent = primaryColor || '#1976d2'
+
+  const {
+    islandBg,
+    islandBorder,
+    islandShadow,
+    islandBlur,
+    buttonBg,
+    buttonHoverBg,
+    buttonPressedBg,
+    buttonBorder,
+    buttonShadow,
+    buttonPressedShadow,
+    toolbarButtonHoverBg,
+    toolbarButtonPressedBg,
+    toolbarButtonBorder,
+    toolbarButtonShadow,
+    bottomButtonBg,
+    bottomButtonHoverBg,
+    bottomButtonPressedBg,
+    bottomButtonBorder,
+    bottomButtonShadow,
+    menuBg,
+    menuBorder,
+    menuShadow,
+    menuItemHoverBg,
+    menuItemDangerBg,
+    toolIconActiveBg,
+    toolIconActiveBorder,
+    toolIconActiveShadow,
+    selectedSurface,
+    selectedSurfaceHover,
+  } = createExcalidrawGlassTokens({ isDark, accent })
+
+  return {
+    // CSS 变量层：让 Excalidraw 内部跟随主题色
+    '--color-primary': accent,
+    '--color-primary-hover': accent,
+    '--color-primary-darker': accent,
+    '--color-primary-darkest': accent,
+    '--color-primary-light': alpha(accent, 0.18),
+    '--color-primary-light-darker': alpha(accent, 0.28),
+    '--color-selection': accent,
+    '--color-brand-hover': accent,
+    '--color-brand-active': accent,
+    '--color-promo': accent,
+    '--color-logo-icon': accent,
+    '--color-on-primary-container': accent,
+    '--color-surface-primary-container': selectedSurface,
+    '--button-selected-bg': selectedSurface,
+    '--button-selected-hover-bg': selectedSurfaceHover,
+    '--button-selected-border': alpha(accent, isDark ? 0.58 : 0.42),
+    '--button-color': accent,
+    '--button-active-bg': buttonPressedBg,
+
+    // Island 玻璃面板（顶部工具栏 / 左上菜单 / 右上小岛 / 缩放条 / 画布操作）
+    '& .excalidraw .Island': {
+      backgroundColor: `${islandBg} !important`,
+      backdropFilter: islandBlur,
+      WebkitBackdropFilter: islandBlur,
+      border: islandBorder,
+      boxShadow: `${islandShadow} !important`,
+      borderRadius: '14px !important',
+    },
+    '& .excalidraw .App-menu_top .App-menu_top__left .Island': {
+      padding: '6px !important',
+    },
+    '& .excalidraw .App-menu_top': {
+      alignItems: 'center !important',
+    },
+    '& .excalidraw .App-menu_top > *': {
+      alignSelf: 'center',
+    },
+    '& .excalidraw .App-menu_top > *:first-of-type, & .excalidraw .App-menu_top > *:last-of-type': {
+      display: 'flex',
+      alignItems: 'center',
+      minHeight: '48px',
+    },
+    '& .excalidraw .layer-ui__wrapper__top-right': {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'flex-end',
+    },
+    '& .excalidraw .layer-ui__wrapper__top-right > *': {
+      display: 'flex',
+      alignItems: 'center',
+    },
+    '& .excalidraw .layer-ui__wrapper__top-right .default-sidebar-trigger, & .excalidraw .layer-ui__wrapper__top-right .sidebar-trigger': {
+      alignSelf: 'center',
+      marginTop: '0 !important',
+      transform: 'translateY(4px)',
+      height: '40px',
+      minHeight: '40px',
+      paddingTop: '0',
+      paddingBottom: '0',
+      paddingInline: '14px',
+      lineHeight: 1,
+    },
+    '& .excalidraw .layer-ui__wrapper__top-right .sidebar-trigger__label-element, & .excalidraw .layer-ui__wrapper__top-right .sidebar-trigger__label': {
+      display: 'flex',
+      alignItems: 'center',
+      lineHeight: 1,
+    },
+    '& .excalidraw .App-toolbar, & .excalidraw .App-toolbar-content': {
+      alignItems: 'center',
+    },
+    '& .excalidraw .layer-ui__wrapper__top-center, & .excalidraw .App-toolbar-container': {
+      background: 'transparent !important',
+    },
+    '& .excalidraw .Island.App-toolbar, & .excalidraw .App-toolbar': {
+      position: 'relative',
+      isolation: 'isolate',
+      background: 'transparent !important',
+      backgroundColor: 'transparent !important',
+      border: 'none !important',
+      boxShadow: 'none !important',
+      borderRadius: '16px !important',
+      overflow: 'hidden',
+    },
+    '& .excalidraw .Island.App-toolbar::before, & .excalidraw .App-toolbar::before': {
+      content: '""',
+      position: 'absolute',
+      inset: 0,
+      zIndex: 0,
+      background: buttonBg,
+      backdropFilter: 'blur(14px) saturate(160%)',
+      WebkitBackdropFilter: 'blur(14px) saturate(160%)',
+      border: `1px solid ${buttonBorder}`,
+      borderRadius: '16px',
+      boxShadow: buttonShadow,
+      pointerEvents: 'none',
+    },
+    '& .excalidraw .App-toolbar-content': {
+      position: 'relative',
+      zIndex: 1,
+      gap: '4px',
+      background: 'transparent !important',
+    },
+    '& .excalidraw .App-toolbar-container .ToolIcon': {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    '& .excalidraw .App-toolbar-container .ToolIcon__icon': {
+      margin: 0,
+    },
+    '& .excalidraw .App-toolbar .App-toolbar__divider': {
+      opacity: 0.45,
+      borderColor: alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.08 : 0.08),
+      marginInline: '4px',
+    },
+
+    // 全部按钮统一成清爽毛玻璃体系
+    '& .excalidraw .ToolIcon__icon, & .excalidraw .ToolIcon_type_button, & .excalidraw .dropdown-menu-button, & .excalidraw .excalidraw-button, & .excalidraw button.standalone, & .excalidraw .sidebar-trigger, & .excalidraw .buttonList label, & .excalidraw .buttonList button, & .excalidraw .buttonList .zIndexButton, & .excalidraw .RadioGroup__choice, & .excalidraw .scroll-back-to-content, & .excalidraw .help-icon, & .excalidraw .undo-redo-buttons button .ToolIcon__icon': {
+      borderRadius: '10px !important',
+      background: `${buttonBg} !important`,
+      border: `1px solid ${buttonBorder} !important`,
+      boxShadow: `${buttonShadow} !important`,
+      backdropFilter: 'blur(14px) saturate(160%)',
+      WebkitBackdropFilter: 'blur(14px) saturate(160%)',
+      transition: 'background-color 160ms ease, box-shadow 160ms ease, color 160ms ease, border-color 160ms ease',
+    },
+
+    // 顶部工具栏默认态更轻：无明显底色、无明显边框，只在交互时浮起
+    '& .excalidraw .App-toolbar-container .ToolIcon:not(.ToolIcon--selected) .ToolIcon__icon, & .excalidraw .App-toolbar__extra-tools-trigger:not(.App-toolbar__extra-tools-trigger--selected)': {
+      background: 'transparent !important',
+      borderColor: 'transparent !important',
+      boxShadow: 'none !important',
+      backdropFilter: 'none',
+      WebkitBackdropFilter: 'none',
+    },
+
+    // hover 统一偏清爽，不做过重高亮
+    '& .excalidraw .ToolIcon:not(.ToolIcon--selected) .ToolIcon__icon:hover, & .excalidraw .ToolIcon_type_button:hover, & .excalidraw .dropdown-menu-button:hover, & .excalidraw .excalidraw-button:hover, & .excalidraw button.standalone:hover, & .excalidraw .sidebar-trigger:hover, & .excalidraw .buttonList label:hover, & .excalidraw .buttonList button:hover, & .excalidraw .buttonList .zIndexButton:hover, & .excalidraw .RadioGroup__choice:hover, & .excalidraw .scroll-back-to-content:hover, & .excalidraw .help-icon:hover, & .excalidraw .undo-redo-buttons button .ToolIcon__icon:hover': {
+      background: `${buttonHoverBg} !important`,
+      borderColor: `${alpha(accent, isDark ? 0.18 : 0.14)} !important`,
+      boxShadow: `${buttonShadow} !important`,
+      color: `${accent} !important`,
+    },
+    '& .excalidraw .App-toolbar-container .ToolIcon:not(.ToolIcon--selected) .ToolIcon__icon:hover, & .excalidraw .App-toolbar__extra-tools-trigger:not(.App-toolbar__extra-tools-trigger--selected):hover': {
+      background: `${toolbarButtonHoverBg} !important`,
+      borderColor: `${toolbarButtonBorder} !important`,
+      boxShadow: `${toolbarButtonShadow} !important`,
+      backdropFilter: 'blur(10px) saturate(145%)',
+      WebkitBackdropFilter: 'blur(10px) saturate(145%)',
+    },
+
+    // 按下态统一，底部按钮也共用
+    '& .excalidraw .ToolIcon .ToolIcon__icon:active, & .excalidraw .ToolIcon_type_button:active, & .excalidraw .dropdown-menu-button:active, & .excalidraw .excalidraw-button:active, & .excalidraw button.standalone:active, & .excalidraw .sidebar-trigger:active, & .excalidraw .buttonList label:active, & .excalidraw .buttonList button:active, & .excalidraw .buttonList .zIndexButton:active, & .excalidraw .RadioGroup__choice:active, & .excalidraw .scroll-back-to-content:active, & .excalidraw .help-icon:active, & .excalidraw .undo-redo-buttons button .ToolIcon__icon:active': {
+      background: `${buttonPressedBg} !important`,
+      borderColor: `${alpha(accent, isDark ? 0.22 : 0.16)} !important`,
+      boxShadow: `${buttonPressedShadow} !important`,
+    },
+    '& .excalidraw .App-toolbar-container .ToolIcon:not(.ToolIcon--selected) .ToolIcon__icon:active, & .excalidraw .App-toolbar__extra-tools-trigger:not(.App-toolbar__extra-tools-trigger--selected):active': {
+      background: `${toolbarButtonPressedBg} !important`,
+      borderColor: `${toolbarButtonBorder} !important`,
+      boxShadow: `${toolbarButtonShadow} !important`,
+    },
+
+    // selected 统一为轻主题色玻璃，不再用过重渐变
+    '& .excalidraw .ToolIcon--selected .ToolIcon__icon, & .excalidraw .ToolIcon_type_button.ToolIcon--selected, & .excalidraw .ToolIcon__icon[aria-pressed="true"], & .excalidraw .ToolIcon .ToolIcon_type_radio:checked + .ToolIcon__icon, & .excalidraw .ToolIcon .ToolIcon_type_checkbox:checked + .ToolIcon__icon': {
+      background: `${toolIconActiveBg} !important`,
+      color: `${accent} !important`,
+      border: `1px solid ${toolIconActiveBorder} !important`,
+      boxShadow: `${toolIconActiveShadow} !important`,
+      '--icon-fill-color': accent,
+      '--keybinding-color': accent,
+    },
+    '& .excalidraw .ToolIcon--selected .ToolIcon__icon svg, & .excalidraw .ToolIcon_type_button.ToolIcon--selected svg, & .excalidraw .ToolIcon .ToolIcon_type_radio:checked + .ToolIcon__icon svg, & .excalidraw .ToolIcon .ToolIcon_type_checkbox:checked + .ToolIcon__icon svg': {
+      color: `${accent} !important`,
+    },
+    '& .excalidraw button.standalone.active, & .excalidraw .excalidraw-button.active, & .excalidraw .dropdown-menu-button.active, & .excalidraw .sidebar-trigger.active, & .excalidraw .sidebar__header__buttons button.active, & .excalidraw .buttonList label.active, & .excalidraw .buttonList button.active, & .excalidraw .buttonList .zIndexButton.active, & .excalidraw .RadioGroup__choice.active, & .excalidraw .help-icon.active, & .excalidraw .App-toolbar__extra-tools-trigger--selected': {
+      backgroundColor: `${selectedSurface} !important`,
+      borderColor: `${toolIconActiveBorder} !important`,
+      color: `${accent} !important`,
+      boxShadow: `${toolIconActiveShadow} !important`,
+    },
+    '& .excalidraw button.standalone.active:hover, & .excalidraw .excalidraw-button.active:hover, & .excalidraw .dropdown-menu-button.active:hover, & .excalidraw .sidebar-trigger.active:hover, & .excalidraw .sidebar__header__buttons button.active:hover, & .excalidraw .buttonList label.active:hover, & .excalidraw .buttonList button.active:hover, & .excalidraw .buttonList .zIndexButton.active:hover, & .excalidraw .RadioGroup__choice.active:hover, & .excalidraw .help-icon.active:hover, & .excalidraw .App-toolbar__extra-tools-trigger--selected:hover': {
+      backgroundColor: `${selectedSurfaceHover} !important`,
+    },
+    '& .excalidraw button.standalone.active svg, & .excalidraw .excalidraw-button.active svg, & .excalidraw .dropdown-menu-button.active svg, & .excalidraw .sidebar-trigger.active svg, & .excalidraw .sidebar__header__buttons button.active svg, & .excalidraw .buttonList label.active svg, & .excalidraw .buttonList button.active svg, & .excalidraw .buttonList .zIndexButton.active svg, & .excalidraw .RadioGroup__choice.active svg, & .excalidraw .help-icon.active svg, & .excalidraw .App-toolbar__extra-tools-trigger--selected svg': {
+      color: `${accent} !important`,
+    },
+
+    // 下拉菜单 / Popover 玻璃化
+    '& .excalidraw .dropdown-menu .dropdown-menu-container, & .excalidraw .Popover, & .excalidraw .Popover__contextMenu, & .excalidraw .context-menu, & .excalidraw .App-toolbar__extra-tools-dropdown': {
+      backgroundColor: `${menuBg} !important`,
+      backdropFilter: 'blur(20px) saturate(180%)',
+      WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+      border: menuBorder,
+      boxShadow: `${menuShadow} !important`,
+      borderRadius: '14px !important',
+    },
+    '& .excalidraw .App-menu_top .dropdown-menu, & .excalidraw .App-menu_top .dropdown-menu .dropdown-menu-container': {
+      backgroundColor: `${menuBg} !important`,
+      backdropFilter: 'blur(20px) saturate(180%)',
+      WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+      border: menuBorder,
+      boxShadow: `${menuShadow} !important`,
+      borderRadius: '16px !important',
+      overflow: 'hidden',
+    },
+    '& .excalidraw .App-menu_top .dropdown-menu .dropdown-menu-item-custom, & .excalidraw .App-menu_top .dropdown-menu .dropdown-menu-group, & .excalidraw .App-menu_top .dropdown-menu .ActiveFile': {
+      backgroundColor: 'transparent !important',
+    },
+    '& .excalidraw .dropdown-menu .dropdown-menu-container, & .excalidraw .context-menu, & .excalidraw .App-toolbar__extra-tools-dropdown': {
+      padding: '6px !important',
+    },
+    '& .excalidraw .dropdown-menu .dropdown-menu-item, & .excalidraw .context-menu-item': {
+      borderRadius: '10px',
+      minHeight: '34px',
+      paddingInline: '10px',
+      transition: 'background-color 140ms ease, color 140ms ease',
+    },
+    '& .excalidraw .dropdown-menu .dropdown-menu-item:hover, & .excalidraw .dropdown-menu .dropdown-menu-item--hovered, & .excalidraw .context-menu-item:hover, & .excalidraw .context-menu-item:focus': {
+      backgroundColor: `${menuItemHoverBg} !important`,
+      color: accent,
+    },
+    '& .excalidraw .dropdown-menu .dropdown-menu-item--selected': {
+      backgroundColor: `${selectedSurface} !important`,
+      color: `${accent} !important`,
+    },
+    '& .excalidraw .dropdown-menu .dropdown-menu-group:has(a[href="https://github.com/excalidraw/excalidraw"])': {
+      display: 'none !important',
+    },
+    '& .excalidraw .dropdown-menu .dropdown-menu-container > div[style*="height: 1px"]:has(+ .dropdown-menu-group:has(a[href="https://github.com/excalidraw/excalidraw"]))': {
+      display: 'none !important',
+    },
+    '& .excalidraw .dropdown-menu .dropdown-menu-group:has(a[href="https://github.com/excalidraw/excalidraw"]) + div[style*="height: 1px"]': {
+      display: 'none !important',
+    },
+    '& .excalidraw .context-menu-item.dangerous:hover, & .excalidraw .context-menu-item:hover.dangerous': {
+      backgroundColor: `${menuItemDangerBg} !important`,
+    },
+    '& .excalidraw .context-menu-item-separator, & .excalidraw .dropdown-menu .dropdown-menu-group:not(:first-of-type)': {
+      borderColor: alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.08 : 0.08),
+    },
+
+    // 素材库面板
+    '& .excalidraw .layer-ui__library': {
+      borderRadius: '18px',
+      background: isDark
+        ? `linear-gradient(180deg, ${alpha('#1e293b', 0.78)} 0%, ${alpha('#0f172a', 0.72)} 100%)`
+        : `linear-gradient(180deg, ${alpha('#ffffff', 0.84)} 0%, ${alpha('#f8fafc', 0.76)} 100%)`,
+      border: isDark
+        ? `1px solid ${alpha('#ffffff', 0.08)}`
+        : `1px solid ${alpha('#ffffff', 0.62)}`,
+      boxShadow: isDark
+        ? `0 14px 34px ${alpha('#000000', 0.18)}, inset 0 1px 0 ${alpha('#ffffff', 0.04)}`
+        : `0 14px 34px ${alpha('#0f172a', 0.07)}, inset 0 1px 0 ${alpha('#ffffff', 0.62)}`,
+      backdropFilter: 'blur(22px) saturate(180%)',
+      WebkitBackdropFilter: 'blur(22px) saturate(180%)',
+      overflow: 'hidden',
+    },
+    '& .excalidraw .sidebar-tabs-root > .sidebar__header': {
+      position: 'relative',
+      zIndex: 3,
+    },
+    '& .excalidraw .sidebar-tabs-root [role=tablist]': {
+      position: 'relative',
+      zIndex: 3,
+      gap: '8px',
+    },
+    '& .excalidraw .sidebar-tabs-root [role=tabpanel]': {
+      position: 'relative',
+      zIndex: 1,
+      overflow: 'hidden',
+      minHeight: 0,
+    },
+    '& .excalidraw .default-sidebar .sidebar-triggers': {
+      padding: 0,
+      marginTop: 0,
+      marginBottom: 0,
+      border: 'none',
+      background: 'transparent',
+      boxShadow: 'none',
+      backdropFilter: 'none',
+      WebkitBackdropFilter: 'none',
+      borderRadius: 0,
+      gap: '6px',
+    },
+    '& .excalidraw .default-sidebar .sidebar-triggers .sidebar-tab-trigger': {
+      height: '40px',
+      width: '40px',
+      minWidth: '40px',
+      minHeight: '40px',
+      borderRadius: '12px',
+      color: alpha(accent, 0.96),
+      border: `1px solid ${alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.08 : 0.08)}`,
+      background: isDark ? alpha('#ffffff', 0.04) : alpha('#ffffff', 0.72),
+      boxShadow: isDark
+        ? `0 2px 8px ${alpha('#000000', 0.08)}`
+        : `0 2px 8px ${alpha('#0f172a', 0.035)}`,
+      backdropFilter: 'blur(14px) saturate(160%)',
+      WebkitBackdropFilter: 'blur(14px) saturate(160%)',
+      position: 'relative',
+      zIndex: 2,
+    },
+    '& .excalidraw .default-sidebar .sidebar-triggers .sidebar-tab-trigger:hover': {
+      background: isDark ? alpha('#ffffff', 0.08) : alpha('#ffffff', 0.88),
+      borderColor: alpha(accent, isDark ? 0.18 : 0.14),
+      color: accent,
+    },
+    '& .excalidraw .default-sidebar .sidebar-triggers .sidebar-tab-trigger[data-state=active]': {
+      background: isDark
+        ? `linear-gradient(135deg, ${alpha(accent, 0.18)} 0%, ${alpha(accent, 0.12)} 100%)`
+        : `linear-gradient(135deg, ${alpha(accent, 0.12)} 0%, ${alpha(accent, 0.08)} 100%)`,
+      borderColor: alpha(accent, isDark ? 0.26 : 0.18),
+      color: accent,
+      boxShadow: isDark
+        ? `0 4px 12px ${alpha(accent, 0.12)}`
+        : `0 4px 12px ${alpha(accent, 0.08)}`,
+    },
+    '& .excalidraw .default-sidebar .sidebar-triggers .sidebar-tab-trigger svg': {
+      color: 'currentColor',
+    },
+    '& .excalidraw .sidebar__header__buttons': {
+      position: 'relative',
+      zIndex: 3,
+      gap: '6px',
+    },
+    '& .excalidraw .sidebar__header__buttons button': {
+      background: isDark ? alpha('#ffffff', 0.04) : alpha('#ffffff', 0.72),
+      border: `1px solid ${alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.08 : 0.08)} !important`,
+      color: `${accent} !important`,
+      boxShadow: isDark
+        ? `0 2px 8px ${alpha('#000000', 0.08)}`
+        : `0 2px 8px ${alpha('#0f172a', 0.035)}`,
+      backdropFilter: 'blur(14px) saturate(160%)',
+      WebkitBackdropFilter: 'blur(14px) saturate(160%)',
+    },
+    '& .excalidraw .sidebar__header__buttons button:hover': {
+      background: isDark ? alpha('#ffffff', 0.08) : alpha('#ffffff', 0.88),
+      borderColor: `${alpha(accent, isDark ? 0.18 : 0.14)} !important`,
+    },
+    '& .excalidraw .sidebar__header__buttons button svg': {
+      color: `${accent} !important`,
+    },
+    '& .excalidraw .layer-ui__library .library-menu-items-container__header': {
+      padding: '12px 14px 10px',
+      borderBottom: `1px solid ${alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.08 : 0.08)}`,
+    },
+    '& .excalidraw .layer-ui__library .library-menu-dropdown-container--in-heading': {
+      top: '12px',
+      right: '12px',
+    },
+    '& .excalidraw .layer-ui__library .library-menu-items-container__items, & .excalidraw .layer-ui__library .library-menu-items-private-library-container': {
+      padding: '10px 12px 12px',
+    },
+    '& .excalidraw .layer-ui__library .library-menu-items-container__grid': {
+      gap: '10px',
+    },
+    '& .excalidraw .layer-ui__library .library-unit': {
+      borderRadius: '14px',
+      background: isDark
+        ? alpha('#ffffff', 0.04)
+        : alpha('#ffffff', 0.58),
+      border: `1px solid ${alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.06 : 0.08)}`,
+      boxShadow: isDark
+        ? `0 4px 12px ${alpha('#000000', 0.08)}`
+        : `0 4px 12px ${alpha('#0f172a', 0.035)}`,
+      transition: 'background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease',
+    },
+    '& .excalidraw .layer-ui__library .library-unit--hover': {
+      background: isDark
+        ? alpha('#ffffff', 0.06)
+        : alpha('#ffffff', 0.72),
+      borderColor: alpha(accent, isDark ? 0.18 : 0.14),
+      boxShadow: isDark
+        ? `0 8px 18px ${alpha('#000000', 0.1)}`
+        : `0 8px 18px ${alpha('#0f172a', 0.05)}`,
+      transform: 'translateY(-1px)',
+    },
+    '& .excalidraw .layer-ui__library .library-unit--selected': {
+      background: `${selectedSurface} !important`,
+      borderColor: `${toolIconActiveBorder} !important`,
+      boxShadow: `${toolIconActiveShadow} !important`,
+    },
+    '& .excalidraw .layer-ui__library .library-unit__checkbox .Checkbox-box': {
+      borderRadius: '10px',
+      borderColor: alpha(accent, isDark ? 0.16 : 0.14),
+      background: isDark ? alpha('#ffffff', 0.04) : alpha('#ffffff', 0.72),
+    },
+    '& .excalidraw .layer-ui__library .library-unit__checkbox.Checkbox:hover .Checkbox-box': {
+      background: isDark ? alpha('#ffffff', 0.08) : alpha('#ffffff', 0.9),
+      borderColor: alpha(accent, isDark ? 0.22 : 0.18),
+    },
+    '& .excalidraw .layer-ui__library .library-unit__checkbox.is-checked .Checkbox-box': {
+      background: `${selectedSurface} !important`,
+      borderColor: `${toolIconActiveBorder} !important`,
+    },
+    '& .excalidraw .layer-ui__library .library-unit__checkbox.is-checked .Checkbox-box svg': {
+      color: `${accent} !important`,
+    },
+    '& .excalidraw .layer-ui__library .library-actions-counter': {
+      background: accent,
+      color: isDark ? '#0f172a' : '#ffffff',
+      boxShadow: `0 4px 10px ${alpha(accent, isDark ? 0.2 : 0.18)}`,
+    },
+    '& .excalidraw .layer-ui__library .library-menu-control-buttons': {
+      gap: '8px',
+      padding: '10px 12px 12px',
+    },
+    '& .excalidraw .layer-ui__library .library-menu-control-buttons--at-bottom::before': {
+      width: 'calc(100% - 24px)',
+      top: 0,
+      background: alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.08 : 0.08),
+    },
+    '& .excalidraw .layer-ui__library .library-menu-browse-button': {
+      borderRadius: '12px',
+      background: isDark
+        ? `linear-gradient(135deg, ${alpha(accent, 0.26)} 0%, ${alpha(accent, 0.18)} 100%)`
+        : `linear-gradient(135deg, ${alpha(accent, 0.16)} 0%, ${alpha(accent, 0.1)} 100%)`,
+      color: `${accent} !important`,
+      border: `1px solid ${alpha(accent, isDark ? 0.3 : 0.22)}`,
+      boxShadow: `0 6px 14px ${alpha(accent, isDark ? 0.14 : 0.1)}`,
+    },
+    '& .excalidraw .layer-ui__library .library-menu-browse-button:hover': {
+      background: isDark
+        ? `linear-gradient(135deg, ${alpha(accent, 0.32)} 0%, ${alpha(accent, 0.22)} 100%)`
+        : `linear-gradient(135deg, ${alpha(accent, 0.2)} 0%, ${alpha(accent, 0.14)} 100%)`,
+    },
+    '& .excalidraw .layer-ui__library .dropdown-menu .dropdown-menu-container': {
+      width: '208px',
+      padding: '6px',
+    },
+    '& .excalidraw .layer-ui__library-message, & .excalidraw .library-menu-items__no-items': {
+      padding: '28px 20px',
+      color: alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.7 : 0.58),
+    },
+    '& .excalidraw .library-menu-items__no-items__label, & .excalidraw .layer-ui__library-message span': {
+      fontSize: '0.82rem',
+    },
+
+    // 缩放条 + 撤销/重做 等控件
+    '& .excalidraw .App-bottom-bar .Island, & .excalidraw .Stack .Island': {
+      background: 'transparent !important',
+      backdropFilter: 'none',
+      WebkitBackdropFilter: 'none',
+      border: 'none !important',
+      boxShadow: 'none !important',
+    },
+    '& .excalidraw .scroll-back-to-content': {
+      color: 'inherit',
+    },
+    '& .excalidraw .App-bottom-bar > .Island': {
+      padding: '6px !important',
+    },
+    '& .excalidraw .App-bottom-bar > .Island .panelColumn': {
+      gap: '6px',
+    },
+    '& .excalidraw .zoom-actions, & .excalidraw .undo-redo-buttons': {
+      gap: '6px',
+      background: 'transparent !important',
+      border: 'none !important',
+      boxShadow: 'none !important',
+      borderRadius: 0,
+    },
+    '& .excalidraw .scroll-back-to-content, & .excalidraw .undo-redo-buttons button .ToolIcon__icon, & .excalidraw .zoom-actions .ToolIcon__icon': {
+      background: `${bottomButtonBg} !important`,
+      border: `1px solid ${bottomButtonBorder} !important`,
+      boxShadow: `${bottomButtonShadow} !important`,
+      backdropFilter: 'blur(12px) saturate(150%)',
+      WebkitBackdropFilter: 'blur(12px) saturate(150%)',
+    },
+    '& .excalidraw .scroll-back-to-content:hover, & .excalidraw .undo-redo-buttons button .ToolIcon__icon:hover, & .excalidraw .zoom-actions .ToolIcon__icon:hover': {
+      background: `${bottomButtonHoverBg} !important`,
+      borderColor: `${alpha(accent, isDark ? 0.16 : 0.12)} !important`,
+      boxShadow: `${bottomButtonShadow} !important`,
+    },
+    '& .excalidraw .scroll-back-to-content:active, & .excalidraw .undo-redo-buttons button .ToolIcon__icon:active, & .excalidraw .zoom-actions .ToolIcon__icon:active': {
+      background: `${bottomButtonPressedBg} !important`,
+      borderColor: `${alpha(accent, isDark ? 0.22 : 0.16)} !important`,
+      boxShadow: `${bottomButtonShadow} !important`,
+    },
+
+    // 主操作按钮（Library / Help / Hamburger 等）
+    '& .excalidraw .HelpIcon, & .excalidraw .help-icon': {
+      color: 'inherit',
+    },
+
+    // 选中元素侧边面板（图层属性）
+    '& .excalidraw .sidebar, & .excalidraw .App-menu__left': {
+      background: `${menuBg} !important`,
+      backdropFilter: 'blur(20px) saturate(180%)',
+      WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+      borderLeft: menuBorder,
+      boxShadow: `${menuShadow} !important`,
+      overflow: 'hidden',
+    },
+    '& .excalidraw .sidebar': {
+      borderTopLeftRadius: '18px',
+      borderBottomLeftRadius: '18px',
+    },
+    '& .excalidraw .App-menu__left': {
+      border: menuBorder,
+      borderRadius: '18px',
+      display: 'flex',
+      flexDirection: 'column',
+    },
+    '& .excalidraw .sidebar__header::after': {
+      background: alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.08 : 0.08),
+    },
+    '& .excalidraw .sidebar .panelColumn, & .excalidraw .App-menu__left .panelColumn': {
+      background: `${menuBg} !important`,
+      backdropFilter: 'blur(20px) saturate(180%)',
+      WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+      border: menuBorder,
+      borderRadius: '16px',
+      boxShadow: `${menuShadow} !important`,
+      padding: '12px',
+      overflowY: 'auto',
+      minHeight: 0,
+      flex: 1,
+      scrollbarGutter: 'stable',
+    },
+    '& .excalidraw .App-menu__left, & .excalidraw .layer-ui__wrapper__top-right, & .excalidraw .sidebar': {
+      '& .Island': {
+        backgroundColor: `${islandBg} !important`,
+        backdropFilter: islandBlur,
+        WebkitBackdropFilter: islandBlur,
+      },
+    },
+
+    // 白板内部所有滚动区域统一跟随应用全局滚动条样式
+    '& .excalidraw ::-webkit-scrollbar': {
+      width: '6px',
+      height: '6px',
+    },
+    '& .excalidraw ::-webkit-scrollbar-track': {
+      background: 'transparent',
+    },
+    '& .excalidraw ::-webkit-scrollbar-thumb': {
+      background: 'rgba(150, 150, 150, 0.2)',
+      borderRadius: '3px',
+      transition: 'background 0.3s ease',
+    },
+    '& .excalidraw ::-webkit-scrollbar-thumb:hover': {
+      background: 'rgba(150, 150, 150, 0.4)',
+    },
+    '& .excalidraw ::-webkit-scrollbar-thumb:active': {
+      background: 'rgba(150, 150, 150, 0.5)',
+    },
+    '& .excalidraw ::-webkit-scrollbar-button': {
+      display: 'none',
+    },
+  }
+
+}
+
+const createImageEditButtonSx = ({ isDark, primaryColor }) => {
+  const accent = primaryColor || '#1976d2'
+
+  return {
+    minWidth: 0,
+    height: 36,
+    px: 1.25,
+    borderRadius: '12px',
+    fontSize: '0.78rem',
+    fontWeight: 650,
+    lineHeight: 1,
+    letterSpacing: '0.01em',
+    color: accent,
+    background: isDark ? alpha('#ffffff', 0.06) : alpha('#ffffff', 0.72),
+    border: `1px solid ${isDark ? alpha('#ffffff', 0.08) : alpha('#ffffff', 0.68)}`,
+    boxShadow: isDark
+      ? `0 2px 8px ${alpha('#000000', 0.08)}`
+      : `0 2px 8px ${alpha('#0f172a', 0.035)}`,
+    backdropFilter: 'blur(12px) saturate(160%)',
+    WebkitBackdropFilter: 'blur(12px) saturate(160%)',
+    '&:hover': {
+      background: isDark ? alpha(accent, 0.14) : alpha(accent, 0.1),
+      borderColor: alpha(accent, isDark ? 0.24 : 0.18),
+      boxShadow: isDark
+        ? `0 4px 12px ${alpha('#000000', 0.1)}`
+        : `0 4px 12px ${alpha('#0f172a', 0.05)}`,
+    },
+    '&:active': {
+      background: isDark ? alpha(accent, 0.18) : alpha(accent, 0.14),
+      boxShadow: isDark
+        ? `0 2px 6px ${alpha('#000000', 0.08)}`
+        : `0 2px 6px ${alpha('#0f172a', 0.04)}`,
+    },
+  }
+}
 
 /**
  * 白板编辑器组件
  * 直接使用 @excalidraw/excalidraw React 组件
  */
 const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onExportPNG }) => {
+  const getEditableMermaidImage = useCallback((elements = [], appState = {}) => {
+    const selectedIds = Object.keys(appState?.selectedElementIds || {})
+    if (selectedIds.length !== 1) return null
+
+    const selected = elements.find((element) => element?.id === selectedIds[0] && !element?.isDeleted)
+    if (!selected || selected.type !== 'image') return null
+
+    const customData = selected.customData || {}
+    if (customData.kind !== 'mermaid-image' || !customData.mermaidSource) return null
+
+    return selected
+  }, [])
+
+  const translateElementsTo = useCallback((elements = [], targetX = 0, targetY = 0) => {
+    const validElements = elements.filter((element) => element && !element.isDeleted)
+    if (!validElements.length) return elements
+
+    const minX = Math.min(...validElements.map((element) => typeof element.x === 'number' ? element.x : 0))
+    const minY = Math.min(...validElements.map((element) => typeof element.y === 'number' ? element.y : 0))
+    const deltaX = targetX - minX
+    const deltaY = targetY - minY
+
+    return elements.map((element) => {
+      if (!element) return element
+      return {
+        ...element,
+        x: typeof element.x === 'number' ? element.x + deltaX : element.x,
+        y: typeof element.y === 'number' ? element.y + deltaY : element.y,
+      }
+    })
+  }, [])
+
   // Get context from either main store or standalone context
   let store
   let actualIsStandaloneMode = isStandaloneMode
@@ -27,7 +819,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     actualIsStandaloneMode = false
   }
   
-  const { notes, updateNote, currentView, theme: themePref } = store
+  const { notes, updateNote, currentView, theme: themePref, primaryColor } = store
 
   // 解析实际主题（处理 'system'）
   const [systemIsDark, setSystemIsDark] = useState(
@@ -48,19 +840,11 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [excalidrawKey, setExcalidrawKey] = useState(() => `excalidraw-${noteId || 'unknown'}`)
   const [bridgeActive, setBridgeActive] = useState(false)
-  // AI 生成对话框状态
-  const [aiDialogOpen, setAiDialogOpen] = useState(false)
-  const [aiPrompt, setAiPrompt] = useState('')
-  const [aiLoading, setAiLoading] = useState(false)
-  const [aiError, setAiError] = useState('')
-  const [aiLoadingText, setAiLoadingText] = useState('')
-  // AI 撤销快照
-  const aiSnapshotRef = useRef(null)
-  const [aiUndoAvailable, setAiUndoAvailable] = useState(false)
-  // AI 按钮位置（null = 默认右下角）
-  const [aiBtnPos, setAiBtnPos] = useState(null)
-  const aiDragRef = useRef({ dragging: false, startMouseX: 0, startMouseY: 0, startBtnX: 0, startBtnY: 0, hasMoved: false })
-  const aiButtonRef = useRef(null)
+  const [selectedMermaidImage, setSelectedMermaidImage] = useState(null)
+  const [dslEditorOpen, setDslEditorOpen] = useState(false)
+  const [dslDraft, setDslDraft] = useState('')
+  const [dslError, setDslError] = useState('')
+  const [isRegeneratingDsl, setIsRegeneratingDsl] = useState(false)
   const hasUnsavedChangesRef = useRef(false)
   // 保存上一个noteId，用于检测noteId变化（初始为null，避免首次加载时触发保存）
   const prevNoteIdRef = useRef(null)
@@ -76,6 +860,126 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
   const latestSceneRef = useRef({ elements: [], appState: {}, files: {} })
   // 标记是否正在进行类型转换，用于避免卸载时自动保存覆盖转换结果
   const isTypeConvertingRef = useRef(false)
+
+  const serializeScene = useCallback((elements = [], appState = {}, files = {}) => {
+    const sanitizedAppState = {
+      viewBackgroundColor: appState.viewBackgroundColor,
+      currentItemFontFamily: appState.currentItemFontFamily,
+      gridSize: appState.gridSize
+    }
+
+    const sortedFileKeys = Object.keys(files || {}).sort()
+    const sanitizedFiles = {}
+    sortedFileKeys.forEach((key) => {
+      sanitizedFiles[key] = files[key]
+    })
+
+    return JSON.stringify({
+      elements,
+      appState: sanitizedAppState,
+      files: sanitizedFiles
+    })
+  }, [])
+
+  const openMermaidDslEditor = useCallback(() => {
+    if (!selectedMermaidImage) return
+    setDslDraft(selectedMermaidImage.customData?.mermaidSource || '')
+    setDslError('')
+    setDslEditorOpen(true)
+  }, [selectedMermaidImage])
+
+  const closeMermaidDslEditor = useCallback(() => {
+    if (isRegeneratingDsl) return
+    setDslEditorOpen(false)
+    setDslError('')
+  }, [isRegeneratingDsl])
+
+  const regenerateMermaidImage = useCallback(async () => {
+    if (!selectedMermaidImage || !dslDraft.trim()) {
+      setDslError('请输入 Mermaid DSL')
+      return
+    }
+
+    if (!excalidrawAPI) return
+
+    setIsRegeneratingDsl(true)
+    setDslError('')
+    isApplyingRemoteDataRef.current = true
+
+    try {
+      const rendered = await renderMermaidNative(dslDraft.trim(), { offsetX: 0, offsetY: 0 })
+      const translatedElements = translateElementsTo(
+        rendered.elements,
+        selectedMermaidImage.x,
+        selectedMermaidImage.y,
+      )
+
+      const currentElements = excalidrawAPI.getSceneElements()
+      const currentAppState = excalidrawAPI.getAppState()
+      const currentFiles = excalidrawAPI.getFiles()
+      const nextElements = [
+        ...currentElements.filter((element) => element.id !== selectedMermaidImage.id),
+        ...translatedElements,
+      ]
+      const nextFiles = { ...(currentFiles || {}) }
+
+      if (selectedMermaidImage.fileId) {
+        delete nextFiles[selectedMermaidImage.fileId]
+      }
+      Object.assign(nextFiles, rendered.files || {})
+
+      const persistedAppState = {
+        viewBackgroundColor: currentAppState.viewBackgroundColor,
+        currentItemFontFamily: currentAppState.currentItemFontFamily,
+        gridSize: currentAppState.gridSize,
+      }
+
+      setSelectedMermaidImage(null)
+      setDslEditorOpen(false)
+      setInitialData({
+        elements: nextElements,
+        appState: persistedAppState,
+        files: nextFiles,
+      })
+      setExcalidrawKey(`excalidraw-${noteId || 'unknown'}-${Date.now()}`)
+
+      latestSceneRef.current = {
+        elements: nextElements,
+        appState: persistedAppState,
+        files: nextFiles,
+      }
+      lastSavedSceneRef.current = serializeScene(nextElements, persistedAppState, nextFiles)
+      setHasUnsavedChanges(false)
+      hasUnsavedChangesRef.current = false
+
+      await updateNote(noteId, {
+        content: buildWhiteboardContent({
+          elements: nextElements,
+          appState: persistedAppState,
+          fileMap: nextFiles,
+        }),
+        note_type: 'whiteboard',
+      })
+    } catch (error) {
+      logger.warn('[WhiteboardEditor] Mermaid DSL 重画失败:', error)
+      setDslError(error?.message || 'Mermaid 解析失败，请检查 DSL 语法')
+      isApplyingRemoteDataRef.current = false
+    } finally {
+      setIsRegeneratingDsl(false)
+    }
+
+    setTimeout(() => {
+      isApplyingRemoteDataRef.current = false
+    }, 200)
+  }, [
+    selectedMermaidImage,
+    dslDraft,
+    excalidrawAPI,
+    translateElementsTo,
+    noteId,
+    serializeScene,
+    updateNote,
+  ])
   
   // 监听类型转换事件
   useEffect(() => {
@@ -98,6 +1002,17 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     hasUnsavedChangesRef.current = hasUnsavedChanges
   }, [hasUnsavedChanges])
 
+  useEffect(() => {
+    if (!selectedMermaidImage) return
+    const currentElements = excalidrawAPI?.getSceneElements?.() || []
+    const stillExists = currentElements.some((element) => element.id === selectedMermaidImage.id && !element.isDeleted)
+    if (!stillExists) {
+      setSelectedMermaidImage(null)
+      setDslEditorOpen(false)
+      setDslError('')
+    }
+  }, [selectedMermaidImage, excalidrawAPI, excalidrawKey])
+
   // 只在开发环境输出调试日志
   if (process.env.NODE_ENV === 'development') {
     logger.log('[WhiteboardEditor] 组件渲染', { 
@@ -113,26 +1028,6 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     appState: { viewBackgroundColor: isDark ? '#1e1e1e' : '#ffffff' },
     files: {}
   }), [isDark])
-
-  const serializeScene = useCallback((elements = [], appState = {}, files = {}) => {
-    const sanitizedAppState = {
-      viewBackgroundColor: appState.viewBackgroundColor,
-      currentItemFontFamily: appState.currentItemFontFamily,
-      gridSize: appState.gridSize
-    }
-
-    const sortedFileKeys = Object.keys(files || {}).sort()
-    const sanitizedFiles = {}
-    sortedFileKeys.forEach((key) => {
-      sanitizedFiles[key] = files[key]
-    })
-
-    return JSON.stringify({
-      elements,
-      appState: sanitizedAppState,
-      files: sanitizedFiles
-    })
-  }, [])
 
   // 重置Excalidraw内容的通用函数
   const resetExcalidrawContent = useCallback(async (api, note) => {
@@ -180,6 +1075,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
 
       // 解析白板数据并更新
       const excalidrawData = JSON.parse(note.content)
+      setError(null)
       const elements = excalidrawData.elements || []
       const appState = excalidrawData.appState || { viewBackgroundColor: '#ffffff' }
       
@@ -224,11 +1120,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
       applyScene(elements, appState, files)
     } catch (error) {
       console.error('[WhiteboardEditor] 更新Excalidraw内容失败', error)
-      applyScene(
-        blankBoardData.elements,
-        blankBoardData.appState,
-        blankBoardData.files
-      )
+      setError('白板数据格式错误，无法加载')
     } finally {
       isApplyingRemoteDataRef.current = false
     }
@@ -276,7 +1168,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
           )
           setHasUnsavedChanges(false)
           hasUnsavedChangesRef.current = false
-          activeNoteIdRef.current = noteId
+          activeNoteIdRef.current = null
           setIsLoading(false)
           isApplyingRemoteDataRef.current = false
           return
@@ -300,6 +1192,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
 
         // 解析白板数据
         const excalidrawData = JSON.parse(note.content)
+        setError(null)
 
         // 处理图片文件
         let files = {}
@@ -364,26 +1257,16 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
         setIsLoading(false)
         isApplyingRemoteDataRef.current = false
       } catch (error) {
-        console.error('[WhiteboardEditor] 解析白板数据失败，使用空白板', error)
-        
-        // 解析失败时使用空白板
-        setInitialData(blankBoardData)
-        lastSavedSceneRef.current = serializeScene(
-          blankBoardData.elements,
-          blankBoardData.appState,
-          blankBoardData.files
-        )
-        latestSceneRef.current = blankBoardData
+        console.error('[WhiteboardEditor] 解析白板数据失败', error)
         setHasUnsavedChanges(false)
         hasUnsavedChangesRef.current = false
-    activeNoteIdRef.current = noteId
+        activeNoteIdRef.current = noteId
         
-        // 只在笔记类型确实是白板时才显示错误
         const note = notes.find(n => n.id === noteId)
         if (note?.note_type === 'whiteboard') {
-          setError('白板数据格式错误，已使用空白板')
+          setError('白板数据格式错误，无法加载')
         } else {
-          setError(null) // 非白板类型解析失败是预期行为
+          setError(null)
         }
         
         setIsLoading(false)
@@ -483,6 +1366,14 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
           // 保存完成后（或无需保存时），加载新笔记
           const note = notes.find(n => n.id === noteId)
           if (note) {
+            if (note.note_type !== 'whiteboard') {
+              activeNoteIdRef.current = null
+              hasUnsavedChangesRef.current = false
+              setHasUnsavedChanges(false)
+              setIsLoading(false)
+              setBridgeActive(false)
+              return
+            }
             if (process.env.NODE_ENV === 'development') {
               logger.log('[WhiteboardEditor] 开始加载新笔记', { noteId })
             }
@@ -542,6 +1433,11 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     }
 
     if (!currentNoteId) {
+      return
+    }
+
+    const currentNote = notes?.find(item => String(item.id) === String(currentNoteId))
+    if (currentNote?.note_type !== 'whiteboard') {
       return
     }
 
@@ -731,92 +1627,106 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     prevViewRef.current = currentView
   }, [currentView, noteId, saveNow, cancelSave, actualIsStandaloneMode])
 
-  // AI 按钮拖动
-  const handleAIBtnPointerDown = useCallback((e) => {
-    if (e.button !== 0) return
-    e.preventDefault()
-    const btn = aiButtonRef.current
-    if (!btn) return
-    const groupEl = btn.parentElement          // 按钮组容器（position:absolute）
-    const whiteboardEl = groupEl?.parentElement // 白板容器（position:relative）
-    const whiteboardRect = whiteboardEl ? whiteboardEl.getBoundingClientRect() : { left: 0, top: 0 }
-    const groupRect = groupEl ? groupEl.getBoundingClientRect() : { left: 0, top: 0 }
-    aiDragRef.current = {
-      dragging: true,
-      startMouseX: e.clientX,
-      startMouseY: e.clientY,
-      // 首次拖动时，取按钮组相对于白板容器的实际位置，而非按钮在组内的偏移
-      startBtnX: aiBtnPos ? aiBtnPos.x : groupRect.left - whiteboardRect.left,
-      startBtnY: aiBtnPos ? aiBtnPos.y : groupRect.top - whiteboardRect.top,
-      hasMoved: false,
+  useEffect(() => {
+    const handleExternalGenerate = async (event) => {
+      const detail = event.detail
+      if (!detail || String(detail.noteId) !== String(noteId) || !excalidrawAPI) return
+
+      detail.handled = true
+      try {
+        const existingElements = excalidrawAPI.getSceneElements().filter(e => !e.isDeleted)
+        const appState = excalidrawAPI.getAppState()
+        const files = excalidrawAPI.getFiles()
+        const note = notes.find(item => String(item.id) === String(noteId))
+        const persistedData = parseWhiteboardContent(note?.content)
+        const result = await generateWhiteboardElementsByAction({
+          action: detail.action,
+          prompt: detail.prompt,
+          elements: existingElements,
+          appState,
+          fileMap: persistedData.fileMap || {},
+          currentWhiteboardSummary: summarizeWhiteboardElementsForAI(existingElements, persistedData.fileMap || {}),
+        })
+
+        const nextFiles = result.action === 'append'
+          ? { ...(files || {}), ...(result.fileMap || {}) }
+          : { ...(result.fileMap || {}) }
+        const nextScene = {
+          elements: result.elements,
+          appState: result.appState,
+          files: nextFiles,
+        }
+        latestSceneRef.current = nextScene
+        hasUnsavedChangesRef.current = true
+        setHasUnsavedChanges(true)
+
+        // 与切换笔记一致，走 initialData + 重挂载路径，确保自研生成器产出的元素
+        // 也能被 Excalidraw 内核正确归一化、立即渲染（仅 updateScene 在缺 index 等字段时会失败）
+        isApplyingRemoteDataRef.current = true
+        setInitialData(nextScene)
+        setExcalidrawKey(`excalidraw-${noteId || 'unknown'}-${Date.now()}`)
+
+        // 把生成器产出的图片资源注入 Excalidraw 资源系统（block-beta/gantt/pie 等回退会产 image 元素）
+        if (excalidrawAPI?.addFiles && result.fileMap && Object.keys(result.fileMap).length > 0) {
+          try {
+            const filesPayload = Object.values(result.fileMap).filter(Boolean)
+            if (filesPayload.length > 0) excalidrawAPI.addFiles(filesPayload)
+          } catch (fileErr) {
+            logger.warn('[WhiteboardEditor] addFiles 失败:', fileErr)
+          }
+        }
+
+        let persistedFileMap = {}
+        if (nextFiles && Object.keys(nextFiles).length > 0) {
+          const saveImagesResult = await window.electronAPI.whiteboard.saveImages(nextFiles)
+          if (saveImagesResult.success) {
+            persistedFileMap = saveImagesResult.data || {}
+          } else {
+            throw new Error(saveImagesResult.error || '保存图片失败')
+          }
+        }
+
+        const persistedAppState = {
+          viewBackgroundColor: nextScene.appState?.viewBackgroundColor,
+          currentItemFontFamily: nextScene.appState?.currentItemFontFamily,
+          gridSize: nextScene.appState?.gridSize,
+        }
+
+        const updateResult = await updateNote(noteId, {
+          content: buildWhiteboardContent({
+            elements: nextScene.elements,
+            appState: persistedAppState,
+            fileMap: persistedFileMap,
+          }),
+          note_type: 'whiteboard',
+        })
+        if (!updateResult?.success) {
+          throw new Error(updateResult?.error || '保存白板失败')
+        }
+
+        lastSavedSceneRef.current = serializeScene(
+          nextScene.elements,
+          persistedAppState,
+          nextScene.files,
+        )
+        hasUnsavedChangesRef.current = false
+        setHasUnsavedChanges(false)
+
+        // 重挂载完成后再放开 onChange 拦截，避免误判为用户操作触发自动保存
+        setTimeout(() => {
+          isApplyingRemoteDataRef.current = false
+        }, 200)
+
+        detail.resolve?.(result)
+      } catch (error) {
+        isApplyingRemoteDataRef.current = false
+        detail.reject?.(error)
+      }
     }
-    btn.setPointerCapture(e.pointerId)
-  }, [aiBtnPos])
 
-  const handleAIBtnPointerMove = useCallback((e) => {
-    if (!aiDragRef.current.dragging) return
-    const dx = e.clientX - aiDragRef.current.startMouseX
-    const dy = e.clientY - aiDragRef.current.startMouseY
-    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
-      aiDragRef.current.hasMoved = true
-      setAiBtnPos({ x: aiDragRef.current.startBtnX + dx, y: aiDragRef.current.startBtnY + dy })
-    }
-  }, [])
-
-  const handleAIBtnPointerUp = useCallback(() => {
-    if (!aiDragRef.current.dragging) return
-    aiDragRef.current.dragging = false
-    if (!aiDragRef.current.hasMoved) {
-      setAiDialogOpen(true)
-      setAiError('')
-    }
-  }, [])
-
-  // AI 生成白板元素
-  const handleAIGenerate = useCallback(async () => {
-    if (!aiPrompt.trim() || !excalidrawAPI) return
-
-    setAiLoading(true)
-    setAiError('')
-    setAiLoadingText('AI 正在理解语义…')
-
-    try {
-      const existingElements = excalidrawAPI.getSceneElements().filter(e => !e.isDeleted)
-
-      // 保存撤销快照
-      aiSnapshotRef.current = existingElements.map(e => ({ ...e }))
-
-      setAiLoadingText('AI 正在生成 Mermaid 图表…')
-      const newElements = await aiGenerateExcalidrawElements(aiPrompt.trim(), existingElements)
-
-      setAiLoadingText('布局渲染中…')
-      // 合并到现有画布
-      const allElements = [...existingElements, ...newElements]
-      excalidrawAPI.updateScene({ elements: allElements })
-      setAiUndoAvailable(true)
-
-      logger.log('[WhiteboardEditor] AI 生成了', newElements.length, '个元素')
-
-      setAiDialogOpen(false)
-      setAiPrompt('')
-    } catch (err) {
-      console.error('[WhiteboardEditor] AI 生成失败:', err)
-      setAiError(err.message || 'AI 生成失败')
-      aiSnapshotRef.current = null
-    } finally {
-      setAiLoading(false)
-      setAiLoadingText('')
-    }
-  }, [aiPrompt, excalidrawAPI])
-
-  // AI 撤销
-  const handleAIUndo = useCallback(() => {
-    if (!excalidrawAPI || !aiSnapshotRef.current) return
-    excalidrawAPI.updateScene({ elements: aiSnapshotRef.current })
-    aiSnapshotRef.current = null
-    setAiUndoAvailable(false)
-    logger.log('[WhiteboardEditor] 已撤销 AI 生成')
-  }, [excalidrawAPI])
+    window.addEventListener(WHITEBOARD_AI_GENERATE_EVENT, handleExternalGenerate)
+    return () => window.removeEventListener(WHITEBOARD_AI_GENERATE_EVENT, handleExternalGenerate)
+  }, [excalidrawAPI, noteId, notes, setHasUnsavedChanges, updateNote, serializeScene])
 
   // 获取当前白板内容（用于类型转换）
   const getCurrentContent = useCallback(async () => {
@@ -957,6 +1867,15 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     }
   }, [saveNow])
 
+  const excalidrawSurfaceSx = useMemo(
+    () => createExcalidrawSurfaceSx({ isDark, primaryColor }),
+    [isDark, primaryColor],
+  )
+  const imageEditButtonSx = useMemo(
+    () => createImageEditButtonSx({ isDark, primaryColor }),
+    [isDark, primaryColor],
+  )
+
   if (error) {
     return (
       <Box sx={{ p: 3 }}>
@@ -996,7 +1915,8 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
         '& .excalidraw': {
           height: '100% !important',
           width: '100% !important'
-        }
+        },
+        ...excalidrawSurfaceSx,
       }}>
         <Excalidraw
           key={excalidrawKey}
@@ -1011,6 +1931,16 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
             if (isApplyingRemoteDataRef.current) {
               return
             }
+
+            const editableMermaidImage = getEditableMermaidImage(elements, appState)
+            setSelectedMermaidImage((prev) => {
+              if (!editableMermaidImage && !prev) return prev
+              if (!editableMermaidImage) return null
+              if (prev?.id === editableMermaidImage.id && prev?.version === editableMermaidImage.version) {
+                return prev
+              }
+              return editableMermaidImage
+            })
 
             const persistedAppState = {
               viewBackgroundColor: appState.viewBackgroundColor,
@@ -1044,133 +1974,55 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
               saveAsImage: false, // 禁用另存为图片（我们有自己的PNG导出）
             },
           }}
+          renderTopRightUI={() => (
+            selectedMermaidImage ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Button
+                  size="small"
+                  variant="text"
+                  onClick={openMermaidDslEditor}
+                  sx={imageEditButtonSx}
+                >
+                  编辑图像
+                </Button>
+              </Box>
+            ) : null
+          )}
         />
       </Box>
-
-      {/* AI 操作按钮组 */}
-      <Box sx={{
-        position: 'absolute',
-        ...(aiBtnPos
-          ? { top: aiBtnPos.y, left: aiBtnPos.x }
-          : { bottom: 20, right: 20 }
-        ),
-        display: 'flex',
-        alignItems: 'center',
-        gap: 1,
-        zIndex: 10,
-      }}>
-        {/* 撤销按钮 */}
-        {aiUndoAvailable && (
-          <Box
-            onClick={handleAIUndo}
-            sx={{
-              display: 'flex', alignItems: 'center', gap: 0.5,
-              px: 1.5, py: 0.75,
-              bgcolor: 'warning.main', color: 'warning.contrastText',
-              borderRadius: 2, boxShadow: 3, cursor: 'pointer',
-              userSelect: 'none', fontSize: 13, fontWeight: 500,
-              whiteSpace: 'nowrap',
-              '&:hover': { bgcolor: 'warning.dark' },
-            }}
-          >
-            <UndoIcon sx={{ fontSize: 16 }} />
-            撤销
-          </Box>
-        )}
-        {/* AI 生成按钮（可拖动） */}
-        <Box
-          ref={aiButtonRef}
-          onPointerDown={handleAIBtnPointerDown}
-          onPointerMove={handleAIBtnPointerMove}
-          onPointerUp={handleAIBtnPointerUp}
-          sx={{
-            display: 'flex', alignItems: 'center', gap: 0.5,
-            px: 1.5, py: 0.75,
-            bgcolor: 'primary.main', color: 'primary.contrastText',
-            borderRadius: 2, boxShadow: 3,
-            cursor: 'grab', userSelect: 'none',
-            fontSize: 14, fontWeight: 500, fontFamily: 'inherit',
-            whiteSpace: 'nowrap',
-            '&:hover': { bgcolor: 'primary.dark' },
-            '&:active': { cursor: 'grabbing' },
-          }}
-        >
-          <AIIcon sx={{ fontSize: 18 }} />
-          AI 生成
-        </Box>
-      </Box>
-
-      {/* AI 生成对话框 */}
       <Dialog
-        open={aiDialogOpen}
-        onClose={() => { if (!aiLoading) setAiDialogOpen(false) }}
-        maxWidth="sm"
+        open={dslEditorOpen}
+        onClose={closeMermaidDslEditor}
+        maxWidth="md"
         fullWidth
       >
-        <DialogTitle>AI 生成白板内容</DialogTitle>
+        <DialogTitle>编辑 Mermaid DSL</DialogTitle>
         <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            当前图片是官方 Mermaid 图片快照。修改 DSL 后会原位重画并替换旧图。
+          </Typography>
           <TextField
             autoFocus
             fullWidth
             multiline
-            minRows={3}
-            maxRows={8}
-            placeholder="描述你想生成的白板内容，例如：&#10;• 画一个项目开发流程图&#10;• 用思维导图整理 React 学习路线&#10;• 画一个用户注册的时序图"
-            value={aiPrompt}
-            onChange={(e) => setAiPrompt(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault()
-                handleAIGenerate()
-              }
-            }}
-            disabled={aiLoading}
-            sx={{ mt: 1 }}
+            minRows={14}
+            value={dslDraft}
+            onChange={(event) => setDslDraft(event.target.value)}
+            placeholder="请输入 Mermaid DSL"
+            disabled={isRegeneratingDsl}
           />
-          {aiLoading && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 2 }}>
-              {/* 五彩圆圈 */}
-              <Box sx={{
-                flexShrink: 0,
-                width: 22, height: 22, borderRadius: '50%',
-                background: 'conic-gradient(#f44336, #ff9800, #ffeb3b, #4caf50, #2196f3, #9c27b0, #f44336)',
-                mask: 'radial-gradient(farthest-side, transparent 63%, black 63%)',
-                WebkitMask: 'radial-gradient(farthest-side, transparent 63%, black 63%)',
-                animation: 'ai-rainbow-spin 0.9s linear infinite',
-                '@keyframes ai-rainbow-spin': { '100%': { transform: 'rotate(360deg)' } },
-              }} />
-              {/* 文字 + 逐点动画 */}
-              <Box sx={{ fontSize: 14, color: 'text.secondary', display: 'flex', alignItems: 'baseline', gap: '1px' }}>
-                {aiLoadingText || 'AI 生成中'}
-                <Box component="span" sx={{
-                  display: 'inline-flex', ml: '1px',
-                  '& .aidot': { opacity: 0, animation: 'ai-dot-seq 1.5s infinite' },
-                  '& .aidot:nth-of-type(2)': { animationDelay: '0.5s' },
-                  '& .aidot:nth-of-type(3)': { animationDelay: '1s' },
-                  '@keyframes ai-dot-seq': { '0%,66%,100%': { opacity: 0 }, '33%': { opacity: 1 } },
-                }}>
-                  <span className="aidot">.</span>
-                  <span className="aidot">.</span>
-                  <span className="aidot">.</span>
-                </Box>
-              </Box>
-            </Box>
-          )}
-          {aiError && (
-            <Alert severity="error" sx={{ mt: 2 }}>{aiError}</Alert>
-          )}
+          {dslError ? (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {dslError}
+            </Alert>
+          ) : null}
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setAiDialogOpen(false)} disabled={aiLoading} color="inherit">
+        <DialogActions>
+          <Button onClick={closeMermaidDslEditor} disabled={isRegeneratingDsl} color="inherit">
             取消
           </Button>
-          <Button
-            onClick={handleAIGenerate}
-            disabled={!aiPrompt.trim() || aiLoading}
-            variant="contained"
-            startIcon={aiLoading ? <CircularProgress size={18} color="inherit" /> : <AIIcon />}
-          >
-            {aiLoading ? '生成中…' : '生成'}
+          <Button onClick={regenerateMermaidImage} disabled={isRegeneratingDsl} variant="contained">
+            {isRegeneratingDsl ? '重画中...' : '重画替换'}
           </Button>
         </DialogActions>
       </Dialog>

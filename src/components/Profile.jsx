@@ -34,10 +34,43 @@ import { useTranslation } from '../utils/i18n';
 import TimeZoneUtils from '../utils/timeZoneUtils';
 import { useError } from './ErrorProvider';
 import UsageWaveCard from './UsageWaveCard';
-import logger from '../utils/logger';
 
 const PROFILE_EASING = 'cubic-bezier(0.32, 0.72, 0, 1)';
 const PROFILE_TRANSITION = `background-color 180ms ${PROFILE_EASING}, border-color 180ms ${PROFILE_EASING}, box-shadow 180ms ${PROFILE_EASING}, color 180ms ${PROFILE_EASING}, filter 180ms ${PROFILE_EASING}`;
+const DEFAULT_TODO_STATS = {
+  total: 0,
+  completed: 0,
+  pending: 0,
+  overdue: 0,
+  dueToday: 0,
+  completedOnTime: 0,
+  completedWithDueDate: 0,
+  onTimeRate: 0,
+  todayCompleted: 0,
+  todayWorkload: 0,
+  todayCompletionRate: null,
+  totalFocusTime: 0,
+  todayFocusTime: 0,
+  weekFocusTime: 0,
+  monthFocusTime: 0,
+};
+const STOP_WORDS = new Set([
+  '的', '了', '是', '在', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很',
+  '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '这', '这个', '那个',
+  '可以', '因为', '所以', '如果', '然后', '已经', '已有', '复制', '链接', '广告', '联系'
+]);
+
+const formatLocalDateKey = (date) => (
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+);
+
+const getHeatmapColors = (isDark) => [
+  isDark ? '#1a1a1a' : '#ebedf0',
+  isDark ? '#0e4429' : '#9be9a8',
+  isDark ? '#006d32' : '#40c463',
+  isDark ? '#26a641' : '#30a14e',
+  isDark ? '#39d353' : '#216e39',
+];
 
 const DashboardCardHeader = ({ title, icon: Icon, color = 'text.primary', mb = 2 }) => (
   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, mb }}>
@@ -81,38 +114,16 @@ const Profile = () => {
         setLoading(true);
         setError(null);
 
-        // 获取待办事项统计
         const todoStatsResult = await fetchTodoStats();
-        logger.log('[Profile] 待办统计结果:', todoStatsResult);
 
-        // invoke函数会自动解包数据，直接返回stats对象
         if (todoStatsResult && typeof todoStatsResult === 'object') {
-          logger.log('[Profile] 待办总数:', todoStatsResult.total);
-          logger.log('[Profile] 已完成:', todoStatsResult.completed);
-          logger.log('[Profile] 进行中:', todoStatsResult.pending);
-          logger.log('[Profile] 逾期:', todoStatsResult.overdue);
-          logger.log('[Profile] 今日到期:', todoStatsResult.dueToday);
           setTodoStats(todoStatsResult);
         } else {
           console.error('[Profile] 待办统计数据格式错误:', todoStatsResult);
-          // 设置默认值
-          setTodoStats({
-            total: 0,
-            completed: 0,
-            pending: 0,
-            overdue: 0,
-            dueToday: 0,
-            completedOnTime: 0,
-            onTimeRate: 0,
-            todayCompleted: 0,
-            todayWorkload: 0,
-            todayCompletionRate: null
-          });
+          setTodoStats(DEFAULT_TODO_STATS);
         }
 
-        // 获取已安装插件
         const pluginsResult = await fetchInstalledPlugins();
-        logger.log('[Profile] 插件列表:', pluginsResult);
         if (Array.isArray(pluginsResult)) {
           setInstalledPlugins(pluginsResult);
         }
@@ -138,24 +149,7 @@ const Profile = () => {
   }), [notes]);
 
   // 计算待办事项统计 - 使用 useMemo 避免重复计算
-  const todoStatsDisplay = useMemo(() => ({
-    total: 0,
-    completed: 0,
-    pending: 0,
-    overdue: 0,
-    dueToday: 0,
-    completedOnTime: 0,
-    completedWithDueDate: 0,
-    onTimeRate: 0,
-    todayCompleted: 0,
-    todayWorkload: 0,
-    todayCompletionRate: null,
-    totalFocusTime: 0,
-    todayFocusTime: 0,
-    weekFocusTime: 0,
-    monthFocusTime: 0,
-    ...(todoStats || {})
-  }), [todoStats]);
+  const todoStatsDisplay = useMemo(() => ({ ...DEFAULT_TODO_STATS, ...(todoStats || {}) }), [todoStats]);
 
   const todayCompletionRate = Number.isFinite(todoStatsDisplay.todayCompletionRate)
     ? todoStatsDisplay.todayCompletionRate
@@ -253,9 +247,7 @@ const Profile = () => {
         // 统计创建时间
         if (note.created_at) {
           const createdDate = new Date(note.created_at);
-          const createdDateKey = createdDate.getFullYear() + '-' +
-            String(createdDate.getMonth() + 1).padStart(2, '0') + '-' +
-            String(createdDate.getDate()).padStart(2, '0');
+          const createdDateKey = formatLocalDateKey(createdDate);
           if (!dateCountMap[createdDateKey]) {
             dateCountMap[createdDateKey] = { created: 0, updated: 0 };
           }
@@ -265,9 +257,7 @@ const Profile = () => {
         // 统计更新时间（如果更新时间与创建时间不同）
         if (note.updated_at && note.updated_at !== note.created_at) {
           const updatedDate = new Date(note.updated_at);
-          const updatedDateKey = updatedDate.getFullYear() + '-' +
-            String(updatedDate.getMonth() + 1).padStart(2, '0') + '-' +
-            String(updatedDate.getDate()).padStart(2, '0');
+          const updatedDateKey = formatLocalDateKey(updatedDate);
           if (!dateCountMap[updatedDateKey]) {
             dateCountMap[updatedDateKey] = { created: 0, updated: 0 };
           }
@@ -280,9 +270,7 @@ const Profile = () => {
     for (let i = days - 1; i >= 0; i--) {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
-      const dateKey = date.getFullYear() + '-' +
-        String(date.getMonth() + 1).padStart(2, '0') + '-' +
-        String(date.getDate()).padStart(2, '0');
+      const dateKey = formatLocalDateKey(date);
       const counts = dateCountMap[dateKey] || { created: 0, updated: 0 };
       const totalCount = counts.created + counts.updated;
       heatmapData.push({
@@ -300,19 +288,13 @@ const Profile = () => {
   // 计算高频词统计
   const getTopWords = () => {
     const wordMap = {};
-    const stopWords = new Set([
-      '的', '了', '是', '在', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很',
-      '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '这', '这个', '那个',
-      '可以', '因为', '所以', '如果', '然后', '已经', '已有', '复制', '链接', '广告', '联系'
-    ]);
-
     notes.forEach(note => {
       if (!note.is_deleted && note.content) {
         // 简单的中文分词（匹配2-4个连续的中文字符）
         const matches = note.content.match(/[\u4e00-\u9fa5]{2,4}/g);
         if (matches) {
           matches.forEach(word => {
-            if (!stopWords.has(word) && word.length >= 2) {
+            if (!STOP_WORDS.has(word) && word.length >= 2) {
               wordMap[word] = (wordMap[word] || 0) + 1;
             }
           });
@@ -336,6 +318,7 @@ const Profile = () => {
     }
     return chunks;
   }, [heatmapData]);
+  const heatmapColors = useMemo(() => getHeatmapColors(theme === 'dark'), [theme]);
 
   if (loading) {
     return (
@@ -597,76 +580,58 @@ const Profile = () => {
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, overflowX: 'auto', overflowY: 'hidden', pb: 1 }}>
                 {weeks.map((week, weekIndex) => (
                   <Box key={weekIndex} sx={{ display: 'flex', gap: 0.5 }}>
-                    {week.map((day, dayIndex) => {
-                      const colors = [
-                        theme === 'dark' ? '#1a1a1a' : '#ebedf0',
-                        theme === 'dark' ? '#0e4429' : '#9be9a8',
-                        theme === 'dark' ? '#006d32' : '#40c463',
-                        theme === 'dark' ? '#26a641' : '#30a14e',
-                        theme === 'dark' ? '#39d353' : '#216e39'
-                      ];
-                      return (
-                        <Tooltip
-                          key={dayIndex}
-                          title={
-                            <Box>
-                              <Typography variant="caption" display="block">{day.date}</Typography>
-                              <Typography variant="caption" display="block">创建: {day.created} 篇</Typography>
-                              <Typography variant="caption" display="block">更新: {day.updated} 篇</Typography>
-                              <Typography variant="caption" display="block" sx={{ fontWeight: 600 }}>
-                                总计: {day.count} 次活动
-                              </Typography>
-                            </Box>
-                          }
-                          placement="top"
-                        >
-                          <Box
-                            sx={{
-                              width: 12,
-                              height: 12,
-                              backgroundColor: colors[day.level],
-                              borderRadius: '2px',
-                              cursor: 'pointer',
-                              border: '1px solid transparent',
-                              transition: PROFILE_TRANSITION,
-                              '&:hover': {
-                                filter: 'brightness(1.12)',
-                                borderColor: theme === 'dark' ? 'rgba(255,255,255,0.28)' : 'rgba(15,23,42,0.18)',
-                                boxShadow: theme === 'dark'
-                                  ? '0 0 0 2px rgba(255,255,255,0.06)'
-                                  : '0 0 0 2px rgba(15,23,42,0.05)'
-                              }
-                            }}
-                          />
-                        </Tooltip>
-                      );
-                    })}
+                    {week.map((day, dayIndex) => (
+                      <Tooltip
+                        key={dayIndex}
+                        title={
+                          <Box>
+                            <Typography variant="caption" display="block">{day.date}</Typography>
+                            <Typography variant="caption" display="block">创建: {day.created} 篇</Typography>
+                            <Typography variant="caption" display="block">更新: {day.updated} 篇</Typography>
+                            <Typography variant="caption" display="block" sx={{ fontWeight: 600 }}>
+                              总计: {day.count} 次活动
+                            </Typography>
+                          </Box>
+                        }
+                        placement="top"
+                      >
+                        <Box
+                          sx={{
+                            width: 12,
+                            height: 12,
+                            backgroundColor: heatmapColors[day.level],
+                            borderRadius: '2px',
+                            cursor: 'pointer',
+                            border: '1px solid transparent',
+                            transition: PROFILE_TRANSITION,
+                            '&:hover': {
+                              filter: 'brightness(1.12)',
+                              borderColor: theme === 'dark' ? 'rgba(255,255,255,0.28)' : 'rgba(15,23,42,0.18)',
+                              boxShadow: theme === 'dark'
+                                ? '0 0 0 2px rgba(255,255,255,0.06)'
+                                : '0 0 0 2px rgba(15,23,42,0.05)'
+                            }
+                          }}
+                        />
+                      </Tooltip>
+                    ))}
                   </Box>
                 ))}
               </Box>
 
               <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5, pt: 0.25 }}>
                 <Typography variant="caption" color="text.secondary">少</Typography>
-                {[0, 1, 2, 3, 4].map(level => {
-                  const colors = [
-                    theme === 'dark' ? '#1a1a1a' : '#ebedf0',
-                    theme === 'dark' ? '#0e4429' : '#9be9a8',
-                    theme === 'dark' ? '#006d32' : '#40c463',
-                    theme === 'dark' ? '#26a641' : '#30a14e',
-                    theme === 'dark' ? '#39d353' : '#216e39'
-                  ];
-                  return (
-                    <Box
-                      key={level}
-                      sx={{
-                        width: 12,
-                        height: 12,
-                        backgroundColor: colors[level],
-                        borderRadius: '2px'
-                      }}
-                    />
-                  );
-                })}
+                {heatmapColors.map((color, level) => (
+                  <Box
+                    key={level}
+                    sx={{
+                      width: 12,
+                      height: 12,
+                      backgroundColor: color,
+                      borderRadius: '2px'
+                    }}
+                  />
+                ))}
                 <Typography variant="caption" color="text.secondary">多</Typography>
               </Box>
             </Box>

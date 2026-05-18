@@ -1,28 +1,13 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from '../utils/i18n';
 import {
   Box,
   Typography,
-  Button,
-  IconButton,
-  Paper,
   Chip,
-  Checkbox,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Grid,
   Divider,
   useTheme,
   Card,
-  CardHeader,
   CardContent,
-  Avatar,
-  ToggleButton,
-  FormControl,
-  InputLabel,
-  Select,
   Menu,
   ListItemIcon,
   ListItemText,
@@ -30,11 +15,8 @@ import {
 } from '@mui/material';
 import MultiSelectToolbar from './MultiSelectToolbar';
 import {
-  Add as AddIcon,
   CheckCircle as CheckCircleIcon,
-  RadioButtonUnchecked as RadioButtonUncheckedIcon,
   SelectAll as SelectAllIcon,
-  Schedule as ScheduleIcon,
   Warning as WarningIcon,
   Flag as FlagIcon,
   FlashOn as FlashOnIcon,
@@ -42,45 +24,31 @@ import {
   Edit as EditIcon,
   Delete as DeleteIcon
 } from '@mui/icons-material';
-import { format, isToday, isPast, parseISO } from 'date-fns';
-import { zhCN } from 'date-fns/locale';
-import TodoFormFields from './TodoFormFields';
+import { isToday, parseISO } from 'date-fns';
 import TodoItem from './TodoItem';
 import FocusModeView from './FocusModeView';
-import TimeZoneUtils from '../utils/timeZoneUtils';
 import {
-  fetchTodos,
   fetchTodosByQuadrant,
   toggleTodoComplete,
   deleteTodo as deleteTodoAPI,
-  createTodo as createTodoAPI,
-  getTodoTagSuggestions,
   addTodoFocusTime
 } from '../api/todoAPI';
-import appLocale from '../locales/zh-CN';
-import { todoSchema, extractValidationErrors } from '../validators/todoValidation';
 import { ANIMATIONS, createTransitionString } from '../utils/animationConfig';
 import useTodoDrag from '../hooks/useTodoDrag';
 import { useError } from './ErrorProvider';
 import { isTodoCompleted, isTodoOverdue, isFutureRecurringTodo } from '../utils/todoDisplayUtils';
 import { useStore } from '../store/useStore';
 
-const {
-  todo: { dialog: todoDialog }
-} = appLocale;
-
 const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedChange, onRefresh, onTodoSelect, refreshTrigger = 0 }) => {
   const { t } = useTranslation();
-  const { showError, showSuccess } = useError();
+  const { showError } = useError();
   const theme = useTheme();
   const todoNavigationRequest = useStore((state) => state.todoNavigationRequest);
   const consumeTodoNavigationRequest = useStore((state) => state.consumeTodoNavigationRequest);
   const effectiveViewMode = viewMode === 'list' ? 'focus' : viewMode;
   const [todos, setTodos] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [sortBy, setSortBy] = useState('quadrant');
   const [filterBy, setFilterBy] = useState('all'); // 'all', 'pending', 'completed', 'overdue', 'today'
-  const [stats, setStats] = useState({ total: 0, completed: 0, pending: 0, overdue: 0 });
 
   // 双击完成相关状态
   const [pendingComplete, setPendingComplete] = useState(new Set());
@@ -106,56 +74,29 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
     }
   });
 
-  // 加载待办事项
-  const computeStatsFromList = (list = []) => {
-    const total = list.length;
-    const completed = list.filter(todo => isTodoCompleted(todo)).length;
-    const pending = total - completed;
-    const overdue = list.filter(todo => isTodoOverdue(todo)).length;
-    return { total, completed, pending, overdue };
-  };
-
   const loadTodos = useCallback(async (options = {}) => {
     const { silent = true } = options;
     try {
       if (!silent) {
         setLoading(true);
       }
-      let statsSource = [];
-      let nextTodos;
-      if (sortBy === 'quadrant') {
-        const data = await fetchTodosByQuadrant(showCompleted);
-        nextTodos = data || {
-          urgent_important: [],
-          not_urgent_important: [],
-          urgent_not_important: [],
-          not_urgent_not_important: []
-        };
-        statsSource = Object.values(nextTodos).flat();
-      } else {
-        const data = await fetchTodos({ sortBy, showCompleted });
-        if (data && Array.isArray(data.todos)) {
-          nextTodos = data.todos;
-          statsSource = data.todos;
-        } else {
-          nextTodos = data || [];
-          statsSource = Array.isArray(nextTodos) ? nextTodos : [];
-        }
-      }
-
-      setTodos(nextTodos);
-      setStats(computeStatsFromList(statsSource));
+      const data = await fetchTodosByQuadrant(showCompleted);
+      setTodos(data || {
+        urgent_important: [],
+        not_urgent_important: [],
+        urgent_not_important: [],
+        not_urgent_not_important: []
+      });
     } catch (error) {
       console.error('加载待办事项失败:', error);
       showError(error, '加载待办事项失败');
       setTodos([]);
-      setStats({ total: 0, completed: 0, pending: 0, overdue: 0 });
     } finally {
       if (!silent) {
         setLoading(false);
       }
     }
-  }, [sortBy, showCompleted, showError]);
+  }, [showCompleted, showError]);
 
   useEffect(() => {
     loadTodos({ silent: false });
@@ -339,7 +280,7 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
         isSelected={selectedTodos.includes(todo.id)}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
-        onClick={(e, todo) => {
+        onClick={(_, todo) => {
           if (multiSelectMode) {
             // 多选模式下的点击处理
             if (selectedTodos.includes(todo.id)) {

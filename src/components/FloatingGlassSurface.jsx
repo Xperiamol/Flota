@@ -44,6 +44,7 @@ const FloatingGlassSurface = forwardRef(function FloatingGlassSurface({
   onClickAway,
   clickAwayDisabled = false,
   ariaLabel,
+  portalContainer,
   sx
 }, ref) {
   const paper = (
@@ -72,7 +73,7 @@ const FloatingGlassSurface = forwardRef(function FloatingGlassSurface({
   )
 
   return (
-    <Portal>
+    <Portal container={portalContainer || undefined}>
       <Box
         aria-hidden={!open}
         sx={{

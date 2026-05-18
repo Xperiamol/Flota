@@ -26,6 +26,7 @@ import { useStore } from '../store/useStore'
 import useAIStream from '../hooks/useAIStream'
 import useDraggableFloatingPanel from '../hooks/useDraggableFloatingPanel'
 import { buildContextPackageFromNotes, truncateText } from '../utils/aiContextUtils'
+import { handleWhiteboardAIRequest } from '../utils/whiteboardAI'
 import logger from '../utils/logger'
 
 const QUICK_PROMPTS = [
@@ -88,7 +89,7 @@ const getDefaultPosition = () => ({
   y: Math.max(PANEL_MARGIN, window.innerHeight - PANEL_ESTIMATED_HEIGHT - PANEL_BOTTOM_OFFSET)
 })
 
-const AICommandCenter = ({ open, onClose }) => {
+const AICommandCenter = ({ open, onClose, portalContainer }) => {
   const inputRef = useRef(null)
   const scrollRef = useRef(null)
   const panelRef = useRef(null)
@@ -103,7 +104,9 @@ const AICommandCenter = ({ open, onClose }) => {
     aiNewChat,
     aiEnsureNoteChat,
     aiSwitchConv,
-    aiUpdateConv
+    aiUpdateConv,
+    updateNote,
+    loadNotes
   } = useStore()
   const noteConversationId = selectedNoteId == null ? null : aiNoteConversationMap?.[String(selectedNoteId)] || null
   const currentConversationId = noteConversationId || (selectedNoteId == null ? aiActiveConvId : null)
@@ -135,9 +138,17 @@ const AICommandCenter = ({ open, onClose }) => {
   )
 
   const previousConversationIdRef = useRef(currentConversationId)
+  const pendingConversationIdRef = useRef(null)
   useEffect(() => {
     if (previousConversationIdRef.current !== currentConversationId) {
+      const isSendInitiatedSwitch = (
+        pendingConversationIdRef.current &&
+        pendingConversationIdRef.current === currentConversationId
+      )
       previousConversationIdRef.current = currentConversationId
+      if (isSendInitiatedSwitch) {
+        return
+      }
       cancel()
       setMessages(currentConversation?.messages || [])
       setStreamContent('')
@@ -184,6 +195,14 @@ const AICommandCenter = ({ open, onClose }) => {
     })
   }, [notes, selectedNoteId])
 
+  const parseToolResult = useCallback((result) => {
+    try {
+      return typeof result === 'string' ? JSON.parse(result) : result
+    } catch (_) {
+      return null
+    }
+  }, [])
+
   const handleCancel = useCallback(() => {
     if (loading) cancel()
   }, [cancel, loading])
@@ -214,6 +233,7 @@ const AICommandCenter = ({ open, onClose }) => {
     } else {
       aiSwitchConv(conversationId)
     }
+    pendingConversationIdRef.current = conversationId
 
     const userMsg = { role: 'user', content: text }
     const nextMessages = [...messages, userMsg]
@@ -230,19 +250,55 @@ const AICommandCenter = ({ open, onClose }) => {
 
     const apiMessages = nextMessages.map(m => ({ role: m.role, content: m.content }))
     const contextPackage = buildContextPackage(text)
+    let shouldReloadNotes = false
 
     try {
-      const { result, content } = await runStream({
+      const whiteboardResult = await handleWhiteboardAIRequest({
+        note: currentNote,
+        prompt: text,
+        messages: nextMessages,
+        updateNote,
+        loadNotes,
+      })
+
+      if (whiteboardResult) {
+        const finalMessages = [...nextMessages, {
+          role: 'assistant',
+          content: whiteboardResult.content,
+        }]
+        setMessages(finalMessages)
+        aiUpdateConv(conversationId, {
+          messages: finalMessages,
+          title: getConversationTitle(finalMessages),
+          noteId: selectedNoteId == null ? null : String(selectedNoteId),
+          source: selectedNoteId == null ? 'general' : 'note'
+        })
+        setStreamContent('')
+        return
+      }
+
+      const { result, content, cancelledByUser } = await runStream({
         messages: apiMessages,
         contextPackage,
         requestPrefix: 'aicc',
         options: { requireConfirmation: false },
         onContent: setStreamContent,
+        onChunk: (chunk) => {
+          if (chunk?.type !== 'tool_end') return
+          const parsed = parseToolResult(chunk.result)
+          if (parsed?.error || parsed?.success === false) {
+            logger.warn('[AICommandCenter] tool failed', { name: chunk.name, result: parsed })
+          }
+          if (['create_note', 'edit_note'].includes(chunk.name) && parsed?.success !== false && !parsed?.error) {
+            shouldReloadNotes = true
+          }
+        },
         onChunkError: (chunk) => setStreamContent(prev => prev + `\n\n⚠️ ${chunk.content}`)
       })
 
+      const stoppedByUser = Boolean(result?.cancelled && cancelledByUser)
       const assistantContent = result?.cancelled
-        ? (content || '已停止生成。')
+        ? (content || (stoppedByUser ? '已停止生成。' : '❌ 生成已中断，请重试'))
         : result?.success
           ? (content || result.fullContent || '')
           : (content || `❌ ${result?.error || '请求失败'}`)
@@ -250,7 +306,7 @@ const AICommandCenter = ({ open, onClose }) => {
       const finalMessages = [...nextMessages, {
         role: 'assistant',
         content: assistantContent,
-        stopped: Boolean(result?.cancelled)
+        stopped: stoppedByUser
       }]
       setMessages(finalMessages)
       aiUpdateConv(conversationId, {
@@ -259,6 +315,9 @@ const AICommandCenter = ({ open, onClose }) => {
         noteId: selectedNoteId == null ? null : String(selectedNoteId),
         source: selectedNoteId == null ? 'general' : 'note'
       })
+      if (shouldReloadNotes) {
+        await loadNotes?.()
+      }
       setStreamContent('')
     } catch (error) {
       logger.warn('[AICommandCenter] chatStream failed', error)
@@ -275,10 +334,11 @@ const AICommandCenter = ({ open, onClose }) => {
       })
       setStreamContent('')
     } finally {
+      pendingConversationIdRef.current = null
       setLoading(false)
       window.setTimeout(() => inputRef.current?.focus(), 30)
     }
-  }, [aiEnsureNoteChat, aiNewChat, aiSwitchConv, aiUpdateConv, buildContextPackage, currentConversationId, currentNote, getConversationTitle, input, loading, messages, runStream, selectedNoteId])
+  }, [aiEnsureNoteChat, aiNewChat, aiSwitchConv, aiUpdateConv, buildContextPackage, currentConversationId, currentNote, getConversationTitle, input, loadNotes, loading, messages, parseToolResult, runStream, selectedNoteId, updateNote])
 
   const handleKeyDown = (event) => {
     if (event.key === 'Escape') {
@@ -304,6 +364,7 @@ const AICommandCenter = ({ open, onClose }) => {
       width={PANEL_WIDTH}
       maxWidth={`calc(100vw - ${PANEL_RIGHT_OFFSET * 2}px)`}
       maxHeight={`min(560px, calc(100vh - ${PANEL_BOTTOM_OFFSET * 2}px))`}
+      portalContainer={portalContainer}
       sx={{ display: 'flex', flexDirection: 'column' }}
     >
       <Box

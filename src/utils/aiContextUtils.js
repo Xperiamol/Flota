@@ -279,6 +279,7 @@ export const buildContextPackageFromNotes = ({ notes = [], todos = [], memories 
     contextPackage.currentNote = {
       id: currentNote.id,
       title: currentNote.title,
+      note_type: currentNote.note_type || 'markdown',
       tags: getNoteTagsText(currentNote.tags),
       content: truncateText(currentNote.content, 2400),
       updated_at: updatedAt,

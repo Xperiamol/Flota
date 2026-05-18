@@ -40,6 +40,7 @@
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@excalidraw/excalidraw": "^0.18.0",
+    "@excalidraw/mermaid-to-excalidraw": "^2.2.2",
     "@googleapis/calendar": "^14.2.0",
     "@modelcontextprotocol/sdk": "^1.25.2",
     "@mui/icons-material": "^7.3.1",

@@ -63,6 +63,34 @@ const isDefaultTimelineTypes = (types) => {
   return DEFAULT_TIMELINE_TYPES.every((type) => normalized.includes(type)) && normalized.length === DEFAULT_TIMELINE_TYPES.length;
 };
 
+const sidebarScrollableListSx = {
+  overflowY: 'auto',
+  flex: 1,
+  pr: '4px',
+  mr: '-4px',
+  scrollbarGutter: 'stable',
+  '&::-webkit-scrollbar': {
+    width: '6px'
+  },
+  '&::-webkit-scrollbar-track': {
+    background: 'transparent'
+  },
+  '&::-webkit-scrollbar-thumb': {
+    background: 'rgba(150, 150, 150, 0.2)',
+    borderRadius: '3px',
+    transition: 'background 0.3s ease'
+  },
+  '&::-webkit-scrollbar-thumb:hover': {
+    background: 'rgba(150, 150, 150, 0.4)'
+  },
+  '&::-webkit-scrollbar-thumb:active': {
+    background: 'rgba(150, 150, 150, 0.5)'
+  },
+  '&::-webkit-scrollbar-button': {
+    display: 'none'
+  }
+};
+
 const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, onShowCompletedChange, viewMode, showCompleted, onMultiSelectChange, onMultiSelectRefChange, todoRefreshTrigger, todoSortBy, onTodoSortByChange, showDeleted, selectedDate, calendarRefreshTrigger, onTodoUpdated }) => {
   const theme = useTheme();
   const currentView = useStore((state) => state.currentView);
@@ -617,7 +645,7 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
                 对话历史
               </Typography>
 
-              <List dense disablePadding sx={{ overflowY: 'auto', flex: 1 }}>
+              <List dense disablePadding sx={sidebarScrollableListSx}>
                 {aiConversations.map((conv) => (
                   <ListItemButton
                     key={conv.id}

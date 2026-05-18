@@ -7,6 +7,7 @@ const createRequestId = (prefix = 'ai') => (
 export const useAIStream = () => {
   const activeRequestIdRef = useRef(null)
   const chunkListenerRef = useRef(null)
+  const cancelRequestedRef = useRef(false)
 
   const cleanupListener = useCallback(() => {
     if (chunkListenerRef.current) {
@@ -18,6 +19,7 @@ export const useAIStream = () => {
   const cancel = useCallback(async () => {
     const requestId = activeRequestIdRef.current
     if (!requestId) return
+    cancelRequestedRef.current = true
     try {
       await window.electronAPI?.ai?.cancelStream?.(requestId)
     } catch (_) {
@@ -31,15 +33,18 @@ export const useAIStream = () => {
     requestPrefix = 'ai',
     options = {},
     onContent,
+    onChunk,
     onChunkError
   }) => {
     cleanupListener()
     const requestId = createRequestId(requestPrefix)
     activeRequestIdRef.current = requestId
+    cancelRequestedRef.current = false
 
     let content = ''
     chunkListenerRef.current = window.electronAPI?.ai?.onChatChunk?.((chunk) => {
       if (!chunk || chunk.requestId !== activeRequestIdRef.current) return
+      onChunk?.(chunk)
 
       if (chunk.type === 'content') {
         content += chunk.content
@@ -55,10 +60,16 @@ export const useAIStream = () => {
         contextPackage,
         ...options
       })
-      return { result, content, requestId }
+      return {
+        result,
+        content,
+        requestId,
+        cancelledByUser: cancelRequestedRef.current
+      }
     } finally {
       cleanupListener()
       activeRequestIdRef.current = null
+      cancelRequestedRef.current = false
     }
   }, [cleanupListener])
 

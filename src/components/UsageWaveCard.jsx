@@ -13,8 +13,6 @@ const clampPercent = (value) => {
   return Math.max(0, Math.min(100, value));
 };
 
-const fallbackPercent = 38;
-
 const UsageWaveCard = ({
   title,
   subtitle,
@@ -33,7 +31,7 @@ const UsageWaveCard = ({
 }) => {
   const theme = useTheme();
   const resolvedPercent = clampPercent(percent);
-  const visualPercent = resolvedPercent ?? fallbackPercent;
+  const visualPercent = resolvedPercent ?? 0;
   const displayPercent = percentLabel || (resolvedPercent == null ? '--' : `${Math.round(resolvedPercent)}%`);
   const waveTop = `${100 - visualPercent}%`;
   const resolvedAccentColor = accentColor || theme.palette.primary.main;
@@ -53,7 +51,7 @@ const UsageWaveCard = ({
   const bottomSpacing = compact ? 1.25 : 3.5;
   const contentMaxWidth = compact ? 320 : 480;
   const valueVariant = compact ? 'h6' : 'h5';
-  const compactCircleBoxSx = {
+  const circleBoxSx = {
     width: circleSize,
     height: circleSize,
     borderRadius: '50%',
@@ -67,16 +65,6 @@ const UsageWaveCard = ({
   };
   const waveLayers = (
     <>
-      <Box
-        sx={{
-          position: 'absolute',
-          width: '100%',
-          height: '100%',
-          top: waveTop,
-          left: 0,
-          transition: 'top 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
-        }}
-      />
       <Box
         sx={{
           position: 'absolute',
@@ -160,7 +148,7 @@ const UsageWaveCard = ({
     return (
       <Box sx={{ py: 0.25, width: '100%' }}>
         <Box sx={{ display: 'flex', gap: 1.25, alignItems: 'center', width: '100%' }}>
-          <Box sx={compactCircleBoxSx}>
+          <Box sx={circleBoxSx}>
             {waveLayers}
           </Box>
 
@@ -222,14 +210,14 @@ const UsageWaveCard = ({
   }
 
   return (
-    <Box sx={{ py: compact ? 0.25 : 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+    <Box sx={{ py: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       <Box sx={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, mb: sectionGap }}>
         <Box sx={{ minWidth: 0 }}>
           <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: '0.02em' }}>
             {title}
           </Typography>
           {subtitle ? (
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: compact ? 0.35 : 0.75, lineHeight: 1.35 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75, lineHeight: 1.35 }}>
               {subtitle}
             </Typography>
           ) : null}
@@ -249,16 +237,16 @@ const UsageWaveCard = ({
       </Box>
 
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
-        <Box sx={{ ...compactCircleBoxSx, mb: bottomSpacing }}>
+        <Box sx={{ ...circleBoxSx, mb: bottomSpacing }}>
           {waveLayers}
         </Box>
 
         <Box sx={{ width: '100%', maxWidth: contentMaxWidth, textAlign: 'center' }}>
-          <Typography variant={valueVariant} sx={{ fontWeight: 700, letterSpacing: '-0.02em', mb: compact ? 0.35 : 0.75 }}>
+          <Typography variant={valueVariant} sx={{ fontWeight: 700, letterSpacing: '-0.02em', mb: 0.75 }}>
             {valueLabel}
           </Typography>
           {metaLabel ? (
-            <Typography variant="body2" color="text.secondary" sx={{ mb: compact ? 0.9 : 1.5, fontSize: compact ? '0.84rem' : undefined, lineHeight: 1.45 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, lineHeight: 1.45 }}>
               {metaLabel}
             </Typography>
           ) : null}
@@ -271,13 +259,7 @@ const UsageWaveCard = ({
 
           {segments.length > 0 ? (
             <Box
-              sx={compact ? {
-                display: 'flex',
-                flexWrap: 'wrap',
-                justifyContent: 'center',
-                gap: 0.75,
-                mb: hint ? 0.9 : 0,
-              } : {
+              sx={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
                 gap: 1.25,
@@ -288,29 +270,20 @@ const UsageWaveCard = ({
                 <Box
                   key={`${segment.label}-${segment.value}`}
                   sx={{
-                    px: compact ? 1 : 1.5,
-                    py: compact ? 0.55 : 1.1,
+                    px: 1.5,
+                    py: 1.1,
                     borderRadius: 2,
                     bgcolor: theme.palette.mode === 'dark' ? alpha('#ffffff', 0.04) : alpha('#ffffff', 0.8),
                     border: '1px solid',
                     borderColor: theme.palette.mode === 'dark' ? alpha('#ffffff', 0.08) : alpha('#cbd5e1', 0.7),
-                    minWidth: compact ? 'auto' : undefined,
                   }}
                 >
-                  {compact ? (
-                    <Typography variant="caption" sx={{ fontWeight: 600, fontSize: '0.78rem', color: 'text.secondary' }}>
-                      {segment.label} {segment.value}
-                    </Typography>
-                  ) : (
-                    <>
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.25 }}>
-                        {segment.label}
-                      </Typography>
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        {segment.value}
-                      </Typography>
-                    </>
-                  )}
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.25 }}>
+                    {segment.label}
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {segment.value}
+                  </Typography>
                 </Box>
               ))}
             </Box>
