@@ -2,6 +2,12 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [3.1.4] - 2026-05-19
+
+### Changed / 更新内容
+- fix(editor): stabilize selection and ai toolbar behavior
+
+
 ## [3.1.3] - 2026-05-19
 
 ### Changed / 更新内容
