@@ -1,0 +1,513 @@
+src/utils/clipboardConversion.js
+  d5ac7a657224dfb1 1-319 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a0c23e75194e1248f58bb41","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Range":[1,319]}]}]}
+src/components/NoteEditor.jsx
+  d5ac7a657224dfb1 59-60,1179,1181-1182,1184-1185,1187-1188,1190-1222,1225-1249,1280-1284,1286-1287,1289,1291-1301,1303,1306,1323-1324,1326-1332,1334,1337 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a0c23e75194e1248f58bb41","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Range":[59,60]},{"Single":1179},{"Range":[1181,1182]},{"Range":[1184,1185]},{"Range":[1187,1188]},{"Range":[1190,1222]},{"Range":[1225,1249]},{"Range":[1280,1284]},{"Range":[1286,1287]},{"Single":1289},{"Range":[1291,1301]},{"Single":1303},{"Single":1306},{"Range":[1323,1324]},{"Range":[1326,1332]},{"Single":1334},{"Single":1337}]}]}
+src/components/AIAssistPanel.jsx
+  d5ac7a657224dfb1 93-101,103-126,128-130,155-156,164,172 gitai:{"mixed_line_ranges":[{"Single":96}],"operations":[{"operation_id":"6a0c23e75194e1248f58bb41","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Range":[93,101]},{"Range":[103,126]},{"Range":[128,130]},{"Range":[155,156]},{"Single":164},{"Single":172}]}]}
+src/utils/textareaInsert.js
+  d5ac7a657224dfb1 1-69 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a0c23e75194e1248f58bb41","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Range":[1,69]}]}]}
+src/components/WYSIWYGEditor.jsx
+  d5ac7a657224dfb1 608-613,618-656,666-670,2128-2136,2139-2141,2540-2541,2548-2549,2552-2583 gitai:{"mixed_line_ranges":[{"Range":[618,620]},{"Single":623},{"Range":[628,629]},{"Single":638},{"Range":[641,642]},{"Range":[644,646]},{"Single":670}],"operations":[{"operation_id":"6a0c23e75194e1248f58bb41","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Range":[608,613]},{"Range":[618,656]},{"Range":[666,670]},{"Range":[2128,2136]},{"Range":[2139,2141]},{"Range":[2540,2541]},{"Range":[2548,2549]},{"Range":[2552,2583]}]}]}
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "80fea220311d8ad68cb56d189af7268ae9fec5fd",
+  "prompts": {
+    "d5ac7a657224dfb1": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a02d93a64154c28b9357226",
+        "model": "openrouter-2o__dev"
+      },
+      "human_author": "Kevin Ye <kevin191702@gamil.com>",
+      "messages": [],
+      "total_additions": 607,
+      "total_deletions": 107,
+      "accepted_lines": 589,
+      "overriden_lines": 14
+    }
+  },
+  "attestation_metadata": {
+    "src/components/AIAssistPanel.jsx": [
+      {
+        "hash": "d5ac7a657224dfb1",
+        "line_ranges": [
+          {
+            "Range": [
+              93,
+              101
+            ]
+          },
+          {
+            "Range": [
+              103,
+              126
+            ]
+          },
+          {
+            "Range": [
+              128,
+              130
+            ]
+          },
+          {
+            "Range": [
+              155,
+              156
+            ]
+          },
+          {
+            "Single": 164
+          },
+          {
+            "Single": 172
+          }
+        ],
+        "mixed_line_ranges": [
+          {
+            "Single": 96
+          }
+        ],
+        "operations": [
+          {
+            "operation_id": "6a0c23e75194e1248f58bb41",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Range": [
+                  93,
+                  101
+                ]
+              },
+              {
+                "Range": [
+                  103,
+                  126
+                ]
+              },
+              {
+                "Range": [
+                  128,
+                  130
+                ]
+              },
+              {
+                "Range": [
+                  155,
+                  156
+                ]
+              },
+              {
+                "Single": 164
+              },
+              {
+                "Single": 172
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/NoteEditor.jsx": [
+      {
+        "hash": "d5ac7a657224dfb1",
+        "line_ranges": [
+          {
+            "Range": [
+              59,
+              60
+            ]
+          },
+          {
+            "Single": 1179
+          },
+          {
+            "Range": [
+              1181,
+              1182
+            ]
+          },
+          {
+            "Range": [
+              1184,
+              1185
+            ]
+          },
+          {
+            "Range": [
+              1187,
+              1188
+            ]
+          },
+          {
+            "Range": [
+              1190,
+              1222
+            ]
+          },
+          {
+            "Range": [
+              1225,
+              1249
+            ]
+          },
+          {
+            "Range": [
+              1280,
+              1284
+            ]
+          },
+          {
+            "Range": [
+              1286,
+              1287
+            ]
+          },
+          {
+            "Single": 1289
+          },
+          {
+            "Range": [
+              1291,
+              1301
+            ]
+          },
+          {
+            "Single": 1303
+          },
+          {
+            "Single": 1306
+          },
+          {
+            "Range": [
+              1323,
+              1324
+            ]
+          },
+          {
+            "Range": [
+              1326,
+              1332
+            ]
+          },
+          {
+            "Single": 1334
+          },
+          {
+            "Single": 1337
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a0c23e75194e1248f58bb41",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Range": [
+                  59,
+                  60
+                ]
+              },
+              {
+                "Single": 1179
+              },
+              {
+                "Range": [
+                  1181,
+                  1182
+                ]
+              },
+              {
+                "Range": [
+                  1184,
+                  1185
+                ]
+              },
+              {
+                "Range": [
+                  1187,
+                  1188
+                ]
+              },
+              {
+                "Range": [
+                  1190,
+                  1222
+                ]
+              },
+              {
+                "Range": [
+                  1225,
+                  1249
+                ]
+              },
+              {
+                "Range": [
+                  1280,
+                  1284
+                ]
+              },
+              {
+                "Range": [
+                  1286,
+                  1287
+                ]
+              },
+              {
+                "Single": 1289
+              },
+              {
+                "Range": [
+                  1291,
+                  1301
+                ]
+              },
+              {
+                "Single": 1303
+              },
+              {
+                "Single": 1306
+              },
+              {
+                "Range": [
+                  1323,
+                  1324
+                ]
+              },
+              {
+                "Range": [
+                  1326,
+                  1332
+                ]
+              },
+              {
+                "Single": 1334
+              },
+              {
+                "Single": 1337
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/WYSIWYGEditor.jsx": [
+      {
+        "hash": "d5ac7a657224dfb1",
+        "line_ranges": [
+          {
+            "Range": [
+              608,
+              613
+            ]
+          },
+          {
+            "Range": [
+              618,
+              656
+            ]
+          },
+          {
+            "Range": [
+              666,
+              670
+            ]
+          },
+          {
+            "Range": [
+              2128,
+              2136
+            ]
+          },
+          {
+            "Range": [
+              2139,
+              2141
+            ]
+          },
+          {
+            "Range": [
+              2540,
+              2541
+            ]
+          },
+          {
+            "Range": [
+              2548,
+              2549
+            ]
+          },
+          {
+            "Range": [
+              2552,
+              2583
+            ]
+          }
+        ],
+        "mixed_line_ranges": [
+          {
+            "Range": [
+              618,
+              620
+            ]
+          },
+          {
+            "Single": 623
+          },
+          {
+            "Range": [
+              628,
+              629
+            ]
+          },
+          {
+            "Single": 638
+          },
+          {
+            "Range": [
+              641,
+              642
+            ]
+          },
+          {
+            "Range": [
+              644,
+              646
+            ]
+          },
+          {
+            "Single": 670
+          }
+        ],
+        "operations": [
+          {
+            "operation_id": "6a0c23e75194e1248f58bb41",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Range": [
+                  608,
+                  613
+                ]
+              },
+              {
+                "Range": [
+                  618,
+                  656
+                ]
+              },
+              {
+                "Range": [
+                  666,
+                  670
+                ]
+              },
+              {
+                "Range": [
+                  2128,
+                  2136
+                ]
+              },
+              {
+                "Range": [
+                  2139,
+                  2141
+                ]
+              },
+              {
+                "Range": [
+                  2540,
+                  2541
+                ]
+              },
+              {
+                "Range": [
+                  2548,
+                  2549
+                ]
+              },
+              {
+                "Range": [
+                  2552,
+                  2583
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/utils/clipboardConversion.js": [
+      {
+        "hash": "d5ac7a657224dfb1",
+        "line_ranges": [
+          {
+            "Range": [
+              1,
+              319
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a0c23e75194e1248f58bb41",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Range": [
+                  1,
+                  319
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/utils/textareaInsert.js": [
+      {
+        "hash": "d5ac7a657224dfb1",
+        "line_ranges": [
+          {
+            "Range": [
+              1,
+              69
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a0c23e75194e1248f58bb41",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Range": [
+                  1,
+                  69
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "remote_transcripts": {
+    "d5ac7a657224dfb1": {
+      "tool": "trae",
+      "conversation_id": "6a02d93a64154c28b9357226",
+      "session_id": "6a02d93a64154c28b9357226",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    }
+  }
+}
