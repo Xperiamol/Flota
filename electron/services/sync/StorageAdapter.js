@@ -8,7 +8,14 @@ const NoteDAO = require('../../dao/NoteDAO');
 const TodoDAO = require('../../dao/TodoDAO');
 const DatabaseManager = require('../../dao/DatabaseManager');
 const RepeatUtils = require('../../utils/repeatUtils');
+const { encryptValue, decryptValue } = require('../../utils/secureValue');
 const hashUtils = require('./utils/hash');
+
+const SYNC_SENSITIVE_SETTING_KEYS = new Set([
+  'ai_api_key',
+  'stt_volc_token',
+  'caldav_password',
+]);
 
 /**
  * 存储适配器类
@@ -335,7 +342,7 @@ class StorageAdapter {
 
     const transaction = this.db.transaction((entries) => {
       for (const [key, value] of entries) {
-        const { serialized, type } = this.serializeSettingValue(value);
+        const { serialized, type } = this.serializeSettingValue(value, key);
         upsertStmt.run(key, serialized, type);
       }
     });
@@ -390,7 +397,7 @@ class StorageAdapter {
           skipped++;
           continue;
         }
-        const { serialized, type } = this.serializeSettingValue(value);
+        const { serialized, type } = this.serializeSettingValue(value, key);
         const ts = this.toSQLiteDateTime(cloudTs) || null;
         upsertStmt.run(key, serialized, type, ts);
         updated++;
@@ -608,17 +615,21 @@ class StorageAdapter {
    * 序列化设置值
    * @private
    */
-  serializeSettingValue(value) {
-    if (value === null) {
+  serializeSettingValue(value, key = '') {
+    const normalizedValue = SYNC_SENSITIVE_SETTING_KEYS.has(key)
+      ? encryptValue(value || '')
+      : value;
+
+    if (normalizedValue === null) {
       return { serialized: 'null', type: 'json' };
-    } else if (typeof value === 'object') {
-      return { serialized: JSON.stringify(value), type: 'json' };
-    } else if (typeof value === 'number') {
-      return { serialized: String(value), type: 'number' };
-    } else if (typeof value === 'boolean') {
-      return { serialized: value ? '1' : '0', type: 'boolean' };
+    } else if (typeof normalizedValue === 'object') {
+      return { serialized: JSON.stringify(normalizedValue), type: 'json' };
+    } else if (typeof normalizedValue === 'number') {
+      return { serialized: String(normalizedValue), type: 'number' };
+    } else if (typeof normalizedValue === 'boolean') {
+      return { serialized: normalizedValue ? '1' : '0', type: 'boolean' };
     } else {
-      return { serialized: String(value), type: 'string' };
+      return { serialized: String(normalizedValue), type: 'string' };
     }
   }
 
@@ -628,6 +639,9 @@ class StorageAdapter {
    */
   parseSettingValue(value, type, key = '') {
     try {
+      if (SYNC_SENSITIVE_SETTING_KEYS.has(key)) {
+        return decryptValue(value);
+      }
       if (type === 'json' || type === 'object' || type === 'array') {
         return JSON.parse(value);
       }

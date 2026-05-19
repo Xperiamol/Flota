@@ -6,6 +6,10 @@ export const WHITEBOARD_AI_ACTIONS = {
   REPLACE: 'replace',
   EDIT: 'edit',
 }
+export const WHITEBOARD_AI_INTENTS = {
+  CHAT: 'chat',
+  WHITEBOARD: 'whiteboard',
+}
 
 export const isWhiteboardNote = (note) => (note?.note_type || 'markdown') === 'whiteboard'
 
@@ -47,6 +51,13 @@ export const inferWhiteboardActionFromPrompt = (prompt = '') => {
   }
 
   return WHITEBOARD_AI_ACTIONS.APPEND
+}
+
+const hasExplicitWhiteboardIntent = (prompt = '') => {
+  const text = String(prompt || '').trim().toLowerCase()
+  if (!text) return false
+
+  return /(画个?|画一[个张幅]|生成|绘制|出个图|做成图|转成图|整理成图|流程图|架构图|时序图|类图|er图|鱼骨图|思维导图|甘特图|时间轴|四象限|在白板上|插入到白板|加到白板|补到白板|重画|重做|替换当前白板|修改白板|调整白板)/.test(text)
 }
 
 const trimInline = (text = '', max = 32) => {
@@ -96,13 +107,54 @@ export const summarizeWhiteboardContentForAI = (content = '') => {
   return summarizeWhiteboardElementsForAI(parsed.elements, parsed.fileMap)
 }
 
+const buildIntentClassificationMessages = ({ prompt, note, messages = [], currentWhiteboardSummary = '' }) => {
+  const recentMessages = getRecentConversationContext(messages, prompt)
+
+  return [
+    {
+      role: 'system',
+      content: `你是 Flota 的白板请求路由器。你的任务是先判断：用户最新一句话，到底应该走“普通文字问答(chat)”还是“白板生成/修改(whiteboard)”。
+
+只输出一个 JSON 对象，禁止解释、Markdown、代码块。
+
+输出格式：
+{
+  "intent": "chat | whiteboard",
+  "reason": "一句简短原因"
+}
+
+判定原则：
+1. chat：总结、解释、提炼要点、问答、翻译、润色、分析风险、列待办、理解当前白板内容、基于白板做文字回复。
+2. whiteboard：明确要求生成/插入/补充/重画/替换/修改图形或白板内容。
+3. 只因为当前笔记是白板，并不代表必须走 whiteboard。
+4. 用户如果说“总结当前笔记/当前白板”“解释这个流程”“提炼结论”，即使上下文是白板，也应判为 chat。
+5. 只有当用户明确想让白板发生变化，或者最近对话强烈表明“上一轮就在让你继续画图/改图”时，才判为 whiteboard。
+6. 有歧义时优先判为 chat，避免误改白板。`
+    },
+    {
+      role: 'user',
+      content: JSON.stringify({
+        prompt,
+        currentNote: {
+          id: note?.id ?? null,
+          title: note?.title || '',
+          tags: note?.tags || [],
+          noteType: note?.note_type || 'markdown',
+        },
+        currentWhiteboardSummary,
+        recentConversation: recentMessages,
+      })
+    }
+  ]
+}
+
 const buildGroundingMessages = ({ prompt, note, messages = [], currentWhiteboardSummary = '', actionHint }) => {
   const recentMessages = getRecentConversationContext(messages, prompt)
 
   return [
     {
       role: 'system',
-      content: `你是 Flota 的白板素材整理器。当前笔记是白板，用户的请求一定要走白板生成。
+      content: `你是 Flota 的白板素材整理器。上游已经确认：这次请求应该进入白板生成/修改流程。
 你的任务是从用户最新一句话、最近对话以及当前白板摘要里，判断动作并提炼“真正要绘制成图的内容”。
 图表类型由下游生成器自动选择，你不需要决定。
 
@@ -142,14 +194,41 @@ const buildGroundingMessages = ({ prompt, note, messages = [], currentWhiteboard
   ]
 }
 
-const parseGroundingResult = (content = '') => {
+const parseModelJsonObject = (content = '', errorMessage = '模型结果格式错误') => {
   const text = String(content || '').trim()
   const start = text.indexOf('{')
   const end = text.lastIndexOf('}')
   if (start === -1 || end === -1 || end <= start) {
-    throw new Error('白板素材整理结果格式错误')
+    throw new Error(errorMessage)
   }
   return JSON.parse(text.slice(start, end + 1))
+}
+
+const normalizeWhiteboardIntent = (intent) => {
+  const value = String(intent || '').trim().toLowerCase()
+  return value === WHITEBOARD_AI_INTENTS.WHITEBOARD
+    ? WHITEBOARD_AI_INTENTS.WHITEBOARD
+    : WHITEBOARD_AI_INTENTS.CHAT
+}
+
+export const classifyWhiteboardIntent = async ({ note, prompt, messages = [] }) => {
+  const currentWhiteboardSummary = isWhiteboardNote(note)
+    ? summarizeWhiteboardContentForAI(note?.content)
+    : ''
+  const res = await window.electronAPI.ai.chat(
+    buildIntentClassificationMessages({ prompt, note, messages, currentWhiteboardSummary }),
+    { temperature: 0, maxTokens: 220 }
+  )
+
+  if (!res?.success || !res.data?.content) {
+    throw new Error(res?.error || '白板意图分类失败')
+  }
+
+  const parsed = parseModelJsonObject(res.data.content, '白板意图分类结果格式错误')
+  return {
+    intent: normalizeWhiteboardIntent(parsed?.intent),
+    reason: String(parsed?.reason || '').trim(),
+  }
 }
 
 export const groundWhiteboardRequest = async ({ note, prompt, messages = [] }) => {
@@ -166,7 +245,7 @@ export const groundWhiteboardRequest = async ({ note, prompt, messages = [] }) =
     throw new Error(res?.error || '白板素材整理失败')
   }
 
-  const parsed = parseGroundingResult(res.data.content)
+  const parsed = parseModelJsonObject(res.data.content, '白板素材整理结果格式错误')
   return {
     action: normalizeWhiteboardAction(parsed?.action, actionHint),
     groundedRequest: String(parsed?.groundedRequest || '').trim(),
@@ -356,6 +435,17 @@ const buildWhiteboardActionMessage = (result = {}) => {
 export const handleWhiteboardAIRequest = async ({ note, prompt, messages = [], updateNote, loadNotes }) => {
   if (!isWhiteboardNote(note)) {
     return null
+  }
+
+  try {
+    const intentResult = await classifyWhiteboardIntent({ note, prompt, messages })
+    if (intentResult.intent !== WHITEBOARD_AI_INTENTS.WHITEBOARD) {
+      return null
+    }
+  } catch (_) {
+    if (!hasExplicitWhiteboardIntent(prompt)) {
+      return null
+    }
   }
 
   let action = inferWhiteboardActionFromPrompt(prompt)

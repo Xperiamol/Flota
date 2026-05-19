@@ -89,14 +89,24 @@ const getDefaultPosition = () => ({
   y: Math.max(PANEL_MARGIN, window.innerHeight - PANEL_ESTIMATED_HEIGHT - PANEL_BOTTOM_OFFSET)
 })
 
-const AICommandCenter = ({ open, onClose, portalContainer }) => {
+const AICommandCenter = ({
+  open,
+  onClose,
+  portalContainer,
+  notesOverride,
+  selectedNoteIdOverride,
+  updateNoteOverride,
+  loadNotesOverride,
+  userAvatarOverride,
+  positionPersistKey = 'flota.aiCommandCenter.position'
+}) => {
   const inputRef = useRef(null)
   const scrollRef = useRef(null)
   const panelRef = useRef(null)
 
   const {
-    notes,
-    selectedNoteId,
+    notes: storeNotes,
+    selectedNoteId: storeSelectedNoteId,
     userAvatar,
     aiConversations,
     aiActiveConvId,
@@ -105,9 +115,14 @@ const AICommandCenter = ({ open, onClose, portalContainer }) => {
     aiEnsureNoteChat,
     aiSwitchConv,
     aiUpdateConv,
-    updateNote,
-    loadNotes
+    updateNote: storeUpdateNote,
+    loadNotes: storeLoadNotes
   } = useStore()
+  const notes = notesOverride ?? storeNotes
+  const selectedNoteId = selectedNoteIdOverride !== undefined ? selectedNoteIdOverride : storeSelectedNoteId
+  const updateNote = updateNoteOverride ?? storeUpdateNote
+  const loadNotes = loadNotesOverride ?? storeLoadNotes
+  const resolvedUserAvatar = userAvatarOverride !== undefined ? userAvatarOverride : userAvatar
   const noteConversationId = selectedNoteId == null ? null : aiNoteConversationMap?.[String(selectedNoteId)] || null
   const currentConversationId = noteConversationId || (selectedNoteId == null ? aiActiveConvId : null)
   const currentConversation = useMemo(
@@ -129,7 +144,7 @@ const AICommandCenter = ({ open, onClose, portalContainer }) => {
     margin: PANEL_MARGIN,
     estimatedWidth: PANEL_WIDTH,
     estimatedHeight: PANEL_ESTIMATED_HEIGHT,
-    persistKey: 'flota.aiCommandCenter.position'
+    persistKey: positionPersistKey
   })
 
   const currentNote = useMemo(
@@ -489,7 +504,7 @@ const AICommandCenter = ({ open, onClose, portalContainer }) => {
         )}
 
         {messages.map((msg, index) => (
-          <ChatBubble key={index} msg={msg} userAvatar={userAvatar} />
+          <ChatBubble key={index} msg={msg} userAvatar={resolvedUserAvatar} />
         ))}
 
         {loading && (

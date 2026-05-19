@@ -1,3 +1,5 @@
+import { summarizeWhiteboardContentForAI } from './whiteboardAI'
+
 export const truncateText = (text, max = 1200) => {
   const value = String(text || '').trim()
   return value.length > max ? `${value.slice(0, max)}…` : value
@@ -207,7 +209,7 @@ export const getRelatedNotes = ({ notes = [], selectedNoteId, query = '', limit 
       id: note.id,
       title: note.title,
       tags: getNoteTagsText(note.tags),
-      excerpt: truncateText(note.content, 420),
+      excerpt: formatNoteContentForAI(note, 420),
       updated_at: note.updated_at || note.updatedAt,
       created_at: note.created_at || note.createdAt,
       timeLabel: formatContextTime(note.updated_at || note.updatedAt || note.created_at || note.createdAt),
@@ -269,6 +271,20 @@ export const normalizeMemories = (memories = [], limit = 5) => (
     })
 )
 
+export const formatNoteContentForAI = (note, max = 2400) => {
+  if (!note) return ''
+  if ((note.note_type || 'markdown') !== 'whiteboard') {
+    return truncateText(note.content, max)
+  }
+
+  try {
+    const summary = summarizeWhiteboardContentForAI(note.content)
+    return truncateText(`白板摘要:\n${summary}`, max)
+  } catch (_) {
+    return '白板摘要：当前白板内容解析失败。'
+  }
+}
+
 export const buildContextPackageFromNotes = ({ notes = [], todos = [], memories = [], selectedNoteId, query = '', contextEnabled = {} }) => {
   const currentNote = notes.find(note => String(note.id) === String(selectedNoteId))
   const contextPackage = {}
@@ -281,7 +297,7 @@ export const buildContextPackageFromNotes = ({ notes = [], todos = [], memories 
       title: currentNote.title,
       note_type: currentNote.note_type || 'markdown',
       tags: getNoteTagsText(currentNote.tags),
-      content: truncateText(currentNote.content, 2400),
+      content: formatNoteContentForAI(currentNote, 2400),
       updated_at: updatedAt,
       created_at: createdAt,
       timeLabel: formatContextTime(updatedAt || createdAt),

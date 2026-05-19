@@ -276,6 +276,8 @@ const zhCN = {
     wysiwyg: '所见即所得',
     fullscreen: '全屏',
     exitFullscreen: '退出全屏',
+    collapseToolbar: '折叠工具栏 (⌘/Ctrl + .)',
+    expandToolbar: '展开工具栏 (⌘/Ctrl + .)',
     convertToTodo: '转换为待办事项',
     openInNewWindow: '在独立窗口打开',
     duplicateNote: '复制笔记',

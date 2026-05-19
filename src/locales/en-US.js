@@ -276,6 +276,8 @@ const enUS = {
     wysiwyg: 'WYSIWYG',
     fullscreen: 'Fullscreen',
     exitFullscreen: 'Exit Fullscreen',
+    collapseToolbar: 'Collapse toolbar (⌘/Ctrl + .)',
+    expandToolbar: 'Expand toolbar (⌘/Ctrl + .)',
     convertToTodo: 'Convert to Todo',
     openInNewWindow: 'Open in new window',
     duplicateNote: 'Duplicate Note',

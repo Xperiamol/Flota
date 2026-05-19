@@ -28,7 +28,9 @@ import {
   GetApp as GetAppIcon,
   CheckCircle as CheckCircleIcon,
   Error as ErrorIcon,
-  Close as CloseIcon
+  Close as CloseIcon,
+  KeyboardArrowUp as CollapseToolbarIcon,
+  KeyboardArrowDown as ExpandToolbarIcon
 } from '@mui/icons-material'
 import { useStore } from '../store/useStore'
 import { useStandaloneContext } from './StandaloneProvider'
@@ -43,6 +45,7 @@ import NoteTypeConversionDialog from './NoteTypeConversionDialog'
 import WYSIWYGEditor from './WYSIWYGEditor'
 import AIAssistPanel from './AIAssistPanel'
 import RelatedContextPanel from './RelatedContextPanel'
+import AICommandCenter from './AICommandCenter'
 import { useDebouncedSave } from '../hooks/useDebouncedSave'
 import { imageAPI } from '../api/imageAPI'
 import { convertMarkdownToWhiteboard, convertWhiteboardToMarkdown, extractImageUrls } from '../utils/markdownToWhiteboardConverter'
@@ -65,6 +68,7 @@ const NoteEditor = () => {
     // 不在独立窗口模式下，使用主应用store
     isStandaloneMode = false
   }
+  const isMinibarMode = Boolean(standaloneContext?.minibarMode)
 
   // 根据运行环境选择状态管理
   const mainStore = useStore()
@@ -74,6 +78,8 @@ const NoteEditor = () => {
   const aiCommandCenterOpen = useStore((state) => state.aiCommandCenterOpen)
   const setAiCommandCenterEnabled = useStore((state) => state.setAiCommandCenterEnabled)
   const setAiCommandCenterOpen = useStore((state) => state.setAiCommandCenterOpen)
+  const initializeMainSettings = useStore((state) => state.initializeSettings)
+  const userAvatar = useStore((state) => state.userAvatar)
 
   const { t } = useTranslation()
   const { showError } = useError()
@@ -84,7 +90,6 @@ const NoteEditor = () => {
     updateNote,
     togglePinNote,
     editorMode,
-    minibarMode,
     currentView
   } = store
 
@@ -103,26 +108,46 @@ const NoteEditor = () => {
   const [pendingNoteType, setPendingNoteType] = useState(null)
   const [whiteboardGetContentFunc, setWhiteboardGetContentFunc] = useState(null)
   const [whiteboardExportFunc, setWhiteboardExportFunc] = useState(null)
-  const [showToolbar, setShowToolbar] = useState(!isStandaloneMode && !minibarMode) // 独立窗口或沉浸模式默认隐藏工具栏
   const [wikiLinkError, setWikiLinkError] = useState('') // wiki 链接错误提示
   const [isOpenInStandaloneWindow, setIsOpenInStandaloneWindow] = useState(false) // 是否在独立窗口中打开
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [userToolbarCollapsed, setUserToolbarCollapsed] = useState(false) // 用户主动折叠工具栏（会话级，不持久化）
+  const [fullscreenToolbarExpanded, setFullscreenToolbarExpanded] = useState(false)
+  const [minibarToolbarExpanded, setMinibarToolbarExpanded] = useState(false)
+  const [standaloneAICommandCenterOpen, setStandaloneAICommandCenterOpen] = useState(false)
   const [relatedAnchorEl, setRelatedAnchorEl] = useState(null)
   const editorContainerRef = useRef(null)
   const contentRef = useRef(null)
   const titleRef = useRef(null)
-  const toolbarTimeoutRef = useRef(null)
   const wysiwygEditorRef = useRef(null)
   // WYSIWYG editor 实例存到 state，避免 ref 在首次渲染时为 null 导致工具栏拿不到
   const [wysiwygEditor, setWysiwygEditor] = useState(null)
   const [blockSelectActive, setBlockSelectActive] = useState(false)
 
   const currentNote = notes.find(note => note.id === selectedNoteId)
+  const resolvedAICommandCenterOpen = isStandaloneMode
+    ? standaloneAICommandCenterOpen
+    : aiCommandCenterOpen
   const persistedNoteType = currentNote?.note_type || 'markdown'
   const selectedNoteIdRef = useRef(selectedNoteId)
   const prevNoteIdRef = useRef(null)
   const prevStateRef = useRef({ title: '', content: '', tags: '', noteType: 'markdown' })
   const hasUnsavedChangesRef = useRef(false)
+
+  useEffect(() => {
+    if (isStandaloneMode) {
+      initializeMainSettings?.()
+    }
+    if (!isStandaloneMode || !window.electronAPI?.settings?.onSettingChanged) return undefined
+    const unsubscribe = window.electronAPI.settings.onSettingChanged((data) => {
+      if (data?.key === 'userAvatar' || data?.key === 'userName') {
+        initializeMainSettings?.()
+      }
+    })
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe()
+    }
+  }, [initializeMainSettings, isStandaloneMode])
 
   const getSavedAtFromUpdateResult = (result) => {
     if (result?.data?.updated_at) return result.data.updated_at
@@ -386,16 +411,6 @@ const NoteEditor = () => {
       }
     }
   }, [])
-
-  // 清理定时器（独立窗口模式）
-  useEffect(() => {
-    return () => {
-      if (toolbarTimeoutRef.current) {
-        clearTimeout(toolbarTimeoutRef.current)
-      }
-    }
-  }, [])
-
 
   // 独立窗口模式：监听窗口关闭事件，触发保存
   useEffect(() => {
@@ -1322,28 +1337,14 @@ const NoteEditor = () => {
     }
   }
 
-  const immersiveMode = isStandaloneMode
-  const immersiveTriggerHeight = 50
-  const immersiveToolbarTotalHeight = 160
-
-  const clearToolbarHideTimer = () => {
-    if (toolbarTimeoutRef.current) {
-      clearTimeout(toolbarTimeoutRef.current)
-      toolbarTimeoutRef.current = null
-    }
-  }
-
-  const scheduleToolbarHide = () => {
-    clearToolbarHideTimer()
-    toolbarTimeoutRef.current = setTimeout(() => {
-      setShowToolbar(false)
-      toolbarTimeoutRef.current = null
-    }, 500)
-  }
-
   useEffect(() => {
     const syncFullscreenState = () => {
-      setIsFullscreen(document.fullscreenElement === editorContainerRef.current)
+      const fsEl = document.fullscreenElement
+      const nextIsFullscreen = Boolean(fsEl) && fsEl === editorContainerRef.current
+      setIsFullscreen(nextIsFullscreen)
+      if (!nextIsFullscreen) {
+        setFullscreenToolbarExpanded(false)
+      }
     }
 
     syncFullscreenState()
@@ -1351,15 +1352,35 @@ const NoteEditor = () => {
     return () => document.removeEventListener('fullscreenchange', syncFullscreenState)
   }, [])
 
+  const toolbarsHidden = isFullscreen
+    ? !fullscreenToolbarExpanded
+    : isMinibarMode
+      ? !minibarToolbarExpanded
+      : userToolbarCollapsed
+
+  // 快捷键：Cmd/Ctrl + . 按当前窗口形态切换工具栏
   useEffect(() => {
-    if (isFullscreen) {
-      setShowToolbar(false)
-      return
+    const handleKeyDown = (e) => {
+      const isToggleCombo = (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === '.'
+      if (!isToggleCombo) return
+      e.preventDefault()
+      if (isFullscreen) {
+        setFullscreenToolbarExpanded(prev => !prev)
+      } else if (isMinibarMode) {
+        setMinibarToolbarExpanded(prev => !prev)
+      } else {
+        setUserToolbarCollapsed(prev => !prev)
+      }
     }
-    if (!isStandaloneMode && !minibarMode) {
-      setShowToolbar(true)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isFullscreen, isMinibarMode])
+
+  useEffect(() => {
+    if (!isMinibarMode) {
+      setMinibarToolbarExpanded(false)
     }
-  }, [isFullscreen, isStandaloneMode, minibarMode])
+  }, [isMinibarMode])
 
   if (!selectedNoteId) {
     return (
@@ -1383,33 +1404,6 @@ const NoteEditor = () => {
         </Box>
       </Box>
     )
-  }
-
-  // 处理鼠标移动事件（独立窗口/沉浸模式）
-  const handleMouseMove = (e) => {
-    if (!immersiveMode) return
-
-    // 鼠标在整个工具栏区域内（包括触发区域）
-    if (e.clientY < immersiveToolbarTotalHeight) {
-      clearToolbarHideTimer()
-      // 在触发区域或工具栏已展开
-      if ((e.clientY < immersiveTriggerHeight || showToolbar) && !minibarMode) {
-        setShowToolbar(true)
-      }
-    } else if (showToolbar) {
-      scheduleToolbarHide()
-    }
-  }
-
-  // 处理鼠标离开编辑器区域
-  const handleMouseLeave = (event) => {
-    if (!immersiveMode) return
-    const relatedTarget = event.relatedTarget
-    if (relatedTarget instanceof Node && editorContainerRef.current?.contains(relatedTarget)) return
-
-    // 不立即隐藏，给一个延迟让handleMouseMove有机会处理
-    // 如果鼠标真的离开了整个窗口，这个延迟后会隐藏
-    scheduleToolbarHide()
   }
 
   // 根据遮罩透明度设置获取对应的透明度值
@@ -1464,9 +1458,47 @@ const NoteEditor = () => {
           WebkitBackdropFilter: opacity > 0 ? 'blur(8px)' : 'none',
         }
       }}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
     >
+      {/* 工具栏隐藏时的浮动入口：全屏/minibar/手动折叠都先展开工具栏 */}
+      {toolbarsHidden && (
+        <Tooltip title={t('notes.expandToolbar')}>
+          <IconButton
+            onClick={() => {
+              if (isFullscreen) {
+                setFullscreenToolbarExpanded(true)
+              } else if (isMinibarMode) {
+                setMinibarToolbarExpanded(true)
+              } else {
+                setUserToolbarCollapsed(false)
+              }
+            }}
+            size="small"
+            sx={(theme) => ({
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              zIndex: 10,
+              borderRadius: '8px',
+              backgroundColor: theme.palette.mode === 'dark'
+                ? 'rgba(15, 23, 42, 0.55)'
+                : 'rgba(255, 255, 255, 0.7)',
+              backdropFilter: 'blur(20px) saturate(160%)',
+              WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+              opacity: 0.45,
+              transition: 'opacity 160ms ease',
+              '&:hover': {
+                opacity: 1,
+                backgroundColor: theme.palette.mode === 'dark'
+                  ? 'rgba(15, 23, 42, 0.85)'
+                  : 'rgba(255, 255, 255, 0.95)',
+              },
+            })}
+          >
+            <ExpandToolbarIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </Tooltip>
+      )}
+
       {/* 工具栏 - 调整高度 */}
       <Paper
         elevation={0}
@@ -1477,7 +1509,7 @@ const NoteEditor = () => {
           borderBottom: 1,
           borderColor: 'divider',
           borderRadius: 0,
-          display: isFullscreen ? 'none' : 'flex',
+          display: toolbarsHidden ? 'none' : 'flex',
           alignItems: 'center',
           gap: 0.75,
           overflow: 'hidden',
@@ -1486,19 +1518,6 @@ const NoteEditor = () => {
             : 'rgba(255, 255, 255, 0.74)',
           backdropFilter: 'blur(30px) saturate(180%)',
           WebkitBackdropFilter: 'blur(30px) saturate(180%)',
-          // 独立窗口/沉浸模式下的特殊样式
-          ...(immersiveMode && {
-            position: 'absolute',
-            top: showToolbar ? 0 : -52,
-            left: 0,
-            right: 0,
-            zIndex: 1000,
-            opacity: showToolbar ? 1 : 0,
-            transform: 'none',
-            transition: 'opacity 0.3s ease, top 0.3s ease',
-            pointerEvents: showToolbar ? 'auto' : 'none',
-            boxShadow: showToolbar ? 2 : 0
-          })
         }}
       >
         <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1653,15 +1672,17 @@ const NoteEditor = () => {
           p: 0.25, borderRadius: '10px',
           bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(15, 23, 42, 0.06)'
         }}>
-          <Tooltip title={t('notes.openInNewWindow')}>
-            <IconButton
-              onClick={handleOpenStandalone}
-              size="small"
-              sx={{ borderRadius: '8px' }}
-            >
-              <WindowIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-          </Tooltip>
+          {!isStandaloneMode && (
+            <Tooltip title={t('notes.openInNewWindow')}>
+              <IconButton
+                onClick={handleOpenStandalone}
+                size="small"
+                sx={{ borderRadius: '8px' }}
+              >
+                <WindowIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Tooltip>
+          )}
 
           <Tooltip title={isFullscreen ? t('notes.exitFullscreen') : t('notes.fullscreen')}>
             <IconButton
@@ -1713,17 +1734,21 @@ const NoteEditor = () => {
             </IconButton>
           </Tooltip>
 
-          <Tooltip title={aiCommandCenterOpen ? '关闭 AI 小窗' : '打开 AI 小窗'}>
+          <Tooltip title={resolvedAICommandCenterOpen ? '关闭 AI 小窗' : '打开 AI 小窗'}>
             <IconButton
               onClick={() => {
+                if (isStandaloneMode) {
+                  setStandaloneAICommandCenterOpen(prev => !prev)
+                  return
+                }
                 if (!aiCommandCenterEnabled) setAiCommandCenterEnabled(true)
                 setAiCommandCenterOpen(!aiCommandCenterOpen)
               }}
               size="small"
               sx={{
                 borderRadius: '8px',
-                color: aiCommandCenterOpen ? 'primary.main' : 'text.secondary',
-                bgcolor: aiCommandCenterOpen
+                color: resolvedAICommandCenterOpen ? 'primary.main' : 'text.secondary',
+                bgcolor: resolvedAICommandCenterOpen
                   ? (theme) => theme.palette.mode === 'dark' ? 'rgba(96,165,250,0.14)' : 'rgba(25,118,210,0.09)'
                   : 'transparent',
               }}
@@ -1744,6 +1769,24 @@ const NoteEditor = () => {
               </IconButton>
             </Tooltip>
           )}
+
+          <Tooltip title={t('notes.collapseToolbar')}>
+            <IconButton
+              onClick={() => {
+                if (isFullscreen) {
+                  setFullscreenToolbarExpanded(false)
+                } else if (isMinibarMode) {
+                  setMinibarToolbarExpanded(false)
+                } else {
+                  setUserToolbarCollapsed(true)
+                }
+              }}
+              size="small"
+              sx={{ borderRadius: '8px' }}
+            >
+              <CollapseToolbarIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Tooltip>
         </Box>
       </Paper>
 
@@ -1754,7 +1797,7 @@ const NoteEditor = () => {
           height: '48px',
           borderBottom: 1,
           borderColor: 'divider',
-          display: isFullscreen ? 'none' : 'flex',
+          display: toolbarsHidden ? 'none' : 'flex',
           alignItems: 'center',
           gap: 1,
           flexWrap: 'nowrap',
@@ -1764,19 +1807,6 @@ const NoteEditor = () => {
             : 'rgba(255, 255, 255, 0.6)',
           backdropFilter: 'blur(30px) saturate(180%)',
           WebkitBackdropFilter: 'blur(30px) saturate(180%)',
-          // 独立窗口/沉浸模式下的特殊样式
-          ...(immersiveMode && {
-            position: 'absolute',
-            top: showToolbar ? (isStandaloneMode ? 48 : 52) : -48,
-            left: 0,
-            right: 0,
-            zIndex: 999,
-            opacity: showToolbar ? 1 : 0,
-            transform: 'none',
-            transition: 'opacity 0.3s ease, top 0.3s ease',
-            pointerEvents: showToolbar ? 'auto' : 'none',
-            boxShadow: showToolbar ? 1 : 0
-          })
         }}
       >
         {/* 标题输入 - 紧凑样式 */}
@@ -1851,19 +1881,7 @@ const NoteEditor = () => {
           <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
             <Box
               sx={{
-                display: isFullscreen ? 'none' : 'block',
-                // 独立窗口/沉浸模式下的特殊样式
-                ...(immersiveMode && {
-                  position: 'absolute',
-                  top: showToolbar ? (isStandaloneMode ? 96 : 100) : -48,
-                  left: 0,
-                  right: 0,
-                  zIndex: 998,
-                  opacity: showToolbar ? 1 : 0,
-                  transform: 'none',
-                  transition: 'opacity 0.3s ease, top 0.3s ease',
-                  pointerEvents: showToolbar ? 'auto' : 'none'
-                })
+                display: toolbarsHidden ? 'none' : 'block',
               }}
             >
               <MarkdownToolbar
@@ -2036,7 +2054,6 @@ const NoteEditor = () => {
           <Box sx={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
             <WhiteboardEditor
               noteId={selectedNoteId}
-              showToolbar={showToolbar}
               isStandaloneMode={isStandaloneMode}
               onGetContent={(func) => setWhiteboardGetContentFunc(() => func)}
               onExportPNG={(func) => setWhiteboardExportFunc(() => func)}
@@ -2204,6 +2221,20 @@ const NoteEditor = () => {
         loading={aiConvertLoading}
         loadingText={aiConvertStep}
       />
+
+      {isStandaloneMode && (
+        <AICommandCenter
+          open={standaloneAICommandCenterOpen}
+          onClose={() => setStandaloneAICommandCenterOpen(false)}
+          portalContainer={editorContainerRef.current}
+          notesOverride={notes}
+          selectedNoteIdOverride={selectedNoteId}
+          updateNoteOverride={updateNote}
+          loadNotesOverride={standaloneContext?.loadNote ? () => standaloneContext.loadNote(selectedNoteId) : undefined}
+          userAvatarOverride={userAvatar}
+          positionPersistKey="flota.aiCommandCenter.standalone.position"
+        />
+      )}
 
     </Box>
   )
