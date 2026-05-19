@@ -56,6 +56,8 @@ import { saveQueue } from '../utils/SaveQueue'
 import logger from '../utils/logger'
 import { formatRelativeNoteTime } from '../utils/noteDateUtils'
 import { finalizeMarkdownForStorage } from '../markdown/index.js'
+import { pickClipboardMarkdown } from '../utils/clipboardConversion'
+import { insertIntoTextarea, placeCursorAfterInsert } from '../utils/textareaInsert'
 
 const NoteEditor = () => {
   // 检测是否在独立窗口模式下运行
@@ -1174,63 +1176,77 @@ const NoteEditor = () => {
 
     // 撤销/重做使用浏览器原生功能
     // 不需要阻止默认行为
-  }  // 处理图片粘贴
+  }  // 处理剪贴板粘贴（统一处理表格 / HTML 富文本 / TSV / 图片 / 纯文本）
   const handlePaste = async (e) => {
-    const items = e.clipboardData?.items
-    if (!items) return
+    const clipboard = e.clipboardData
+    if (!clipboard) return
 
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i]
-      if (item.type.indexOf('image') !== -1) {
-        e.preventDefault()
-        try {
-          const blob = item.getAsFile()
-          if (blob) {
-            const arrayBuffer = await blob.arrayBuffer()
-            const buffer = new Uint8Array(arrayBuffer)
-            const fileName = `clipboard_${Date.now()}.png`
-            const imagePath = await imageAPI.saveFromBuffer(buffer, fileName)
+    const items = clipboard.items ? Array.from(clipboard.items) : []
+    const imageItems = items.filter(item => item.type?.startsWith('image/'))
 
-            // 插入图片到光标位置（支持撤销）
-            const textarea = contentRef.current?.querySelector('textarea')
-            if (textarea) {
-              const start = textarea.selectionStart
-              const end = textarea.selectionEnd
-              const imageMarkdown = `![${fileName}](${imagePath})`
-              
-              // 使用可撤销的方式插入
-              textarea.focus()
-              textarea.setSelectionRange(start, end)
-              
-              let success = false
-              try {
-                success = document.execCommand('insertText', false, imageMarkdown)
-              } catch (err) {
-                success = false
-              }
-              
-              if (!success) {
-                const newContent = content.substring(0, start) + imageMarkdown + content.substring(end)
-                setContent(newContent)
-              }
-              
-              setHasUnsavedChanges(true)
-              prevStateRef.current.content = textarea.value
-              debouncedSave()
+    const html = clipboard.getData('text/html') || ''
+    const plain = clipboard.getData('text/plain') || ''
 
-              // 设置光标位置到图片markdown之后
-              setTimeout(() => {
-                textarea.selectionStart = textarea.selectionEnd = start + imageMarkdown.length
-                textarea.focus()
-              }, 0)
-            }
-          }
-        } catch (error) {
-          console.error('粘贴图片失败:', error)
-          showError(error, '粘贴图片失败')
+    // 仅当浏览器能处理纯文本本身、且没有图片/HTML 表格/复杂结构时，才完全交给浏览器默认逻辑。
+    if (!imageItems.length && !html && !plain) return
+
+    // 选取最合适的 Markdown 文本。失败时退化为 plain。
+    let textForInsert = ''
+    let kind = 'plain'
+    try {
+      const picked = pickClipboardMarkdown({ html, plain })
+      textForInsert = picked.text || ''
+      kind = picked.kind
+    } catch (err) {
+      logger.warn?.('剪贴板转换失败，回退纯文本:', err)
+      textForInsert = plain
+      kind = 'plain'
+    }
+
+    // 如果只有纯文本、且已是 plain 文本，让浏览器默认处理，保留原生光标 / IME / Undo 行为。
+    if (!imageItems.length && kind === 'plain') return
+
+    e.preventDefault()
+
+    try {
+      const imageMarkdowns = []
+      if (imageItems.length > 0) {
+        const timestamp = Date.now()
+        for (let i = 0; i < imageItems.length; i++) {
+          const blob = imageItems[i].getAsFile()
+          if (!blob) continue
+          const arrayBuffer = await blob.arrayBuffer()
+          const buffer = new Uint8Array(arrayBuffer)
+          const fileName = `clipboard_${timestamp}_${i + 1}.png`
+          const imagePath = await imageAPI.saveFromBuffer(buffer, fileName)
+          imageMarkdowns.push(`![${fileName}](${imagePath})`)
         }
-        break
       }
+
+      const trimmedText = String(textForInsert || '').replace(/\s+$/g, '')
+      const imagesBlock = imageMarkdowns.join('\n')
+      const insertText = [trimmedText, imagesBlock]
+        .filter(Boolean)
+        .join(trimmedText && imagesBlock ? '\n\n' : '')
+
+      if (!insertText) return
+
+      const textarea = contentRef.current?.querySelector('textarea')
+      if (!textarea) return
+
+      const { start, success, nextValue } = insertIntoTextarea(textarea, insertText, {
+        getValue: () => content,
+        onFallback: (next) => setContent(next),
+      })
+
+      setHasUnsavedChanges(true)
+      prevStateRef.current.content = success ? textarea.value : nextValue
+      debouncedSave()
+
+      placeCursorAfterInsert(textarea, start, insertText.length)
+    } catch (error) {
+      console.error('粘贴失败:', error)
+      showError(error, '粘贴失败')
     }
   }
 
@@ -1260,36 +1276,34 @@ const NoteEditor = () => {
       // 降级方案:使用当前光标位置
       position = textarea.selectionStart
     }
-    
-    const start = position
-    const end = position
 
-    // 优先处理文本（支持撤销）
-    const text = e.dataTransfer.getData('text/plain')
-    if (text) {
-      textarea.focus()
-      textarea.setSelectionRange(start, end)
-      
-      let success = false
+    // 优先处理文本/HTML（与粘贴保持一致：表格 / 富文本 / 纯文本）
+    const html = e.dataTransfer.getData('text/html') || ''
+    const plain = e.dataTransfer.getData('text/plain') || ''
+    if (html || plain) {
+      let textToInsert = plain
       try {
-        success = document.execCommand('insertText', false, text)
+        const picked = pickClipboardMarkdown({ html, plain })
+        textToInsert = picked.text || plain
       } catch (err) {
-        success = false
+        logger.warn?.('拖拽文本转换失败，回退纯文本:', err)
       }
-      
-      if (!success) {
-        const newContent = content.substring(0, start) + text + content.substring(end)
-        setContent(newContent)
-      }
-      
+      if (!textToInsert) return
+
+      // 把光标先放到落点位置，再用统一插入工具
+      textarea.focus()
+      textarea.setSelectionRange(position, position)
+
+      const { start, success, nextValue } = insertIntoTextarea(textarea, textToInsert, {
+        getValue: () => content,
+        onFallback: (next) => setContent(next),
+      })
+
       setHasUnsavedChanges(true)
-      prevStateRef.current.content = textarea.value
+      prevStateRef.current.content = success ? textarea.value : nextValue
       debouncedSave()
 
-      setTimeout(() => {
-        textarea.selectionStart = textarea.selectionEnd = start + text.length
-        textarea.focus()
-      }, 0)
+      placeCursorAfterInsert(textarea, start, textToInsert.length)
       return
     }
 
@@ -1306,31 +1320,21 @@ const NoteEditor = () => {
         const imagePath = await imageAPI.saveFromBuffer(buffer, file.name)
         insertText += `![${file.name}](${imagePath})\n`
       }
-      
-      // 使用可撤销的方式插入
+
+      // 把光标先放到落点位置，再走统一插入工具，保留撤销栈
       textarea.focus()
-      textarea.setSelectionRange(start, end)
-      
-      let success = false
-      try {
-        success = document.execCommand('insertText', false, insertText)
-      } catch (err) {
-        success = false
-      }
-      
-      if (!success) {
-        const newContent = content.substring(0, start) + insertText + content.substring(end)
-        setContent(newContent)
-      }
-      
+      textarea.setSelectionRange(position, position)
+
+      const { start, success, nextValue } = insertIntoTextarea(textarea, insertText, {
+        getValue: () => content,
+        onFallback: (next) => setContent(next),
+      })
+
       setHasUnsavedChanges(true)
-      prevStateRef.current.content = textarea.value
+      prevStateRef.current.content = success ? textarea.value : nextValue
       debouncedSave()
 
-      setTimeout(() => {
-        textarea.selectionStart = textarea.selectionEnd = start + insertText.length
-        textarea.focus()
-      }, 0)
+      placeCursorAfterInsert(textarea, start, insertText.length)
     } catch (error) {
       console.error('拖拽失败:', error)
       showError(error, '拖拽失败')

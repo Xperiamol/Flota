@@ -76,25 +76,58 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
   ), [selectedText])
 
   const updatePosition = useCallback((mouseEvent) => {
+    const positionNearPoint = (x, y) => {
+      const panelHeight = panelRef.current?.offsetHeight || PANEL_ESTIMATED_HEIGHT
+      let nextY = y - panelHeight - 8
+      if (nextY < PANEL_MARGIN) nextY = y + 16
+      setPosition(clampPosition(x, nextY))
+    }
+
     if (isTextareaMode) {
       if (mouseEvent) {
-        const panelHeight = panelRef.current?.offsetHeight || PANEL_ESTIMATED_HEIGHT
-        let y = mouseEvent.clientY - panelHeight - 8
-        if (y < PANEL_MARGIN) y = mouseEvent.clientY + 16
-        const x = mouseEvent.clientX
-        setPosition(clampPosition(x, y))
+        positionNearPoint(mouseEvent.clientX, mouseEvent.clientY)
       }
       return
     }
     if (!editor) return
-    const { from, to } = editor.state.selection
-    const pos = from !== to ? from : editor.state.selection.$head.pos
+
+    // 1) 优先使用鼠标抬起位置：用户视线就在这里，大范围拖选也能贴脸出现
+    if (mouseEvent && Number.isFinite(mouseEvent.clientX) && Number.isFinite(mouseEvent.clientY)) {
+      positionNearPoint(mouseEvent.clientX, mouseEvent.clientY)
+      return
+    }
+
+    // 2) 无鼠标事件：用选区 head（拖选结束端 / 光标当前端），而不是 from。
+    //    这样大范围拖选时不会跑到不可见的起点位置。
     try {
-      const coords = editor.view.coordsAtPos(pos)
+      const sel = editor.state.selection
+      const headPos = sel.$head?.pos ?? sel.to ?? sel.from
+      const headCoords = editor.view.coordsAtPos(headPos)
+
+      // 取选区的可视边界，作为兜底防止 head 在视口外
+      let anchorTop = headCoords.top
+      let anchorBottom = headCoords.bottom
+      let anchorLeft = headCoords.left
+      if (sel.from !== sel.to) {
+        try {
+          const fromCoords = editor.view.coordsAtPos(sel.from)
+          const toCoords = editor.view.coordsAtPos(sel.to)
+          anchorTop = Math.min(fromCoords.top, toCoords.top, headCoords.top)
+          anchorBottom = Math.max(fromCoords.bottom, toCoords.bottom, headCoords.bottom)
+          anchorLeft = headCoords.left
+        } catch (_) { /* ignore */ }
+      }
+
+      const viewportH = window.innerHeight || document.documentElement.clientHeight
+      // 若 head 在视口外（拖选起点被滚走），把锚点夹到当前视口内，
+      // 防止面板被 clampPosition 强行拍回屏幕角落。
+      const clampedBottom = Math.min(Math.max(anchorBottom, PANEL_MARGIN), viewportH - PANEL_MARGIN)
+      const clampedTop = Math.min(Math.max(anchorTop, PANEL_MARGIN), viewportH - PANEL_MARGIN)
+
       const panelHeight = panelRef.current?.offsetHeight || PANEL_ESTIMATED_HEIGHT
-      let y = coords.top - panelHeight - 8
-      if (y < PANEL_MARGIN) y = coords.bottom + 8
-      setPosition(clampPosition(coords.left, y))
+      let y = clampedTop - panelHeight - 8
+      if (y < PANEL_MARGIN) y = clampedBottom + 8
+      setPosition(clampPosition(anchorLeft, y))
     } catch (_) {
       // pos invalid, skip
     }
@@ -119,6 +152,8 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
       mouseDownRef.current = false
       if (aiPanelMode === 'disabled') return
       if (panelRef.current?.contains(e.target)) return
+      // 缓存当前 mouseup 的位置，setTimeout 内 e 仍可用，但显式拷贝更稳
+      const mouseSnapshot = { clientX: e.clientX, clientY: e.clientY }
       setTimeout(() => {
         const { from, to } = editor.state.selection
         const text = editor.state.doc.textBetween(from, to, ' ')
@@ -126,7 +161,7 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
           selRangeRef.current = { from, to }
           lastSelRef.current = text
           setSelectedText(text)
-          updatePosition()
+          updatePosition(mouseSnapshot)
           setVisible(true)
           setResult('')
           setError('')
@@ -134,7 +169,7 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
           setActiveAction(null)
         } else if (aiPanelMode === 'always') {
           setSelectedText('')
-          updatePosition()
+          updatePosition(mouseSnapshot)
           setVisible(true)
         }
       }, 50)

@@ -605,12 +605,55 @@ const CustomImage = Image.extend({
 })
 
 // ─── 编辑器状态订阅 hook ────────────────────────────────────────────────────────
-// 监听 editor 的 selection/transaction 更新，触发使用者重渲染
+// 监听 editor 的 selection/transaction 更新，触发使用者重渲染。
+// 关键点：拖拽鼠标进行选区（尤其是表格 CellSelection）时，ProseMirror 会持续
+// 派发 selectionUpdate / transaction。如果此时直接 force re-render 整个宿主
+// 组件，会重建 BubbleMenu 等子树，并扰动浏览器原生选区与表格 CellSelection
+// 的 decoration，导致选区高亮"选着选着就没了"。因此在拖拽期间挂起 force()，
+// 并在 mouseup 后进行一次性补偿渲染，确保浮层最终同步且不破坏选区。
 const useEditorState = (editor) => {
   const [, force] = useState(0)
   useEffect(() => {
     if (!editor) return
-    const handler = () => force((v) => v + 1)
+    let isDragging = false
+    let hasPendingRender = false
+    let rafId = 0
+
+    const flush = () => {
+      hasPendingRender = false
+      force((v) => v + 1)
+    }
+
+    const handler = () => {
+      if (isDragging) {
+        hasPendingRender = true
+        return
+      }
+      flush()
+    }
+
+    const onMouseDown = (e) => {
+      // 仅左键拖拽视为选区拖拽
+      if (e.button !== 0) return
+      isDragging = true
+    }
+    const endDrag = () => {
+      if (!isDragging) return
+      isDragging = false
+      // 等当前事件循环结束（让 ProseMirror 完成最后一次 transaction）后补一次
+      if (hasPendingRender) {
+        if (rafId) cancelAnimationFrame(rafId)
+        rafId = requestAnimationFrame(flush)
+      }
+    }
+
+    const dom = editor.view?.dom
+    dom?.addEventListener('mousedown', onMouseDown)
+    // mouseup 必须挂在 window，因为拖拽常在编辑器外松开
+    window.addEventListener('mouseup', endDrag, true)
+    window.addEventListener('dragend', endDrag, true)
+    window.addEventListener('blur', endDrag, true)
+
     editor.on('selectionUpdate', handler)
     editor.on('transaction', handler)
     editor.on('focus', handler)
@@ -620,6 +663,11 @@ const useEditorState = (editor) => {
       editor.off('transaction', handler)
       editor.off('focus', handler)
       editor.off('blur', handler)
+      dom?.removeEventListener('mousedown', onMouseDown)
+      window.removeEventListener('mouseup', endDrag, true)
+      window.removeEventListener('dragend', endDrag, true)
+      window.removeEventListener('blur', endDrag, true)
+      if (rafId) cancelAnimationFrame(rafId)
     }
   }, [editor])
 }
@@ -2077,8 +2125,20 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       handlePaste: (_view, event) => {
         const items = event.clipboardData?.items
         if (!items) return false
+        const plainText = event.clipboardData?.getData('text/plain') || ''
+        const htmlText = (event.clipboardData?.getData('text/html') || '')
+          .replace(/<script[\s\S]*?<\/script>/gi, '')
+          .replace(/<style[\s\S]*?<\/style>/gi, '')
+          .replace(/<[^>]+>/g, '')
+          .replace(/&nbsp;/g, ' ')
+          .trim()
+        const hasTextualContent = Boolean(plainText.trim() || htmlText)
+
         for (let i = 0; i < items.length; i++) {
           if (items[i].type.startsWith('image/')) {
+            if (hasTextualContent) {
+              return false
+            }
             event.preventDefault()
             const blob = items[i].getAsFile()
             if (blob) handleImageUpload(blob) // 使用 editorRef，无闭包失效问题
@@ -2477,14 +2537,50 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
             borderCollapse: 'collapse',
             width: '100%',
             margin: '0.5rem 0',
+            // 表格自带选区样式，避免 contenteditable 默认选区与之冲突
+            tableLayout: 'fixed',
           },
           '& th, & td': {
             border: '1px solid',
             borderColor: 'divider',
             padding: '6px 12px',
             textAlign: 'left',
+            position: 'relative',
+            verticalAlign: 'top',
           },
           '& th': { fontWeight: 600, backgroundColor: 'action.hover' },
+          // 关键：跨单元格拖选时，ProseMirror 会清掉浏览器原生选区，
+          // 改用 CellSelection 给单元格打上 .selectedCell 类。
+          // 没有这条 CSS，跨单元格拖选会"看起来什么都没选中"。
+          '& td.selectedCell, & th.selectedCell': {
+            position: 'relative',
+          },
+          '& td.selectedCell::after, & th.selectedCell::after': {
+            content: '""',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(80, 140, 255, 0.22)',
+            pointerEvents: 'none',
+            zIndex: 2,
+          },
+          // 列宽拖动时给 body 的辅助类（prosemirror-tables 默认）
+          '& .column-resize-handle': {
+            position: 'absolute',
+            right: '-2px',
+            top: 0,
+            bottom: 0,
+            width: '4px',
+            backgroundColor: 'primary.main',
+            opacity: 0.4,
+            pointerEvents: 'none',
+          },
+          '& .tableWrapper': {
+            overflowX: 'auto',
+            margin: '0.5rem 0',
+          },
 
           // ── 分割线 ────────────────────────────────────────────────────────────
           '& hr': {
