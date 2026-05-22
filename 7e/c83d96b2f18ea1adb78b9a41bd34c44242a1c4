@@ -1,0 +1,3477 @@
+src/components/PriorityFilter.jsx
+  55ebedbcf358d164 3,10,12-13,15,18,92-93 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Single":3},{"Single":10},{"Range":[12,13]},{"Single":15},{"Single":18},{"Range":[92,93]}]}]}
+src/components/FilterPopover.jsx
+  55ebedbcf358d164 1-193 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Range":[1,193]}]}]}
+src/components/TodoList.jsx
+  55ebedbcf358d164 45,47,56-60,62,148-150,286-313,340,631-633,644-662,697-698,705,708,712,720-726,729-731,736-761,763 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Single":45},{"Single":47},{"Range":[56,60]},{"Single":62},{"Range":[148,150]},{"Range":[286,313]},{"Single":340},{"Range":[631,633]},{"Range":[644,662]},{"Range":[697,698]},{"Single":705},{"Single":708},{"Single":712},{"Range":[720,726]},{"Range":[729,731]},{"Range":[736,761]},{"Single":763}]}]}
+src/components/TimelineView.jsx
+  55ebedbcf358d164 46,145-150,196,206-208,283,299-300,307-308,499-506,510,1207,1232,1276-1300,1747,1760-1780 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Single":46},{"Range":[145,150]},{"Single":196},{"Range":[206,208]},{"Single":283},{"Range":[299,300]},{"Range":[307,308]},{"Range":[499,506]},{"Single":510},{"Single":1207},{"Single":1232},{"Range":[1276,1300]},{"Single":1747},{"Range":[1760,1780]}]}]}
+electron/dao/DatabaseManager.js
+  55ebedbcf358d164 414 gitai:{"mixed_line_ranges":[{"Single":414}],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Single":414}]}]}
+src/components/ChoiceFilter.jsx
+  55ebedbcf358d164 1-55 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Range":[1,55]}]}]}
+src/utils/markdownTextUtils.js
+  55ebedbcf358d164 11-14 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Range":[11,14]}]}]}
+src/store/useStore.js
+  55ebedbcf358d164 57-58,68,142-143,391,462,471,840-842,932 gitai:{"mixed_line_ranges":[{"Single":57}],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Range":[57,58]},{"Single":68},{"Range":[142,143]},{"Single":391},{"Single":462},{"Single":471},{"Range":[840,842]},{"Single":932}]}]}
+src/components/AIAssistPanel.jsx
+  55ebedbcf358d164 15,291 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Single":15},{"Single":291}]}]}
+src/components/WYSIWYGEditor.jsx
+  55ebedbcf358d164 6,34,173-176,515-516,519,521,2099-2104,2126-2128,2130-2135,2137-2138,2141,2145-2182 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Single":6},{"Single":34},{"Range":[173,176]},{"Range":[515,516]},{"Single":519},{"Single":521},{"Range":[2099,2104]},{"Range":[2126,2128]},{"Range":[2130,2135]},{"Range":[2137,2138]},{"Single":2141},{"Range":[2145,2182]}]}]}
+src/styles/commonStyles.js
+  55ebedbcf358d164 269-348 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Range":[269,348]}]}]}
+electron/dao/SettingDAO.js
+  55ebedbcf358d164 213 gitai:{"mixed_line_ranges":[{"Single":213}],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Single":213}]}]}
+src/components/RelatedContextPanel.jsx
+  55ebedbcf358d164 25,113 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Single":25},{"Single":113}]}]}
+src/components/Sidebar.jsx
+  55ebedbcf358d164 42,48,51,68-70,244-246,248,253-254,258,271,279-281,403,406,416 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Single":42},{"Single":48},{"Single":51},{"Range":[68,70]},{"Range":[244,246]},{"Single":248},{"Range":[253,254]},{"Single":258},{"Single":271},{"Range":[279,281]},{"Single":403},{"Single":406},{"Single":416}]}]}
+src/components/NoteEditor.jsx
+  55ebedbcf358d164 60,122,426,428,431,642,687,692-693,696,707,711,729,733,737-738,740,742,747,753,755,760,766,780,784,790,792-793,798,813,815,838,840,846,851-852,855,863,867,869,872,875-877,879,883,890-891,895,897,906,912,945,947-948,1229-1231,1233,1235,1432-1440,1453,1525-1526,1532 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Single":60},{"Single":122},{"Single":426},{"Single":428},{"Single":431},{"Single":642},{"Single":687},{"Range":[692,693]},{"Single":696},{"Single":707},{"Single":711},{"Single":729},{"Single":733},{"Range":[737,738]},{"Single":740},{"Single":742},{"Single":747},{"Single":753},{"Single":755},{"Single":760},{"Single":766},{"Single":780},{"Single":784},{"Single":790},{"Range":[792,793]},{"Single":798},{"Single":813},{"Single":815},{"Single":838},{"Single":840},{"Single":846},{"Range":[851,852]},{"Single":855},{"Single":863},{"Single":867},{"Single":869},{"Single":872},{"Range":[875,877]},{"Single":879},{"Single":883},{"Range":[890,891]},{"Single":895},{"Single":897},{"Single":906},{"Single":912},{"Single":945},{"Range":[947,948]},{"Range":[1229,1231]},{"Single":1233},{"Single":1235},{"Range":[1432,1440]},{"Single":1453},{"Range":[1525,1526]},{"Single":1532}]}]}
+src/components/CalendarView.jsx
+  55ebedbcf358d164 35,38,97,152,232 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Single":35},{"Single":38},{"Single":97},{"Single":152},{"Single":232}]}]}
+src/store/useStandaloneStore.js
+  55ebedbcf358d164 23-24,26-31,154-162 gitai:{"mixed_line_ranges":[{"Single":28},{"Single":160}],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Range":[23,24]},{"Range":[26,31]},{"Range":[154,162]}]}]}
+src/components/BaseFilter.jsx
+  55ebedbcf358d164 1-2,5-6,10,20-56,58-61,63-71,73-74,78 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Range":[1,2]},{"Range":[5,6]},{"Single":10},{"Range":[20,56]},{"Range":[58,61]},{"Range":[63,71]},{"Range":[73,74]},{"Single":78}]}]}
+src/components/Toolbar.jsx
+  55ebedbcf358d164 380-381,385,388-389,399,403-408,421,425-430,440,460,474,537,547-566,568,595,608,642,664,666 gitai:{"mixed_line_ranges":[{"Single":381},{"Single":385},{"Range":[404,407]},{"Range":[426,429]},{"Single":552}],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Range":[380,381]},{"Single":385},{"Range":[388,389]},{"Single":399},{"Range":[403,408]},{"Single":421},{"Range":[425,430]},{"Single":440},{"Single":460},{"Single":474},{"Single":537},{"Range":[547,566]},{"Single":568},{"Single":595},{"Single":608},{"Single":642},{"Single":664},{"Single":666}]}]}
+src/components/WhiteboardEditor.jsx
+  55ebedbcf358d164 256-266,274-293,295,704,740,762-828,869-895,897,945-946,972-975,979,1025-1044,1059,1061,1131-1256,1280-1296,1317,1320-1327,1329,1363,1369,1375,1378-1384,1427,1433,1463,1465,1481,1497,1545-1551,1569,1576,1872,1926,2013,2040,2142,2187-2190,2291-2300,2307,2309-2310,2319-2320,2352-2389 gitai:{"mixed_line_ranges":[{"Single":1025},{"Single":1280},{"Single":1293},{"Single":1317}],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Range":[256,266]},{"Range":[274,293]},{"Single":295},{"Single":704},{"Single":740},{"Range":[762,828]},{"Range":[869,895]},{"Single":897},{"Range":[945,946]},{"Range":[972,975]},{"Single":979},{"Range":[1025,1044]},{"Single":1059},{"Single":1061},{"Range":[1131,1256]},{"Range":[1280,1296]},{"Single":1317},{"Range":[1320,1327]},{"Single":1329},{"Single":1363},{"Single":1369},{"Single":1375},{"Range":[1378,1384]},{"Single":1427},{"Single":1433},{"Single":1463},{"Single":1465},{"Single":1481},{"Single":1497},{"Range":[1545,1551]},{"Single":1569},{"Single":1576},{"Single":1872},{"Single":1926},{"Single":2013},{"Single":2040},{"Single":2142},{"Range":[2187,2190]},{"Range":[2291,2300]},{"Single":2307},{"Range":[2309,2310]},{"Range":[2319,2320]},{"Range":[2352,2389]}]}]}
+src/components/Settings.jsx
+  55ebedbcf358d164 27,72,560,713-715,1042-1049,1057-1060,1071-1077,1280,1289-1325,1525-1530 gitai:{"mixed_line_ranges":[{"Single":1526}],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Single":27},{"Single":72},{"Single":560},{"Range":[713,715]},{"Range":[1042,1049]},{"Range":[1057,1060]},{"Range":[1071,1077]},{"Single":1280},{"Range":[1289,1325]},{"Range":[1525,1530]}]}]}
+src/components/MyDayPanel.jsx
+  55ebedbcf358d164 18,92 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Single":18},{"Single":92}]}]}
+src/components/MarkdownPreview.jsx
+  55ebedbcf358d164 142-156,237-238 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Range":[142,156]},{"Range":[237,238]}]}]}
+src/components/AIChatView.jsx
+  55ebedbcf358d164 24,352 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Single":24},{"Single":352}]}]}
+src/components/SecondarySidebar.jsx
+  55ebedbcf358d164 46,68,71-80,83-91 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Single":46},{"Single":68},{"Range":[71,80]},{"Range":[83,91]}]}]}
+src/components/NoteList.jsx
+  55ebedbcf358d164 53-54,56-57,70-74,99-103,112,150-163,166-176,178-184,187-194,196-215,217-232,551-552,555,557,577,660-663,674-692,710,713,721-727,729-730,734-780,782,859,865,867-869,906-912,921-927,930-931,936-940,942-946,952,954-955,962,972,974,980-981,985-986,994,1005-1009,1015-1028,1033,1056,1059-1062,1064 gitai:{"mixed_line_ranges":[{"Range":[660,661]},{"Single":676},{"Single":679},{"Single":681},{"Single":685},{"Single":689},{"Single":859},{"Single":922},{"Single":924},{"Single":927},{"Single":972},{"Single":1006},{"Single":1020},{"Range":[1024,1025]},{"Single":1056},{"Single":1064}],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Range":[53,54]},{"Range":[56,57]},{"Range":[70,74]},{"Range":[99,103]},{"Single":112},{"Range":[150,163]},{"Range":[166,176]},{"Range":[178,184]},{"Range":[187,194]},{"Range":[196,215]},{"Range":[217,232]},{"Range":[551,552]},{"Single":555},{"Single":557},{"Single":577},{"Range":[660,663]},{"Range":[674,692]},{"Single":710},{"Single":713},{"Range":[721,727]},{"Range":[729,730]},{"Range":[734,780]},{"Single":782},{"Single":859},{"Single":865},{"Range":[867,869]},{"Range":[906,912]},{"Range":[921,927]},{"Range":[930,931]},{"Range":[936,940]},{"Range":[942,946]},{"Single":952},{"Range":[954,955]},{"Single":962},{"Single":972},{"Single":974},{"Range":[980,981]},{"Range":[985,986]},{"Single":994},{"Range":[1005,1009]},{"Range":[1015,1028]},{"Single":1033},{"Single":1056},{"Range":[1059,1062]},{"Single":1064}]}]}
+src/components/TagFilter.jsx
+  55ebedbcf358d164 5-6,8-9,11-15,22-25,27-29,32,36,78-81,86-87,89-97,100-113,116,119-123,143,146-226,233-234,244 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Range":[5,6]},{"Range":[8,9]},{"Range":[11,15]},{"Range":[22,25]},{"Range":[27,29]},{"Single":32},{"Single":36},{"Range":[78,81]},{"Range":[86,87]},{"Range":[89,97]},{"Range":[100,113]},{"Single":116},{"Range":[119,123]},{"Single":143},{"Range":[146,226]},{"Range":[233,234]},{"Single":244}]}]}
+src/components/FilterContainer.jsx
+  55ebedbcf358d164 2,8,13,18,21-24,27-46,49-54,56-62,67-68 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Single":2},{"Single":8},{"Single":13},{"Single":18},{"Range":[21,24]},{"Range":[27,46]},{"Range":[49,54]},{"Range":[56,62]},{"Range":[67,68]}]}]}
+src/components/FilterToggleButton.jsx
+  55ebedbcf358d164 1-2,12,14-24,27-32,34-39,43-60,63 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Range":[1,2]},{"Single":12},{"Range":[14,24]},{"Range":[27,32]},{"Range":[34,39]},{"Range":[43,60]},{"Single":63}]}]}
+src/StandaloneWindow.jsx
+  55ebedbcf358d164 114-124,135-145 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Range":[114,124]},{"Range":[135,145]}]}]}
+src/utils/dataUrlImage.js
+  55ebedbcf358d164 1-134 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Range":[1,134]}]}]}
+src/utils/todoDisplayUtils.js
+  55ebedbcf358d164 28-38 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101b665194e1248f58dfac","tool_type":"agent","tool_id":"SearchReplace","line_ranges":[{"Range":[28,38]}]}]}
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "7ec83d96b2f18ea1adb78b9a41bd34c44242a1c4",
+  "prompts": {
+    "55ebedbcf358d164": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a06bf115194e1248f58954f",
+        "model": "openrouter-2o__dev"
+      },
+      "human_author": "Kevin Ye <kevin191702@gamil.com>",
+      "messages": [],
+      "total_additions": 2105,
+      "total_deletions": 853,
+      "accepted_lines": 1829,
+      "overriden_lines": 39
+    }
+  },
+  "attestation_metadata": {
+    "electron/dao/DatabaseManager.js": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Single": 414
+          }
+        ],
+        "mixed_line_ranges": [
+          {
+            "Single": 414
+          }
+        ],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Single": 414
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "electron/dao/SettingDAO.js": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Single": 213
+          }
+        ],
+        "mixed_line_ranges": [
+          {
+            "Single": 213
+          }
+        ],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Single": 213
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/StandaloneWindow.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Range": [
+              114,
+              124
+            ]
+          },
+          {
+            "Range": [
+              135,
+              145
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Range": [
+                  114,
+                  124
+                ]
+              },
+              {
+                "Range": [
+                  135,
+                  145
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/AIAssistPanel.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Single": 15
+          },
+          {
+            "Single": 291
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Single": 15
+              },
+              {
+                "Single": 291
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/AIChatView.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Single": 24
+          },
+          {
+            "Single": 352
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Single": 24
+              },
+              {
+                "Single": 352
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/BaseFilter.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Range": [
+              1,
+              2
+            ]
+          },
+          {
+            "Range": [
+              5,
+              6
+            ]
+          },
+          {
+            "Single": 10
+          },
+          {
+            "Range": [
+              20,
+              56
+            ]
+          },
+          {
+            "Range": [
+              58,
+              61
+            ]
+          },
+          {
+            "Range": [
+              63,
+              71
+            ]
+          },
+          {
+            "Range": [
+              73,
+              74
+            ]
+          },
+          {
+            "Single": 78
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Range": [
+                  1,
+                  2
+                ]
+              },
+              {
+                "Range": [
+                  5,
+                  6
+                ]
+              },
+              {
+                "Single": 10
+              },
+              {
+                "Range": [
+                  20,
+                  56
+                ]
+              },
+              {
+                "Range": [
+                  58,
+                  61
+                ]
+              },
+              {
+                "Range": [
+                  63,
+                  71
+                ]
+              },
+              {
+                "Range": [
+                  73,
+                  74
+                ]
+              },
+              {
+                "Single": 78
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/CalendarView.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Single": 35
+          },
+          {
+            "Single": 38
+          },
+          {
+            "Single": 97
+          },
+          {
+            "Single": 152
+          },
+          {
+            "Single": 232
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Single": 35
+              },
+              {
+                "Single": 38
+              },
+              {
+                "Single": 97
+              },
+              {
+                "Single": 152
+              },
+              {
+                "Single": 232
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/ChoiceFilter.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Range": [
+              1,
+              55
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Range": [
+                  1,
+                  55
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/FilterContainer.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Single": 2
+          },
+          {
+            "Single": 8
+          },
+          {
+            "Single": 13
+          },
+          {
+            "Single": 18
+          },
+          {
+            "Range": [
+              21,
+              24
+            ]
+          },
+          {
+            "Range": [
+              27,
+              46
+            ]
+          },
+          {
+            "Range": [
+              49,
+              54
+            ]
+          },
+          {
+            "Range": [
+              56,
+              62
+            ]
+          },
+          {
+            "Range": [
+              67,
+              68
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Single": 2
+              },
+              {
+                "Single": 8
+              },
+              {
+                "Single": 13
+              },
+              {
+                "Single": 18
+              },
+              {
+                "Range": [
+                  21,
+                  24
+                ]
+              },
+              {
+                "Range": [
+                  27,
+                  46
+                ]
+              },
+              {
+                "Range": [
+                  49,
+                  54
+                ]
+              },
+              {
+                "Range": [
+                  56,
+                  62
+                ]
+              },
+              {
+                "Range": [
+                  67,
+                  68
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/FilterPopover.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Range": [
+              1,
+              193
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Range": [
+                  1,
+                  193
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/FilterToggleButton.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Range": [
+              1,
+              2
+            ]
+          },
+          {
+            "Single": 12
+          },
+          {
+            "Range": [
+              14,
+              24
+            ]
+          },
+          {
+            "Range": [
+              27,
+              32
+            ]
+          },
+          {
+            "Range": [
+              34,
+              39
+            ]
+          },
+          {
+            "Range": [
+              43,
+              60
+            ]
+          },
+          {
+            "Single": 63
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Range": [
+                  1,
+                  2
+                ]
+              },
+              {
+                "Single": 12
+              },
+              {
+                "Range": [
+                  14,
+                  24
+                ]
+              },
+              {
+                "Range": [
+                  27,
+                  32
+                ]
+              },
+              {
+                "Range": [
+                  34,
+                  39
+                ]
+              },
+              {
+                "Range": [
+                  43,
+                  60
+                ]
+              },
+              {
+                "Single": 63
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/MarkdownPreview.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Range": [
+              142,
+              156
+            ]
+          },
+          {
+            "Range": [
+              237,
+              238
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Range": [
+                  142,
+                  156
+                ]
+              },
+              {
+                "Range": [
+                  237,
+                  238
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/MyDayPanel.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Single": 18
+          },
+          {
+            "Single": 92
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Single": 18
+              },
+              {
+                "Single": 92
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/NoteEditor.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Single": 60
+          },
+          {
+            "Single": 122
+          },
+          {
+            "Single": 426
+          },
+          {
+            "Single": 428
+          },
+          {
+            "Single": 431
+          },
+          {
+            "Single": 642
+          },
+          {
+            "Single": 687
+          },
+          {
+            "Range": [
+              692,
+              693
+            ]
+          },
+          {
+            "Single": 696
+          },
+          {
+            "Single": 707
+          },
+          {
+            "Single": 711
+          },
+          {
+            "Single": 729
+          },
+          {
+            "Single": 733
+          },
+          {
+            "Range": [
+              737,
+              738
+            ]
+          },
+          {
+            "Single": 740
+          },
+          {
+            "Single": 742
+          },
+          {
+            "Single": 747
+          },
+          {
+            "Single": 753
+          },
+          {
+            "Single": 755
+          },
+          {
+            "Single": 760
+          },
+          {
+            "Single": 766
+          },
+          {
+            "Single": 780
+          },
+          {
+            "Single": 784
+          },
+          {
+            "Single": 790
+          },
+          {
+            "Range": [
+              792,
+              793
+            ]
+          },
+          {
+            "Single": 798
+          },
+          {
+            "Single": 813
+          },
+          {
+            "Single": 815
+          },
+          {
+            "Single": 838
+          },
+          {
+            "Single": 840
+          },
+          {
+            "Single": 846
+          },
+          {
+            "Range": [
+              851,
+              852
+            ]
+          },
+          {
+            "Single": 855
+          },
+          {
+            "Single": 863
+          },
+          {
+            "Single": 867
+          },
+          {
+            "Single": 869
+          },
+          {
+            "Single": 872
+          },
+          {
+            "Range": [
+              875,
+              877
+            ]
+          },
+          {
+            "Single": 879
+          },
+          {
+            "Single": 883
+          },
+          {
+            "Range": [
+              890,
+              891
+            ]
+          },
+          {
+            "Single": 895
+          },
+          {
+            "Single": 897
+          },
+          {
+            "Single": 906
+          },
+          {
+            "Single": 912
+          },
+          {
+            "Single": 945
+          },
+          {
+            "Range": [
+              947,
+              948
+            ]
+          },
+          {
+            "Range": [
+              1229,
+              1231
+            ]
+          },
+          {
+            "Single": 1233
+          },
+          {
+            "Single": 1235
+          },
+          {
+            "Range": [
+              1432,
+              1440
+            ]
+          },
+          {
+            "Single": 1453
+          },
+          {
+            "Range": [
+              1525,
+              1526
+            ]
+          },
+          {
+            "Single": 1532
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Single": 60
+              },
+              {
+                "Single": 122
+              },
+              {
+                "Single": 426
+              },
+              {
+                "Single": 428
+              },
+              {
+                "Single": 431
+              },
+              {
+                "Single": 642
+              },
+              {
+                "Single": 687
+              },
+              {
+                "Range": [
+                  692,
+                  693
+                ]
+              },
+              {
+                "Single": 696
+              },
+              {
+                "Single": 707
+              },
+              {
+                "Single": 711
+              },
+              {
+                "Single": 729
+              },
+              {
+                "Single": 733
+              },
+              {
+                "Range": [
+                  737,
+                  738
+                ]
+              },
+              {
+                "Single": 740
+              },
+              {
+                "Single": 742
+              },
+              {
+                "Single": 747
+              },
+              {
+                "Single": 753
+              },
+              {
+                "Single": 755
+              },
+              {
+                "Single": 760
+              },
+              {
+                "Single": 766
+              },
+              {
+                "Single": 780
+              },
+              {
+                "Single": 784
+              },
+              {
+                "Single": 790
+              },
+              {
+                "Range": [
+                  792,
+                  793
+                ]
+              },
+              {
+                "Single": 798
+              },
+              {
+                "Single": 813
+              },
+              {
+                "Single": 815
+              },
+              {
+                "Single": 838
+              },
+              {
+                "Single": 840
+              },
+              {
+                "Single": 846
+              },
+              {
+                "Range": [
+                  851,
+                  852
+                ]
+              },
+              {
+                "Single": 855
+              },
+              {
+                "Single": 863
+              },
+              {
+                "Single": 867
+              },
+              {
+                "Single": 869
+              },
+              {
+                "Single": 872
+              },
+              {
+                "Range": [
+                  875,
+                  877
+                ]
+              },
+              {
+                "Single": 879
+              },
+              {
+                "Single": 883
+              },
+              {
+                "Range": [
+                  890,
+                  891
+                ]
+              },
+              {
+                "Single": 895
+              },
+              {
+                "Single": 897
+              },
+              {
+                "Single": 906
+              },
+              {
+                "Single": 912
+              },
+              {
+                "Single": 945
+              },
+              {
+                "Range": [
+                  947,
+                  948
+                ]
+              },
+              {
+                "Range": [
+                  1229,
+                  1231
+                ]
+              },
+              {
+                "Single": 1233
+              },
+              {
+                "Single": 1235
+              },
+              {
+                "Range": [
+                  1432,
+                  1440
+                ]
+              },
+              {
+                "Single": 1453
+              },
+              {
+                "Range": [
+                  1525,
+                  1526
+                ]
+              },
+              {
+                "Single": 1532
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/NoteList.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Range": [
+              53,
+              54
+            ]
+          },
+          {
+            "Range": [
+              56,
+              57
+            ]
+          },
+          {
+            "Range": [
+              70,
+              74
+            ]
+          },
+          {
+            "Range": [
+              99,
+              103
+            ]
+          },
+          {
+            "Single": 112
+          },
+          {
+            "Range": [
+              150,
+              163
+            ]
+          },
+          {
+            "Range": [
+              166,
+              176
+            ]
+          },
+          {
+            "Range": [
+              178,
+              184
+            ]
+          },
+          {
+            "Range": [
+              187,
+              194
+            ]
+          },
+          {
+            "Range": [
+              196,
+              215
+            ]
+          },
+          {
+            "Range": [
+              217,
+              232
+            ]
+          },
+          {
+            "Range": [
+              551,
+              552
+            ]
+          },
+          {
+            "Single": 555
+          },
+          {
+            "Single": 557
+          },
+          {
+            "Single": 577
+          },
+          {
+            "Range": [
+              660,
+              663
+            ]
+          },
+          {
+            "Range": [
+              674,
+              692
+            ]
+          },
+          {
+            "Single": 710
+          },
+          {
+            "Single": 713
+          },
+          {
+            "Range": [
+              721,
+              727
+            ]
+          },
+          {
+            "Range": [
+              729,
+              730
+            ]
+          },
+          {
+            "Range": [
+              734,
+              780
+            ]
+          },
+          {
+            "Single": 782
+          },
+          {
+            "Single": 859
+          },
+          {
+            "Single": 865
+          },
+          {
+            "Range": [
+              867,
+              869
+            ]
+          },
+          {
+            "Range": [
+              906,
+              912
+            ]
+          },
+          {
+            "Range": [
+              921,
+              927
+            ]
+          },
+          {
+            "Range": [
+              930,
+              931
+            ]
+          },
+          {
+            "Range": [
+              936,
+              940
+            ]
+          },
+          {
+            "Range": [
+              942,
+              946
+            ]
+          },
+          {
+            "Single": 952
+          },
+          {
+            "Range": [
+              954,
+              955
+            ]
+          },
+          {
+            "Single": 962
+          },
+          {
+            "Single": 972
+          },
+          {
+            "Single": 974
+          },
+          {
+            "Range": [
+              980,
+              981
+            ]
+          },
+          {
+            "Range": [
+              985,
+              986
+            ]
+          },
+          {
+            "Single": 994
+          },
+          {
+            "Range": [
+              1005,
+              1009
+            ]
+          },
+          {
+            "Range": [
+              1015,
+              1028
+            ]
+          },
+          {
+            "Single": 1033
+          },
+          {
+            "Single": 1056
+          },
+          {
+            "Range": [
+              1059,
+              1062
+            ]
+          },
+          {
+            "Single": 1064
+          }
+        ],
+        "mixed_line_ranges": [
+          {
+            "Range": [
+              660,
+              661
+            ]
+          },
+          {
+            "Single": 676
+          },
+          {
+            "Single": 679
+          },
+          {
+            "Single": 681
+          },
+          {
+            "Single": 685
+          },
+          {
+            "Single": 689
+          },
+          {
+            "Single": 859
+          },
+          {
+            "Single": 922
+          },
+          {
+            "Single": 924
+          },
+          {
+            "Single": 927
+          },
+          {
+            "Single": 972
+          },
+          {
+            "Single": 1006
+          },
+          {
+            "Single": 1020
+          },
+          {
+            "Range": [
+              1024,
+              1025
+            ]
+          },
+          {
+            "Single": 1056
+          },
+          {
+            "Single": 1064
+          }
+        ],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Range": [
+                  53,
+                  54
+                ]
+              },
+              {
+                "Range": [
+                  56,
+                  57
+                ]
+              },
+              {
+                "Range": [
+                  70,
+                  74
+                ]
+              },
+              {
+                "Range": [
+                  99,
+                  103
+                ]
+              },
+              {
+                "Single": 112
+              },
+              {
+                "Range": [
+                  150,
+                  163
+                ]
+              },
+              {
+                "Range": [
+                  166,
+                  176
+                ]
+              },
+              {
+                "Range": [
+                  178,
+                  184
+                ]
+              },
+              {
+                "Range": [
+                  187,
+                  194
+                ]
+              },
+              {
+                "Range": [
+                  196,
+                  215
+                ]
+              },
+              {
+                "Range": [
+                  217,
+                  232
+                ]
+              },
+              {
+                "Range": [
+                  551,
+                  552
+                ]
+              },
+              {
+                "Single": 555
+              },
+              {
+                "Single": 557
+              },
+              {
+                "Single": 577
+              },
+              {
+                "Range": [
+                  660,
+                  663
+                ]
+              },
+              {
+                "Range": [
+                  674,
+                  692
+                ]
+              },
+              {
+                "Single": 710
+              },
+              {
+                "Single": 713
+              },
+              {
+                "Range": [
+                  721,
+                  727
+                ]
+              },
+              {
+                "Range": [
+                  729,
+                  730
+                ]
+              },
+              {
+                "Range": [
+                  734,
+                  780
+                ]
+              },
+              {
+                "Single": 782
+              },
+              {
+                "Single": 859
+              },
+              {
+                "Single": 865
+              },
+              {
+                "Range": [
+                  867,
+                  869
+                ]
+              },
+              {
+                "Range": [
+                  906,
+                  912
+                ]
+              },
+              {
+                "Range": [
+                  921,
+                  927
+                ]
+              },
+              {
+                "Range": [
+                  930,
+                  931
+                ]
+              },
+              {
+                "Range": [
+                  936,
+                  940
+                ]
+              },
+              {
+                "Range": [
+                  942,
+                  946
+                ]
+              },
+              {
+                "Single": 952
+              },
+              {
+                "Range": [
+                  954,
+                  955
+                ]
+              },
+              {
+                "Single": 962
+              },
+              {
+                "Single": 972
+              },
+              {
+                "Single": 974
+              },
+              {
+                "Range": [
+                  980,
+                  981
+                ]
+              },
+              {
+                "Range": [
+                  985,
+                  986
+                ]
+              },
+              {
+                "Single": 994
+              },
+              {
+                "Range": [
+                  1005,
+                  1009
+                ]
+              },
+              {
+                "Range": [
+                  1015,
+                  1028
+                ]
+              },
+              {
+                "Single": 1033
+              },
+              {
+                "Single": 1056
+              },
+              {
+                "Range": [
+                  1059,
+                  1062
+                ]
+              },
+              {
+                "Single": 1064
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/PriorityFilter.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Single": 3
+          },
+          {
+            "Single": 10
+          },
+          {
+            "Range": [
+              12,
+              13
+            ]
+          },
+          {
+            "Single": 15
+          },
+          {
+            "Single": 18
+          },
+          {
+            "Range": [
+              92,
+              93
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Single": 3
+              },
+              {
+                "Single": 10
+              },
+              {
+                "Range": [
+                  12,
+                  13
+                ]
+              },
+              {
+                "Single": 15
+              },
+              {
+                "Single": 18
+              },
+              {
+                "Range": [
+                  92,
+                  93
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/RelatedContextPanel.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Single": 25
+          },
+          {
+            "Single": 113
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Single": 25
+              },
+              {
+                "Single": 113
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/SecondarySidebar.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Single": 46
+          },
+          {
+            "Single": 68
+          },
+          {
+            "Range": [
+              71,
+              80
+            ]
+          },
+          {
+            "Range": [
+              83,
+              91
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Single": 46
+              },
+              {
+                "Single": 68
+              },
+              {
+                "Range": [
+                  71,
+                  80
+                ]
+              },
+              {
+                "Range": [
+                  83,
+                  91
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/Settings.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Single": 27
+          },
+          {
+            "Single": 72
+          },
+          {
+            "Single": 560
+          },
+          {
+            "Range": [
+              713,
+              715
+            ]
+          },
+          {
+            "Range": [
+              1042,
+              1049
+            ]
+          },
+          {
+            "Range": [
+              1057,
+              1060
+            ]
+          },
+          {
+            "Range": [
+              1071,
+              1077
+            ]
+          },
+          {
+            "Single": 1280
+          },
+          {
+            "Range": [
+              1289,
+              1325
+            ]
+          },
+          {
+            "Range": [
+              1525,
+              1530
+            ]
+          }
+        ],
+        "mixed_line_ranges": [
+          {
+            "Single": 1526
+          }
+        ],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Single": 27
+              },
+              {
+                "Single": 72
+              },
+              {
+                "Single": 560
+              },
+              {
+                "Range": [
+                  713,
+                  715
+                ]
+              },
+              {
+                "Range": [
+                  1042,
+                  1049
+                ]
+              },
+              {
+                "Range": [
+                  1057,
+                  1060
+                ]
+              },
+              {
+                "Range": [
+                  1071,
+                  1077
+                ]
+              },
+              {
+                "Single": 1280
+              },
+              {
+                "Range": [
+                  1289,
+                  1325
+                ]
+              },
+              {
+                "Range": [
+                  1525,
+                  1530
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/Sidebar.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Single": 42
+          },
+          {
+            "Single": 48
+          },
+          {
+            "Single": 51
+          },
+          {
+            "Range": [
+              68,
+              70
+            ]
+          },
+          {
+            "Range": [
+              244,
+              246
+            ]
+          },
+          {
+            "Single": 248
+          },
+          {
+            "Range": [
+              253,
+              254
+            ]
+          },
+          {
+            "Single": 258
+          },
+          {
+            "Single": 271
+          },
+          {
+            "Range": [
+              279,
+              281
+            ]
+          },
+          {
+            "Single": 403
+          },
+          {
+            "Single": 406
+          },
+          {
+            "Single": 416
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Single": 42
+              },
+              {
+                "Single": 48
+              },
+              {
+                "Single": 51
+              },
+              {
+                "Range": [
+                  68,
+                  70
+                ]
+              },
+              {
+                "Range": [
+                  244,
+                  246
+                ]
+              },
+              {
+                "Single": 248
+              },
+              {
+                "Range": [
+                  253,
+                  254
+                ]
+              },
+              {
+                "Single": 258
+              },
+              {
+                "Single": 271
+              },
+              {
+                "Range": [
+                  279,
+                  281
+                ]
+              },
+              {
+                "Single": 403
+              },
+              {
+                "Single": 406
+              },
+              {
+                "Single": 416
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/TagFilter.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Range": [
+              5,
+              6
+            ]
+          },
+          {
+            "Range": [
+              8,
+              9
+            ]
+          },
+          {
+            "Range": [
+              11,
+              15
+            ]
+          },
+          {
+            "Range": [
+              22,
+              25
+            ]
+          },
+          {
+            "Range": [
+              27,
+              29
+            ]
+          },
+          {
+            "Single": 32
+          },
+          {
+            "Single": 36
+          },
+          {
+            "Range": [
+              78,
+              81
+            ]
+          },
+          {
+            "Range": [
+              86,
+              87
+            ]
+          },
+          {
+            "Range": [
+              89,
+              97
+            ]
+          },
+          {
+            "Range": [
+              100,
+              113
+            ]
+          },
+          {
+            "Single": 116
+          },
+          {
+            "Range": [
+              119,
+              123
+            ]
+          },
+          {
+            "Single": 143
+          },
+          {
+            "Range": [
+              146,
+              226
+            ]
+          },
+          {
+            "Range": [
+              233,
+              234
+            ]
+          },
+          {
+            "Single": 244
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Range": [
+                  5,
+                  6
+                ]
+              },
+              {
+                "Range": [
+                  8,
+                  9
+                ]
+              },
+              {
+                "Range": [
+                  11,
+                  15
+                ]
+              },
+              {
+                "Range": [
+                  22,
+                  25
+                ]
+              },
+              {
+                "Range": [
+                  27,
+                  29
+                ]
+              },
+              {
+                "Single": 32
+              },
+              {
+                "Single": 36
+              },
+              {
+                "Range": [
+                  78,
+                  81
+                ]
+              },
+              {
+                "Range": [
+                  86,
+                  87
+                ]
+              },
+              {
+                "Range": [
+                  89,
+                  97
+                ]
+              },
+              {
+                "Range": [
+                  100,
+                  113
+                ]
+              },
+              {
+                "Single": 116
+              },
+              {
+                "Range": [
+                  119,
+                  123
+                ]
+              },
+              {
+                "Single": 143
+              },
+              {
+                "Range": [
+                  146,
+                  226
+                ]
+              },
+              {
+                "Range": [
+                  233,
+                  234
+                ]
+              },
+              {
+                "Single": 244
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/TimelineView.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Single": 46
+          },
+          {
+            "Range": [
+              145,
+              150
+            ]
+          },
+          {
+            "Single": 196
+          },
+          {
+            "Range": [
+              206,
+              208
+            ]
+          },
+          {
+            "Single": 283
+          },
+          {
+            "Range": [
+              299,
+              300
+            ]
+          },
+          {
+            "Range": [
+              307,
+              308
+            ]
+          },
+          {
+            "Range": [
+              499,
+              506
+            ]
+          },
+          {
+            "Single": 510
+          },
+          {
+            "Single": 1207
+          },
+          {
+            "Single": 1232
+          },
+          {
+            "Range": [
+              1276,
+              1300
+            ]
+          },
+          {
+            "Single": 1747
+          },
+          {
+            "Range": [
+              1760,
+              1780
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Single": 46
+              },
+              {
+                "Range": [
+                  145,
+                  150
+                ]
+              },
+              {
+                "Single": 196
+              },
+              {
+                "Range": [
+                  206,
+                  208
+                ]
+              },
+              {
+                "Single": 283
+              },
+              {
+                "Range": [
+                  299,
+                  300
+                ]
+              },
+              {
+                "Range": [
+                  307,
+                  308
+                ]
+              },
+              {
+                "Range": [
+                  499,
+                  506
+                ]
+              },
+              {
+                "Single": 510
+              },
+              {
+                "Single": 1207
+              },
+              {
+                "Single": 1232
+              },
+              {
+                "Range": [
+                  1276,
+                  1300
+                ]
+              },
+              {
+                "Single": 1747
+              },
+              {
+                "Range": [
+                  1760,
+                  1780
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/TodoList.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Single": 45
+          },
+          {
+            "Single": 47
+          },
+          {
+            "Range": [
+              56,
+              60
+            ]
+          },
+          {
+            "Single": 62
+          },
+          {
+            "Range": [
+              148,
+              150
+            ]
+          },
+          {
+            "Range": [
+              286,
+              313
+            ]
+          },
+          {
+            "Single": 340
+          },
+          {
+            "Range": [
+              631,
+              633
+            ]
+          },
+          {
+            "Range": [
+              644,
+              662
+            ]
+          },
+          {
+            "Range": [
+              697,
+              698
+            ]
+          },
+          {
+            "Single": 705
+          },
+          {
+            "Single": 708
+          },
+          {
+            "Single": 712
+          },
+          {
+            "Range": [
+              720,
+              726
+            ]
+          },
+          {
+            "Range": [
+              729,
+              731
+            ]
+          },
+          {
+            "Range": [
+              736,
+              761
+            ]
+          },
+          {
+            "Single": 763
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Single": 45
+              },
+              {
+                "Single": 47
+              },
+              {
+                "Range": [
+                  56,
+                  60
+                ]
+              },
+              {
+                "Single": 62
+              },
+              {
+                "Range": [
+                  148,
+                  150
+                ]
+              },
+              {
+                "Range": [
+                  286,
+                  313
+                ]
+              },
+              {
+                "Single": 340
+              },
+              {
+                "Range": [
+                  631,
+                  633
+                ]
+              },
+              {
+                "Range": [
+                  644,
+                  662
+                ]
+              },
+              {
+                "Range": [
+                  697,
+                  698
+                ]
+              },
+              {
+                "Single": 705
+              },
+              {
+                "Single": 708
+              },
+              {
+                "Single": 712
+              },
+              {
+                "Range": [
+                  720,
+                  726
+                ]
+              },
+              {
+                "Range": [
+                  729,
+                  731
+                ]
+              },
+              {
+                "Range": [
+                  736,
+                  761
+                ]
+              },
+              {
+                "Single": 763
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/Toolbar.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Range": [
+              380,
+              381
+            ]
+          },
+          {
+            "Single": 385
+          },
+          {
+            "Range": [
+              388,
+              389
+            ]
+          },
+          {
+            "Single": 399
+          },
+          {
+            "Range": [
+              403,
+              408
+            ]
+          },
+          {
+            "Single": 421
+          },
+          {
+            "Range": [
+              425,
+              430
+            ]
+          },
+          {
+            "Single": 440
+          },
+          {
+            "Single": 460
+          },
+          {
+            "Single": 474
+          },
+          {
+            "Single": 537
+          },
+          {
+            "Range": [
+              547,
+              566
+            ]
+          },
+          {
+            "Single": 568
+          },
+          {
+            "Single": 595
+          },
+          {
+            "Single": 608
+          },
+          {
+            "Single": 642
+          },
+          {
+            "Single": 664
+          },
+          {
+            "Single": 666
+          }
+        ],
+        "mixed_line_ranges": [
+          {
+            "Single": 381
+          },
+          {
+            "Single": 385
+          },
+          {
+            "Range": [
+              404,
+              407
+            ]
+          },
+          {
+            "Range": [
+              426,
+              429
+            ]
+          },
+          {
+            "Single": 552
+          }
+        ],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Range": [
+                  380,
+                  381
+                ]
+              },
+              {
+                "Single": 385
+              },
+              {
+                "Range": [
+                  388,
+                  389
+                ]
+              },
+              {
+                "Single": 399
+              },
+              {
+                "Range": [
+                  403,
+                  408
+                ]
+              },
+              {
+                "Single": 421
+              },
+              {
+                "Range": [
+                  425,
+                  430
+                ]
+              },
+              {
+                "Single": 440
+              },
+              {
+                "Single": 460
+              },
+              {
+                "Single": 474
+              },
+              {
+                "Single": 537
+              },
+              {
+                "Range": [
+                  547,
+                  566
+                ]
+              },
+              {
+                "Single": 568
+              },
+              {
+                "Single": 595
+              },
+              {
+                "Single": 608
+              },
+              {
+                "Single": 642
+              },
+              {
+                "Single": 664
+              },
+              {
+                "Single": 666
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/WYSIWYGEditor.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Single": 6
+          },
+          {
+            "Single": 34
+          },
+          {
+            "Range": [
+              173,
+              176
+            ]
+          },
+          {
+            "Range": [
+              515,
+              516
+            ]
+          },
+          {
+            "Single": 519
+          },
+          {
+            "Single": 521
+          },
+          {
+            "Range": [
+              2099,
+              2104
+            ]
+          },
+          {
+            "Range": [
+              2126,
+              2128
+            ]
+          },
+          {
+            "Range": [
+              2130,
+              2135
+            ]
+          },
+          {
+            "Range": [
+              2137,
+              2138
+            ]
+          },
+          {
+            "Single": 2141
+          },
+          {
+            "Range": [
+              2145,
+              2182
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Single": 6
+              },
+              {
+                "Single": 34
+              },
+              {
+                "Range": [
+                  173,
+                  176
+                ]
+              },
+              {
+                "Range": [
+                  515,
+                  516
+                ]
+              },
+              {
+                "Single": 519
+              },
+              {
+                "Single": 521
+              },
+              {
+                "Range": [
+                  2099,
+                  2104
+                ]
+              },
+              {
+                "Range": [
+                  2126,
+                  2128
+                ]
+              },
+              {
+                "Range": [
+                  2130,
+                  2135
+                ]
+              },
+              {
+                "Range": [
+                  2137,
+                  2138
+                ]
+              },
+              {
+                "Single": 2141
+              },
+              {
+                "Range": [
+                  2145,
+                  2182
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/components/WhiteboardEditor.jsx": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Range": [
+              256,
+              266
+            ]
+          },
+          {
+            "Range": [
+              274,
+              293
+            ]
+          },
+          {
+            "Single": 295
+          },
+          {
+            "Single": 704
+          },
+          {
+            "Single": 740
+          },
+          {
+            "Range": [
+              762,
+              828
+            ]
+          },
+          {
+            "Range": [
+              869,
+              895
+            ]
+          },
+          {
+            "Single": 897
+          },
+          {
+            "Range": [
+              945,
+              946
+            ]
+          },
+          {
+            "Range": [
+              972,
+              975
+            ]
+          },
+          {
+            "Single": 979
+          },
+          {
+            "Range": [
+              1025,
+              1044
+            ]
+          },
+          {
+            "Single": 1059
+          },
+          {
+            "Single": 1061
+          },
+          {
+            "Range": [
+              1131,
+              1256
+            ]
+          },
+          {
+            "Range": [
+              1280,
+              1296
+            ]
+          },
+          {
+            "Single": 1317
+          },
+          {
+            "Range": [
+              1320,
+              1327
+            ]
+          },
+          {
+            "Single": 1329
+          },
+          {
+            "Single": 1363
+          },
+          {
+            "Single": 1369
+          },
+          {
+            "Single": 1375
+          },
+          {
+            "Range": [
+              1378,
+              1384
+            ]
+          },
+          {
+            "Single": 1427
+          },
+          {
+            "Single": 1433
+          },
+          {
+            "Single": 1463
+          },
+          {
+            "Single": 1465
+          },
+          {
+            "Single": 1481
+          },
+          {
+            "Single": 1497
+          },
+          {
+            "Range": [
+              1545,
+              1551
+            ]
+          },
+          {
+            "Single": 1569
+          },
+          {
+            "Single": 1576
+          },
+          {
+            "Single": 1872
+          },
+          {
+            "Single": 1926
+          },
+          {
+            "Single": 2013
+          },
+          {
+            "Single": 2040
+          },
+          {
+            "Single": 2142
+          },
+          {
+            "Range": [
+              2187,
+              2190
+            ]
+          },
+          {
+            "Range": [
+              2291,
+              2300
+            ]
+          },
+          {
+            "Single": 2307
+          },
+          {
+            "Range": [
+              2309,
+              2310
+            ]
+          },
+          {
+            "Range": [
+              2319,
+              2320
+            ]
+          },
+          {
+            "Range": [
+              2352,
+              2389
+            ]
+          }
+        ],
+        "mixed_line_ranges": [
+          {
+            "Single": 1025
+          },
+          {
+            "Single": 1280
+          },
+          {
+            "Single": 1293
+          },
+          {
+            "Single": 1317
+          }
+        ],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Range": [
+                  256,
+                  266
+                ]
+              },
+              {
+                "Range": [
+                  274,
+                  293
+                ]
+              },
+              {
+                "Single": 295
+              },
+              {
+                "Single": 704
+              },
+              {
+                "Single": 740
+              },
+              {
+                "Range": [
+                  762,
+                  828
+                ]
+              },
+              {
+                "Range": [
+                  869,
+                  895
+                ]
+              },
+              {
+                "Single": 897
+              },
+              {
+                "Range": [
+                  945,
+                  946
+                ]
+              },
+              {
+                "Range": [
+                  972,
+                  975
+                ]
+              },
+              {
+                "Single": 979
+              },
+              {
+                "Range": [
+                  1025,
+                  1044
+                ]
+              },
+              {
+                "Single": 1059
+              },
+              {
+                "Single": 1061
+              },
+              {
+                "Range": [
+                  1131,
+                  1256
+                ]
+              },
+              {
+                "Range": [
+                  1280,
+                  1296
+                ]
+              },
+              {
+                "Single": 1317
+              },
+              {
+                "Range": [
+                  1320,
+                  1327
+                ]
+              },
+              {
+                "Single": 1329
+              },
+              {
+                "Single": 1363
+              },
+              {
+                "Single": 1369
+              },
+              {
+                "Single": 1375
+              },
+              {
+                "Range": [
+                  1378,
+                  1384
+                ]
+              },
+              {
+                "Single": 1427
+              },
+              {
+                "Single": 1433
+              },
+              {
+                "Single": 1463
+              },
+              {
+                "Single": 1465
+              },
+              {
+                "Single": 1481
+              },
+              {
+                "Single": 1497
+              },
+              {
+                "Range": [
+                  1545,
+                  1551
+                ]
+              },
+              {
+                "Single": 1569
+              },
+              {
+                "Single": 1576
+              },
+              {
+                "Single": 1872
+              },
+              {
+                "Single": 1926
+              },
+              {
+                "Single": 2013
+              },
+              {
+                "Single": 2040
+              },
+              {
+                "Single": 2142
+              },
+              {
+                "Range": [
+                  2187,
+                  2190
+                ]
+              },
+              {
+                "Range": [
+                  2291,
+                  2300
+                ]
+              },
+              {
+                "Single": 2307
+              },
+              {
+                "Range": [
+                  2309,
+                  2310
+                ]
+              },
+              {
+                "Range": [
+                  2319,
+                  2320
+                ]
+              },
+              {
+                "Range": [
+                  2352,
+                  2389
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/store/useStandaloneStore.js": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Range": [
+              23,
+              24
+            ]
+          },
+          {
+            "Range": [
+              26,
+              31
+            ]
+          },
+          {
+            "Range": [
+              154,
+              162
+            ]
+          }
+        ],
+        "mixed_line_ranges": [
+          {
+            "Single": 28
+          },
+          {
+            "Single": 160
+          }
+        ],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Range": [
+                  23,
+                  24
+                ]
+              },
+              {
+                "Range": [
+                  26,
+                  31
+                ]
+              },
+              {
+                "Range": [
+                  154,
+                  162
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/store/useStore.js": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Range": [
+              57,
+              58
+            ]
+          },
+          {
+            "Single": 68
+          },
+          {
+            "Range": [
+              142,
+              143
+            ]
+          },
+          {
+            "Single": 391
+          },
+          {
+            "Single": 462
+          },
+          {
+            "Single": 471
+          },
+          {
+            "Range": [
+              840,
+              842
+            ]
+          },
+          {
+            "Single": 932
+          }
+        ],
+        "mixed_line_ranges": [
+          {
+            "Single": 57
+          }
+        ],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Range": [
+                  57,
+                  58
+                ]
+              },
+              {
+                "Single": 68
+              },
+              {
+                "Range": [
+                  142,
+                  143
+                ]
+              },
+              {
+                "Single": 391
+              },
+              {
+                "Single": 462
+              },
+              {
+                "Single": 471
+              },
+              {
+                "Range": [
+                  840,
+                  842
+                ]
+              },
+              {
+                "Single": 932
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/styles/commonStyles.js": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Range": [
+              269,
+              348
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Range": [
+                  269,
+                  348
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/utils/dataUrlImage.js": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Range": [
+              1,
+              134
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Range": [
+                  1,
+                  134
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/utils/markdownTextUtils.js": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Range": [
+              11,
+              14
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Range": [
+                  11,
+                  14
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "src/utils/todoDisplayUtils.js": [
+      {
+        "hash": "55ebedbcf358d164",
+        "line_ranges": [
+          {
+            "Range": [
+              28,
+              38
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101b665194e1248f58dfac",
+            "tool_type": "agent",
+            "tool_id": "SearchReplace",
+            "line_ranges": [
+              {
+                "Range": [
+                  28,
+                  38
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "remote_transcripts": {
+    "55ebedbcf358d164": {
+      "tool": "trae",
+      "conversation_id": "6a06bf115194e1248f58954f",
+      "session_id": "6a06bf115194e1248f58954f",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    }
+  }
+}
