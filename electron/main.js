@@ -825,11 +825,11 @@ async function initializeServices() {
 
 ## 版本新功能
 
-### 白板笔记
-- **Excalidraw 集成**：创建白板笔记，支持手绘图形和流程图
+### 画布笔记
+- **Excalidraw 集成**：创建画布笔记，支持手绘图形和流程图
 - **素材库支持**：使用内置素材库或浏览在线素材库
-- **独立窗口优化**：支持拖拽白板笔记到独立窗口中编辑
-- **PNG 导出**：一键导出白板为高清图片
+- **独立窗口优化**：支持拖拽画布笔记到独立窗口中编辑
+- **PNG 导出**：一键导出画布为高清图片
 
 ### Markdown 增强
 - **扩展语法**：支持高亮（==text==）、@orange{彩色文本}、[[Wiki 链接]]、#标签等
@@ -850,7 +850,7 @@ async function initializeServices() {
 
 ### 基本操作
 - **创建笔记**：点击左上角的 "新建" 按钮或使用快捷键 \`Ctrl+N\`
-- **创建白板**：选择"白板笔记"类型，使用 Excalidraw 进行创作
+- **创建画布**：选择"画布笔记"类型，使用 Excalidraw 进行创作
 - **搜索笔记**：使用顶部搜索框快速找到你需要的笔记
 - **标签管理**：为笔记添加标签，方便分类和查找
 - **拖拽窗口**：试试拖动笔记列表到窗口外~
@@ -881,11 +881,11 @@ console.log('Hello, Flota!');
 - 制作任务列表：
   - [x] 安装 Flota
   - [x] 阅读欢迎笔记
-  - [ ] 创建第一个白板笔记
+  - [ ] 创建第一个画布笔记
   - [ ] 尝试插件系统
   - [ ] 探索更多功能
 
-### 白板功能
+### 画布功能
 - 🎨 手绘风格图形
 - 📐 多种形状和箭头
 - 📝 文本注释
@@ -902,7 +902,7 @@ console.log('Hello, Flota!');
 ## 开始使用
 
 现在你可以：
-1. 创建你的第一个白板笔记
+1. 创建你的第一个画布笔记
 2. 尝试使用 Markdown 扩展语法
 3. 打开命令面板（Ctrl+Shift+P）探索插件功能
 4. 在设置中配置云同步
@@ -2431,7 +2431,7 @@ registerIpcHandlers([
   { channel: 'image:delete', handler: createImageServiceHandler('deleteImage', '删除图片失败') }
 ])
 
-// 白板图片存储 IPC 处理器
+// 画布图片存储 IPC 处理器
 ipcMain.handle('whiteboard:save-images', async (event, files) => {
   try {
     const imageStorage = getImageStorageInstance()
@@ -2473,12 +2473,12 @@ ipcMain.handle('whiteboard:save-images', async (event, files) => {
 
     return { success: true, data: fileMap }
   } catch (error) {
-    console.error('保存白板图片失败:', error)
+    console.error('保存画布图片失败:', error)
     return { success: false, error: error.message }
   }
 })
 
-// 简单委托的白板 handler（表驱动）
+// 简单委托的画布 handler（表驱动）
 const whiteboardSimpleHandlers = {
   'whiteboard:load-images':      { method: 'loadWhiteboardImages' },
   'whiteboard:load-image':       { method: 'loadWhiteboardImage' },
@@ -2499,7 +2499,7 @@ for (const [channel, cfg] of Object.entries(whiteboardSimpleHandlers)) {
   })
 }
 
-// 保存白板预览图（PNG），供移动端只读查看
+// 保存画布预览图（PNG），供移动端只读查看
 ipcMain.handle('whiteboard:save-preview', async (event, { syncId, pngBase64 }) => {
   try {
     if (!syncId || !pngBase64) return { success: false, error: '参数缺失' }
@@ -2516,14 +2516,14 @@ ipcMain.handle('whiteboard:save-preview', async (event, { syncId, pngBase64 }) =
       if (v3Service && v3Service.isEnabled && v3Service.uploadImage) {
         const relativePath = `images/whiteboard-preview/${syncId}.png`
         v3Service.uploadImage(filePath, relativePath).catch(err =>
-          console.error('[白板预览上传] 失败:', err)
+          console.error('[画布预览上传] 失败:', err)
         )
       }
     } catch (_) { /* 不阻塞 */ }
 
     return { success: true }
   } catch (error) {
-    console.error('保存白板预览图失败:', error)
+    console.error('保存画布预览图失败:', error)
     return { success: false, error: error.message }
   }
 })

@@ -454,13 +454,13 @@ class HistoricalDataMigrationService {
       ? note.tags.split(',').map(t => t.trim()).filter(t => t)
       : [];
 
-    // 白板笔记：提取 Excalidraw 文字+关系
+    // 画布笔记：提取 Excalidraw 文字+关系
     if (note.note_type === 'whiteboard') {
       try {
         fullContent = this._extractWhiteboardKnowledge(note.id, fullContent);
         if (!fullContent) return;
       } catch (e) {
-        console.warn(`[Migration] 白板笔记 ${note.id} 处理失败:`, e.message);
+        console.warn(`[Migration] 画布笔记 ${note.id} 处理失败:`, e.message);
         return;
       }
     } else if (fullContent.length >= 200) {
@@ -492,7 +492,7 @@ class HistoricalDataMigrationService {
   }
 
   /**
-   * 从白板 Excalidraw 数据中提取知识内容（文字 + 结构关系）
+   * 从画布 Excalidraw 数据中提取知识内容（文字 + 结构关系）
    * @private
    * @param {number} noteId
    * @param {string} jsonContent - Excalidraw JSON 字符串
@@ -501,7 +501,7 @@ class HistoricalDataMigrationService {
   _extractWhiteboardKnowledge(noteId, jsonContent) {
     const whiteboardData = JSON.parse(jsonContent);
     if (!whiteboardData.elements || !Array.isArray(whiteboardData.elements)) {
-      console.log(`[Migration] 白板笔记 ${noteId} 无 elements 数据，跳过`);
+      console.log(`[Migration] 画布笔记 ${noteId} 无 elements 数据，跳过`);
       return null;
     }
 
@@ -540,7 +540,7 @@ class HistoricalDataMigrationService {
     }
 
     if (textElements.length === 0 && relationships.length === 0) {
-      console.log(`[Migration] 白板笔记 ${noteId} 无文字内容，跳过`);
+      console.log(`[Migration] 画布笔记 ${noteId} 无文字内容，跳过`);
       return null;
     }
 
@@ -554,12 +554,12 @@ class HistoricalDataMigrationService {
     }
 
     const result = parts.join('\n');
-    console.log(`[Migration] 白板笔记 ${noteId}，提取 ${textElements.length} 个文字，${relationships.length} 个关系`);
+    console.log(`[Migration] 画布笔记 ${noteId}，提取 ${textElements.length} 个文字，${relationships.length} 个关系`);
     return result;
   }
 
   /**
-   * 获取白板元素的文字内容（处理容器元素内嵌文字）
+   * 获取画布元素的文字内容（处理容器元素内嵌文字）
    * @private
    */
   _getElementText(el, elementById) {

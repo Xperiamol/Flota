@@ -57,7 +57,7 @@ const sanitizeSvgText = (svgText = '') => String(svgText)
 
 /**
  * SVG dataURL → 高分辨率 PNG dataURL
- * 关键：canvas 像素缓冲 = 逻辑显示尺寸 × scale，最终图片在白板里仍然按逻辑尺寸显示，
+ * 关键：canvas 像素缓冲 = 逻辑显示尺寸 × scale，最终图片在画布里仍然按逻辑尺寸显示，
  * 但因为像素密度更高，缩放后依然清晰。
  */
 const svgDataURLToPng = ({ dataURL, width = 1200, height = 800 }) => new Promise((resolve, reject) => {

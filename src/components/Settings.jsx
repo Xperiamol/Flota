@@ -24,6 +24,7 @@ import {
     Slider,
     useTheme
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import {
     GetApp as ImportIcon,
     Brightness4,
@@ -68,7 +69,7 @@ import { useError } from './ErrorProvider';
 import { ALL_TOOLBAR_ITEMS, DEFAULT_TOOLBAR_ORDER, DEFAULT_FLOATING_ORDER } from './MarkdownToolbar';
 import { ALL_CONTEXT_MENU_ITEMS, CONTEXT_MENU_ITEM_LABELS, DEFAULT_CONTEXT_MENU_ITEMS } from './WYSIWYGEditor';
 import { PATTERN_STYLES, hexToRgb } from '../utils/patternStyles';
-import { sectionTitleSx, sectionDescriptionSx, settingsRowSx, settingsSectionSx } from '../styles/commonStyles';
+import { sectionTitleSx, sectionDescriptionSx, settingsRowSx, settingsSectionSx, colorPresetSwatchSx } from '../styles/commonStyles';
 import logger from '../utils/logger';
 
 function TabPanel({ children, value, index, ...other }) {
@@ -556,7 +557,7 @@ const Settings = () => {
     const { showError } = useError();
     const muiTheme = useTheme();
     const isDark = muiTheme.palette.mode === 'dark';
-    const { theme, setTheme, primaryColor, setPrimaryColor, setUserAvatar, setUserName, titleBarStyle, setTitleBarStyle, editorMode, setEditorMode, language, setLanguage, setDefaultMinibarMode, maskOpacity, setMaskOpacity, christmasMode, setChristmasMode, aiPanelMode, setAiPanelMode, toolbarOrder, setToolbarOrder, floatingPanelItems, setFloatingPanelItems, contextMenuItems, setContextMenuItems, backgroundPattern, setBackgroundPattern, patternOpacity, setPatternOpacity, wallpaperPath, setWallpaperPath } = useStore();
+    const { theme, setTheme, primaryColor, setPrimaryColor, setUserAvatar, setUserName, titleBarStyle, setTitleBarStyle, editorMode, setEditorMode, language, setLanguage, setDefaultMinibarMode, maskOpacity, setMaskOpacity, christmasMode, setChristmasMode, aiPanelMode, setAiPanelMode, toolbarOrder, setToolbarOrder, floatingPanelItems, setFloatingPanelItems, contextMenuItems, setContextMenuItems, backgroundPattern, setBackgroundPattern, patternOpacity, setPatternOpacity, wallpaperPath, setWallpaperPath, whiteboardStyle, setWhiteboardStyle } = useStore();
     const settingsTabValue = useStore((state) => state.settingsTabValue);
     const appVersion = useStore((state) => state.appVersion);
     const updateInfo = useStore((state) => state.appUpdateInfo);
@@ -708,6 +709,9 @@ const Settings = () => {
         },
         christmasMode: {
             syncGlobalState: setChristmasMode
+        },
+        whiteboardStyle: {
+            syncGlobalState: setWhiteboardStyle
         },
         theme: {
             syncGlobalState: setTheme
@@ -1035,20 +1039,24 @@ const Settings = () => {
     ];
 
     const themeColorPresets = [
-        { name: '浅黛蓝', color: '#3B82F6' },
-        { name: '薄荷绿', color: '#10B981' },
-        { name: '丁香紫', color: '#8B5CF6' },
-        { name: '珊瑚红', color: '#F43F5E' },
-        { name: '秋叶黄', color: '#F59E0B' },
-        { name: '樱花粉', color: '#EC4899' },
-        { name: '松石蓝', color: '#14B8A6' },
-        { name: '极简灰', color: '#64748B' },
+        { name: '经典蓝', color: '#1976d2' },
+        { name: '远黛', color: '#4F90A0' },
+        { name: '松烟', color: '#5A8E72' },
+        { name: '琥珀', color: '#C99151' },
+        { name: '朱砂', color: '#D6604F' },
+        { name: '海棠', color: '#D17B8E' },
+        { name: '紫藤', color: '#8B6FD4' },
+        { name: '玄铁', color: '#6B7280' },
     ];
     const maskOpacityOptions = [
         { value: 'none', label: '无遮罩' },
         { value: 'light', label: '轻度' },
         { value: 'medium', label: '中度' },
         { value: 'heavy', label: '重度' },
+    ];
+    const whiteboardStyleOptions = [
+        { value: 'neat', label: '规整' },
+        { value: 'sketchy', label: '手绘' },
     ];
     const isMacOS =
         typeof navigator !== 'undefined' &&
@@ -1060,18 +1068,13 @@ const Settings = () => {
         { value: 'windows', label: t('settings.titleBarWindows') },
     ];
 
-    const getColorPresetSx = (presetColor) => {
-        const selected = primaryColor === presetColor;
-        return {
-            width: 36,
-            height: 36,
-            borderRadius: 1,
-            backgroundColor: presetColor,
-            cursor: 'pointer',
-            border: selected ? '3px solid' : '2px solid',
-            borderColor: selected ? 'primary.main' : 'divider',
-        };
-    };
+    const getColorPresetSx = (presetColor) =>
+        colorPresetSwatchSx({
+            color: presetColor,
+            selected: primaryColor === presetColor,
+            isDark,
+            alpha,
+        });
 
     const settingsSurfaceSx = settingsSectionSx(muiTheme);
     const backgroundMode = backgroundPattern === 'custom'
@@ -1274,7 +1277,7 @@ const Settings = () => {
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
                             {t('settings.themeColorDesc')}
                         </Typography>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: 'wrap' }}>
                             {themeColorPresets.map((preset) => (
                                 <Tooltip key={preset.color} title={preset.name}>
                                     <Box
@@ -1283,15 +1286,43 @@ const Settings = () => {
                                     />
                                 </Tooltip>
                             ))}
-                            <TextField
-                                type="color"
-                                value={primaryColor}
-                                onChange={(e) => setPrimaryColor(e.target.value)}
-                                onBlur={(e) => handleSettingChange('customThemeColor', e.target.value)}
-                                size="small"
-                                sx={{ width: 44, height: 36, p: 0, '& input': { cursor: 'pointer' } }}
-                                aria-label="自定义主题颜色"
-                            />
+                            <Tooltip title="自定义颜色">
+                                <Box
+                                    component="label"
+                                    sx={{
+                                        position: 'relative',
+                                        width: 30,
+                                        height: 30,
+                                        borderRadius: '50%',
+                                        cursor: 'pointer',
+                                        background: 'conic-gradient(from 0deg, #ef4444, #f59e0b, #84cc16, #06b6d4, #6366f1, #ec4899, #ef4444)',
+                                        boxShadow: `inset 0 0 0 2px ${isDark ? '#1e293b' : '#ffffff'}, inset 0 0 0 3px ${alpha('#000', isDark ? 0.35 : 0.12)}, 0 1px 2px ${alpha('#000', isDark ? 0.32 : 0.08)}`,
+                                        transition: 'transform 160ms ease, box-shadow 200ms ease',
+                                        '&:hover': {
+                                            transform: 'translateY(-1px)',
+                                            boxShadow: `inset 0 0 0 2px ${isDark ? '#1e293b' : '#ffffff'}, inset 0 0 0 3px ${alpha('#000', isDark ? 0.35 : 0.12)}, 0 4px 12px ${alpha('#000', isDark ? 0.5 : 0.18)}`,
+                                        },
+                                        '& input[type="color"]': {
+                                            position: 'absolute',
+                                            inset: 0,
+                                            opacity: 0,
+                                            width: '100%',
+                                            height: '100%',
+                                            cursor: 'pointer',
+                                            border: 0,
+                                            padding: 0,
+                                        },
+                                    }}
+                                    aria-label="自定义主题颜色"
+                                >
+                                    <input
+                                        type="color"
+                                        value={primaryColor}
+                                        onChange={(e) => setPrimaryColor(e.target.value)}
+                                        onBlur={(e) => handleSettingChange('customThemeColor', e.target.value)}
+                                    />
+                                </Box>
+                            </Tooltip>
                         </Box>
                     </Box>
 
@@ -1490,6 +1521,12 @@ const Settings = () => {
                             secondary="调节内容区域的背景遮罩强度"
                             action={<ChipSelector options={maskOpacityOptions} value={maskOpacity}
                                 onChange={v => handleSettingChange('maskOpacity', v)} />}
+                        />
+                        <SettingRow
+                            primary="画布风格"
+                            secondary="规整：使用规范字体与直线；手绘：使用 Excalidraw 默认手绘风格（同时影响 Mermaid 生成的图表）"
+                            action={<ChipSelector options={whiteboardStyleOptions} value={whiteboardStyle || 'neat'}
+                                onChange={v => handleSettingChange('whiteboardStyle', v)} />}
                         />
                         {!isMacOS && (
                             <SettingRow

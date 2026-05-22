@@ -16,7 +16,6 @@ import {
   InputAdornment,
   Skeleton,
   Fade,
-  Collapse,
   CircularProgress,
   Checkbox,
   useTheme,
@@ -51,8 +50,11 @@ import { useSearchManager } from '../hooks/useSearchManager'
 import { useMultiSelectManager } from '../hooks/useMultiSelectManager'
 import { useFiltersVisibility } from '../hooks/useFiltersVisibility'
 import { searchNotesAPI } from '../api/searchAPI'
-import TagFilter from './TagFilter'
+import FilterContainer from './FilterContainer'
+import FilterPopover from './FilterPopover'
 import FilterToggleButton from './FilterToggleButton'
+import ChoiceFilter from './ChoiceFilter'
+import { Image as ImageIcon, AccessTime as AccessTimeIcon, Description as MarkdownIcon, Category as CategoryIcon } from '@mui/icons-material'
 import zhCN from '../locales/zh-CN'
 
 const {
@@ -60,11 +62,15 @@ const {
 } = zhCN;
 import MultiSelectToolbar from './MultiSelectToolbar'
 import { useDragAnimation } from './DragAnimationProvider'
-import { ANIMATIONS, createTransitionString } from '../utils/animationConfig'
 import { useError } from './ErrorProvider'
 import logger from '../utils/logger'
 import { formatRelativeNoteTime } from '../utils/noteDateUtils'
 import { stripMarkdownToPreviewText } from '../utils/markdownTextUtils'
+
+const NOTE_LIST_GUTTER = '10px'
+const NOTE_SCROLLBAR_COMPENSATION = '8px'
+const NOTE_ITEM_RADIUS = '12px'
+const NOTE_ITEM_SHADOW = '0 4px 12px rgba(0,0,0,0.08)'
 
 const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefChange }) => {
   const { t } = useTranslation()
@@ -90,6 +96,11 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
   const [selectedNote, setSelectedNote] = useState(null)
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [selectedTagFilters, setSelectedTagFilters] = useState([])
+  // 笔记新增筛选维度
+  const [selectedPinFilters, setSelectedPinFilters] = useState([]) // ['pinned'] 或 []
+  const [selectedImageFilters, setSelectedImageFilters] = useState([]) // ['has', 'none']
+  const [selectedTimeFilters, setSelectedTimeFilters] = useState([]) // ['today','7d','30d']
+  const [selectedTypeFilters, setSelectedTypeFilters] = useState([]) // ['markdown','whiteboard']
   const [permanentDeleteConfirm, setPermanentDeleteConfirm] = useState(false)
   const [batchPermanentDeleteConfirm, setBatchPermanentDeleteConfirm] = useState(false)
   const [confirmDialog, setConfirmDialog] = useState({ 
@@ -98,6 +109,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
     count: 0, 
     ids: [] 
   })
+  const filterAnchorRef = useRef(null)
 
   // 添加ref防止重复加载
   const isLoadingRef = useRef(false)
@@ -135,24 +147,89 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
 
   // 过滤笔记 - 使用 useMemo 避免每次渲染都重新计算
   const filteredNotes = useMemo(() => {
+    const now = Date.now();
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const TIME_WINDOW = {
+      today: DAY_MS,
+      '7d': 7 * DAY_MS,
+      '30d': 30 * DAY_MS
+    };
+
+    const noteHasImage = (note) => {
+      if (Array.isArray(note.images) && note.images.length > 0) return true;
+      const text = note.content || '';
+      return /!\[[^\]]*]\([^)]+\)/.test(text);
+    };
+
     return notes.filter(note => {
       const matchesDeletedStatus = showDeleted ? note.is_deleted : !note.is_deleted;
+      if (!matchesDeletedStatus) return false;
 
-      // 如果没有选择标签筛选，只按删除状态筛选
-      if (selectedTagFilters.length === 0) {
-        return matchesDeletedStatus;
+      // 标签（OR 命中）
+      if (selectedTagFilters.length > 0) {
+        const noteTags = note.tags ?
+          (Array.isArray(note.tags) ? note.tags : note.tags.split(',').map(tag => tag.trim())) : [];
+        const tagHit = selectedTagFilters.some(filterTag =>
+          noteTags.some(noteTag => noteTag === filterTag || noteTag.startsWith(filterTag + '/'))
+        );
+        if (!tagHit) return false;
       }
 
-      // 检查笔记是否包含选中的标签（层级前缀匹配：选中 "论文" 也匹配 "论文/初稿"）
-      const noteTags = note.tags ?
-        (Array.isArray(note.tags) ? note.tags : note.tags.split(',').map(tag => tag.trim())) : [];
-      const hasSelectedTags = selectedTagFilters.some(filterTag =>
-        noteTags.some(noteTag => noteTag === filterTag || noteTag.startsWith(filterTag + '/'))
-      );
+      // 置顶
+      if (selectedPinFilters.length > 0) {
+        const isPinned = !!note.is_pinned;
+        const wantPinned = selectedPinFilters.includes('pinned');
+        const wantUnpinned = selectedPinFilters.includes('unpinned');
+        if (wantPinned && !wantUnpinned && !isPinned) return false;
+        if (wantUnpinned && !wantPinned && isPinned) return false;
+      }
 
-      return matchesDeletedStatus && hasSelectedTags;
+      // 是否含图片
+      if (selectedImageFilters.length > 0) {
+        const hasImg = noteHasImage(note);
+        const wantHas = selectedImageFilters.includes('has');
+        const wantNone = selectedImageFilters.includes('none');
+        if (wantHas && !wantNone && !hasImg) return false;
+        if (wantNone && !wantHas && hasImg) return false;
+      }
+
+      // 时间范围（OR 命中：任一窗口内即通过）
+      if (selectedTimeFilters.length > 0) {
+        const ts = note.updated_at || note.created_at;
+        const t = ts ? new Date(ts).getTime() : 0;
+        if (!t) return false;
+        const passed = selectedTimeFilters.some((key) => {
+          const win = TIME_WINDOW[key];
+          if (!win) return false;
+          return now - t <= win;
+        });
+        if (!passed) return false;
+      }
+
+      // 笔记类型
+      if (selectedTypeFilters.length > 0) {
+        const type = note.note_type || 'markdown';
+        if (!selectedTypeFilters.includes(type)) return false;
+      }
+
+      return true;
     })
-  }, [notes, showDeleted, selectedTagFilters])
+  }, [notes, showDeleted, selectedTagFilters, selectedPinFilters, selectedImageFilters, selectedTimeFilters, selectedTypeFilters])
+
+  const totalSelectedFilters =
+    selectedTagFilters.length +
+    selectedPinFilters.length +
+    selectedImageFilters.length +
+    selectedTimeFilters.length +
+    selectedTypeFilters.length
+
+  const clearAllFilters = useCallback(() => {
+    setSelectedTagFilters([])
+    setSelectedPinFilters([])
+    setSelectedImageFilters([])
+    setSelectedTimeFilters([])
+    setSelectedTypeFilters([])
+  }, [])
 
   // 使用多选管理hook
   const multiSelect = useMultiSelectManager({
@@ -471,12 +548,13 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
         const whiteboardData = JSON.parse(content)
         const texts = whiteboardData.elements
           ?.filter(e => e.type === 'text' && !e.isDeleted && e.text?.trim())
-          .map(e => e.text.trim()) || []
+          .map(e => stripMarkdownToPreviewText(e.text).trim())
+          .filter(Boolean) || []
         if (texts.length > 0) return texts.join(' ').substring(0, 100)
         const count = whiteboardData.elements?.filter(e => !e.isDeleted)?.length || 0
-        return count > 0 ? `白板笔记 · ${count} 个元素` : '白板笔记'
+        return count > 0 ? `画布笔记 · ${count} 个元素` : '画布笔记'
       } catch (error) {
-        return '白板笔记'
+        return '画布笔记'
       }
     }
 
@@ -496,7 +574,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
     }
     if (note.content) {
       if (note.note_type === 'whiteboard') {
-        return '白板笔记'
+        return '画布笔记'
       }
       // Reuse the same preview cleaning for title fallback
       const preview = getPreviewText(note.content, note.note_type, 0)
@@ -579,10 +657,10 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
       {/* 搜索框 */}
       <Box
         sx={{
-          pl: '25px',
-          pr: '30px', // 16px content gutter + 4px list scrollbar gutter（兼容更窄滚动条）
-          pt: 2,
-          pb: 1,
+          pl: NOTE_LIST_GUTTER,
+          pr: `calc(${NOTE_LIST_GUTTER} + ${NOTE_SCROLLBAR_COMPENSATION})`,
+          pt: 0.625,
+          pb: 0.5,
           flexShrink: 0
         }}
       >
@@ -593,6 +671,25 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
           value={localSearchQuery}
           onChange={(e) => setLocalSearchQuery(e.target.value)}
           aria-label="搜索笔记"
+          sx={{
+            '& .MuiOutlinedInput-root': {
+              height: 34,
+              borderRadius: '12px',
+              fontSize: '0.8125rem',
+              paddingLeft: '8px',
+              paddingRight: '4px',
+              backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.035)' : 'rgba(255,255,255,0.62)',
+            },
+            '& .MuiOutlinedInput-input': {
+              padding: '6px 4px',
+            },
+            '& .MuiInputAdornment-root': {
+              marginRight: '4px',
+            },
+            '& .MuiSvgIcon-root': {
+              fontSize: 18,
+            },
+          }}
           slotProps={{
             input: {
               startAdornment: (
@@ -610,8 +707,10 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                     </InputAdornment>
                   )}
                 <FilterToggleButton
+                  ref={filterAnchorRef}
                   filtersVisible={filtersVisible}
                   onToggle={toggleFiltersVisibility}
+                  selectedCount={totalSelectedFilters}
                 />
                 </>
               )
@@ -619,27 +718,68 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
           }}
         />
 
-        {/* 标签筛选 */}
-        <Collapse
-          in={filtersVisible}
-          timeout={200}
-          easing={{
-            enter: ANIMATIONS.dragTransition.easing,
-            exit: 'cubic-bezier(0.55, 0.06, 0.68, 0.19)'
-          }}
-          sx={{
-            '& .MuiCollapse-wrapper': {
-              transition: createTransitionString(ANIMATIONS.dragTransition)
-            }
-          }}
+        <FilterPopover
+          open={filtersVisible}
+          anchorRef={filterAnchorRef}
+          onClose={() => { if (filtersVisible) toggleFiltersVisibility() }}
+          title="筛选笔记"
+          totalSelected={totalSelectedFilters}
+          onClearAll={clearAllFilters}
         >
-          <TagFilter
+          <FilterContainer
+            showTagFilter={true}
             selectedTags={selectedTagFilters}
             onTagsChange={setSelectedTagFilters}
             showDeleted={showDeleted}
-            sx={{ mt: 1 }}
+            extraGroups={[
+              <ChoiceFilter
+                key="type"
+                title="类型"
+                icon={<CategoryIcon />}
+                options={[
+                  { key: 'markdown', label: 'Markdown', icon: <MarkdownIcon sx={{ fontSize: 14 }} /> },
+                  { key: 'whiteboard', label: '白板', icon: <WhiteboardIcon sx={{ fontSize: 14 }} /> }
+                ]}
+                selectedKeys={selectedTypeFilters}
+                onChange={setSelectedTypeFilters}
+              />,
+              <ChoiceFilter
+                key="pin"
+                title="置顶"
+                icon={<PinIcon />}
+                options={[
+                  { key: 'pinned', label: '已置顶' },
+                  { key: 'unpinned', label: '未置顶' }
+                ]}
+                selectedKeys={selectedPinFilters}
+                onChange={setSelectedPinFilters}
+              />,
+              <ChoiceFilter
+                key="image"
+                title="图片"
+                icon={<ImageIcon />}
+                options={[
+                  { key: 'has', label: '含图片' },
+                  { key: 'none', label: '无图片' }
+                ]}
+                selectedKeys={selectedImageFilters}
+                onChange={setSelectedImageFilters}
+              />,
+              <ChoiceFilter
+                key="time"
+                title="时间范围"
+                icon={<AccessTimeIcon />}
+                options={[
+                  { key: 'today', label: '今天' },
+                  { key: '7d', label: '7 天内' },
+                  { key: '30d', label: '30 天内' }
+                ]}
+                selectedKeys={selectedTimeFilters}
+                onChange={setSelectedTimeFilters}
+              />
+            ]}
           />
-        </Collapse>
+        </FilterPopover>
       </Box>
 
       {/* 多选工具栏 */}
@@ -716,14 +856,17 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                 </Typography>
               </Box>
             ) : (
-              <List sx={{ py: 0, px: 2 }}>
+              <List sx={{ py: 0, px: NOTE_LIST_GUTTER }}>
                 {filteredNotes.map((note) => (
                   <React.Fragment key={note.id}>
                     <ListItem
                       disablePadding
                       sx={{
-                        mb: 0.5,
+                        mb: 0.25,
                         position: 'relative',
+                        width: '100%',
+                        display: 'block',
+                        borderRadius: NOTE_ITEM_RADIUS,
                         '&:hover .note-menu-button': {
                           opacity: 1
                         }
@@ -760,7 +903,13 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                         }}
                         sx={{
                           position: 'relative',
-                          borderRadius: '12px',
+                          width: '100%',
+                          maxWidth: 'none',
+                          boxSizing: 'border-box',
+                          m: '0 !important',
+                          borderRadius: NOTE_ITEM_RADIUS,
+                          overflow: 'hidden',
+                          backgroundClip: 'padding-box',
                           border: '1px solid',
                           borderColor: note.is_pinned
                             ? theme.palette.primary.main + '80'
@@ -769,32 +918,48 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                             ? (theme.palette.mode === 'dark' ? theme.palette.primary.main + '14' : theme.palette.primary.main + '0A')
                             : (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.6)'),
                           transition: 'background-color 0.2s cubic-bezier(0.4,0,0.2,1), box-shadow 0.2s cubic-bezier(0.4,0,0.2,1), border-color 0.2s cubic-bezier(0.4,0,0.2,1)',
-                          py: 1,
-                          pr: multiSelect.isMultiSelectMode ? 2 : 6,
+                          minHeight: 46,
+                          py: 0.5,
+                          px: 1.25,
+                          pr: 1.25,
+                          '& .MuiTouchRipple-root': {
+                            borderRadius: 'inherit'
+                          },
                           '&:hover': {
                             backgroundColor: theme.palette.action.hover,
-                            boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                            borderRadius: NOTE_ITEM_RADIUS,
+                            boxShadow: NOTE_ITEM_SHADOW,
                             borderColor: note.is_pinned ? theme.palette.primary.main : theme.palette.divider,
                             zIndex: 1,
                           },
                           '&.Mui-selected': {
-                            backgroundColor: theme.palette.primary.main + '1A', // 10% 透明度
-                            borderColor: theme.palette.primary.main + '33',
+                            borderRadius: NOTE_ITEM_RADIUS,
+                            backgroundColor: theme.palette.mode === 'dark'
+                              ? theme.palette.primary.main + '1F'
+                              : theme.palette.primary.main + '12',
+                            borderColor: theme.palette.primary.main + '40',
                             '&:hover': {
-                              backgroundColor: theme.palette.primary.main + '26'
+                              borderRadius: NOTE_ITEM_RADIUS,
+                              boxShadow: NOTE_ITEM_SHADOW,
+                              backgroundColor: theme.palette.mode === 'dark'
+                                ? theme.palette.primary.main + '29'
+                                : theme.palette.primary.main + '1A'
                             }
                           },
                           ...(multiSelect.isMultiSelectMode && multiSelect.isSelected(note.id) && {
                             backgroundColor: 'action.selected',
                             borderColor: theme.palette.primary.main,
+                            borderRadius: NOTE_ITEM_RADIUS,
                             '&:hover': {
+                              borderRadius: NOTE_ITEM_RADIUS,
+                              boxShadow: NOTE_ITEM_SHADOW,
                               backgroundColor: 'action.selected'
                             }
                           })
                         }}
                       >
                         {multiSelect.isMultiSelectMode && (
-                          <ListItemIcon sx={{ minWidth: 36 }}>
+                          <ListItemIcon sx={{ minWidth: 30 }}>
                             <Checkbox
                               checked={multiSelect.isSelected(note.id)}
                               size="small"
@@ -804,18 +969,21 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                         )}
                         <ListItemText
                           primary={
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
                               {!!note.note_type && note.note_type === 'whiteboard' && (
-                                <WhiteboardIcon sx={{ fontSize: 13, color: 'text.disabled', flexShrink: 0 }} />
+                                <WhiteboardIcon sx={{ fontSize: 12, color: 'text.disabled', flexShrink: 0, alignSelf: 'center' }} />
                               )}
                               <Typography
                                 variant="subtitle2"
                                 sx={{
                                   fontWeight: note.is_pinned ? 600 : 500,
+                                  fontSize: '0.8125rem',
+                                  lineHeight: 1.35,
                                   overflow: 'hidden',
                                   textOverflow: 'ellipsis',
                                   whiteSpace: 'nowrap',
-                                  flex: 1
+                                  flex: 1,
+                                  minWidth: 0
                                 }}
                               >
                                 {getNoteDisplayTitle(note)}
@@ -823,7 +991,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                             </Box>
                           }
                           secondary={
-                            <Box component="span" sx={{ display: 'block', mt: 0.5 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0, mt: 0.25 }}>
                               {getNotePreviewText(note) && (
                                 <Typography
                                   component="span"
@@ -833,19 +1001,36 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                                     overflow: 'hidden',
                                     textOverflow: 'ellipsis',
                                     whiteSpace: 'nowrap',
-                                    mb: 0.5,
                                     display: 'block',
-                                    fontSize: '0.85rem'
+                                    fontSize: '0.75rem',
+                                    lineHeight: 1.4,
+                                    opacity: 0.85,
+                                    flex: 1,
+                                    minWidth: 0
                                   }}
                                 >
                                   {getNotePreviewText(note)}
                                 </Typography>
                               )}
-                              <Typography component="span" variant="caption" color="text.secondary" sx={{ display: 'block', opacity: 0.8 }}>
+                              <Typography
+                                component="span"
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{
+                                  whiteSpace: 'nowrap',
+                                  flexShrink: 0,
+                                  fontSize: '0.6875rem',
+                                  lineHeight: 1.35,
+                                  opacity: 0.56,
+                                  ml: getNotePreviewText(note) ? 0 : 'auto',
+                                  pr: 2.25
+                                }}
+                              >
                                 {formatDate(note.updated_at || note.created_at)}
                               </Typography>
                             </Box>
                           }
+                          sx={{ my: 0 }}
                           slotProps={{
                             primary: { component: 'div' },
                             secondary: { component: 'div' }
@@ -868,14 +1053,18 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                             className="note-menu-button"
                             sx={{
                               position: 'absolute',
-                              right: 8,
+                              right: 6,
                               top: '50%',
                               transform: 'translateY(-50%)',
-                              opacity: 0.3,
-                              transition: 'opacity 0.2s',
+                              width: 26,
+                              height: 26,
+                              opacity: 0,
+                              transition: 'opacity 0.2s, background-color 0.2s',
                               zIndex: 10,
-                              backgroundColor: theme.palette.background.paper,
+                              padding: 0,
+                              backgroundColor: 'transparent',
                               '&:hover': {
+                                opacity: 1,
                                 backgroundColor: theme.palette.action.hover
                               }
                             }}

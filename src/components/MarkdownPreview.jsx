@@ -139,7 +139,21 @@ const MarkdownPreview = ({
 
     try {
       const html = sanitizeMarkdownHtml(md.render(prepareMarkdownForDisplay(content)))
-      setRenderedHTML(html)
+      // 将需要异步解析的相对路径 src 暂存到 data-original-src，避免浏览器先发起一次失败请求
+      const safeHtml = html.replace(/<img\b([^>]*?)\ssrc=(["'])([^"']*)\2/gi, (match, attrs, quote, src) => {
+        if (!src) return match
+        if (
+          src.startsWith('data:') ||
+          src.startsWith('http://') ||
+          src.startsWith('https://') ||
+          src.startsWith('file://') ||
+          src.startsWith('app://')
+        ) {
+          return match
+        }
+        return `<img${attrs} data-original-src=${quote}${src}${quote}`
+      })
+      setRenderedHTML(safeHtml)
     } catch (error) {
       console.error('Markdown 渲染失败:', error)
       setRenderedHTML('<div class="markdown-render-error">渲染失败</div>')
@@ -220,7 +234,8 @@ const MarkdownPreview = ({
       const audioExts = new Set(['.m4a', '.mp3', '.ogg', '.wav', '.aac', '.opus', '.flac', '.webm'])
 
       for (const img of images) {
-        const originalSrc = img.getAttribute('src')
+        // 优先使用暂存的原始 src（相对路径已被前置处理移到 data-original-src 以避免浏览器预先请求失败）
+        const originalSrc = img.getAttribute('data-original-src') || img.getAttribute('src')
 
         logger.log(`[MarkdownPreview] 图片原始路径:`, originalSrc)
 

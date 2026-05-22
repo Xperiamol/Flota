@@ -54,6 +54,8 @@ const useStore = create(
                 // 主题相关状态
                 theme: 'system',
                 primaryColor: '#1976d2',
+                // 画布视觉风格：'neat' 规整（规范字体 + 实线 + 直线），'sketchy' 手绘（Excalidraw 默认）
+                whiteboardStyle: 'neat',
                 // macOS 下强制使用 mac 样式（并在设置中隐藏该项）
                 titleBarStyle: IS_MACOS ? 'mac' : 'windows', // 标题栏样式：'mac' 或 'windows'
                 language: 'zh-CN', // 界面语言
@@ -63,7 +65,7 @@ const useStore = create(
                 selectedNoteId: null,
                 searchQuery: '',
 
-                // 白板元素数量实时状态（用于预览更新）
+                // 画布元素数量实时状态（用于预览更新）
                 whiteboardElementCounts: {}, // noteId -> elementCount
 
                 // UI 相关状态
@@ -136,6 +138,8 @@ const useStore = create(
                 setTheme: (theme) => set({ theme }),
 
                 setPrimaryColor: (color) => set({ primaryColor: color }),
+
+                setWhiteboardStyle: (style) => set({ whiteboardStyle: style === 'sketchy' ? 'sketchy' : 'neat' }),
 
                 setTitleBarStyle: (style) => {
                     if (IS_MACOS) return
@@ -384,7 +388,7 @@ const useStore = create(
                             tags: normalizeTags(n.tags)
                         }))
 
-                        // 每次都用数据库内容重建白板元素数量缓存，确保预览与实际一致
+                        // 每次都用数据库内容重建画布元素数量缓存，确保预览与实际一致
                         const elementCounts = {}
                         normalized.forEach(note => {
                             if (note.note_type === 'whiteboard' && note.content) {
@@ -455,7 +459,7 @@ const useStore = create(
                                 notes: null, // 将在下面设置
                             }
 
-                            // 如果是白板笔记，从传入的updates或返回的result中更新元素数量缓存
+                            // 如果是画布笔记，从传入的updates或返回的result中更新元素数量缓存
                             if (updatedNote.note_type === 'whiteboard') {
                                 // 优先使用传入的content（这是最新保存的内容）
                                 const contentToUse = updates.content || updatedNote.content
@@ -464,7 +468,7 @@ const useStore = create(
                                         const whiteboardData = JSON.parse(contentToUse)
                                         const elementCount = whiteboardData.elements?.length || 0
                                         stateUpdate.whiteboardElementCounts = elementCount
-                                        logger.log(`[Store] 更新白板元素数量缓存: noteId=${id}, count=${elementCount}`)
+                                        logger.log(`[Store] 更新画布元素数量缓存: noteId=${id}, count=${elementCount}`)
                                     } catch (error) {
                                         console.warn('Failed to parse whiteboard content for element count:', error)
                                     }
@@ -833,6 +837,9 @@ const useStore = create(
                                 if (settings.christmasMode !== undefined) {
                                     set({ christmasMode: Boolean(settings.christmasMode) })
                                 }
+                                if (settings.whiteboardStyle) {
+                                    set({ whiteboardStyle: settings.whiteboardStyle === 'sketchy' ? 'sketchy' : 'neat' })
+                                }
                                 if (settings.maskOpacity) {
                                     set({ maskOpacity: settings.maskOpacity })
                                 }
@@ -922,6 +929,7 @@ const useStore = create(
             partialize: (state) => ({
                 theme: state.theme,
                 primaryColor: state.primaryColor,
+                whiteboardStyle: state.whiteboardStyle,
                 titleBarStyle: state.titleBarStyle,
                 maskOpacity: state.maskOpacity,
                 christmasMode: state.christmasMode,

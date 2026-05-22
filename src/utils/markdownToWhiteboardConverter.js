@@ -1,5 +1,5 @@
 /**
- * Markdown 到白板（Excalidraw）的转换工具
+ * Markdown 到画布（Excalidraw）的转换工具
  * 将 Markdown 文本内容转换为 Excalidraw 元素
  * 支持：标题、段落、列表、代码块、图片
  */
@@ -411,10 +411,10 @@ function generateExcalidrawElements(blocks, imageDataMap = {}) {
 }
 
 /**
- * 将 Markdown 内容转换为白板数据
+ * 将 Markdown 内容转换为画布数据
  * @param {string} markdownContent - Markdown 文本内容
  * @param {Object} imageDataMap - 图片数据映射（可选）
- * @returns {string} JSON 格式的白板数据
+ * @returns {string} JSON 格式的画布数据
  */
 export function convertMarkdownToWhiteboard(markdownContent, imageDataMap = {}) {
   try {
@@ -426,9 +426,9 @@ export function convertMarkdownToWhiteboard(markdownContent, imageDataMap = {}) 
     logger.log('[convertMarkdownToWhiteboard] 解析得到的blocks数量:', blocks.length)
     logger.log('[convertMarkdownToWhiteboard] 解析得到的blocks:', blocks)
     
-    // 如果没有内容，返回空白板
+    // 如果没有内容，返回空画布
     if (blocks.length === 0) {
-      logger.log('[convertMarkdownToWhiteboard] blocks为空，返回空白板')
+      logger.log('[convertMarkdownToWhiteboard] blocks为空，返回空画布')
       return JSON.stringify({
         type: 'excalidraw',
         version: 2,
@@ -448,7 +448,7 @@ export function convertMarkdownToWhiteboard(markdownContent, imageDataMap = {}) 
     logger.log('[convertMarkdownToWhiteboard] 生成的elements数量:', elements.length)
     logger.log('[convertMarkdownToWhiteboard] 生成的fileMap:', Object.keys(fileMap))
     
-    // 3. 构建完整的白板数据
+    // 3. 构建完整的画布数据
     const whiteboardData = {
       type: 'excalidraw',
       version: 2,
@@ -470,8 +470,8 @@ export function convertMarkdownToWhiteboard(markdownContent, imageDataMap = {}) 
 }
 
 /**
- * 将白板数据转换为 Markdown 内容
- * @param {string} whiteboardContent - JSON 格式的白板数据
+ * 将画布数据转换为 Markdown 内容
+ * @param {string} whiteboardContent - JSON 格式的画布数据
  * @returns {Object} { markdown, imageMap } - Markdown 文本和图片映射
  */
 export function convertWhiteboardToMarkdown(whiteboardContent) {
@@ -532,7 +532,7 @@ export function convertWhiteboardToMarkdown(whiteboardContent) {
         // 处理图片
         const fileData = fileMap[element.fileId]
         if (fileData) {
-          // 白板存储格式有两种：
+          // 画布存储格式有两种：
           // 1. 从 Markdown 转换来的：{ dataURL, mimeType }
           // 2. 从文件系统保存的：{ fileName, mimeType, created }
           

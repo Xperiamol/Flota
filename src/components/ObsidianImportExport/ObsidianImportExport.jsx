@@ -297,7 +297,7 @@ const ObsidianImportExport = () => {
                     size="small"
                   />
                 }
-                label={<Typography variant="body2">导出白板笔记（导出为 .excalidraw 文件）</Typography>}
+                label={<Typography variant="body2">导出画布笔记（导出为 .excalidraw 文件）</Typography>}
               />
               <Box sx={{ mt: 1 }}>
                 <TextField

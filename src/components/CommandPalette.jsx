@@ -80,8 +80,8 @@ const CommandPalette = ({ open, onClose }) => {
     },
     {
       id: 'new-whiteboard',
-      title: '新建白板笔记',
-      description: '创建一个新的白板笔记',
+      title: '新建画布笔记',
+      description: '创建一个新的画布笔记',
       category: '笔记',
       icon: <DashboardIcon />,
       action: async () => {

@@ -15,7 +15,6 @@ import {
   TextField,
   InputAdornment,
   Fade,
-  Collapse,
   CircularProgress,
   Checkbox
 } from '@mui/material';
@@ -43,7 +42,9 @@ import { useFiltersVisibility } from '../hooks/useFiltersVisibility';
 import { searchTodosAPI } from '../api/searchAPI';
 import { createNote } from '../api/noteAPI';
 import FilterContainer from './FilterContainer';
+import FilterPopover from './FilterPopover';
 import FilterToggleButton from './FilterToggleButton';
+import ChoiceFilter from './ChoiceFilter';
 import DropdownMenu from './DropdownMenu';
 import zhCN from '../locales/zh-CN';
 import { t } from '../utils/i18n';
@@ -52,10 +53,13 @@ const {
   filters: { placeholder }
 } = zhCN;
 
-const COMPLETION_BUTTON_SIZE = 32;
-const COMPLETION_ICON_SIZE = 22;
+const TODO_LIST_GUTTER = '10px';
+const TODO_ITEM_RADIUS = '12px';
+const TODO_ITEM_SHADOW = '0 4px 12px rgba(0,0,0,0.08)';
+const COMPLETION_BUTTON_SIZE = 28;
+const COMPLETION_ICON_SIZE = 20;
 const completionSlotSx = {
-  minWidth: 40,
+  minWidth: 34,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center'
@@ -141,6 +145,9 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
   // 新增筛选状态
   const [selectedTags, setSelectedTags] = useState([]);
   const [selectedPriorities, setSelectedPriorities] = useState([]);
+  const [selectedStatusFilters, setSelectedStatusFilters] = useState([]);
+  const [selectedDueFilters, setSelectedDueFilters] = useState([]);
+  const filterAnchorRef = useRef(null);
 
   // 保持 todos 的最新引用，供 loadTodos 判断是否已有数据
   useEffect(() => {
@@ -276,6 +283,34 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
         });
       }
 
+      // 按完成状态筛选
+      if (selectedStatusFilters.length > 0) {
+        filtered = filtered.filter(todo => {
+          const isDone = !!todo.completed;
+          return (
+            (selectedStatusFilters.includes('completed') && isDone) ||
+            (selectedStatusFilters.includes('pending') && !isDone)
+          );
+        });
+      }
+
+      // 按截止日周期筛选
+      if (selectedDueFilters.length > 0) {
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        const endOfToday = startOfToday + 24 * 60 * 60 * 1000;
+        const endOf7d = startOfToday + 7 * 24 * 60 * 60 * 1000;
+        filtered = filtered.filter(todo => {
+          const due = todo.due_date ? new Date(todo.due_date).getTime() : null;
+          if (selectedDueFilters.includes('none') && !due) return true;
+          if (!due) return false;
+          if (selectedDueFilters.includes('overdue') && due < startOfToday) return true;
+          if (selectedDueFilters.includes('today') && due >= startOfToday && due < endOfToday) return true;
+          if (selectedDueFilters.includes('7d') && due >= startOfToday && due < endOf7d) return true;
+          return false;
+        });
+      }
+
       // 排序
       filtered.sort((a, b) => {
         switch (sortBy) {
@@ -302,7 +337,7 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
       setIsRefreshing(false);
       isLoadingRef.current = false;
     }
-  }, [isExternalData, externalTodos, showCompleted, sortBy, selectedPriorities, selectedTags, refreshTrigger]);
+  }, [isExternalData, externalTodos, showCompleted, sortBy, selectedPriorities, selectedTags, selectedStatusFilters, selectedDueFilters, refreshTrigger]);
 
   // 统一的数据加载effect
   useEffect(() => {
@@ -593,10 +628,9 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
       {/* 搜索框和筛选区域 */}
       <Box
         sx={{
-          pl: '25px',
-          pr: '30px',
-          pt: 2,
-          pb: 1,
+          px: TODO_LIST_GUTTER,
+          pt: 0.625,
+          pb: 0.5,
           flexShrink: 0
         }}
       >
@@ -607,6 +641,25 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
           value={localSearchQuery}
           onChange={(e) => setLocalSearchQuery(e.target.value)}
           aria-label="搜索待办"
+          sx={(theme) => ({
+            '& .MuiOutlinedInput-root': {
+              height: 34,
+              borderRadius: '12px',
+              fontSize: '0.8125rem',
+              paddingLeft: '8px',
+              paddingRight: '4px',
+              backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.035)' : 'rgba(255,255,255,0.62)',
+            },
+            '& .MuiOutlinedInput-input': {
+              padding: '6px 4px',
+            },
+            '& .MuiInputAdornment-root': {
+              marginRight: '4px',
+            },
+            '& .MuiSvgIcon-root': {
+              fontSize: 18,
+            },
+          })}
           slotProps={{
             input: {
               startAdornment: (
@@ -641,20 +694,22 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                   onSelect={onSortByChange}
                   size="small"
                   sx={{
-                    ml: 1,
-                    mr: 0.5,
+                    ml: 0.25,
+                    mr: 0.25,
                     fontSize: '0.8rem',
                     minWidth: 'auto',
                     width: 'auto'
                   }}
                 />
                 <FilterToggleButton
+                  ref={filterAnchorRef}
                   filtersVisible={filtersVisible}
                   onToggle={toggleFiltersVisibility}
+                  selectedCount={selectedTags.length + selectedPriorities.length}
                 />
                 {/* 后台刷新时在搜索框内显示小型指示器，避免遮挡列表 */}
                 {isRefreshing && (
-                  <CircularProgress size={18} sx={{ ml: 1, color: 'text.secondary' }} />
+                  <CircularProgress size={16} sx={{ ml: 0.5, color: 'text.secondary' }} />
                 )}
                 </>
               )
@@ -662,31 +717,50 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
           }}
         />
 
-        {/* 筛选容器 */}
-        <Collapse
-          in={filtersVisible}
-          timeout={200}
-          easing={{
-            enter: ANIMATIONS.dragTransition.easing,
-            exit: 'cubic-bezier(0.55, 0.06, 0.68, 0.19)'
-          }}
-          sx={{
-            '& .MuiCollapse-wrapper': {
-              transition: createTransitionString(ANIMATIONS.dragTransition)
-            }
-          }}
+        <FilterPopover
+          open={filtersVisible}
+          anchorRef={filterAnchorRef}
+          onClose={() => { if (filtersVisible) toggleFiltersVisibility(); }}
+          title="筛选待办"
+          totalSelected={selectedTags.length + selectedPriorities.length + selectedStatusFilters.length + selectedDueFilters.length}
+          onClearAll={() => { setSelectedTags([]); setSelectedPriorities([]); setSelectedStatusFilters([]); setSelectedDueFilters([]); }}
         >
           <FilterContainer
+            showTagFilter={true}
+            showPriorityFilter={true}
+            isTodoFilter={true}
             selectedTags={selectedTags}
             onTagsChange={setSelectedTags}
             selectedPriorities={selectedPriorities}
             onPrioritiesChange={setSelectedPriorities}
-            showTagFilter={true}
-            showPriorityFilter={true}
-            isTodoFilter={true}
-            sx={{ mt: 1 }}
+            extraGroups={[
+              <ChoiceFilter
+                key="status"
+                title="完成状态"
+                icon={<CheckCircleIcon />}
+                options={[
+                  { key: 'completed', label: '已完成' },
+                  { key: 'pending', label: '未完成' }
+                ]}
+                selectedKeys={selectedStatusFilters}
+                onChange={setSelectedStatusFilters}
+              />,
+              <ChoiceFilter
+                key="due"
+                title="截止日"
+                icon={<ScheduleIcon />}
+                options={[
+                  { key: 'overdue', label: '已逾期' },
+                  { key: 'today', label: '今天' },
+                  { key: '7d', label: '7 天内' },
+                  { key: 'none', label: '无截止日' }
+                ]}
+                selectedKeys={selectedDueFilters}
+                onChange={setSelectedDueFilters}
+              />
+            ]}
           />
-        </Collapse>
+        </FilterPopover>
       </Box>
 
       {/* 待办事项列表 */}
@@ -718,15 +792,18 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
         ) : todos.length === 0 ? (
           renderEmptyState()
         ) : (
-          <List sx={{ py: 0, px: 2, overflow: 'visible' }}>
+          <List sx={{ py: 0, px: TODO_LIST_GUTTER, overflow: 'visible' }}>
             {todos.map((todo) => (
               <Fade key={todo.id} in timeout={200}>
                 <ListItem
                   disablePadding
                   sx={{
-                    mb: 1,
+                    mb: 0.25,
                     position: 'relative',
-                    overflow: 'visible'
+                    overflow: 'visible',
+                    width: '100%',
+                    display: 'block',
+                    borderRadius: TODO_ITEM_RADIUS
                   }}
                 >
                   <ListItemButton
@@ -739,13 +816,24 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                     )}
                     selected={multiSelect.isMultiSelectMode && multiSelect.isSelected(todo.id)}
                     sx={{
-                      py: 0.6,
-                      borderRadius: '12px',
+                      width: '100%',
+                      maxWidth: 'none',
+                      boxSizing: 'border-box',
+                      m: '0 !important',
+                      minHeight: 46,
+                      py: 0.5,
+                      px: 1.25,
+                      pr: 0.75,
+                      borderRadius: TODO_ITEM_RADIUS,
                       border: '1px solid transparent',
                       backgroundColor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.6)',
                       transition: 'background-color 0.2s cubic-bezier(0.4,0,0.2,1), box-shadow 0.2s cubic-bezier(0.4,0,0.2,1), border-color 0.2s cubic-bezier(0.4,0,0.2,1)',
                       position: 'relative',
                       overflow: 'hidden',
+                      backgroundClip: 'padding-box',
+                      '& .MuiTouchRipple-root': {
+                        borderRadius: 'inherit'
+                      },
                       // 完成动画作用于按钮本身
                       ...(celebratingTodos.has(todo.id) && {
                         '&::before': {
@@ -760,27 +848,35 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                           animation: createAnimationString(ANIMATIONS.completion),
                           zIndex: 0,
                           pointerEvents: 'none',
-                          borderRadius: '12px'
+                          borderRadius: TODO_ITEM_RADIUS
                         },
                         ...GREEN_SWEEP_KEYFRAMES
                       }),
                       '&:hover': {
                         backgroundColor: (theme) => theme.palette.action.hover,
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                        borderRadius: TODO_ITEM_RADIUS,
+                        boxShadow: TODO_ITEM_SHADOW,
                         borderColor: (theme) => theme.palette.divider,
                         zIndex: 1,
                       },
                       '&.Mui-selected': {
-                        backgroundColor: (theme) => theme.palette.primary.main + '1A',
-                        borderColor: (theme) => theme.palette.primary.main + '33',
+                        borderRadius: TODO_ITEM_RADIUS,
+                        backgroundColor: (theme) => theme.palette.mode === 'dark'
+                          ? theme.palette.primary.main + '1F'
+                          : theme.palette.primary.main + '12',
+                        borderColor: (theme) => theme.palette.primary.main + '40',
                         '&:hover': {
-                          backgroundColor: (theme) => theme.palette.primary.main + '26'
+                          borderRadius: TODO_ITEM_RADIUS,
+                          boxShadow: TODO_ITEM_SHADOW,
+                          backgroundColor: (theme) => theme.palette.mode === 'dark'
+                            ? theme.palette.primary.main + '29'
+                            : theme.palette.primary.main + '1A'
                         }
                       }
                     }}
                   >
                     {multiSelect.isMultiSelectMode && (
-                      <ListItemIcon sx={{ minWidth: 40 }}>
+                      <ListItemIcon sx={{ minWidth: 30 }}>
                         <Checkbox
                           checked={multiSelect.isSelected(todo.id)}
                           size="small"
@@ -845,7 +941,10 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                           variant="body2"
                           sx={{
                             textDecoration: todo.completed ? 'line-through' : 'none',
-                            opacity: todo.completed ? 0.6 : 1
+                            opacity: todo.completed ? 0.6 : 1,
+                            fontSize: '0.8125rem',
+                            lineHeight: 1.35,
+                            fontWeight: 500
                           }}
                         >
                           {todo.title}
@@ -855,10 +954,10 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                         <Box sx={{
                           display: 'flex',
                           alignItems: 'center',
-                          gap: 1,
-                          mt: 0.5,
+                          gap: 0.5,
+                          mt: 0.25,
                           flexWrap: 'wrap',
-                          maxWidth: 'calc(100% - 60px)' // 为右侧图标预留空间
+                          maxWidth: '100%'
                         }}>
                           <Chip
                             label={getPriorityText(todo.priority)}
@@ -866,8 +965,9 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                             sx={{
                               backgroundColor: `${getPriorityColor(todo.priority)}20`,
                               color: getPriorityColor(todo.priority),
-                              fontSize: '0.7rem',
-                              height: 20
+                              fontSize: '0.675rem',
+                              height: 18,
+                              borderRadius: '7px'
                             }}
                           />
                           {todo.due_date && (
@@ -877,8 +977,9 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                               sx={{
                                 backgroundColor: isOverdue(todo.due_date) ? '#f4433620' : '#2196f320',
                                 color: isOverdue(todo.due_date) ? '#f44336' : '#2196f3',
-                                fontSize: '0.7rem',
-                                height: 20
+                                fontSize: '0.675rem',
+                                height: 18,
+                                borderRadius: '7px'
                               }}
                             />
                           )}
@@ -890,17 +991,19 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                               sx={{
                                 backgroundColor: '#9c27b020',
                                 color: '#9c27b0',
-                                fontSize: '0.7rem',
-                                height: 20
+                                fontSize: '0.675rem',
+                                height: 18,
+                                borderRadius: '7px'
                               }}
                             />
                           ))}
                         </Box>
                       }
+                      sx={{ my: 0, minWidth: 0, flex: 1 }}
                       slotProps={{ secondary: { component: 'div' } }}
                     />
 
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, ml: 0.5 }}>
                       {getPriorityIcon(todo.priority)}
                       <IconButton
                         size="small"
@@ -914,8 +1017,17 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                           e.preventDefault();
                           e.stopPropagation();
                         }}
+                        sx={{
+                          width: 26,
+                          height: 26,
+                          p: 0,
+                          opacity: 0.36,
+                          '&:hover': {
+                            opacity: 1
+                          }
+                        }}
                       >
-                        <MoreVertIcon />
+                        <MoreVertIcon fontSize="small" />
                       </IconButton>
                     </Box>
                   </ListItemButton>

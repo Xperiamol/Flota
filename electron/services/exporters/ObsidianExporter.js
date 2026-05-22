@@ -51,7 +51,7 @@ class ObsidianExporter extends BaseExporter {
       useCategories: true,
       // 是否导出图片附件
       exportImages: true,
-      // 是否导出白板笔记（导出为PNG）
+      // 是否导出画布笔记（导出为PNG）
       exportWhiteboards: true,
       // 日期格式
       dateFormat: 'YYYY-MM-DD HH:mm:ss'
@@ -155,7 +155,7 @@ class ObsidianExporter extends BaseExporter {
    */
   async exportNote(note, exportPath, attachmentPath) {
     try {
-      // 如果是白板笔记且启用了白板导出
+      // 如果是画布笔记且启用了画布导出
       if (note.note_type === 'whiteboard' && this.config.exportWhiteboards) {
         return await this.exportWhiteboardNote(note, exportPath, attachmentPath);
       }
@@ -201,22 +201,22 @@ class ObsidianExporter extends BaseExporter {
   }
 
   /**
-   * 导出白板笔记为Excalidraw文件+Markdown
+   * 导出画布笔记为Excalidraw文件+Markdown
    */
   async exportWhiteboardNote(note, exportPath, attachmentPath) {
     try {
-      // 解析白板内容
+      // 解析画布内容
       let whiteboardData;
       try {
         whiteboardData = JSON.parse(note.content || '{}');
       } catch {
-        throw new Error('无效的白板数据');
+        throw new Error('无效的画布数据');
       }
       
       const { elements = [] } = whiteboardData;
       
       if (elements.length === 0) {
-        this.addWarning(`白板笔记为空: ${note.title}`, '跳过导出');
+        this.addWarning(`画布笔记为空: ${note.title}`, '跳过导出');
         return { noteId: note.id, title: note.title, success: false, skipped: true };
       }
       
@@ -251,14 +251,14 @@ class ObsidianExporter extends BaseExporter {
       
       // 添加说明和链接
       content += `# ${note.title}\n\n`;
-      content += `这是一个白板笔记，已导出为 Excalidraw 文件。\n\n`;
+      content += `这是一个画布笔记，已导出为 Excalidraw 文件。\n\n`;
       
       // 添加文件引用
       const relativePath = path.join(this.config.attachmentFolder, excalidrawFileName);
       if (this.config.useWikiLinks) {
-        content += `白板文件: [[${excalidrawFileName}]]\n\n`;
+        content += `画布文件: [[${excalidrawFileName}]]\n\n`;
       } else {
-        content += `白板文件: [${excalidrawFileName}](${relativePath})\n\n`;
+        content += `画布文件: [${excalidrawFileName}](${relativePath})\n\n`;
       }
       
       // 如果有备注，添加到内容
@@ -280,7 +280,7 @@ class ObsidianExporter extends BaseExporter {
         success: true
       };
     } catch (error) {
-      this.addError(`导出白板笔记失败: ${note.title}`, error.message);
+      this.addError(`导出画布笔记失败: ${note.title}`, error.message);
       throw error;
     }
   }

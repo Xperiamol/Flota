@@ -377,16 +377,16 @@ const Toolbar = ({
           : 'rgba(255, 255, 255, 0.85)',
         backdropFilter: 'blur(12px) saturate(150%)',
         WebkitBackdropFilter: 'blur(12px) saturate(150%)',
-        minHeight: '64px !important',
-        px: 2
+        minHeight: '48px !important',
+        px: 1.25
       })}
     >
       {/* 左侧按钮组 */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
         {viewConfig.showSidebarToggle && (
           <Tooltip title={sidebarOpen ? t('common.close') : t('common.open')}>
-            <IconButton onClick={onToggleSidebar}>
-              {sidebarOpen ? <CloseIcon /> : <MenuIcon />}
+            <IconButton size="small" onClick={onToggleSidebar}>
+              {sidebarOpen ? <CloseIcon fontSize="small" /> : <MenuIcon fontSize="small" />}
             </IconButton>
           </Tooltip>
         )}
@@ -396,12 +396,16 @@ const Toolbar = ({
           <Tooltip title={viewConfig.createButtonText}>
             <Button
               variant="contained"
+              size="small"
               startIcon={<AddIcon />}
               onClick={viewConfig.createAction}
               sx={{
-                ml: 1,
-                height: '40px',
-                minHeight: '40px'
+                ml: 0.5,
+                height: '30px',
+                minHeight: '30px',
+                px: 1.25,
+                borderRadius: '10px',
+                fontSize: '0.8125rem',
               }}
             >
               {viewConfig.createButtonText}
@@ -414,12 +418,16 @@ const Toolbar = ({
           <Tooltip title={t('toolbar.newNote')}>
             <Button
               variant="outlined"
+              size="small"
               startIcon={<EditNoteIcon />}
               onClick={handleQuickInput}
               sx={{
-                ml: 1,
-                height: '40px',
-                minHeight: '40px'
+                ml: 0.5,
+                height: '30px',
+                minHeight: '30px',
+                px: 1.25,
+                borderRadius: '10px',
+                fontSize: '0.8125rem',
               }}
             >
               {t('toolbar.newNote')}
@@ -429,7 +437,7 @@ const Toolbar = ({
 
         {/* 左侧区域的复选框（待办/日历视图） */}
         {viewConfig.customButtons && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, ml: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, ml: 1.25 }}>
             {viewConfig.customButtons
               .filter(button => button.position === 'left' || (button.type === 'checkbox' && currentView === 'calendar'))
               .map((button, index) => {
@@ -449,7 +457,7 @@ const Toolbar = ({
                         />
                       }
                       label={button.label}
-                      sx={{ '& .MuiFormControlLabel-label': { fontSize: '0.875rem' } }}
+                      sx={{ mr: 0, '& .MuiFormControlLabel-label': { fontSize: '0.8125rem' } }}
                     />
                   );
                 }
@@ -463,7 +471,7 @@ const Toolbar = ({
 
       {/* 居中区域 - 日历视图模式选择器和待办视图切换 */}
       {viewConfig.customButtons && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
           {viewConfig.customButtons
             .filter(button =>
               (button.type === 'calendarViewMode' && button.position === 'right') ||
@@ -526,7 +534,7 @@ const Toolbar = ({
 
       {/* 右侧区域 - 日历导航按钮 */}
       {currentView === 'calendar' && viewConfig.customButtons && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, ml: 'auto' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 'auto' }}>
           {viewConfig.customButtons
             .filter(button => button.type === 'calendarNavigation')
             .map((button, index) => <CalendarNavButtons key={index} button={button} />)}
@@ -536,9 +544,28 @@ const Toolbar = ({
       {/* 动态标题已移除 */}
 
       {/* 右侧按钮组 */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: currentView === 'calendar' ? 0 : 'auto' }}>
+      <Box sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 0.5,
+        ml: currentView === 'calendar' ? 0 : 'auto',
+        pl: 0.875,
+        position: 'relative',
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          left: 0,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          width: '1px',
+          height: '20px',
+          backgroundColor: (theme) => theme.palette.mode === 'dark'
+            ? 'rgba(255,255,255,0.08)'
+            : 'rgba(0,0,0,0.08)',
+        }
+      }}>
         {currentView === 'timeline' && (
-          <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 1, mr: 1 }}>
+          <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 0.75, mr: 0.75 }}>
             <Box sx={segmentedControlSx}>
               {[
                 { value: 'all', label: '全部' },
@@ -565,7 +592,7 @@ const Toolbar = ({
               size="small"
               variant="outlined"
               onClick={handleTimelineScrollLatest}
-              sx={{ borderRadius: '10px', height: 32, px: 1.5 }}
+              sx={{ borderRadius: '10px', height: 30, px: 1.25, fontSize: '0.8125rem' }}
             >
               最新
             </Button>
@@ -578,7 +605,7 @@ const Toolbar = ({
           { view: 'todo', commands: todoToolbarCommands },
         ].map(({ view, commands }) =>
           currentView === view && commands.length > 0 && (
-            <Box key={view} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mr: 0.5 }}>
+            <Box key={view} sx={{ display: 'flex', alignItems: 'center', gap: 0.375, mr: 0.375 }}>
               {commands.map((command) => {
                 const commandKey = `${command.pluginId}:${command.commandId}`
                 const baseLabel = command.description || command.title || command.commandId
@@ -612,7 +639,7 @@ const Toolbar = ({
 
         {/* 视图特定的右侧按钮 */}
         {viewConfig.rightButtons && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mr: 0.5 }}>
             {viewConfig.rightButtons.map((button, index) => {
               if (button.type === 'sortMenu') {
                 return (
@@ -634,9 +661,9 @@ const Toolbar = ({
         {/* 回收站按钮 - 仅在笔记视图显示 */}
         {viewConfig.showDeletedButton && (
           <Tooltip title={showDeleted ? t('common.restore') : t('sidebar.trash')}>
-            <IconButton onClick={onToggleDeleted}>
+            <IconButton size="small" onClick={onToggleDeleted}>
               <Badge badgeContent={deletedNotesCount} color="error">
-                {showDeleted ? <RestoreIcon /> : <DeleteIcon />}
+                {showDeleted ? <RestoreIcon fontSize="small" /> : <DeleteIcon fontSize="small" />}
               </Badge>
             </IconButton>
           </Tooltip>

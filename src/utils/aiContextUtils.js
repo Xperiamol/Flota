@@ -279,9 +279,9 @@ export const formatNoteContentForAI = (note, max = 2400) => {
 
   try {
     const summary = summarizeWhiteboardContentForAI(note.content)
-    return truncateText(`白板摘要:\n${summary}`, max)
+    return truncateText(`画布摘要:\n${summary}`, max)
   } catch (_) {
-    return '白板摘要：当前白板内容解析失败。'
+    return '画布摘要：当前画布内容解析失败。'
   }
 }
 

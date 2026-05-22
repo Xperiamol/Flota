@@ -62,7 +62,7 @@ const ConflictResolutionDialog = ({ open, conflict, onResolve, onCancel }) => {
       case 'note':
         return '笔记';
       case 'whiteboard':
-        return '白板';
+        return '画布';
       case 'todos':
         return '待办事项';
       case 'settings':

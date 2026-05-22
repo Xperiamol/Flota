@@ -103,7 +103,7 @@ const DragPreview = ({
         return draggedItem.title;
       }
       if (draggedItem.content) {
-        if (draggedItem.note_type === 'whiteboard') return '白板笔记';
+        if (draggedItem.note_type === 'whiteboard') return '画布笔记';
         const clean = stripMarkdownToPreviewText(draggedItem.content)
         if (isPlaceholderOnlyPreview(clean)) return '';
         if (clean) return clean.substring(0, 9) + (clean.length > 9 ? '...' : '');
@@ -127,9 +127,9 @@ const DragPreview = ({
         try {
           const wData = JSON.parse(content);
           const count = wData.elements?.filter(e => !e.isDeleted)?.length || 0;
-          return count > 0 ? `白板笔记 · ${count} 个元素` : '白板笔记';
+          return count > 0 ? `画布笔记 · ${count} 个元素` : '画布笔记';
         } catch { 
-           return '白板笔记'; 
+           return '画布笔记'; 
         }
       }
 

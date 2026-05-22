@@ -57,6 +57,7 @@ import logger from '../utils/logger'
 import { formatRelativeNoteTime } from '../utils/noteDateUtils'
 import { finalizeMarkdownForStorage } from '../markdown/index.js'
 import { pickClipboardMarkdown } from '../utils/clipboardConversion'
+import { replaceDataImagesInMarkdown } from '../utils/dataUrlImage'
 import { insertIntoTextarea, placeCursorAfterInsert } from '../utils/textareaInsert'
 
 const NoteEditor = () => {
@@ -118,6 +119,7 @@ const NoteEditor = () => {
   const [minibarToolbarExpanded, setMinibarToolbarExpanded] = useState(false)
   const [standaloneAICommandCenterOpen, setStandaloneAICommandCenterOpen] = useState(false)
   const [relatedAnchorEl, setRelatedAnchorEl] = useState(null)
+  const [tagAnchorEl, setTagAnchorEl] = useState(null)
   const editorContainerRef = useRef(null)
   const contentRef = useRef(null)
   const titleRef = useRef(null)
@@ -421,12 +423,12 @@ const NoteEditor = () => {
     const handleStandaloneSave = async () => {
       logger.log('独立窗口保存事件触发', { noteType: prevStateRef.current.noteType })
 
-      // 对于白板类型，触发全局保存事件由WhiteboardEditor处理
+      // 对于画布类型，触发全局保存事件由WhiteboardEditor处理
       if (prevStateRef.current.noteType === 'whiteboard') {
-        logger.log('白板类型，触发白板保存事件')
+        logger.log('画布类型，触发画布保存事件')
         const whiteboardSaveEvent = new CustomEvent('whiteboard-save')
         window.dispatchEvent(whiteboardSaveEvent)
-        // 等待白板保存完成
+        // 等待画布保存完成
         await new Promise(resolve => setTimeout(resolve, 500))
         return
       }
@@ -637,7 +639,7 @@ const NoteEditor = () => {
       const elements = Array.isArray(parsed?.elements) ? parsed.elements : []
       return elements.filter(element => !element?.isDeleted).length === 0
     } catch (error) {
-      logger.warn('[NoteEditor] 判断白板是否为空失败，按非空处理:', error)
+      logger.warn('[NoteEditor] 判断画布是否为空失败，按非空处理:', error)
       return false
     }
   }, [whiteboardGetContentFunc, currentNote?.content])
@@ -682,16 +684,16 @@ const NoteEditor = () => {
     }
   }
 
-  // Markdown 转白板（支持图片）
+  // Markdown 转画布（支持图片）
   const convertMarkdownToWhiteboardNote = async () => {
     if (!selectedNoteId) return
 
     try {
-      // 先保存当前 MD 内容（和白板转换逻辑一样）
-      logger.log('MD转白板: 先保存当前内容...')
+      // 先保存当前 MD 内容（和画布转换逻辑一样）
+      logger.log('MD转画布: 先保存当前内容...')
       
       if (hasUnsavedChangesRef.current) {
-        logger.log('MD转白板: 检测到未保存的更改，立即保存')
+        logger.log('MD转画布: 检测到未保存的更改，立即保存')
         cancelSave()
         saveNow()
         // 等待保存完成
@@ -702,11 +704,11 @@ const NoteEditor = () => {
       const latestNote = notes.find(n => n.id === selectedNoteId)
       const markdownContent = latestNote?.content || content || ''
       
-      logger.log('MD转白板: 获取到MD内容长度:', markdownContent.length)
+      logger.log('MD转画布: 获取到MD内容长度:', markdownContent.length)
       
       // 提取 Markdown 中的图片 URL
       const imageUrls = extractImageUrls(markdownContent)
-      logger.log('MD转白板: 提取到图片URL:', imageUrls)
+      logger.log('MD转画布: 提取到图片URL:', imageUrls)
       
       const imageDataMap = {}
       
@@ -724,44 +726,44 @@ const NoteEditor = () => {
                 dataURL: dataURL,
                 mimeType: mimeType
               }
-              logger.log('MD转白板: 加载图片成功:', url)
+              logger.log('MD转画布: 加载图片成功:', url)
             }
           }
         } catch (error) {
-          console.warn('MD转白板: 加载图片失败:', url, error)
+          console.warn('MD转画布: 加载图片失败:', url, error)
         }
       }
       
-      // 转换 Markdown 内容为白板数据（包含图片）
-      logger.log('MD转白板: 开始转换，图片数据:', Object.keys(imageDataMap).length)
+      // 转换 Markdown 内容为画布数据（包含图片）
+      logger.log('MD转画布: 开始转换，图片数据:', Object.keys(imageDataMap).length)
       const whiteboardContentStr = convertMarkdownToWhiteboard(markdownContent, imageDataMap)
-      logger.log('MD转白板: 转换结果长度:', whiteboardContentStr?.length || 0)
+      logger.log('MD转画布: 转换结果长度:', whiteboardContentStr?.length || 0)
       
-      // 解析白板数据，将图片保存到文件系统（和白板保存逻辑一致）
+      // 解析画布数据，将图片保存到文件系统（和画布保存逻辑一致）
       const whiteboardData = JSON.parse(whiteboardContentStr)
       let finalFileMap = {}
       
       if (whiteboardData.fileMap && Object.keys(whiteboardData.fileMap).length > 0) {
-        logger.log('MD转白板: 保存图片到文件系统...')
+        logger.log('MD转画布: 保存图片到文件系统...')
         const files = whiteboardData.fileMap
         const result = await window.electronAPI.whiteboard.saveImages(files)
         
         if (result.success) {
           finalFileMap = result.data
-          logger.log('MD转白板: 图片保存成功，数量:', Object.keys(finalFileMap).length)
+          logger.log('MD转画布: 图片保存成功，数量:', Object.keys(finalFileMap).length)
         } else {
-          console.warn('MD转白板: 图片保存失败:', result.error)
+          console.warn('MD转画布: 图片保存失败:', result.error)
           // 继续，但图片可能丢失
         }
       }
       
-      // 构建最终的白板数据（使用保存后的 fileMap）
+      // 构建最终的画布数据（使用保存后的 fileMap）
       const finalWhiteboardData = {
         ...whiteboardData,
         fileMap: finalFileMap
       }
       const finalWhiteboardContent = JSON.stringify(finalWhiteboardData)
-      logger.log('MD转白板: 最终数据长度:', finalWhiteboardContent.length)
+      logger.log('MD转画布: 最终数据长度:', finalWhiteboardContent.length)
 
       // 先更新笔记到数据库（在切换类型之前，确保数据已保存）
       const updateResult = await updateNote(selectedNoteId, {
@@ -775,25 +777,25 @@ const NoteEditor = () => {
         throw new Error('保存失败: ' + (updateResult?.error || '未知错误'))
       }
       
-      logger.log('MD转白板: 数据库更新完成')
+      logger.log('MD转画布: 数据库更新完成')
 
       // 然后更新本地状态，触发 WhiteboardEditor 挂载
       setNoteType('whiteboard')
-      setContent('') // 清空 Markdown content 状态（白板数据存储在 note.content 中）
+      setContent('') // 清空 Markdown content 状态（画布数据存储在 note.content 中）
       prevStateRef.current.noteType = 'whiteboard'
       prevStateRef.current.content = ''
       setHasUnsavedChanges(false)
       hasUnsavedChangesRef.current = false
 
-      logger.log('Markdown 转白板成功，处理了', imageUrls.length, '张图片')
+      logger.log('Markdown 转画布成功，处理了', imageUrls.length, '张图片')
     } catch (error) {
-      console.error('Markdown 转白板失败:', error)
-      showError(error, 'Markdown 转白板失败')
+      console.error('Markdown 转画布失败:', error)
+      showError(error, 'Markdown 转画布失败')
       throw error
     }
   }
 
-  // AI 智能 Markdown 转白板
+  // AI 智能 Markdown 转画布
   const aiConvertMarkdownToWhiteboardNote = async () => {
     if (!selectedNoteId) return
 
@@ -808,9 +810,9 @@ const NoteEditor = () => {
       const latestNote = notes.find(n => n.id === selectedNoteId)
       const markdownContent = latestNote?.content || content || ''
 
-      logger.log('AI MD转白板: 内容长度:', markdownContent.length)
+      logger.log('AI MD转画布: 内容长度:', markdownContent.length)
 
-      // 调用 AI 生成白板数据
+      // 调用 AI 生成画布数据
       const whiteboardContentStr = await aiConvertMarkdownToWhiteboard(markdownContent)
 
       // 更新数据库
@@ -833,24 +835,24 @@ const NoteEditor = () => {
       setHasUnsavedChanges(false)
       hasUnsavedChangesRef.current = false
 
-      logger.log('AI Markdown 转白板成功')
+      logger.log('AI Markdown 转画布成功')
     } catch (error) {
-      console.error('AI Markdown 转白板失败:', error)
+      console.error('AI Markdown 转画布失败:', error)
       showError(error, 'AI 转换失败: ' + error.message)
       throw error
     }
   }
 
-  // 白板转 Markdown（智能提取内容和图片）
+  // 画布转 Markdown（智能提取内容和图片）
   const convertWhiteboardToMarkdownNote = async () => {
     if (!selectedNoteId) return
 
     try {
-      // 直接从白板编辑器获取最新内容（包括图片）
-      logger.log('白板转MD: 从编辑器获取最新内容...')
+      // 直接从画布编辑器获取最新内容（包括图片）
+      logger.log('画布转MD: 从编辑器获取最新内容...')
       
       if (!whiteboardGetContentFunc) {
-        console.error('白板转MD: whiteboardGetContentFunc 未初始化')
+        console.error('画布转MD: whiteboardGetContentFunc 未初始化')
         return
       }
       
@@ -858,41 +860,41 @@ const NoteEditor = () => {
       const whiteboardContent = await whiteboardGetContentFunc()
       
       if (!whiteboardContent) {
-        console.error('白板转MD: 获取内容失败')
+        console.error('画布转MD: 获取内容失败')
         return
       }
       
-      logger.log('白板转MD: 获取到内容长度:', whiteboardContent.length)
+      logger.log('画布转MD: 获取到内容长度:', whiteboardContent.length)
       
-      // 通知白板编辑器正在进行类型转换，避免卸载时自动保存覆盖转换结果
+      // 通知画布编辑器正在进行类型转换，避免卸载时自动保存覆盖转换结果
       window.dispatchEvent(new CustomEvent('whiteboard-type-converting'))
       
-      // 转换白板为 Markdown
+      // 转换画布为 Markdown
       const { markdown, imageMap } = convertWhiteboardToMarkdown(whiteboardContent)
       
-      logger.log('白板转MD: 原始markdown长度:', markdown.length)
-      logger.log('白板转MD: 图片数量:', Object.keys(imageMap).length)
-      logger.log('白板转MD: 图片映射:', imageMap)
+      logger.log('画布转MD: 原始markdown长度:', markdown.length)
+      logger.log('画布转MD: 图片数量:', Object.keys(imageMap).length)
+      logger.log('画布转MD: 图片映射:', imageMap)
       
-      // 处理图片：将白板中的图片保存为 Markdown 可用的格式
+      // 处理图片：将画布中的图片保存为 Markdown 可用的格式
       let finalMarkdown = finalizeMarkdownForStorage(markdown)
       
       for (const [fileName, imageData] of Object.entries(imageMap)) {
-        logger.log('白板转MD: 处理图片:', fileName, imageData)
+        logger.log('画布转MD: 处理图片:', fileName, imageData)
         
         try {
           let dataURL = imageData.dataURL
           
           // 如果没有 dataURL，尝试从文件系统加载
           if (!dataURL && imageData.sourceFileName) {
-            logger.log('白板转MD: 从文件系统加载图片:', imageData.sourceFileName)
-            // 加载白板图片
+            logger.log('画布转MD: 从文件系统加载图片:', imageData.sourceFileName)
+            // 加载画布图片
             const loadResult = await window.electronAPI.whiteboard.loadImage(imageData.sourceFileName)
             if (loadResult.success) {
               dataURL = loadResult.data
-              logger.log('白板转MD: 图片加载成功，dataURL长度:', dataURL?.length || 0)
+              logger.log('画布转MD: 图片加载成功，dataURL长度:', dataURL?.length || 0)
             } else {
-              console.warn('白板转MD: 图片加载失败:', loadResult.error)
+              console.warn('画布转MD: 图片加载失败:', loadResult.error)
             }
           }
           
@@ -901,13 +903,13 @@ const NoteEditor = () => {
             const base64Data = dataURL.split(',')[1]
             const buffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0))
             const imagePath = await imageAPI.saveFromBuffer(buffer, fileName)
-            logger.log('白板转MD: 图片保存成功:', imagePath)
+            logger.log('画布转MD: 图片保存成功:', imagePath)
             
             // 替换占位符为实际路径
             const placeholder = `{{IMAGE_PLACEHOLDER:${fileName}}}`
             finalMarkdown = finalizeMarkdownForStorage(finalMarkdown.replace(placeholder, imagePath))
           } else {
-            console.warn('白板转MD: 无法获取图片数据:', fileName)
+            console.warn('画布转MD: 无法获取图片数据:', fileName)
             // 移除无法保存的图片占位符
             finalMarkdown = finalMarkdown.replace(
               new RegExp(`!\\[[^\\]]*\\]\\(\\{\\{IMAGE_PLACEHOLDER:${fileName}\\}\\}\\)\\n?`, 'g'),
@@ -940,10 +942,10 @@ const NoteEditor = () => {
         tags: formatTags(parseTags(tags))
       })
 
-      logger.log('白板转 Markdown 成功，提取了', Object.keys(imageMap).length, '张图片')
+      logger.log('画布转 Markdown 成功，提取了', Object.keys(imageMap).length, '张图片')
     } catch (error) {
-      console.error('白板转 Markdown 失败:', error)
-      showError(error, '白板转 Markdown 失败')
+      console.error('画布转 Markdown 失败:', error)
+      showError(error, '画布转 Markdown 失败')
       throw error
     }
   }
@@ -1224,10 +1226,13 @@ const NoteEditor = () => {
       }
 
       const trimmedText = String(textForInsert || '').replace(/\s+$/g, '')
+      // 若 markdown 文本里包含 ![alt](data:image/...;base64,...)（如飞书复制的图文混排）
+      // 立刻把 data URL 持久化为本地图片文件，避免超长 base64 被写进笔记后续被序列化破坏
+      const normalizedText = await replaceDataImagesInMarkdown(trimmedText)
       const imagesBlock = imageMarkdowns.join('\n')
-      const insertText = [trimmedText, imagesBlock]
+      const insertText = [normalizedText, imagesBlock]
         .filter(Boolean)
-        .join(trimmedText && imagesBlock ? '\n\n' : '')
+        .join(normalizedText && imagesBlock ? '\n\n' : '')
 
       if (!insertText) return
 
@@ -1424,6 +1429,15 @@ const NoteEditor = () => {
 
   const relatedOpen = Boolean(relatedAnchorEl)
   const noteTags = parseTags(tags)
+  const tagPopoverOpen = Boolean(tagAnchorEl)
+  const primaryTagLabel = noteTags.length > 0 ? `#${noteTags[0]}` : '# 标签'
+  const hiddenTagCount = Math.max(noteTags.length - 1, 0)
+  const handleTagsChange = (newTags) => {
+    setTags(newTags)
+    setHasUnsavedChanges(true)
+    prevStateRef.current.tags = newTags
+    debouncedSave()
+  }
   const plainContent = String(content || '')
     .replace(/<[^>]+>/g, ' ')
     .replace(/!\[[^\]]*]\([^)]+\)/g, ' ')
@@ -1436,7 +1450,7 @@ const NoteEditor = () => {
   const noteCreatedAt = currentNote?.created_at || currentNote?.createdAt
   const noteUpdatedAt = lastSaved || currentNote?.updated_at || currentNote?.updatedAt || noteCreatedAt
   const noteMetaItems = [
-    { label: '类型', value: noteType === 'whiteboard' ? '白板' : editorMode === 'wysiwyg' ? '所见即所得' : 'Markdown' },
+    { label: '类型', value: noteType === 'whiteboard' ? '画布' : editorMode === 'wysiwyg' ? '所见即所得' : 'Markdown' },
     { label: '字数', value: `${wordCount} 字` },
     { label: '字符', value: `${charCount} 个` },
     { label: '创建', value: formatLastSaved(noteCreatedAt) || '未知' },
@@ -1508,14 +1522,14 @@ const NoteEditor = () => {
         elevation={0}
         sx={{
           px: 1,
-          py: 0.75,
-          minHeight: '52px',
+          py: 0.5,
+          minHeight: '40px',
           borderBottom: 1,
           borderColor: 'divider',
           borderRadius: 0,
           display: toolbarsHidden ? 'none' : 'flex',
           alignItems: 'center',
-          gap: 0.75,
+          gap: 0.5,
           overflow: 'hidden',
           backgroundColor: (theme) => theme.palette.mode === 'dark'
             ? 'rgba(15, 23, 42, 0.58)'
@@ -1524,109 +1538,250 @@ const NoteEditor = () => {
           WebkitBackdropFilter: 'blur(30px) saturate(180%)',
         }}
       >
-        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box sx={{
+          flex: '0 0 auto',
+          width: 32,
+          minWidth: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
           {isAutoSaving ? (
-            <Box sx={{
-              display: 'inline-flex', alignItems: 'center', gap: 0.5,
-              px: 1, py: 0.35, borderRadius: '999px',
-              bgcolor: 'primary.main', color: 'primary.contrastText',
-              maxWidth: '100%'
-            }}>
-              <AutoSaveIcon fontSize="small" sx={{ fontSize: 15, animation: 'pulse 1.5s infinite' }} />
-              <Typography variant="caption" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
-                {t('common.autoSaving')}
-              </Typography>
-            </Box>
-          ) : showSaveError ? (
-            <Box sx={{
-              display: 'inline-flex', alignItems: 'center', gap: 0.5,
-              px: 1, py: 0.35, borderRadius: '999px',
-              bgcolor: 'error.main', color: 'error.contrastText',
-              maxWidth: '100%'
-            }}>
-              <ErrorIcon sx={{ fontSize: 16 }} />
-              <Typography variant="caption" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
-                保存失败
-              </Typography>
-            </Box>
-          ) : hasUnsavedChanges ? (
-            <Box sx={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 0.75,
-              px: 1,
-              py: 0.35,
-              borderRadius: '999px',
-              bgcolor: (theme) => theme.palette.mode === 'dark'
-                ? 'rgba(96, 165, 250, 0.14)'
-                : 'rgba(59, 130, 246, 0.10)',
-              color: 'text.secondary',
-              maxWidth: '100%',
-              '@keyframes gentleBounce': {
-                '0%, 80%, 100%': {
-                  transform: 'translateY(0)',
-                  opacity: 0.45
-                },
-                '40%': {
-                  transform: 'translateY(-2px)',
-                  opacity: 1
-                }
-              }
-            }}>
-              <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: '3px', pl: 0.125 }}>
-                {[0, 1, 2].map((index) => (
-                  <Box
-                    key={index}
-                    sx={{
-                      width: 4,
-                      height: 4,
-                      borderRadius: '50%',
-                      bgcolor: 'primary.main',
-                      opacity: 0.45,
-                      animation: 'gentleBounce 1.2s ease-in-out infinite',
-                      animationDelay: `${index * 0.14}s`,
-                    }}
-                  />
-                ))}
-              </Box>
-              <Typography
-                variant="caption"
+            <Tooltip title={t('common.autoSaving')} arrow>
+              <Box
+                aria-label={t('common.autoSaving')}
                 sx={{
-                  fontWeight: 500,
-                  color: 'text.secondary',
-                  whiteSpace: 'nowrap'
+                  width: 28,
+                  height: 28,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: '999px',
+                  bgcolor: 'primary.main',
+                  color: 'primary.contrastText'
                 }}
               >
-                {t('common.editing')}
-              </Typography>
-            </Box>
+                <AutoSaveIcon fontSize="small" sx={{ fontSize: 15, animation: 'pulse 1.5s infinite' }} />
+              </Box>
+            </Tooltip>
+          ) : showSaveError ? (
+            <Tooltip title="保存失败" arrow>
+              <Box
+                aria-label="保存失败"
+                sx={{
+                  width: 28,
+                  height: 28,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: '999px',
+                  bgcolor: 'error.main',
+                  color: 'error.contrastText'
+                }}
+              >
+                <ErrorIcon sx={{ fontSize: 16 }} />
+              </Box>
+            </Tooltip>
+          ) : hasUnsavedChanges ? (
+            <Tooltip title={t('common.editing')} arrow>
+              <Box
+                aria-label={t('common.editing')}
+                sx={{
+                  width: 28,
+                  height: 28,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: '999px',
+                  bgcolor: (theme) => theme.palette.mode === 'dark'
+                    ? 'rgba(96, 165, 250, 0.14)'
+                    : 'rgba(59, 130, 246, 0.10)',
+                  '@keyframes gentleBounce': {
+                    '0%, 80%, 100%': {
+                      transform: 'translateY(0)',
+                      opacity: 0.45
+                    },
+                    '40%': {
+                      transform: 'translateY(-2px)',
+                      opacity: 1
+                    }
+                  }
+                }}
+              >
+                <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                  {[0, 1, 2].map((index) => (
+                    <Box
+                      key={index}
+                      sx={{
+                        width: 4,
+                        height: 4,
+                        borderRadius: '50%',
+                        bgcolor: 'primary.main',
+                        opacity: 0.45,
+                        animation: 'gentleBounce 1.2s ease-in-out infinite',
+                        animationDelay: `${index * 0.14}s`,
+                      }}
+                    />
+                  ))}
+                </Box>
+              </Box>
+            </Tooltip>
           ) : lastSaved ? (
-            <Box sx={{
-              display: 'inline-flex', alignItems: 'center', gap: 0.5,
-              px: 1, py: 0.35, borderRadius: '999px',
-              bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.12)',
-              maxWidth: '100%'
-            }}>
-              <CheckCircleIcon sx={{ fontSize: 15, color: 'success.main' }} />
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {t('common.lastSaved', { time: formatLastSaved(lastSaved) })}
-              </Typography>
-            </Box>
+            <Tooltip title={t('common.lastSaved', { time: formatLastSaved(lastSaved) })} arrow>
+              <Box
+                aria-label={t('common.lastSaved', { time: formatLastSaved(lastSaved) })}
+                sx={{
+                  width: 28,
+                  height: 28,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: '999px',
+                  bgcolor: (theme) => theme.palette.mode === 'dark'
+                    ? 'rgba(16, 185, 129, 0.18)'
+                    : 'rgba(16, 185, 129, 0.12)'
+                }}
+              >
+                <CheckCircleIcon sx={{ fontSize: 15, color: 'success.main' }} />
+              </Box>
+            </Tooltip>
           ) : (
-            <Typography variant="caption" color="text.secondary" sx={{ px: 1 }}>
-              {t('common.newNote')}
-            </Typography>
+            <Tooltip title={t('common.newNote')} arrow>
+              <Box
+                aria-label={t('common.newNote')}
+                sx={(theme) => ({
+                  width: 28,
+                  height: 28,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: '999px',
+                  bgcolor: theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.12)' : 'rgba(15,23,42,0.055)'
+                })}
+              >
+                <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'text.disabled' }} />
+              </Box>
+            </Tooltip>
           )}
+        </Box>
+
+        <Divider orientation="vertical" flexItem sx={{ mx: 0.25, opacity: 0.5 }} />
+
+        <Box sx={{
+          flex: 1,
+          minWidth: 0,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          '@media (max-width: 960px)': {
+            gap: 0.75
+          }
+        }}>
+          <TextField
+            ref={titleRef}
+            fullWidth
+            variant="standard"
+            placeholder={t('common.noteTitlePlaceholder')}
+            value={title}
+            onChange={handleTitleChange}
+            onKeyDown={handleKeyDown}
+            aria-label={t('common.noteTitlePlaceholder')}
+            sx={{
+              flex: '1 1 62%',
+              minWidth: 120,
+              '& .MuiInput-input': {
+                fontSize: '1rem',
+                fontWeight: 600,
+                padding: '2px 0',
+                maxWidth: '100%'
+              },
+              '& .MuiInput-input::placeholder': {
+                opacity: 0.55,
+              },
+            }}
+            slotProps={{
+              input: {
+                disableUnderline: true
+              }
+            }}
+          />
+
+          <Tooltip title={noteTags.length > 0 ? '管理标签' : '添加标签'}>
+            <Button
+              disableRipple
+              onClick={(event) => setTagAnchorEl(event.currentTarget)}
+              sx={(theme) => ({
+                flex: '0 0 auto',
+                minWidth: 0,
+                maxWidth: 156,
+                height: 28,
+                px: 1,
+                gap: 0.5,
+                borderRadius: '999px',
+                textTransform: 'none',
+                color: noteTags.length > 0 ? 'text.primary' : 'text.secondary',
+                border: '1px solid',
+                borderColor: tagPopoverOpen
+                  ? theme.palette.primary.main + '55'
+                  : theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.16)' : 'rgba(15,23,42,0.08)',
+                bgcolor: tagPopoverOpen
+                  ? theme.palette.mode === 'dark' ? 'rgba(96,165,250,0.14)' : 'rgba(25,118,210,0.08)'
+                  : theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.045)' : 'rgba(15,23,42,0.035)',
+                '&:hover': {
+                  bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.075)' : 'rgba(15,23,42,0.055)',
+                  borderColor: theme.palette.primary.main + '44',
+                },
+                '@media (max-width: 960px)': {
+                  maxWidth: 112,
+                  px: 0.75,
+                }
+              })}
+            >
+              <Typography
+                component="span"
+                sx={{
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  fontSize: '0.75rem',
+                  fontWeight: 650,
+                  lineHeight: 1
+                }}
+              >
+                {primaryTagLabel}
+              </Typography>
+              {hiddenTagCount > 0 && (
+                <Box
+                  component="span"
+                  sx={(theme) => ({
+                    flexShrink: 0,
+                    px: 0.5,
+                    py: '1px',
+                    borderRadius: '999px',
+                    fontSize: '0.65rem',
+                    fontWeight: 750,
+                    lineHeight: 1.2,
+                    color: 'primary.main',
+                    bgcolor: theme.palette.mode === 'dark' ? 'rgba(96,165,250,0.16)' : 'rgba(25,118,210,0.08)'
+                  })}
+                >
+                  +{hiddenTagCount}
+                </Box>
+              )}
+            </Button>
+          </Tooltip>
         </Box>
 
         {/* 笔记类型切换 - 移到工具栏 */}
         <Box sx={{
           display: 'flex', alignItems: 'center', gap: '3px',
+          flexShrink: 0,
           bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)',
           borderRadius: '12px', p: '3px',
         }}>
           {[{ value: 'markdown', icon: <ArticleIcon sx={{ fontSize: 15, mr: 0.5 }} />, label: 'Markdown' },
-            { value: 'whiteboard', icon: <WhiteboardIcon sx={{ fontSize: 15, mr: 0.5 }} />, label: '白板' }].map((item) => {
+            { value: 'whiteboard', icon: <WhiteboardIcon sx={{ fontSize: 15, mr: 0.5 }} />, label: '画布' }].map((item) => {
             const isActive = noteType === item.value;
             return (
               <Button
@@ -1673,6 +1828,7 @@ const NoteEditor = () => {
 
         <Box sx={{
           display: 'flex', alignItems: 'center', gap: 0.5,
+          flexShrink: 0,
           p: 0.25, borderRadius: '10px',
           bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(15, 23, 42, 0.06)'
         }}>
@@ -1761,7 +1917,7 @@ const NoteEditor = () => {
             </IconButton>
           </Tooltip>
 
-          {/* 白板模式：导出PNG */}
+          {/* 画布模式：导出PNG */}
           {noteType === 'whiteboard' && (
             <Tooltip title={t('common.exportPngTooltip')}>
               <IconButton
@@ -1793,84 +1949,6 @@ const NoteEditor = () => {
           </Tooltip>
         </Box>
       </Paper>
-
-      {/* 标签和标题栏 - 调整高度 */}
-      <Box
-        sx={{
-          p: 1,
-          height: '48px',
-          borderBottom: 1,
-          borderColor: 'divider',
-          display: toolbarsHidden ? 'none' : 'flex',
-          alignItems: 'center',
-          gap: 1,
-          flexWrap: 'nowrap',
-          overflow: 'hidden',
-          backgroundColor: (theme) => theme.palette.mode === 'dark'
-            ? 'rgba(30, 41, 59, 0.6)'
-            : 'rgba(255, 255, 255, 0.6)',
-          backdropFilter: 'blur(30px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(30px) saturate(180%)',
-        }}
-      >
-        {/* 标题输入 - 紧凑样式 */}
-        <TextField
-          ref={titleRef}
-          fullWidth
-          variant="standard"
-          placeholder={t('common.noteTitlePlaceholder')}
-          value={title}
-          onChange={handleTitleChange}
-          onKeyDown={handleKeyDown}
-          aria-label={t('common.noteTitlePlaceholder')}
-          sx={{
-            flex: 1,  // 减小标题宽度占比
-            '& .MuiInput-input': {
-              fontSize: '1.1rem',  // 减小字体大小
-              fontWeight: 500,
-              padding: '2px 0',    // 减小内边距
-              maxWidth: '100%'     // 确保不超过容器宽度
-            }
-          }}
-          slotProps={{
-            input: {
-              disableUnderline: true
-            }
-          }}
-        />
-
-        {/* 标签 */}
-        <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', gap: 0.5, justifyContent: 'flex-end' }}>
-          <Box sx={{ flex: 1 }}>
-            <TagInput
-              value={tags}
-              onChange={(newTags) => {
-                setTags(newTags);
-                setHasUnsavedChanges(true);
-                prevStateRef.current.tags = newTags;
-                debouncedSave();
-              }}
-              placeholder={t('common.tagsPlaceholder')}
-              maxTags={5}
-              showSuggestions={true}
-              inline={true}
-              noteContent={content}
-              noteId={selectedNoteId}
-              size="small"
-              sx={{
-                width: '100%',
-                '& .MuiInputBase-root': {
-                  height: '100%',
-                  fontSize: '0.85rem'
-                },
-                '& .MuiInputBase-input': {
-                  fontSize: '0.85rem'
-                }
-              }}
-            />
-          </Box>
-        </Box>
-      </Box>
 
       {/* 编辑区域 */}
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
@@ -2053,7 +2131,7 @@ const NoteEditor = () => {
           </Box>
         )}
 
-        {/* 白板编辑器 */}
+        {/* 画布编辑器 */}
         {persistedNoteType === 'whiteboard' && selectedNoteId && (
           <Box sx={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
             <WhiteboardEditor
@@ -2065,6 +2143,74 @@ const NoteEditor = () => {
           </Box>
         )}
       </Box>
+
+      <Popover
+        open={tagPopoverOpen}
+        anchorEl={tagAnchorEl}
+        onClose={() => setTagAnchorEl(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'center' }}
+        slotProps={{
+          paper: {
+            sx: (theme) => ({
+              mt: 0.75,
+              width: 360,
+              maxWidth: 'calc(100vw - 32px)',
+              borderRadius: '16px',
+              border: '1px solid',
+              borderColor: theme.palette.mode === 'dark'
+                ? 'rgba(148, 163, 184, 0.18)'
+                : 'rgba(148, 163, 184, 0.22)',
+              bgcolor: theme.palette.mode === 'dark'
+                ? 'rgba(15, 23, 42, 0.82)'
+                : 'rgba(255, 255, 255, 0.84)',
+              backdropFilter: 'blur(22px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(22px) saturate(180%)',
+              boxShadow: '0 18px 56px rgba(15, 23, 42, 0.22), 0 4px 16px rgba(15, 23, 42, 0.10)',
+              backgroundImage: 'none',
+              overflow: 'visible',
+            })
+          }
+        }}
+      >
+        <Box sx={{ p: 1.25 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography sx={{ fontSize: 12, fontWeight: 800, color: 'text.disabled', letterSpacing: '0.04em' }}>
+                管理标签
+              </Typography>
+            </Box>
+            <Tooltip title="关闭标签">
+              <IconButton size="small" onClick={() => setTagAnchorEl(null)} sx={{ borderRadius: '8px', p: 0.55 }}>
+                <CloseIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
+          </Box>
+
+          <TagInput
+            value={tags}
+            onChange={handleTagsChange}
+            placeholder={t('common.tagsPlaceholder')}
+            maxTags={5}
+            showSuggestions={true}
+            inline={true}
+            noteContent={content}
+            noteId={selectedNoteId}
+            size="small"
+            sx={{
+              width: '100%',
+              '& .MuiInputBase-root': {
+                minHeight: 36,
+                fontSize: '0.8125rem',
+                borderRadius: '12px',
+              },
+              '& .MuiInputBase-input': {
+                fontSize: '0.8125rem'
+              }
+            }}
+          />
+        </Box>
+      </Popover>
 
       <Popover
         open={relatedOpen}

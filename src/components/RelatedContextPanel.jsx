@@ -22,6 +22,7 @@ import {
 } from '@mui/icons-material'
 import { useStore } from '../store/useStore'
 import { getRelatedNotes, getTodoTemporalStatus, isTodoCompleted, normalizeMemories, truncateText } from '../utils/aiContextUtils'
+import { toListResult } from '../utils/todoDisplayUtils'
 
 const getTodoScore = (todo, query) => {
   const text = `${todo?.content || ''}\n${todo?.description || ''}\n${todo?.tags || ''}`.toLowerCase()
@@ -109,7 +110,7 @@ const RelatedContextPanel = ({
     ]).then(([todoResult, memoryResult]) => {
       if (cancelled) return
       const todoValue = todoResult.status === 'fulfilled' ? todoResult.value : null
-      const todoItems = Array.isArray(todoValue?.data) ? todoValue.data : Array.isArray(todoValue) ? todoValue : []
+      const todoItems = toListResult(todoValue)
       setTodos(todoItems.filter(todo => !isTodoCompleted(todo)))
 
       const memoryValue = memoryResult.status === 'fulfilled' ? memoryResult.value : null

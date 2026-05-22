@@ -411,6 +411,7 @@ class DatabaseManager {
       { key: 'titleBarStyle', value: 'windows', type: 'string', description: '标题栏样式' },
       { key: 'language', value: 'zh-CN', type: 'string', description: '界面语言' },
       { key: 'maskOpacity', value: 'medium', type: 'string', description: '遮罩强度' },
+      { key: 'whiteboardStyle', value: 'neat', type: 'string', description: '画布视觉风格 (neat | sketchy)' },
       { key: 'backgroundPattern', value: 'none', type: 'string', description: '背景花纹' },
       { key: 'patternOpacity', value: '1', type: 'number', description: '花纹强度' },
       { key: 'auto_save', value: 'true', type: 'boolean', description: '自动保存' },
@@ -724,11 +725,11 @@ class DatabaseManager {
       
       // ===== 笔记类型系统 (2025-11-11) =====
       if (!notesColumnNames.includes('note_type')) {
-        console.log('添加note_type字段到notes表 (支持Markdown/白板等类型)...');
+        console.log('添加note_type字段到notes表 (支持Markdown/画布等类型)...');
         this.db.exec("ALTER TABLE notes ADD COLUMN note_type TEXT DEFAULT 'markdown'");
         
         // 迁移现有数据：将 category='whiteboard' 的笔记迁移为 note_type='whiteboard'
-        console.log('迁移现有白板笔记...');
+        console.log('迁移现有画布笔记...');
         this.db.exec("UPDATE notes SET note_type = 'whiteboard' WHERE category = 'whiteboard'");
         
         // 创建索引

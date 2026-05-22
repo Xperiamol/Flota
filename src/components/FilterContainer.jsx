@@ -1,62 +1,68 @@
 import React from 'react';
-import { Box } from '@mui/material';
+import { Box, Divider } from '@mui/material';
 import TagFilter from './TagFilter';
 import PriorityFilter from './PriorityFilter';
 
 /**
  * 筛选容器组件
- * 统一管理不同类型的筛选组件
- * 遵循单一职责原则，专门负责筛选UI的布局和组织
+ * 浮窗内的多分组筛选承载（标签 / 优先级 / 通过 extraGroups 注入的自定义分组）。
  */
 const FilterContainer = ({
-  // 通用属性
   showTagFilter = false,
   showPriorityFilter = false,
-  
-  // 标签筛选相关
+
   selectedTags = [],
   onTagsChange,
   showDeleted = false,
   isTodoFilter = false,
-  
-  // 优先级筛选相关
+
   selectedPriorities = [],
   onPrioritiesChange,
-  
-  // 样式
+
+  // 额外的筛选分组（已是 React 节点；按数组顺序在标签/优先级之后渲染）
+  extraGroups = [],
+
   sx = {}
 }) => {
-  // 如果没有启用任何筛选，不渲染组件
-  if (!showTagFilter && !showPriorityFilter) {
-    return null;
+  const groups = [];
+  if (showTagFilter) {
+    groups.push(
+      <TagFilter
+        key="tag"
+        selectedTags={selectedTags}
+        onTagsChange={onTagsChange}
+        showDeleted={showDeleted}
+        isTodoFilter={isTodoFilter}
+      />
+    );
+  }
+  if (showPriorityFilter) {
+    groups.push(
+      <PriorityFilter
+        key="priority"
+        selectedPriorities={selectedPriorities}
+        onPrioritiesChange={onPrioritiesChange}
+      />
+    );
   }
 
+  for (const node of extraGroups) {
+    if (node) groups.push(node);
+  }
+
+  if (groups.length === 0) return null;
+
   return (
-    <Box sx={{ 
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 0,
-      ...sx 
-    }}>
-      {/* 标签筛选 */}
-      {showTagFilter && (
-        <TagFilter
-          selectedTags={selectedTags}
-          onTagsChange={onTagsChange}
-          showDeleted={showDeleted}
-          isTodoFilter={isTodoFilter}
-        />
-      )}
-      
-      {/* 优先级筛选 */}
-      {showPriorityFilter && (
-        <PriorityFilter
-          selectedPriorities={selectedPriorities}
-          onPrioritiesChange={onPrioritiesChange}
-        />
-      )}
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, ...sx }}>
+      {groups.map((group, index) => (
+        <React.Fragment key={group.key ?? `group-${index}`}>
+          {index > 0 && <Divider flexItem sx={{ opacity: 0.4 }} />}
+          {group}
+        </React.Fragment>
+      ))}
     </Box>
   );
 };
 
 export default FilterContainer;
+

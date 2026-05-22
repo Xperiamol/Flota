@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Box,
   useTheme,
@@ -43,6 +43,7 @@ import NoteList from './NoteList';
 import TodoList from './TodoList';
 import MyDayPanel from './MyDayPanel';
 import { t } from '../utils/i18n';
+import { compactGlassPanelSx, thinScrollbarSx } from '../styles/commonStyles';
 
 const DEFAULT_TIMELINE_TYPES = ['note', 'whiteboard', 'todo'];
 
@@ -64,34 +65,30 @@ const isDefaultTimelineTypes = (types) => {
 };
 
 const sidebarScrollableListSx = {
-  overflowY: 'auto',
+  ...thinScrollbarSx,
   flex: 1,
   pr: '4px',
-  mr: '-4px',
-  scrollbarGutter: 'stable',
-  '&::-webkit-scrollbar': {
-    width: '6px'
-  },
-  '&::-webkit-scrollbar-track': {
-    background: 'transparent'
-  },
-  '&::-webkit-scrollbar-thumb': {
-    background: 'rgba(150, 150, 150, 0.2)',
-    borderRadius: '3px',
-    transition: 'background 0.3s ease'
-  },
-  '&::-webkit-scrollbar-thumb:hover': {
-    background: 'rgba(150, 150, 150, 0.4)'
-  },
-  '&::-webkit-scrollbar-thumb:active': {
-    background: 'rgba(150, 150, 150, 0.5)'
-  },
-  '&::-webkit-scrollbar-button': {
-    display: 'none'
-  }
+  mr: '-10px',
 };
 
-const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, onShowCompletedChange, viewMode, showCompleted, onMultiSelectChange, onMultiSelectRefChange, todoRefreshTrigger, todoSortBy, onTodoSortByChange, showDeleted, selectedDate, calendarRefreshTrigger, onTodoUpdated }) => {
+const compactPanelSx = compactGlassPanelSx;
+
+const compactTitleSx = {
+  mb: 1,
+  fontSize: 15,
+  fontWeight: 750,
+  lineHeight: 1.3
+};
+
+const compactSectionLabelSx = {
+  mb: 0.75,
+  color: 'text.secondary',
+  fontSize: 12,
+  fontWeight: 700,
+  lineHeight: 1.2
+};
+
+const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, onShowCompletedChange, viewMode, showCompleted, onMultiSelectChange, onMultiSelectRefChange, todoRefreshTrigger, todoSortBy, onTodoSortByChange, showDeleted, selectedDate, calendarRefreshTrigger, onTodoUpdated }) => {
   const theme = useTheme();
   const currentView = useStore((state) => state.currentView);
   const maskOpacity = useStore((state) => state.maskOpacity);
@@ -117,10 +114,11 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
   const [aiSelectedConvIds, setAiSelectedConvIds] = useState([]);
 
   const sidebarItemSx = (active = false) => ({
-    borderRadius: '12px',
-    mb: 0.5,
-    px: 1.25,
-    minHeight: 40,
+    borderRadius: '10px',
+    mb: 0.25,
+    px: 1,
+    py: 0.25,
+    minHeight: 36,
     border: '1px solid',
     borderColor: active
       ? 'primary.main'
@@ -142,6 +140,12 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
         ? (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(25,118,210,0.08)'
         : undefined,
     },
+    '& .MuiListItemText-root': {
+      my: 0
+    },
+    '& .MuiSvgIcon-root': {
+      fontSize: 18
+    }
   });
 
   const handleAiContextMenu = (event, conv) => {
@@ -173,9 +177,25 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
     setAiSelectedConvIds([]);
   };
 
+  const clearSharedMultiSelectBridge = useCallback(() => {
+    onMultiSelectChange?.({
+      isActive: false,
+      selectedIds: [],
+      selectedCount: 0,
+      totalCount: 0,
+      itemType: ''
+    });
+    onMultiSelectRefChange?.(null);
+  }, [onMultiSelectChange, onMultiSelectRefChange]);
+
   // 将 AI 多选状态桥接给 App 顶层 MultiSelectToolbar
   useEffect(() => {
     if (currentView !== 'ai') {
+      if (aiMultiSelectMode || aiSelectedConvIds.length > 0) {
+        setAiMultiSelectMode(false);
+        setAiSelectedConvIds([]);
+      }
+      clearSharedMultiSelectBridge();
       return;
     }
 
@@ -203,7 +223,8 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
     aiSelectedConvIds,
     aiConversations,
     onMultiSelectChange,
-    onMultiSelectRefChange
+    onMultiSelectRefChange,
+    clearSharedMultiSelectBridge
   ]);
 
   // 根据遮罩透明度设置获取对应的透明度值
@@ -268,7 +289,7 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
 
         const typeOptions = [
           { id: 'note', label: '笔记', icon: <NotesIcon fontSize="small" /> },
-          { id: 'whiteboard', label: '白板', icon: <WhiteboardIcon fontSize="small" /> },
+          { id: 'whiteboard', label: '画布', icon: <WhiteboardIcon fontSize="small" /> },
           { id: 'todo', label: '待办', icon: <AddTaskIcon fontSize="small" /> }
         ]
         const normalizedTypes = normalizeTimelineTypes(timelineFilter.types)
@@ -295,8 +316,8 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
           (timelineFilter.quickMode || 'all') !== 'all'
 
         const filterSectionSx = (themeObj) => ({
-          p: 1.25,
-          borderRadius: '16px',
+          p: 1,
+          borderRadius: '12px',
           border: '1px solid',
           borderColor: themeObj.palette.mode === 'dark' ? 'rgba(148,163,184,0.14)' : 'rgba(15,23,42,0.07)',
           bgcolor: themeObj.palette.mode === 'dark' ? 'rgba(15,23,42,0.34)' : 'rgba(255,255,255,0.58)',
@@ -309,22 +330,14 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
           fontSize: 12,
           fontWeight: 700,
           color: 'text.secondary',
-          mb: 1
+          mb: 0.75
         }
 
         return (
           <Box
             sx={(themeObj) => ({
-              p: 1.5,
-              display: 'flex',
-              flexDirection: 'column',
-              height: '100%',
-              backgroundColor: themeObj.palette.mode === 'dark'
-                ? 'rgba(15,23,42,0.42)'
-                : 'rgba(248,251,255,0.72)',
-              backdropFilter: 'blur(16px) saturate(160%)',
-              WebkitBackdropFilter: 'blur(16px) saturate(160%)',
-              gap: 1.25
+              ...compactPanelSx(themeObj),
+              gap: 1
             })}
           >
             <Stack direction="row" alignItems="center" justifyContent="space-between">
@@ -346,7 +359,14 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
               size="small"
               value={timelineFilter.search}
               onChange={(event) => setTimelineFilter({ search: event.target.value })}
-              placeholder="搜索笔记 / 白板 / 待办 / 标签"
+              placeholder="搜索笔记 / 画布 / 待办 / 标签"
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  height: 34,
+                  borderRadius: '12px',
+                  fontSize: '0.8125rem'
+                }
+              }}
               slotProps={{
                 input: {
                   startAdornment: (
@@ -417,7 +437,7 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
                   )
                 })}
               </Stack>
-              <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 1 }}>
+              <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mt: 0.75 }}>
                 <Checkbox
                   size="small"
                   checked={timelineFilter.showCompleted}
@@ -426,7 +446,7 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
                 />
                 <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>显示已完成待办</Typography>
               </Stack>
-              <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 0.5 }}>
+              <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mt: 0.5 }}>
                 <Checkbox
                   size="small"
                   checked={timelineFilter.showFuture === true}
@@ -504,21 +524,13 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
 
         return (
           <Box sx={(theme) => ({ 
-            p: 2, 
-            display: 'flex', 
-            flexDirection: 'column', 
-            height: '100%',
-            backgroundColor: theme.palette.mode === 'dark'
-              ? 'rgba(30, 41, 59, 0.85)'
-              : 'rgba(255, 255, 255, 0.85)',
-            backdropFilter: 'blur(12px) saturate(150%)',
-            WebkitBackdropFilter: 'blur(12px) saturate(150%)'
+            ...compactPanelSx(theme)
           })}>
-            <Typography variant="h6" sx={{ mb: 2 }}>
+            <Typography sx={compactTitleSx}>
               {t('sidebar.plugins')}
             </Typography>
 
-            <Stack direction="row" spacing={1} sx={{ mb: 3 }}>
+            <Stack direction="row" spacing={0.75} sx={{ mb: 1.25 }}>
               {tabs.map((tab) => (
                 <Chip
                   key={tab.id}
@@ -526,16 +538,17 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
                   color={pluginStoreFilters.tab === tab.id ? 'primary' : 'default'}
                   variant={pluginStoreFilters.tab === tab.id ? 'filled' : 'outlined'}
                   onClick={() => setPluginStoreTab(tab.id)}
-                  sx={{ cursor: 'pointer' }}
+                  size="small"
+                  sx={{ cursor: 'pointer', borderRadius: '9px', fontWeight: 650 }}
                 />
               ))}
             </Stack>
 
-            <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary' }}>
+            <Typography sx={compactSectionLabelSx}>
               {t('plugins.categories')}
             </Typography>
 
-            <List dense disablePadding sx={{ overflowY: 'auto' }}>
+            <List dense disablePadding sx={sidebarScrollableListSx}>
               {categories.map((category) => (
                 <ListItemButton
                   key={category.id || category}
@@ -546,7 +559,7 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
                   <ListItemText
                     primary={(
                       <Typography sx={{
-                        fontSize: 14,
+                        fontSize: 13,
                         fontWeight: pluginStoreFilters.category === (category.id || category) ? 600 : 400
                       }}>
                         {category.name || category}
@@ -577,21 +590,13 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
 
         return (
           <Box sx={(theme) => ({
-            p: 2, 
-            display: 'flex', 
-            flexDirection: 'column', 
-            height: '100%',
-            backgroundColor: theme.palette.mode === 'dark'
-              ? 'rgba(15,23,42,0.38)'
-              : 'rgba(255,255,255,0.58)',
-            backdropFilter: 'blur(12px) saturate(150%)',
-            WebkitBackdropFilter: 'blur(12px) saturate(150%)'
+            ...compactPanelSx(theme)
           })}>
-            <Typography variant="h6" sx={{ mb: 2 }}>
+            <Typography sx={compactTitleSx}>
               {t('settings.settings')}
             </Typography>
 
-            <List dense disablePadding sx={{ overflowY: 'auto' }}>
+            <List dense disablePadding sx={sidebarScrollableListSx}>
               {settingsCategories.map((category) => (
                 <ListItemButton
                   key={category.id}
@@ -599,13 +604,13 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
                   onClick={() => setSettingsTabValue(category.id)}
                   sx={sidebarItemSx(settingsTabValue === category.id)}
                 >
-                  <ListItemIcon sx={{ minWidth: 38, color: settingsTabValue === category.id ? 'primary.main' : 'text.secondary' }}>
+                  <ListItemIcon sx={{ minWidth: 32, color: settingsTabValue === category.id ? 'primary.main' : 'text.secondary' }}>
                     {category.icon}
                   </ListItemIcon>
                   <ListItemText
                     primary={(
                       <Typography sx={{
-                        fontSize: 14,
+                        fontSize: 13,
                         fontWeight: settingsTabValue === category.id ? 600 : 400
                       }}>
                         {category.name}
@@ -631,17 +636,10 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
 
         return (
           <Box sx={(theme) => ({
-            display: 'flex',
-            flexDirection: 'column',
-            height: '100%',
-            backgroundColor: theme.palette.mode === 'dark'
-              ? 'rgba(30, 41, 59, 0.85)'
-              : 'rgba(255, 255, 255, 0.85)',
-            backdropFilter: 'blur(12px) saturate(150%)',
-            WebkitBackdropFilter: 'blur(12px) saturate(150%)'
+            ...compactPanelSx(theme)
           })}>
-            <Box sx={{ p: 2, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-              <Typography variant="h6" sx={{ mb: 2 }}>
+            <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+              <Typography sx={compactTitleSx}>
                 对话历史
               </Typography>
 
@@ -664,7 +662,7 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
                     }}
                   >
                     {aiMultiSelectMode && (
-                      <ListItemIcon sx={{ minWidth: 36 }}>
+                      <ListItemIcon sx={{ minWidth: 30 }}>
                         <Checkbox
                           checked={aiSelectedConvIds.includes(conv.id)}
                           size="small"
@@ -675,7 +673,7 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
                     <ListItemText
                       primary={(
                         <Typography noWrap sx={{
-                          fontSize: 14,
+                          fontSize: 13,
                           fontWeight: conv.id === aiActiveConvId ? 600 : 400
                         }}>
                           {conv.title || '新对话'}
@@ -692,7 +690,7 @@ const SecondarySidebar = ({ open, width = 380, onTodoSelect, onViewModeChange, o
                         className="del-btn"
                         size="small"
                         onClick={(e) => { e.stopPropagation(); aiDeleteConv(conv.id) }}
-                        sx={{ opacity: 0, transition: 'opacity 0.15s', ml: 0.5 }}
+                        sx={{ opacity: 0, transition: 'opacity 0.15s', ml: 0.25, width: 26, height: 26 }}
                       >
                         <DeleteIcon sx={{ fontSize: 16 }} />
                       </IconButton>

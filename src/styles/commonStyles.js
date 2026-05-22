@@ -266,3 +266,83 @@ export const settingsFieldGroupSx = (muiTheme) => ({
       : 'rgba(15,23,42,0.08)',
   },
 });
+
+// ========== 二级面板（侧栏 / MyDay 等容器） ==========
+/**
+ * 标准的紧凑玻璃面板：高斯模糊 + 半透明底色 + 内边距。
+ * 用法：<Box sx={(t) => ({ ...compactGlassPanelSx(t), ...其他覆盖 })}>
+ */
+export const compactGlassPanelSx = (muiTheme) => ({
+  display: 'flex',
+  flexDirection: 'column',
+  height: '100%',
+  minHeight: 0,
+  p: 1.25,
+  backgroundColor: muiTheme.palette.mode === 'dark'
+    ? 'rgba(15,23,42,0.42)'
+    : 'rgba(248,251,255,0.72)',
+  backdropFilter: 'blur(16px) saturate(160%)',
+  WebkitBackdropFilter: 'blur(16px) saturate(160%)',
+});
+
+// ========== 细长滚动条（侧栏列表通用） ==========
+/**
+ * 与 panel 内边距协同的细滚动条。caller 通过 mr 把滚动条贴到 panel 边缘。
+ */
+export const thinScrollbarSx = {
+  overflowY: 'auto',
+  scrollbarGutter: 'stable',
+  '&::-webkit-scrollbar': { width: '6px' },
+  '&::-webkit-scrollbar-track': { background: 'transparent' },
+  '&::-webkit-scrollbar-thumb': {
+    background: 'rgba(150, 150, 150, 0.2)',
+    borderRadius: '3px',
+    transition: 'background 0.3s ease',
+  },
+  '&::-webkit-scrollbar-thumb:hover': {
+    background: 'rgba(150, 150, 150, 0.4)',
+  },
+  '&::-webkit-scrollbar-thumb:active': {
+    background: 'rgba(150, 150, 150, 0.5)',
+  },
+  '&::-webkit-scrollbar-button': { display: 'none' },
+};
+
+// ========== 主题色预设色块 ==========
+/**
+ * 设置页"主题色预设"色块的 sx 工厂。
+ * @param {object} options
+ * @param {string} options.color   该色块的色值
+ * @param {boolean} options.selected 是否被选中
+ * @param {boolean} options.isDark 当前是否是暗色模式
+ * @param {(c: string, a: number) => string} options.alpha MUI alpha 工具
+ */
+export const colorPresetSwatchSx = ({ color, selected, isDark, alpha }) => ({
+  position: 'relative',
+  width: 30,
+  height: 30,
+  borderRadius: '50%',
+  backgroundColor: color,
+  cursor: 'pointer',
+  transition: 'transform 160ms ease, box-shadow 200ms ease',
+  boxShadow: selected
+    ? `0 0 0 2px ${isDark ? '#0f172a' : '#ffffff'}, 0 0 0 4px ${alpha(color, 0.55)}, 0 4px 14px ${alpha(color, 0.32)}`
+    : `inset 0 0 0 1px ${alpha('#000', isDark ? 0.35 : 0.10)}, 0 1px 2px ${alpha('#000', isDark ? 0.32 : 0.06)}`,
+  '&:hover': {
+    transform: 'translateY(-1px)',
+    boxShadow: selected
+      ? `0 0 0 2px ${isDark ? '#0f172a' : '#ffffff'}, 0 0 0 4px ${alpha(color, 0.65)}, 0 6px 18px ${alpha(color, 0.36)}`
+      : `inset 0 0 0 1px ${alpha('#000', isDark ? 0.35 : 0.10)}, 0 4px 12px ${alpha(color, 0.28)}`,
+  },
+  '&::after': selected ? {
+    content: '""',
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    width: 8,
+    height: 4,
+    borderLeft: '2px solid #fff',
+    borderBottom: '2px solid #fff',
+    transform: 'translate(-50%, -65%) rotate(-45deg)',
+  } : undefined,
+});

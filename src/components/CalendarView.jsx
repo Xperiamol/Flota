@@ -32,10 +32,10 @@ import MarkdownPreview from './MarkdownPreview';
 import { Excalidraw } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import { useError } from './ErrorProvider';
-import { isTodoCompleted, isFutureRecurringTodo, isTodoInDateInstance, isTodoCompletedOnDate } from '../utils/todoDisplayUtils';
+import { isTodoCompleted, isFutureRecurringTodo, isTodoInDateInstance, isTodoCompletedOnDate, toListResult } from '../utils/todoDisplayUtils';
 import { stripMarkdownToPreviewText } from '../utils/markdownTextUtils'
 
-// 白板预览组件 - 只读模式
+// 画布预览组件 - 只读模式
 const WhiteboardPreview = ({ content, theme }) => {
   const [whiteboardData, setWhiteboardData] = useState({
     elements: [],
@@ -94,7 +94,7 @@ const WhiteboardPreview = ({ content, theme }) => {
 
         setWhiteboardData({ elements, appState, files });
       } catch (error) {
-        console.error('[WhiteboardPreview] 解析白板数据失败:', error);
+        console.error('[WhiteboardPreview] 解析画布数据失败:', error);
         // 不显示错误提示，这是后台操作
         setWhiteboardData({
           elements: [],
@@ -149,7 +149,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
     }
     // 没有标题时，显示内容前9个字
     if (note.content) {
-      // 白板笔记特殊处理
+      // 画布笔记特殊处理
       if (note.note_type === 'whiteboard') {
         return t('notes.whiteboardNote')
       }
@@ -229,7 +229,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
       // 这里改为前端按格子的目标日 _completedOnDate 决定是否展示，
       // showCompleted 只控制单元格内的过滤（incompleteTodos vs dayTodosWithState）。
       const data = await fetchTodos({ includeCompleted: true });
-      const normalizedTodos = (data || []).map(todo => ({
+      const normalizedTodos = toListResult(data).map(todo => ({
         ...todo,
         completed: isTodoCompleted(todo)
       }));
@@ -580,8 +580,8 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                       }
                     }}
                     sx={{
-                      height: '100%',
-                      minHeight: '100px',
+                      height: index < calendarDays.length - 7 ? 'calc(100% - 1px)' : '100%',
+                      minHeight: index < calendarDays.length - 7 ? 'calc(100px - 1px)' : '100px',
                       p: 1.5,
                       backgroundColor: isSelectedDay
                         ? theme.palette.primary.light + '18'
@@ -594,6 +594,8 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                         : 'transparent',
                       borderRadius: dayInfo.isToday || isSelectedDay ? '12px' : 0,
                       boxShadow: isSelectedDay ? `inset 0 0 0 1px ${theme.palette.primary.main}22` : 'none',
+                      boxSizing: 'border-box',
+                      mb: index < calendarDays.length - 7 ? '1px' : 0,
                       display: 'flex',
                       flexDirection: 'column',
                       cursor: 'pointer',
@@ -844,7 +846,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
 
                         return (
                           <Fade key={note.id} in timeout={200}>
-                            <Tooltip title={`${isWhiteboard ? '白板' : 'Markdown'}: ${getNoteDisplayTitle(note)}`} placement="top">
+                            <Tooltip title={`${isWhiteboard ? '画布' : 'Markdown'}: ${getNoteDisplayTitle(note)}`} placement="top">
                               <Box
                                 onClick={() => {
                                   setPreviewNote(note);
@@ -1220,7 +1222,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
                           {note.type === 'markdown' ? 'Markdown' :
                             note.type === 'wysiwyg' ? '富文本' :
-                              note.type === 'whiteboard' ? '白板' : '笔记'}
+                              note.type === 'whiteboard' ? '画布' : '笔记'}
                           {' · '}
                           {new Date(note.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
                           {note.updated_at && note.updated_at !== note.created_at && (
@@ -1293,7 +1295,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
               {previewNote ? getNoteDisplayTitle(previewNote) : ''}
             </Typography>
             <Chip
-              label={previewNote?.note_type === 'whiteboard' ? '白板笔记' : 'Markdown'}
+              label={previewNote?.note_type === 'whiteboard' ? '画布笔记' : 'Markdown'}
               size="small"
               sx={{
                 backgroundColor: previewNote?.note_type === 'whiteboard'

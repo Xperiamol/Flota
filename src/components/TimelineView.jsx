@@ -43,6 +43,7 @@ import { useStore } from '../store/useStore'
 import { createTodo, deleteTodo, fetchTodos, toggleTodoComplete, updateTodo } from '../api/todoAPI'
 import ImagePreviewModal, { canvasToPngBlob } from './ImagePreviewModal'
 import { getImageResolver } from '../utils/ImageProtocolResolver'
+import { toListResult } from '../utils/todoDisplayUtils'
 import AudioRecordButton from './AudioRecordButton'
 import MarkdownPreview from './MarkdownPreview'
 import TodoEditDialog from './TodoEditDialog'
@@ -141,6 +142,12 @@ const stripMarkdown = (content = '') => String(content)
   .replace(/\[([^\]]+)]\(([^)]+)\)/g, (_, label, url) => (
     String(url).startsWith('file://') ? `[附件] ${label}` : url
   ))
+  // 先吃掉完整 HTML 标签（必须在去掉 `>` 前完成）；编辑器富文本会以 <table>/<p> 等形式存为内容
+  .replace(/<\/?[a-zA-Z][^>]*>/g, ' ')
+  // 兜底：去除任何残留的孤立标签碎片，例如缺右尖括号的 `<table style="..."` 之类
+  .replace(/<\/?[a-zA-Z][^<\n]*?(?=<|$)/g, ' ')
+  .replace(/&nbsp;/g, ' ')
+  .replace(/&(?:amp|lt|gt|quot|#39);/g, ' ')
   .replace(/[#>*_`~]/g, '')
   .replace(/\s+/g, ' ')
   .trim()
@@ -186,7 +193,7 @@ const buildNoteTitle = ({ rawTitle, isWhiteboard, audios, images, files, content
     return title
   }
 
-  if (isWhiteboard) return '白板笔记'
+  if (isWhiteboard) return '画布笔记'
   // 有正文内容但无显式标题：返回空字符串，渲染端会直接隐藏标题行
   if (contentText) return ''
   if (files.length > 0 || audios.length > 0 || images.length > 0) return ''
@@ -196,9 +203,9 @@ const buildNoteTitle = ({ rawTitle, isWhiteboard, audios, images, files, content
 const buildNotePreview = ({ note, isWhiteboard, whiteboardSummary, audios, images, files }) => {
   if (isWhiteboard) {
     return {
-      title: normalizeTitle(note.title) || '白板笔记',
-      body: whiteboardSummary.body || '白板内容',
-      fullBody: whiteboardSummary.fullBody || '白板内容'
+      title: normalizeTitle(note.title) || '画布笔记',
+      body: whiteboardSummary.body || '画布内容',
+      fullBody: whiteboardSummary.fullBody || '画布内容'
     }
   }
 
@@ -273,7 +280,7 @@ const summarizeWhiteboard = (content = '') => {
     const files = parsed?.files || parsed?.fileMap || {}
 
     const textSnippets = elements
-      .map((item) => String(item?.text || '').trim())
+      .map((item) => stripMarkdown(String(item?.text || '')).trim())
       .filter(Boolean)
       .slice(0, 3)
 
@@ -289,16 +296,16 @@ const summarizeWhiteboard = (content = '') => {
     ].filter(Boolean)
 
     return {
-      body: textSnippets.join(' / ') || stats.join('，') || '白板内容',
-      fullBody: stats.join('，') || textSnippets.join('\n') || '白板内容',
+      body: textSnippets.join(' / ') || stats.join('，') || '画布内容',
+      fullBody: stats.join('，') || textSnippets.join('\n') || '画布内容',
       images: [],
       audios: [],
       files: []
     }
   } catch {
     return {
-      body: '白板内容',
-      fullBody: '白板内容',
+      body: '画布内容',
+      fullBody: '画布内容',
       images: [],
       audios: [],
       files: []
@@ -489,10 +496,18 @@ const TimelineView = ({ onTodoUpdated }) => {
   const scrollRef = useRef(null)
   const clickTimerRef = useRef(null)
 
+  const getDisplayImageSrc = useCallback((src) => {
+    if (!src) return null
+    if (src.startsWith('data:') || src.startsWith('http://') || src.startsWith('https://') || src.startsWith('file://')) {
+      return src
+    }
+    return resolvedImages[src] || null
+  }, [resolvedImages])
+
   const refreshTodos = useCallback(async () => {
     try {
       const result = await fetchTodos({ includeCompleted: true, limit: 300 })
-      setTodos(Array.isArray(result?.data) ? result.data : Array.isArray(result) ? result : [])
+      setTodos(toListResult(result))
     } catch (error) {
       console.error('加载时间轴待办失败:', error)
     }
@@ -1189,7 +1204,7 @@ const TimelineView = ({ onTodoUpdated }) => {
                 <Box
                   component="img"
                   src={item.whiteboardPreviewUrl}
-                  alt="白板缩略预览"
+                  alt="画布缩略预览"
                   onError={() => handleWhiteboardPreviewError(item.id)}
                   sx={{
                     width: '100%',
@@ -1214,7 +1229,7 @@ const TimelineView = ({ onTodoUpdated }) => {
                   }}
                 >
                   <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: 'text.primary' }}>
-                    白板预览
+                    画布预览
                   </Typography>
                 </Stack>
               </Box>
@@ -1258,27 +1273,31 @@ const TimelineView = ({ onTodoUpdated }) => {
                   maxWidth: 260
                 }}
               >
-                {timelineImages.map((src) => (
-                  <Box
-                    key={src}
-                    component="img"
-                    src={resolvedImages[src] || src}
-                    alt="时间轴图片预览"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      setPreviewImage(resolvedImages[src] || src)
-                    }}
-                    sx={{
-                      width: '100%',
-                      height: 92,
-                      objectFit: 'cover',
-                      borderRadius: '10px',
-                      border: theme.palette.mode === 'dark' ? '1px solid rgba(148,163,184,0.18)' : '1px solid rgba(15,23,42,0.08)',
-                      bgcolor: theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.08)' : 'rgba(15,23,42,0.03)',
-                      cursor: 'zoom-in'
-                    }}
-                  />
-                ))}
+                {timelineImages.map((src) => {
+                  const displaySrc = getDisplayImageSrc(src)
+                  if (!displaySrc) return null
+                  return (
+                    <Box
+                      key={src}
+                      component="img"
+                      src={displaySrc}
+                      alt="时间轴图片预览"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setPreviewImage(displaySrc)
+                      }}
+                      sx={{
+                        width: '100%',
+                        height: 92,
+                        objectFit: 'cover',
+                        borderRadius: '10px',
+                        border: theme.palette.mode === 'dark' ? '1px solid rgba(148,163,184,0.18)' : '1px solid rgba(15,23,42,0.08)',
+                        bgcolor: theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.08)' : 'rgba(15,23,42,0.03)',
+                        cursor: 'zoom-in'
+                      }}
+                    />
+                  )
+                })}
               </Box>
             )}
             {hiddenImageCount > 0 && (
@@ -1725,7 +1744,7 @@ const TimelineView = ({ onTodoUpdated }) => {
                     <Box
                       component="img"
                       src={detailPopover.item.whiteboardPreviewUrl}
-                      alt="白板缩略预览"
+                      alt="画布缩略预览"
                       onError={() => handleWhiteboardPreviewError(detailPopover.item.id)}
                       sx={{
                         width: '100%',
@@ -1738,23 +1757,27 @@ const TimelineView = ({ onTodoUpdated }) => {
                 )}
                 {detailPopover.item.images?.length > 0 && (
                   <Box sx={{ display: 'flex', gap: 0.75, overflowX: 'auto', pb: 0.5 }}>
-                    {detailPopover.item.images.map((src) => (
-                      <Box
-                        key={src}
-                        component="img"
-                        src={resolvedImages[src] || src}
-                        alt="时间轴图片预览"
-                        onClick={() => setPreviewImage(resolvedImages[src] || src)}
-                        sx={{
-                          width: 140,
-                          height: 104,
-                          objectFit: 'cover',
-                          borderRadius: '12px',
-                          flexShrink: 0,
-                          cursor: 'zoom-in'
-                        }}
-                      />
-                    ))}
+                    {detailPopover.item.images.map((src) => {
+                      const displaySrc = getDisplayImageSrc(src)
+                      if (!displaySrc) return null
+                      return (
+                        <Box
+                          key={src}
+                          component="img"
+                          src={displaySrc}
+                          alt="时间轴图片预览"
+                          onClick={() => setPreviewImage(displaySrc)}
+                          sx={{
+                            width: 140,
+                            height: 104,
+                            objectFit: 'cover',
+                            borderRadius: '12px',
+                            flexShrink: 0,
+                            cursor: 'zoom-in'
+                          }}
+                        />
+                      )
+                    })}
                   </Box>
                 )}
               </Stack>

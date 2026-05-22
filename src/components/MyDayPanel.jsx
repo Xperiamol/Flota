@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
-  Chip,
-  CircularProgress
+  Chip
 } from '@mui/material';
 import {
   Today as TodayIcon,
@@ -16,6 +15,7 @@ import { zhCN } from 'date-fns/locale';
 import TodoList from './TodoList';
 import { fetchTodos } from '../api/todoAPI';
 import { isTodoCompletedOnDate, isTodoInDateInstance } from '../utils/todoDisplayUtils';
+import { compactGlassPanelSx } from '../styles/commonStyles';
 
 const MyDayPanel = ({
   selectedDate,
@@ -27,7 +27,6 @@ const MyDayPanel = ({
   onMultiSelectRefChange
 }) => {
   const [todayTodos, setTodayTodos] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState({
     total: 0,
     completed: 0,
@@ -37,7 +36,6 @@ const MyDayPanel = ({
 
   // 获取指定日期的Todo
   const loadTodos = async (date = null) => {
-    setLoading(true);
     try {
       const allTodos = await fetchTodos({ includeCompleted: true });
       // 过滤出指定日期或今日的任务，使用与CalendarView相同的过滤逻辑
@@ -74,8 +72,6 @@ const MyDayPanel = ({
       setStats({ total, completed, pending, urgent });
     } catch (error) {
       console.error('获取Todo失败:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -93,38 +89,32 @@ const MyDayPanel = ({
   const headerText = `${formattedDate}${isToday(targetDate) ? ' - 今天' : ''}`;
 
   return (
-    <Box sx={(theme) => ({ 
-      height: '100%', 
-      display: 'flex', 
-      flexDirection: 'column',
-      backgroundColor: theme.palette.mode === 'dark'
-        ? 'rgba(30, 41, 59, 0.85)'
-        : 'rgba(255, 255, 255, 0.85)',
-      backdropFilter: 'blur(12px) saturate(150%)',
-      WebkitBackdropFilter: 'blur(12px) saturate(150%)'
-    })}>
+    <Box sx={(theme) => ({ ...compactGlassPanelSx(theme), p: 0 })}>
       {/* 头部信息 */}
       <Box 
         sx={{ 
-          p: 2, 
+          px: 1.25,
+          pt: 1,
+          pb: 0.875,
           borderBottom: 1, 
           borderColor: 'divider'
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h5" sx={{ fontWeight: 700 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.75 }}>
+          <Typography sx={{ fontSize: 15, fontWeight: 750, lineHeight: 1.3 }}>
             {headerText}
           </Typography>
         </Box>
         
         {/* 统计信息 */}
-        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        <Box sx={{ display: 'flex', gap: 0.625, flexWrap: 'wrap' }}>
           <Chip
             icon={<TodayIcon />}
             label={`总计 ${stats.total}`}
             size="small"
             color="default"
             variant="outlined"
+            sx={{ height: 24, borderRadius: '8px', fontSize: '0.72rem', '& .MuiChip-icon': { fontSize: 15 } }}
           />
           <Chip
             icon={<CheckCircleIcon />}
@@ -132,6 +122,7 @@ const MyDayPanel = ({
             size="small"
             color="success"
             variant="outlined"
+            sx={{ height: 24, borderRadius: '8px', fontSize: '0.72rem', '& .MuiChip-icon': { fontSize: 15 } }}
           />
           <Chip
             icon={<ScheduleIcon />}
@@ -139,6 +130,7 @@ const MyDayPanel = ({
             size="small"
             color="primary"
             variant="outlined"
+            sx={{ height: 24, borderRadius: '8px', fontSize: '0.72rem', '& .MuiChip-icon': { fontSize: 15 } }}
           />
           {stats.urgent > 0 && (
             <Chip
@@ -147,6 +139,7 @@ const MyDayPanel = ({
               size="small"
               color="error"
               variant="outlined"
+              sx={{ height: 24, borderRadius: '8px', fontSize: '0.72rem', '& .MuiChip-icon': { fontSize: 15 } }}
             />
           )}
         </Box>

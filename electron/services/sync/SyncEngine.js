@@ -488,7 +488,7 @@ class SyncEngine extends EventEmitter {
 
     this.log(`[Init] 本地数据 (已启用类别: ${enabledCategories.join(', ')}): ${Object.keys(localNotes).length} 笔记, ${Object.keys(localTodos).length} 待办`);
 
-    // 4. 上传本地笔记和白板（如果启用）
+    // 4. 上传本地笔记和画布（如果启用）
     // 保护：仅当云端不存在同名文件时才上传，避免初始化把云端已有的更新版本覆盖回去
     const noteUploads = enabledCategories.includes('notes')
       ? Object.values(localNotes).map(async (note) => {
@@ -505,7 +505,7 @@ class SyncEngine extends EventEmitter {
     await Promise.all(noteUploads);
     uploadCount += noteUploads.length;
     if (noteUploads.length > 0) {
-      this.log(`[Init] ${noteUploads.length} 个笔记/白板已检查/上传`);
+      this.log(`[Init] ${noteUploads.length} 个笔记/画布已检查/上传`);
     }
 
     // 5. 上传笔记中引用的图片（如果启用images类别）
@@ -521,12 +521,12 @@ class SyncEngine extends EventEmitter {
       this.log(`[Init] ${attachmentCount} 个附件上传完成`);
     }
 
-    // 5.5 上传白板预览图
+    // 5.5 上传画布预览图
     if (enabledCategories.includes('images')) {
       const previewCount = await this.uploadAllWhiteboardPreviews(localNotes);
       uploadCount += previewCount;
       if (previewCount > 0) {
-        this.log(`[Init] ${previewCount} 个白板预览图上传完成`);
+        this.log(`[Init] ${previewCount} 个画布预览图上传完成`);
       }
     }
 
@@ -659,7 +659,7 @@ class SyncEngine extends EventEmitter {
   }
 
   /**
-   * 上传单个笔记/白板到云端
+   * 上传单个笔记/画布到云端
    * @private
    */
   async uploadNote(note) {
@@ -1404,7 +1404,7 @@ class SyncEngine extends EventEmitter {
         await this.syncWallpaperAsset(task.data, true);
       }
     } else {
-      // 上传笔记/白板
+      // 上传笔记/画布
       const note = task.data;
       if (note) {
         // 如果有旧文件路径（类型转换），先删除旧文件
@@ -1430,7 +1430,7 @@ class SyncEngine extends EventEmitter {
           await this.uploadNoteAttachments(note.content, note.note_type || 'markdown');
         }
 
-        // 白板笔记：同步上传预览图
+        // 画布笔记：同步上传预览图
         if ((note.note_type || 'markdown') === 'whiteboard') {
           await this.syncWhiteboardPreview(task.fileId, true);
         }
@@ -1639,7 +1639,7 @@ class SyncEngine extends EventEmitter {
       const mergedSettings = await this.storage.getAllSettings();
       await this.syncWallpaperAsset(mergedSettings, false);
     } else {
-      // 下载笔记/白板
+      // 下载笔记/画布
       let content;
       let actualExt = task.remoteEntry.ext;
 
@@ -1709,7 +1709,7 @@ class SyncEngine extends EventEmitter {
         await this.downloadNoteAttachments(content, noteType);
       }
 
-      // 白板笔记：同步下载预览图
+      // 画布笔记：同步下载预览图
       if (noteType === 'whiteboard') {
         await this.syncWhiteboardPreview(task.fileId, false);
       }
@@ -1717,7 +1717,7 @@ class SyncEngine extends EventEmitter {
   }
 
   /**
-   * 同步白板预览图 (上传/下载)
+   * 同步画布预览图 (上传/下载)
    * @private
    * @param {string} syncId - 笔记的 sync_id
    * @param {boolean} upload - true=上传, false=下载
@@ -1732,7 +1732,7 @@ class SyncEngine extends EventEmitter {
 
         // 基于内容 hash + 持久化记录的去重策略：
         //   旧实现使用 `mtimeMs < this.lastSyncTime` 判断，在 App 重启后 lastSyncTime=0
-        //   会导致所有白板预览图被重新上传，浪费带宽与请求次数。
+        //   会导致所有画布预览图被重新上传，浪费带宽与请求次数。
         //   现改为：计算文件 hash，与 localManifest.previewHashes[syncId] 比对一致则跳过。
         const imageData = fs.readFileSync(localPath);
         const hash = crypto.createHash('sha256').update(imageData).digest('hex');
@@ -1778,7 +1778,7 @@ class SyncEngine extends EventEmitter {
   }
 
   /**
-   * 批量上传所有白板笔记的预览图 (初始化时使用)
+   * 批量上传所有画布笔记的预览图 (初始化时使用)
    * @private
    */
   async uploadAllWhiteboardPreviews(notes) {
@@ -1897,7 +1897,7 @@ class SyncEngine extends EventEmitter {
     const imageRefs = new Set();
 
     if (noteType === 'whiteboard') {
-      // 白板笔记 - 从 JSON 中提取 fileMap
+      // 画布笔记 - 从 JSON 中提取 fileMap
       try {
         const whiteboardData = JSON.parse(content);
         if (whiteboardData.fileMap && typeof whiteboardData.fileMap === 'object') {
@@ -1913,13 +1913,13 @@ class SyncEngine extends EventEmitter {
             }
 
             if (filename && typeof filename === 'string') {
-              // 白板图片存储在 images/whiteboard/ 目录
+              // 画布图片存储在 images/whiteboard/ 目录
               imageRefs.add(`images/whiteboard/${filename}`);
             }
           });
         }
       } catch (error) {
-        this.log(`[Extract Images] 解析白板内容失败: ${error.message}`);
+        this.log(`[Extract Images] 解析画布内容失败: ${error.message}`);
       }
     } else {
       // Markdown 笔记 - 先解析 frontmatter 中的封面/缩略图字段，再匹配正文图片
@@ -2005,7 +2005,7 @@ class SyncEngine extends EventEmitter {
       // 不删除全局 settings
       this.log(`[Delete Local] 跳过 global_settings 删除`);
     } else {
-      // 软删除笔记/白板
+      // 软删除笔记/画布
       await this.storage.softDeleteNote(task.fileId, true);
       this.log(`[Delete Local] 已软删除本地笔记: ${task.fileId}`);
     }
@@ -2241,9 +2241,9 @@ class SyncEngine extends EventEmitter {
     }
 
     // 上传新 manifest
-    // 持久化白板预览图 hash 缓存（#8）—— 必须做"远端 + 本地缓存 + 本轮新增"三方 merge，
+    // 持久化画布预览图 hash 缓存（#8）—— 必须做"远端 + 本地缓存 + 本轮新增"三方 merge，
     // 否则：
-    //   1) 本轮没有任何白板预览图触发上传时，_previewHashCache 为空，会把远端已有的 previewHashes 抹掉
+    //   1) 本轮没有任何画布预览图触发上传时，_previewHashCache 为空，会把远端已有的 previewHashes 抹掉
     //   2) 新设备首次同步时无本地缓存，会把云端已有的 previewHashes 全部丢失
     //   3) 旧客户端（手机端）写入 manifest 时也会丢失该字段，需要桌面端在 commit 时补回
     const remoteManifestPreviewHashes = (this._lastRemoteManifest && this._lastRemoteManifest.previewHashes) || {};
@@ -2338,7 +2338,7 @@ class SyncEngine extends EventEmitter {
             const rel = path.relative(baseDir, full).replace(/\\/g, '/');
             const normalized = `images/${rel}`;
             if (referencedRefs.has(normalized)) continue;
-            // 跳过白板预览图（由白板自身管理）
+            // 跳过画布预览图（由画布自身管理）
             if (normalized.startsWith('images/whiteboard-preview/')) continue;
             try {
               const stat = fs.statSync(full);
@@ -2474,7 +2474,7 @@ class SyncEngine extends EventEmitter {
     } else if (fileId === 'global_settings') {
       return 'settings.json';
     } else {
-      // 笔记/白板，尝试从本地数据获取标题
+      // 笔记/画布，尝试从本地数据获取标题
       const note = localData.localNotes?.[fileId];
       if (note && note.title) {
         return note.title;
@@ -2512,7 +2512,7 @@ class SyncEngine extends EventEmitter {
         // JSON 文件
         return await this.client.downloadJson(remotePath);
       } else {
-        // 笔记/白板文本
+        // 笔记/画布文本
         return await this.client.downloadText(remotePath);
       }
     } catch (error) {

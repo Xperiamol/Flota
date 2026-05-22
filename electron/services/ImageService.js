@@ -91,7 +91,7 @@ class ImageService {
       relativePath = relativePath.substring(7) // 移除 "images/"
     }
     
-    // 处理白板图片路径
+    // 处理画布图片路径
     if (relativePath.startsWith('whiteboard/')) {
       // whiteboard/xxx.png -> userData/images/whiteboard/xxx.png
       return path.join(this.imagesDir, relativePath)

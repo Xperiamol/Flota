@@ -273,7 +273,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     delete: inv('image:delete'),
   },
 
-  // 白板图片存储API
+  // 画布图片存储API
   whiteboard: {
     saveImages: inv('whiteboard:save-images'),
     loadImages: inv('whiteboard:load-images'),

@@ -39,16 +39,16 @@ const NavItem = React.memo(function NavItem({
 
   return (
     <Tooltip title={tooltip} placement="right" enterDelay={400} enterNextDelay={200}>
-      <Box sx={{ position: 'relative', width: '44px', height: '44px' }}>
+      <Box sx={{ position: 'relative', width: '36px', height: '36px' }}>
         {/* 左侧流体指示条：选中时从中心向上下伸展 */}
         <Box
           aria-hidden
           sx={{
             position: 'absolute',
-            left: '-10px',
+            left: '-7px',
             top: '50%',
             width: '3px',
-            height: '20px',
+            height: '16px',
             borderRadius: '2px',
             backgroundColor: theme.palette.primary.main,
             transform: active
@@ -65,9 +65,9 @@ const NavItem = React.memo(function NavItem({
           focusRipple={false}
           disableRipple
           sx={{
-            width: '44px',
-            height: '44px',
-            borderRadius: '12px',
+            width: '36px',
+            height: '36px',
+            borderRadius: '10px',
             color: active ? theme.palette.primary.main : theme.palette.text.secondary,
             backgroundColor: active ? activeBg : 'transparent',
             transition: `background-color ${NAV_DURATION}ms ${NAV_EASING}, color ${NAV_DURATION}ms ${NAV_EASING}`,
@@ -241,21 +241,21 @@ const Sidebar = () => {
   return (
     <Box
       sx={{
-        width: '68px', // Slightly wider for better touch target
-        minWidth: '68px',
-        maxWidth: '68px',
+        width: '52px',
+        minWidth: '52px',
+        maxWidth: '52px',
         height: '100%',
-        backgroundColor: 'transparent', // Let glass handle it
+        backgroundColor: 'transparent',
         borderRight: `1px solid ${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        paddingTop: '12px',
-        paddingBottom: '16px',
+        paddingTop: '7px',
+        paddingBottom: '8px',
         position: 'relative',
         zIndex: 100,
         background: theme.palette.mode === 'dark'
-          ? 'rgba(30, 41, 59, 0.7)' // Slate 800 with opacity
+          ? 'rgba(30, 41, 59, 0.7)'
           : 'rgba(255, 255, 255, 0.7)',
         backdropFilter: 'blur(20px)',
         boxShadow: 'none',
@@ -268,7 +268,7 @@ const Sidebar = () => {
       <Box
         sx={{
           position: 'relative',
-          marginBottom: '12px',
+          marginBottom: '7px',
         }}
       >
         <Box
@@ -276,9 +276,9 @@ const Sidebar = () => {
           onMouseEnter={() => setAvatarHover(true)}
           onMouseLeave={() => setAvatarHover(false)}
           sx={{
-            width: '40px',
-            height: '40px',
-            borderRadius: '10px',
+            width: '34px',
+            height: '34px',
+            borderRadius: '9px',
             backgroundColor: userAvatar ? 'transparent' : theme.palette.primary.main,
             display: 'flex',
             alignItems: 'center',
@@ -400,10 +400,10 @@ const Sidebar = () => {
       {/* 分隔线 */}
       <Box
         sx={{
-          width: '44px',
+          width: '32px',
           height: '1px',
           backgroundColor: theme.palette.divider,
-          marginBottom: '16px',
+          marginBottom: '8px',
           opacity: 0.5,
         }}
       />
@@ -413,7 +413,7 @@ const Sidebar = () => {
         sx={{
           display: 'flex',
           flexDirection: 'column',
-          gap: '4px',
+          gap: '2px',
           flex: 1,
           overflow: 'visible',
           minHeight: 0
@@ -455,7 +455,7 @@ const Sidebar = () => {
       >
         <Box
           sx={{
-            width: '44px',
+            width: '32px',
             height: '1px',
             backgroundColor: theme.palette.divider,
             marginBottom: '8px',

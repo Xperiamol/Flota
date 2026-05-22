@@ -133,7 +133,7 @@ class ImageCleanupService {
     for (const note of notes) {
       if (!note.content) continue;
 
-      // 处理白板笔记
+      // 处理画布笔记
       if (note.note_type === 'whiteboard') {
         try {
           const whiteboardData = JSON.parse(note.content);
@@ -157,7 +157,7 @@ class ImageCleanupService {
             });
           }
         } catch (error) {
-          console.error('[ImageCleanup] 解析白板笔记失败:', error);
+          console.error('[ImageCleanup] 解析画布笔记失败:', error);
           // 继续处理其他笔记
         }
       } else {

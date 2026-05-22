@@ -1,22 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { Box } from '@mui/material';
+import { Flag as FlagIcon } from '@mui/icons-material';
 import BaseFilter from './BaseFilter';
 import FilterChip from './FilterChip';
 import { getAllPriorities, getPriorityIcon } from '../utils/priorityUtils';
 
 /**
  * 优先级筛选组件
- * 为待办事项提供优先级筛选功能
- * 复用TagFilter的设计模式，遵循DRY原则
+ * 浮窗筛选器中的「优先级」分组。
  */
-const PriorityFilter = ({ 
-  selectedPriorities = [], 
+const PriorityFilter = ({
+  selectedPriorities = [],
   onPrioritiesChange,
-  sx = {} 
+  sx = {}
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
   const [priorities, setPriorities] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [, setIsLoading] = useState(false);
 
   // 加载优先级统计数据
   const loadPriorityStats = async () => {
@@ -90,12 +89,10 @@ const PriorityFilter = ({
 
   return (
     <BaseFilter
-      title="优先级筛选"
+      title="优先级"
+      icon={<FlagIcon />}
       selectedItems={selectedPriorities}
       onClearAll={clearAllFilters}
-      expandable={priorities.length > 0}
-      isExpanded={isExpanded}
-      onToggleExpand={() => setIsExpanded(!isExpanded)}
       sx={sx}
     >
       {renderPriorityChips()}

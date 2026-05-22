@@ -1,5 +1,5 @@
 /**
- * AI 白板图表生成器（Composition IR 架构）
+ * AI 画布图表生成器（Composition IR 架构）
  *
  * 流程：
  *   1) AI 规划画布：输出 outline（描述这张画布上要有哪些区块/自由要素）
@@ -58,7 +58,7 @@ const buildOutlineMessages = (userRequest) => {
   return [
     {
       role: 'system',
-      content: `你是 Flota 白板规划师，负责为用户素材设计一张完整的画布。
+      content: `你是 Flota 画布规划师，负责为用户素材设计一张完整的画布。
 你不是单选一种图，而是规划"由哪些区块/便签/分组/连接线组合成"。
 
 可选区块类型 (block)（带能力分层 tier）：
@@ -379,7 +379,7 @@ export async function aiGenerateExcalidrawElements(description, existingElements
 }
 
 /**
- * 把整篇 Markdown 转白板（用于"内容转白板"按钮）
+ * 把整篇 Markdown 转画布（用于"内容转画布"按钮）
  */
 export async function aiConvertMarkdownToWhiteboard(markdownContent) {
   const result = await aiGenerateExcalidrawElements(markdownContent, [])

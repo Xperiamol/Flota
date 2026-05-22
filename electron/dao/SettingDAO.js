@@ -210,6 +210,7 @@ class SettingDAO {
       { key: 'titleBarStyle', value: 'windows', type: 'string', description: '标题栏样式' },
       { key: 'language', value: 'zh-CN', type: 'string', description: '界面语言' },
       { key: 'maskOpacity', value: 'medium', type: 'string', description: '遮罩强度' },
+      { key: 'whiteboardStyle', value: 'neat', type: 'string', description: '画布视觉风格 (neat | sketchy)' },
       { key: 'backgroundPattern', value: 'none', type: 'string', description: '背景花纹' },
       { key: 'patternOpacity', value: '1', type: 'number', description: '花纹强度' },
       { key: 'auto_save', value: 'true', type: 'boolean', description: '自动保存' },

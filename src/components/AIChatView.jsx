@@ -21,6 +21,7 @@ import remarkGfm from 'remark-gfm'
 import { useStore } from '../store/useStore'
 import { buildContextPackageFromNotes, getContextSources, truncateText } from '../utils/aiContextUtils'
 import { handleWhiteboardAIRequest } from '../utils/whiteboardAI'
+import { toListResult } from '../utils/todoDisplayUtils'
 
 // ─── Markdown 渲染（react-markdown + remark-gfm） ───
 
@@ -348,7 +349,7 @@ export default function AIChatView({ onTodoUpdated }) {
     if (contextEnabled.todos) {
       try {
         const todoResult = await window.electronAPI?.todos?.getAll?.({ includeCompleted: false, limit: 100 })
-        todoContext = Array.isArray(todoResult?.data) ? todoResult.data : Array.isArray(todoResult) ? todoResult : []
+        todoContext = toListResult(todoResult)
       } catch (_) {
         todoContext = []
       }

@@ -25,6 +25,18 @@ export function toDateKey(date) {
 }
 
 /**
+ * 把后端 IPC 返回的列表统一成数组。
+ * 后端有时返回 [...]，有时返回 { data: [...] }；统一兜底到一处。
+ * @param {unknown} result
+ * @returns {Array}
+ */
+export function toListResult(result) {
+  if (Array.isArray(result)) return result;
+  if (Array.isArray(result?.data)) return result.data;
+  return [];
+}
+
+/**
  * 判断一个 todo 是否为重复待办
  * @param {object} todo
  * @returns {boolean}

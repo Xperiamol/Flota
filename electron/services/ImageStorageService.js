@@ -30,7 +30,7 @@ const getUserDataPath = () => {
 
 /**
  * 图片存储服务
- * 用于管理白板和笔记中的图片文件
+ * 用于管理画布和笔记中的图片文件
  * 将base64图片数据存储到文件系统，而非数据库
  */
 class ImageStorageService {
@@ -54,7 +54,7 @@ class ImageStorageService {
       
       console.log('图片存储服务初始化成功');
       console.log('- 存储目录:', this.storageDir);
-      console.log('- 白板图片:', this.whiteboardDir);
+      console.log('- 画布图片:', this.whiteboardDir);
       
       this.initialized = true;
     } catch (error) {
@@ -83,7 +83,7 @@ class ImageStorageService {
   }
 
   /**
-   * 保存白板图片
+   * 保存画布图片
    * @param {string} fileId - Excalidraw的文件ID
    * @param {string} base64Data - base64编码的图片数据
    * @returns {Promise<string>} 返回图片文件路径
@@ -112,17 +112,17 @@ class ImageStorageService {
       // 保存到文件系统
       await fs.writeFile(filePath, buffer);
       
-      console.log(`白板图片已保存: ${fileName} (${(buffer.length / 1024).toFixed(2)} KB)`);
+      console.log(`画布图片已保存: ${fileName} (${(buffer.length / 1024).toFixed(2)} KB)`);
       
       return fileName; // 返回相对路径
     } catch (error) {
-      console.error('保存白板图片失败:', error);
+      console.error('保存画布图片失败:', error);
       throw error;
     }
   }
 
   /**
-   * 批量保存白板图片
+   * 批量保存画布图片
    * @param {Object} files - Excalidraw的files对象
    * @returns {Promise<Object>} 返回文件ID到文件路径的映射
    */
@@ -158,7 +158,7 @@ class ImageStorageService {
   }
 
   /**
-   * 加载白板图片
+   * 加载画布图片
    * @param {string} fileName - 图片文件名
    * @returns {Promise<string>} 返回base64编码的图片数据
    */
@@ -180,13 +180,13 @@ class ImageStorageService {
       
       return base64Data;
     } catch (error) {
-      console.error('加载白板图片失败:', fileName, error);
+      console.error('加载画布图片失败:', fileName, error);
       throw error;
     }
   }
 
   /**
-   * 批量加载白板图片
+   * 批量加载画布图片
    * @param {Object} fileMap - 文件ID到文件路径的映射
    * @returns {Promise<Object>} 返回Excalidraw的files对象
    */
@@ -221,7 +221,7 @@ class ImageStorageService {
   }
 
   /**
-   * 删除白板图片
+   * 删除画布图片
    * @param {string} fileName - 图片文件名
    */
   async deleteWhiteboardImage(fileName) {
@@ -239,7 +239,7 @@ class ImageStorageService {
   }
 
   /**
-   * 批量删除白板图片
+   * 批量删除画布图片
    * @param {Object} fileMap - 文件ID到文件路径的映射
    */
   async deleteWhiteboardImages(fileMap) {

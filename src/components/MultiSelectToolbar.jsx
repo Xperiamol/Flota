@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   Box,
   Toolbar,
@@ -50,14 +49,23 @@ const MultiSelectToolbar = ({
     color: 'inherit',
     textTransform: 'none',
     minWidth: 'auto',
-    px: 1.25,
-    borderRadius: 1.5,
+    height: 28,
+    px: 1,
+    borderRadius: '9px',
     border: '1px solid',
-    borderColor: 'rgba(255,255,255,0.35)',
-    fontWeight: 500,
+    borderColor: 'rgba(148,163,184,0.28)',
+    fontWeight: 600,
+    fontSize: '0.75rem',
+    lineHeight: 1,
     '&:hover': {
-      borderColor: 'rgba(255,255,255,0.55)',
+      borderColor: 'rgba(148,163,184,0.45)',
       backgroundColor: 'rgba(255,255,255,0.12)'
+    },
+    '& .MuiButton-startIcon': {
+      mr: 0.5,
+      '& .MuiSvgIcon-root': {
+        fontSize: 16
+      }
     },
     '&.Mui-disabled': {
       color: 'rgba(255,255,255,0.55)',
@@ -82,42 +90,51 @@ const MultiSelectToolbar = ({
   return (
     <Fade in={visible} timeout={200}>
       <Box
-        sx={{
+        sx={(theme) => ({
           borderBottom: 1,
-          borderColor: 'divider',
-          backgroundColor: 'primary.light',
-          color: 'primary.contrastText'
-        }}
+          borderColor: theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.14)' : 'rgba(15,23,42,0.08)',
+          backgroundColor: theme.palette.mode === 'dark'
+            ? 'rgba(30,41,59,0.78)'
+            : 'rgba(248,251,255,0.82)',
+          color: 'text.primary',
+          backdropFilter: 'blur(18px) saturate(160%)',
+          WebkitBackdropFilter: 'blur(18px) saturate(160%)'
+        })}
       >
         <Toolbar
           variant="dense"
           sx={{
-            minHeight: 48,
-            px: 2,
+            minHeight: 40,
+            pl: 1,
+            pr: 1.5,
             display: 'flex',
             alignItems: 'center',
-            gap: 1
+            gap: 0.75
           }}
         >
           {/* 关闭按钮 */}
           <IconButton
-            size="medium"
+            size="small"
             onClick={onClose}
             aria-label="关闭多选"
             sx={{
               color: 'inherit',
-              ml: '-7px'
+              ml: -1.6,
+              width: 28,
+              height: 28,
+              flexShrink: 0,
+              borderRadius: '9px'
             }}
           >
-            <CloseIcon />
+            <CloseIcon sx={{ fontSize: 18 }} />
           </IconButton>
           
           {/* 选中数量显示 */}
-          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+          <Typography variant="body2" sx={{ fontSize: '0.8125rem', fontWeight: 650, whiteSpace: 'nowrap' }}>
             已选择 {selectedCount} 个{itemType}
           </Typography>
           
-          <Divider orientation="vertical" flexItem sx={{ mx: 1, borderColor: 'currentColor' }} />
+          <Divider orientation="vertical" flexItem sx={{ mx: 0.25, borderColor: 'divider' }} />
           
           {/* 全选/取消全选 */}
           <Button
@@ -131,7 +148,7 @@ const MultiSelectToolbar = ({
           
           {/* 只有在有操作时显示分隔符 */}
           {(onDelete || onSetTags || customActions.length > 0) && (
-            <Divider orientation="vertical" flexItem sx={{ mx: 1, borderColor: 'currentColor' }} />
+            <Divider orientation="vertical" flexItem sx={{ mx: 0.25, borderColor: 'divider' }} />
           )}
           
           {/* 删除按钮 - 始终显示（如果提供） */}
@@ -186,9 +203,12 @@ const MultiSelectToolbar = ({
             size="small"
             variant="outlined"
             sx={{
-              borderColor: 'currentColor',
+              height: 24,
+              borderColor: 'divider',
               color: 'inherit',
-              fontSize: '0.75rem'
+              fontSize: '0.7rem',
+              fontWeight: 650,
+              borderRadius: '8px'
             }}
           />
         </Toolbar>

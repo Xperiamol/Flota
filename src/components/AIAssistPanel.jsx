@@ -12,6 +12,7 @@ import useAIStream from '../hooks/useAIStream'
 import useDraggableFloatingPanel from '../hooks/useDraggableFloatingPanel'
 import { ALL_TOOLBAR_ITEMS, DEFAULT_FLOATING_ORDER, execWYSIWYGCommand } from './MarkdownToolbar'
 import { buildContextPackageFromNotes, truncateText } from '../utils/aiContextUtils'
+import { toListResult } from '../utils/todoDisplayUtils'
 
 const PANEL_MARGIN = 8
 const PANEL_ESTIMATED_WIDTH = 280
@@ -287,7 +288,7 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
         })
       ])
       const todos = todoResult.status === 'fulfilled'
-        ? (Array.isArray(todoResult.value?.data) ? todoResult.value.data : Array.isArray(todoResult.value) ? todoResult.value : [])
+        ? toListResult(todoResult.value)
         : []
       const memories = memoryResult.status === 'fulfilled' && Array.isArray(memoryResult.value?.results)
         ? memoryResult.value.results

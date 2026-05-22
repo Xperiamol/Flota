@@ -253,7 +253,17 @@ const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
     '& .excalidraw .layer-ui__wrapper__top-center, & .excalidraw .App-toolbar-container': {
       background: 'transparent !important',
     },
-    '& .excalidraw .Island.App-toolbar, & .excalidraw .App-toolbar': {
+    // 外层 footer.App-toolbar 仅作布局用，不要再画一层玻璃，避免和内层 Island 叠成两层
+    '& .excalidraw footer.App-toolbar': {
+      background: 'transparent !important',
+      backgroundColor: 'transparent !important',
+      border: 'none !important',
+      boxShadow: 'none !important',
+      backdropFilter: 'none !important',
+      WebkitBackdropFilter: 'none !important',
+    },
+    // 真正的工具岛：内层 .Island.App-toolbar
+    '& .excalidraw .Island.App-toolbar': {
       position: 'relative',
       isolation: 'isolate',
       background: 'transparent !important',
@@ -261,9 +271,28 @@ const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
       border: 'none !important',
       boxShadow: 'none !important',
       borderRadius: '16px !important',
-      overflow: 'hidden',
+      overflow: 'visible',
+      // 仅按内容高度撑开，避免被父级 grid/flex 容器拉伸（大屏下尤其明显）
+      height: 'fit-content',
+      alignSelf: 'center',
+      justifySelf: 'center',
     },
-    '& .excalidraw .Island.App-toolbar::before, & .excalidraw .App-toolbar::before': {
+    // 工具岛父容器（Stack.Row.App-toolbar-container）也按内容收缩
+    '& .excalidraw .App-toolbar-container': {
+      height: 'fit-content',
+      alignSelf: 'center',
+      alignItems: 'center',
+    },
+    // 工具岛内部按钮一行（Stack.Row）也按内容收缩
+    '& .excalidraw .Island.App-toolbar > .Stack_horizontal': {
+      alignItems: 'center',
+      height: 'fit-content',
+    },
+    // HintViewer：Excalidraw 在工具栏正下方挂的提示文案，宽窗口下会变得很长很占视野，统一隐藏
+    '& .excalidraw .HintViewer': {
+      display: 'none !important',
+    },
+    '& .excalidraw .Island.App-toolbar::before': {
       content: '""',
       position: 'absolute',
       inset: 0,
@@ -672,7 +701,7 @@ const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
       WebkitBackdropFilter: 'blur(20px) saturate(180%)',
       borderLeft: menuBorder,
       boxShadow: `${menuShadow} !important`,
-      overflow: 'hidden',
+      overflow: 'visible',
     },
     '& .excalidraw .sidebar': {
       borderTopLeftRadius: '18px',
@@ -708,7 +737,7 @@ const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
       },
     },
 
-    // 白板内部所有滚动区域统一跟随应用全局滚动条样式
+    // 画布内部所有滚动区域统一跟随应用全局滚动条样式
     '& .excalidraw ::-webkit-scrollbar': {
       width: '6px',
       height: '6px',
@@ -729,6 +758,73 @@ const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
     },
     '& .excalidraw ::-webkit-scrollbar-button': {
       display: 'none',
+    },
+
+    // ── 模态层（Dialog / Modal / HelpDialog / ConfirmDialog / Tooltip / ColorPicker） ──
+    // Excalidraw 内置的对话框、提示气泡、颜色选择器等弹层统一玻璃化，
+    // 与上方 dropdown-menu / context-menu 复用同一套 token，避免视觉割裂。
+    // 注意：所有规则都仅作用于 .excalidraw 内部，避免污染外部 MUI Dialog。
+    '& .excalidraw .Modal__background': {
+      background: isDark
+        ? alpha('#000000', 0.36)
+        : alpha('#0f172a', 0.18),
+      backdropFilter: 'blur(4px)',
+      WebkitBackdropFilter: 'blur(4px)',
+    },
+    '& .excalidraw .Dialog, & .excalidraw .Modal__content, & .excalidraw .HelpDialog, & .excalidraw .ConfirmDialog': {
+      backgroundColor: `${menuBg} !important`,
+      backdropFilter: 'blur(22px) saturate(180%)',
+      WebkitBackdropFilter: 'blur(22px) saturate(180%)',
+      border: menuBorder,
+      boxShadow: `${menuShadow} !important`,
+      borderRadius: '16px !important',
+      color: 'inherit',
+    },
+    '& .excalidraw .Dialog__title, & .excalidraw .HelpDialog__header': {
+      borderBottomColor: alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.08 : 0.08),
+    },
+    '& .excalidraw .Tooltip, & .excalidraw .Tooltip__label': {
+      backgroundColor: `${menuBg} !important`,
+      backdropFilter: 'blur(14px) saturate(160%)',
+      WebkitBackdropFilter: 'blur(14px) saturate(160%)',
+      border: menuBorder,
+      boxShadow: `${menuShadow} !important`,
+      borderRadius: '10px !important',
+      color: 'inherit',
+    },
+    '& .excalidraw .picker, & .excalidraw .color-picker, & .excalidraw .color-picker__container, & .excalidraw .color-picker-content, & .excalidraw .color-picker-popover': {
+      backgroundColor: `${menuBg} !important`,
+      backdropFilter: 'blur(20px) saturate(180%)',
+      WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+      border: menuBorder,
+      boxShadow: `${menuShadow} !important`,
+      borderRadius: '14px !important',
+    },
+    '& .excalidraw .picker .color-picker-content--default': {
+      background: 'transparent !important',
+    },
+    '& .excalidraw .picker-content, & .excalidraw .picker-container': {
+      background: 'transparent !important',
+    },
+    '& .excalidraw input, & .excalidraw textarea, & .excalidraw select': {
+      background: isDark ? alpha('#ffffff', 0.04) : alpha('#ffffff', 0.72),
+      border: `1px solid ${alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.1 : 0.1)}`,
+      borderRadius: '10px',
+      color: 'inherit',
+      transition: 'background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease',
+    },
+    '& .excalidraw input:focus, & .excalidraw textarea:focus, & .excalidraw select:focus': {
+      borderColor: alpha(accent, isDark ? 0.4 : 0.32),
+      boxShadow: `0 0 0 3px ${alpha(accent, isDark ? 0.18 : 0.14)}`,
+      outline: 'none',
+    },
+
+    // ── 交互修复：防止某些场景下 Island::before / 半透明伪元素拦截鼠标事件 ──
+    // 配合上方 `pointer-events: none`，确保子按钮能正常点击。
+    // 这里统一兜底一遍，避免后续 token 调整时遗漏。
+    '& .excalidraw .Island.App-toolbar > *': {
+      position: 'relative',
+      zIndex: 1,
     },
   }
 
@@ -770,8 +866,35 @@ const createImageEditButtonSx = ({ isDark, primaryColor }) => {
   }
 }
 
+// 与 Excalidraw 内置 Dialog 视觉一致的 MUI Dialog 玻璃 token，
+// 复用 createExcalidrawGlassTokens 输出的 menu 系列变量，避免双标。
+const createMermaidDialogSlotProps = ({ isDark, primaryColor }) => {
+  const accent = primaryColor || '#1976d2'
+  const { menuBg, menuBorder, menuShadow } = createExcalidrawGlassTokens({ isDark, accent })
+  return {
+    paper: {
+      sx: {
+        backgroundColor: menuBg,
+        backdropFilter: 'blur(22px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(22px) saturate(180%)',
+        border: menuBorder,
+        boxShadow: menuShadow,
+        borderRadius: '16px',
+        backgroundImage: 'none',
+      },
+    },
+    backdrop: {
+      sx: {
+        backgroundColor: isDark ? alpha('#000000', 0.36) : alpha('#0f172a', 0.18),
+        backdropFilter: 'blur(4px)',
+        WebkitBackdropFilter: 'blur(4px)',
+      },
+    },
+  }
+}
+
 /**
- * 白板编辑器组件
+ * 画布编辑器组件
  * 直接使用 @excalidraw/excalidraw React 组件
  */
 const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onExportPNG }) => {
@@ -819,7 +942,8 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     actualIsStandaloneMode = false
   }
   
-  const { notes, updateNote, currentView, theme: themePref, primaryColor } = store
+  const { notes, updateNote, currentView, theme: themePref, primaryColor, whiteboardStyle } = store
+  const styleMode = whiteboardStyle === 'sketchy' ? 'sketchy' : 'neat'
 
   // 解析实际主题（处理 'system'）
   const [systemIsDark, setSystemIsDark] = useState(
@@ -845,10 +969,14 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
   const [dslDraft, setDslDraft] = useState('')
   const [dslError, setDslError] = useState('')
   const [isRegeneratingDsl, setIsRegeneratingDsl] = useState(false)
+  const [creatorOpen, setCreatorOpen] = useState(false)
+  const [creatorDraft, setCreatorDraft] = useState('')
+  const [creatorError, setCreatorError] = useState('')
+  const [isCreatingDiagram, setIsCreatingDiagram] = useState(false)
   const hasUnsavedChangesRef = useRef(false)
   // 保存上一个noteId，用于检测noteId变化（初始为null，避免首次加载时触发保存）
   const prevNoteIdRef = useRef(null)
-  // 当前正在编辑的白板noteId（防止异步保存写错对象）
+  // 当前正在编辑的画布noteId（防止异步保存写错对象）
   const activeNoteIdRef = useRef(noteId)
   // 标记是否正在切换笔记，用于避免组件卸载时的重复保存
   const isSwitchingNoteRef = useRef(false)
@@ -894,6 +1022,26 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     setDslError('')
   }, [isRegeneratingDsl])
 
+  // 根据当前画布风格对生成的元素做规整化处理：
+  // - 文本元素：fontFamily 改为 Helvetica（2）
+  // - 形状/箭头/线条等：roughness=0（直线）、strokeStyle=solid（实线）
+  // 手绘模式下保持原样不动
+  const applyWhiteboardStyleToElements = useCallback((elements) => {
+    if (styleMode !== 'neat') return elements
+    if (!Array.isArray(elements)) return elements
+    return elements.map((el) => {
+      if (!el || typeof el !== 'object') return el
+      const next = { ...el }
+      if (typeof next.roughness === 'number') {
+        next.roughness = 0
+      }
+      if (next.type === 'text' && typeof next.fontFamily === 'number') {
+        next.fontFamily = 2
+      }
+      return next
+    })
+  }, [styleMode])
+
   const regenerateMermaidImage = useCallback(async () => {
     if (!selectedMermaidImage || !dslDraft.trim()) {
       setDslError('请输入 Mermaid DSL')
@@ -908,8 +1056,9 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
 
     try {
       const rendered = await renderMermaidNative(dslDraft.trim(), { offsetX: 0, offsetY: 0 })
+      const styledElements = applyWhiteboardStyleToElements(rendered.elements)
       const translatedElements = translateElementsTo(
-        rendered.elements,
+        styledElements,
         selectedMermaidImage.x,
         selectedMermaidImage.y,
       )
@@ -979,6 +1128,132 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     noteId,
     serializeScene,
     updateNote,
+    applyWhiteboardStyleToElements,
+  ])
+
+  const openMermaidCreator = useCallback(() => {
+    setCreatorDraft('')
+    setCreatorError('')
+    setCreatorOpen(true)
+  }, [])
+
+  const closeMermaidCreator = useCallback(() => {
+    if (isCreatingDiagram) return
+    setCreatorOpen(false)
+    setCreatorError('')
+  }, [isCreatingDiagram])
+
+  const createMermaidDiagram = useCallback(async () => {
+    const dsl = creatorDraft.trim()
+    if (!dsl) {
+      setCreatorError('请输入 Mermaid DSL')
+      return
+    }
+    if (!excalidrawAPI) return
+
+    setIsCreatingDiagram(true)
+    setCreatorError('')
+    isApplyingRemoteDataRef.current = true
+
+    try {
+      const rendered = await renderMermaidNative(dsl, { offsetX: 0, offsetY: 0 })
+      const styledRenderedElements = applyWhiteboardStyleToElements(rendered.elements)
+
+      const currentElements = excalidrawAPI.getSceneElements()
+      const currentAppState = excalidrawAPI.getAppState()
+      const currentFiles = excalidrawAPI.getFiles()
+
+      // 视口中心（场景坐标）= -scroll + viewport/zoom/2
+      const zoom = currentAppState?.zoom?.value || 1
+      const viewportW = currentAppState?.width || 0
+      const viewportH = currentAppState?.height || 0
+      const centerX = -(currentAppState?.scrollX || 0) + viewportW / zoom / 2
+      const centerY = -(currentAppState?.scrollY || 0) + viewportH / zoom / 2
+
+      const validNew = styledRenderedElements.filter((el) => el && !el.isDeleted)
+      let translatedElements = styledRenderedElements
+      if (validNew.length) {
+        const minX = Math.min(...validNew.map((el) => typeof el.x === 'number' ? el.x : 0))
+        const minY = Math.min(...validNew.map((el) => typeof el.y === 'number' ? el.y : 0))
+        const maxX = Math.max(
+          ...validNew.map((el) => (typeof el.x === 'number' ? el.x : 0) + (typeof el.width === 'number' ? el.width : 0)),
+        )
+        const maxY = Math.max(
+          ...validNew.map((el) => (typeof el.y === 'number' ? el.y : 0) + (typeof el.height === 'number' ? el.height : 0)),
+        )
+        const width = maxX - minX
+        const height = maxY - minY
+        translatedElements = translateElementsTo(
+          styledRenderedElements,
+          centerX - width / 2,
+          centerY - height / 2,
+        )
+      }
+
+      const nextElements = [...currentElements, ...translatedElements]
+      const nextFiles = { ...(currentFiles || {}), ...(rendered.files || {}) }
+
+      // Tier3 回退分支会产 image 元素，需要把图片资源注入 Excalidraw 文件系统
+      if (excalidrawAPI?.addFiles && rendered.files && Object.keys(rendered.files).length > 0) {
+        try {
+          const filesPayload = Object.values(rendered.files).filter(Boolean)
+          if (filesPayload.length > 0) excalidrawAPI.addFiles(filesPayload)
+        } catch (fileErr) {
+          logger.warn('[WhiteboardEditor] Mermaid 成图 addFiles 失败:', fileErr)
+        }
+      }
+
+      const persistedAppState = {
+        viewBackgroundColor: currentAppState.viewBackgroundColor,
+        currentItemFontFamily: currentAppState.currentItemFontFamily,
+        gridSize: currentAppState.gridSize,
+      }
+
+      setCreatorOpen(false)
+      setCreatorDraft('')
+      setInitialData({
+        elements: nextElements,
+        appState: persistedAppState,
+        files: nextFiles,
+      })
+      setExcalidrawKey(`excalidraw-${noteId || 'unknown'}-${Date.now()}`)
+
+      latestSceneRef.current = {
+        elements: nextElements,
+        appState: persistedAppState,
+        files: nextFiles,
+      }
+      lastSavedSceneRef.current = serializeScene(nextElements, persistedAppState, nextFiles)
+      setHasUnsavedChanges(false)
+      hasUnsavedChangesRef.current = false
+
+      await updateNote(noteId, {
+        content: buildWhiteboardContent({
+          elements: nextElements,
+          appState: persistedAppState,
+          fileMap: nextFiles,
+        }),
+        note_type: 'whiteboard',
+      })
+    } catch (error) {
+      logger.warn('[WhiteboardEditor] Mermaid 成图失败:', error)
+      setCreatorError(error?.message || 'Mermaid 解析失败，请检查 DSL 语法')
+      isApplyingRemoteDataRef.current = false
+    } finally {
+      setIsCreatingDiagram(false)
+    }
+
+    setTimeout(() => {
+      isApplyingRemoteDataRef.current = false
+    }, 200)
+  }, [
+    creatorDraft,
+    excalidrawAPI,
+    translateElementsTo,
+    noteId,
+    serializeScene,
+    updateNote,
+    applyWhiteboardStyleToElements,
   ])
   
   // 监听类型转换事件
@@ -1002,6 +1277,23 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     hasUnsavedChangesRef.current = hasUnsavedChanges
   }, [hasUnsavedChanges])
 
+  // 当用户在设置中切换画布风格时，实时把 appState 的"当前绘图属性"推送到画布
+  // 这样无需切换/刷新笔记，新画的元素就会立刻按新风格渲染
+  useEffect(() => {
+    if (!excalidrawAPI) return
+    try {
+      excalidrawAPI.updateScene({
+        appState: {
+          currentItemFontFamily: styleMode === 'neat' ? 2 : 1,
+          currentItemRoughness: styleMode === 'neat' ? 0 : 1,
+          currentItemStrokeStyle: 'solid',
+        },
+      })
+    } catch (e) {
+      logger.warn('[WhiteboardEditor] 推送画布风格失败', e)
+    }
+  }, [styleMode, excalidrawAPI])
+
   useEffect(() => {
     if (!selectedMermaidImage) return
     const currentElements = excalidrawAPI?.getSceneElements?.() || []
@@ -1022,12 +1314,19 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     })
   }
 
-  // 定义空白板模板数据（跟随暗黑模式）
+  // 定义空画布模板数据（跟随暗黑模式与画布风格设置）
   const blankBoardData = useMemo(() => ({
     elements: [],
-    appState: { viewBackgroundColor: isDark ? '#1e1e1e' : '#ffffff' },
+    appState: {
+      viewBackgroundColor: isDark ? '#1e1e1e' : '#ffffff',
+      // 规整模式：默认使用 Helvetica（fontFamily=2）+ 直线（roughness=0）+ 实线（strokeStyle=solid）
+      // 手绘模式：保留 Excalidraw 默认（Virgil + roughness=1 + solid）
+      currentItemFontFamily: styleMode === 'neat' ? 2 : 1,
+      currentItemRoughness: styleMode === 'neat' ? 0 : 1,
+      currentItemStrokeStyle: 'solid',
+    },
     files: {}
-  }), [isDark])
+  }), [isDark, styleMode])
 
   // 重置Excalidraw内容的通用函数
   const resetExcalidrawContent = useCallback(async (api, note) => {
@@ -1061,23 +1360,28 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
         )
       }
 
-      // 如果笔记类型不是白板，使用空白板
+      // 如果笔记类型不是画布，使用空画布
       if (note.note_type !== 'whiteboard') {
         useBlankScene()
         return
       }
 
-      // 笔记类型是白板，但内容为空
+      // 笔记类型是画布，但内容为空
       if (!note.content) {
         useBlankScene()
         return
       }
 
-      // 解析白板数据并更新
+      // 解析画布数据并更新
       const excalidrawData = JSON.parse(note.content)
       setError(null)
-      const elements = excalidrawData.elements || []
-      const appState = excalidrawData.appState || { viewBackgroundColor: '#ffffff' }
+      const elements = applyWhiteboardStyleToElements(excalidrawData.elements || [])
+      const appState = {
+        ...(excalidrawData.appState || { viewBackgroundColor: '#ffffff' }),
+        currentItemFontFamily: styleMode === 'neat' ? 2 : 1,
+        currentItemRoughness: styleMode === 'neat' ? 0 : 1,
+        currentItemStrokeStyle: 'solid',
+      }
       
       // 处理图片文件
       let files = {}
@@ -1120,13 +1424,13 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
       applyScene(elements, appState, files)
     } catch (error) {
       console.error('[WhiteboardEditor] 更新Excalidraw内容失败', error)
-      setError('白板数据格式错误，无法加载')
+      setError('画布数据格式错误，无法加载')
     } finally {
       isApplyingRemoteDataRef.current = false
     }
   }, [blankBoardData, serializeScene, setHasUnsavedChanges, setInitialData])
 
-  // 加载白板数据（仅在首次挂载时执行，后续切换通过 useEffect 处理）
+  // 加载画布数据（仅在首次挂载时执行，后续切换通过 useEffect 处理）
   useEffect(() => {
     // 只在首次加载时执行（prevNoteIdRef 为 null）
     if (prevNoteIdRef.current !== null) {
@@ -1156,9 +1460,9 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
         return
       }
 
-      // 解析白板数据
+      // 解析画布数据
       try {
-        // 如果笔记类型不是白板，使用空白板
+        // 如果笔记类型不是画布，使用空画布
         if (note.note_type !== 'whiteboard') {
           setInitialData(blankBoardData)
           lastSavedSceneRef.current = serializeScene(
@@ -1174,7 +1478,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
           return
         }
 
-        // 笔记类型是白板，但内容为空
+        // 笔记类型是画布，但内容为空
         if (!note.content) {
           setInitialData(blankBoardData)
           lastSavedSceneRef.current = serializeScene(
@@ -1190,7 +1494,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
           return
         }
 
-        // 解析白板数据
+        // 解析画布数据
         const excalidrawData = JSON.parse(note.content)
         setError(null)
 
@@ -1238,8 +1542,13 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
         }
 
         const initialScene = {
-          elements: excalidrawData.elements || [],
-          appState: excalidrawData.appState || { viewBackgroundColor: '#ffffff' },
+          elements: applyWhiteboardStyleToElements(excalidrawData.elements || []),
+          appState: {
+            ...(excalidrawData.appState || { viewBackgroundColor: '#ffffff' }),
+            currentItemFontFamily: styleMode === 'neat' ? 2 : 1,
+            currentItemRoughness: styleMode === 'neat' ? 0 : 1,
+            currentItemStrokeStyle: 'solid',
+          },
           files: files
         }
 
@@ -1257,14 +1566,14 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
         setIsLoading(false)
         isApplyingRemoteDataRef.current = false
       } catch (error) {
-        console.error('[WhiteboardEditor] 解析白板数据失败', error)
+        console.error('[WhiteboardEditor] 解析画布数据失败', error)
         setHasUnsavedChanges(false)
         hasUnsavedChangesRef.current = false
         activeNoteIdRef.current = noteId
         
         const note = notes.find(n => n.id === noteId)
         if (note?.note_type === 'whiteboard') {
-          setError('白板数据格式错误，无法加载')
+          setError('画布数据格式错误，无法加载')
         } else {
           setError(null)
         }
@@ -1560,7 +1869,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     return result
   }, [performSave, noteId, hasUnsavedChangesRef, excalidrawAPI])
 
-  // 使用防抖保存 Hook，白板保存频率较低（10秒）
+  // 使用防抖保存 Hook，画布保存频率较低（10秒）
   const { debouncedSave, saveNow, cancelSave } = useDebouncedSave(performSaveWithLog, 10000)
 
   // 独立窗口模式：监听窗口关闭事件
@@ -1614,7 +1923,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     
     // 如果从笔记视图切换到其他视图，且有选中的笔记且有未保存的更改，立即保存
     if (prevView === 'notes' && currentView !== 'notes' && noteId && hasUnsavedChangesRef.current) {
-      logger.log('[WhiteboardEditor] 切换视图前保存白板，从', prevView, '切换到', currentView)
+      logger.log('[WhiteboardEditor] 切换视图前保存画布，从', prevView, '切换到', currentView)
       // 先取消防抖保存
       cancelSave()
       // 立即保存
@@ -1701,7 +2010,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
           note_type: 'whiteboard',
         })
         if (!updateResult?.success) {
-          throw new Error(updateResult?.error || '保存白板失败')
+          throw new Error(updateResult?.error || '保存画布失败')
         }
 
         lastSavedSceneRef.current = serializeScene(
@@ -1728,7 +2037,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     return () => window.removeEventListener(WHITEBOARD_AI_GENERATE_EVENT, handleExternalGenerate)
   }, [excalidrawAPI, noteId, notes, setHasUnsavedChanges, updateNote, serializeScene])
 
-  // 获取当前白板内容（用于类型转换）
+  // 获取当前画布内容（用于类型转换）
   const getCurrentContent = useCallback(async () => {
     if (!excalidrawAPI) return null
 
@@ -1830,7 +2139,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     }
   }, [exportPNG, onExportPNG])
 
-  // 组件卸载时保存当前白板
+  // 组件卸载时保存当前画布
   useEffect(() => {
     return () => {
       // 如果正在切换笔记，不要在卸载时保存（已在切换逻辑中处理）
@@ -1873,6 +2182,10 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
   )
   const imageEditButtonSx = useMemo(
     () => createImageEditButtonSx({ isDark, primaryColor }),
+    [isDark, primaryColor],
+  )
+  const mermaidDialogSlotProps = useMemo(
+    () => createMermaidDialogSlotProps({ isDark, primaryColor }),
     [isDark, primaryColor],
   )
 
@@ -1975,18 +2288,26 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
             },
           }}
           renderTopRightUI={() => (
-            selectedMermaidImage ? (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Button
+                size="small"
+                variant="text"
+                onClick={openMermaidCreator}
+                sx={imageEditButtonSx}
+              >
+                Mermaid 成图
+              </Button>
+              {selectedMermaidImage ? (
                 <Button
                   size="small"
                   variant="text"
                   onClick={openMermaidDslEditor}
                   sx={imageEditButtonSx}
                 >
-                  编辑图像
+                  修改
                 </Button>
-              </Box>
-            ) : null
+              ) : null}
+            </Box>
           )}
         />
       </Box>
@@ -1995,6 +2316,8 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
         onClose={closeMermaidDslEditor}
         maxWidth="md"
         fullWidth
+        slotProps={mermaidDialogSlotProps}
+        sx={{ zIndex: (theme) => theme.zIndex.modal + 10 }}
       >
         <DialogTitle>编辑 Mermaid DSL</DialogTitle>
         <DialogContent>
@@ -2023,6 +2346,44 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
           </Button>
           <Button onClick={regenerateMermaidImage} disabled={isRegeneratingDsl} variant="contained">
             {isRegeneratingDsl ? '重画中...' : '重画替换'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        open={creatorOpen}
+        onClose={closeMermaidCreator}
+        maxWidth="md"
+        fullWidth
+        slotProps={mermaidDialogSlotProps}
+        sx={{ zIndex: (theme) => theme.zIndex.modal + 10 }}
+      >
+        <DialogTitle>Mermaid 代码成图</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            输入 Mermaid DSL，将在画布视口中心生成图形。flowchart / sequence / class / state / er 可拆图元编辑，其余类型以图片快照插入。
+          </Typography>
+          <TextField
+            autoFocus
+            fullWidth
+            multiline
+            minRows={14}
+            value={creatorDraft}
+            onChange={(event) => setCreatorDraft(event.target.value)}
+            placeholder={'示例：\nflowchart LR\n  A[开始] --> B{是否登录}\n  B -- 是 --> C[进入主页]\n  B -- 否 --> D[跳转登录]'}
+            disabled={isCreatingDiagram}
+          />
+          {creatorError ? (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {creatorError}
+            </Alert>
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeMermaidCreator} disabled={isCreatingDiagram} color="inherit">
+            取消
+          </Button>
+          <Button onClick={createMermaidDiagram} disabled={isCreatingDiagram} variant="contained">
+            {isCreatingDiagram ? '生成中...' : '生成到画布'}
           </Button>
         </DialogActions>
       </Dialog>

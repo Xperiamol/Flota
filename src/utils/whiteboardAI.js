@@ -57,7 +57,7 @@ const hasExplicitWhiteboardIntent = (prompt = '') => {
   const text = String(prompt || '').trim().toLowerCase()
   if (!text) return false
 
-  return /(画个?|画一[个张幅]|生成|绘制|出个图|做成图|转成图|整理成图|流程图|架构图|时序图|类图|er图|鱼骨图|思维导图|甘特图|时间轴|四象限|在白板上|插入到白板|加到白板|补到白板|重画|重做|替换当前白板|修改白板|调整白板)/.test(text)
+  return /(画个?|画一[个张幅]|生成|绘制|出个图|做成图|转成图|整理成图|流程图|架构图|时序图|类图|er图|鱼骨图|思维导图|甘特图|时间轴|四象限|在画布上|插入到画布|加到画布|补到画布|重画|重做|替换当前画布|修改画布|调整画布)/.test(text)
 }
 
 const trimInline = (text = '', max = 32) => {
@@ -72,7 +72,7 @@ export const summarizeWhiteboardElementsForAI = (elements = [], fileMap = {}) =>
     : []
 
   if (!activeElements.length) {
-    return '当前白板为空。'
+    return '当前画布为空。'
   }
 
   const textSnippets = activeElements
@@ -113,7 +113,7 @@ const buildIntentClassificationMessages = ({ prompt, note, messages = [], curren
   return [
     {
       role: 'system',
-      content: `你是 Flota 的白板请求路由器。你的任务是先判断：用户最新一句话，到底应该走“普通文字问答(chat)”还是“白板生成/修改(whiteboard)”。
+      content: `你是 Flota 的画布请求路由器。你的任务是先判断：用户最新一句话，到底应该走“普通文字问答(chat)”还是“画布生成/修改(whiteboard)”。
 
 只输出一个 JSON 对象，禁止解释、Markdown、代码块。
 
@@ -124,12 +124,12 @@ const buildIntentClassificationMessages = ({ prompt, note, messages = [], curren
 }
 
 判定原则：
-1. chat：总结、解释、提炼要点、问答、翻译、润色、分析风险、列待办、理解当前白板内容、基于白板做文字回复。
-2. whiteboard：明确要求生成/插入/补充/重画/替换/修改图形或白板内容。
-3. 只因为当前笔记是白板，并不代表必须走 whiteboard。
-4. 用户如果说“总结当前笔记/当前白板”“解释这个流程”“提炼结论”，即使上下文是白板，也应判为 chat。
-5. 只有当用户明确想让白板发生变化，或者最近对话强烈表明“上一轮就在让你继续画图/改图”时，才判为 whiteboard。
-6. 有歧义时优先判为 chat，避免误改白板。`
+1. chat：总结、解释、提炼要点、问答、翻译、润色、分析风险、列待办、理解当前画布内容、基于画布做文字回复。
+2. whiteboard：明确要求生成/插入/补充/重画/替换/修改图形或画布内容。
+3. 只因为当前笔记是画布，并不代表必须走 whiteboard。
+4. 用户如果说“总结当前笔记/当前画布”“解释这个流程”“提炼结论”，即使上下文是画布，也应判为 chat。
+5. 只有当用户明确想让画布发生变化，或者最近对话强烈表明“上一轮就在让你继续画图/改图”时，才判为 whiteboard。
+6. 有歧义时优先判为 chat，避免误改画布。`
     },
     {
       role: 'user',
@@ -154,8 +154,8 @@ const buildGroundingMessages = ({ prompt, note, messages = [], currentWhiteboard
   return [
     {
       role: 'system',
-      content: `你是 Flota 的白板素材整理器。上游已经确认：这次请求应该进入白板生成/修改流程。
-你的任务是从用户最新一句话、最近对话以及当前白板摘要里，判断动作并提炼“真正要绘制成图的内容”。
+      content: `你是 Flota 的画布素材整理器。上游已经确认：这次请求应该进入画布生成/修改流程。
+你的任务是从用户最新一句话、最近对话以及当前画布摘要里，判断动作并提炼“真正要绘制成图的内容”。
 图表类型由下游生成器自动选择，你不需要决定。
 
 只输出一个 JSON 对象，禁止解释、Markdown、代码块。
@@ -168,11 +168,11 @@ const buildGroundingMessages = ({ prompt, note, messages = [], currentWhiteboard
 }
 
 规则：
-1. 永远不要把白板原始 JSON 当成素材；如果提供了 currentWhiteboardSummary，只能使用这个语义摘要。
-2. append = 在现有白板基础上继续补充；replace = 清空后重新生成整张白板；edit = 基于当前白板内容做定向修改，输出“修改后的完整白板需求”。
+1. 永远不要把画布原始 JSON 当成素材；如果提供了 currentWhiteboardSummary，只能使用这个语义摘要。
+2. append = 在现有画布基础上继续补充；replace = 清空后重新生成整张画布；edit = 基于当前画布内容做定向修改，输出“修改后的完整画布需求”。
 3. 如果用户说“这段内容/上面/刚才/整理一下”，优先用最近对话里 assistant 或 user 的真实文本。
 4. 如果只有命令句、找不到具体素材，groundedRequest 设为空字符串，由前端用原 prompt 兜底。
-5. 不要画“Mermaid 规范 / 图表规范 / 白板功能说明”这类元信息。
+5. 不要画“Mermaid 规范 / 图表规范 / 画布功能说明”这类元信息。
 6. groundedRequest 必须是描述要画什么的中文说明，不要直接输出 Mermaid 或其他 DSL。
 7. 如果用户明确指定图表类型（如“画甘特图/鱼骨图/思维导图”），把这个偏好写在 groundedRequest 开头，例如“以鱼骨图呈现：……”。
 8. 如果 actionHint 很明确，应尽量与 actionHint 保持一致；只有用户表达明显相反时才改动。`
@@ -221,10 +221,10 @@ export const classifyWhiteboardIntent = async ({ note, prompt, messages = [] }) 
   )
 
   if (!res?.success || !res.data?.content) {
-    throw new Error(res?.error || '白板意图分类失败')
+    throw new Error(res?.error || '画布意图分类失败')
   }
 
-  const parsed = parseModelJsonObject(res.data.content, '白板意图分类结果格式错误')
+  const parsed = parseModelJsonObject(res.data.content, '画布意图分类结果格式错误')
   return {
     intent: normalizeWhiteboardIntent(parsed?.intent),
     reason: String(parsed?.reason || '').trim(),
@@ -242,10 +242,10 @@ export const groundWhiteboardRequest = async ({ note, prompt, messages = [] }) =
   )
 
   if (!res?.success || !res.data?.content) {
-    throw new Error(res?.error || '白板素材整理失败')
+    throw new Error(res?.error || '画布素材整理失败')
   }
 
-  const parsed = parseModelJsonObject(res.data.content, '白板素材整理结果格式错误')
+  const parsed = parseModelJsonObject(res.data.content, '画布素材整理结果格式错误')
   return {
     action: normalizeWhiteboardAction(parsed?.action, actionHint),
     groundedRequest: String(parsed?.groundedRequest || '').trim(),
@@ -273,7 +273,7 @@ export const parseWhiteboardContent = (content = '') => {
 
   const data = JSON.parse(content)
   if (!data || typeof data !== 'object' || !Array.isArray(data.elements)) {
-    throw new Error('白板数据格式错误')
+    throw new Error('画布数据格式错误')
   }
 
   return {
@@ -294,12 +294,12 @@ export const buildWhiteboardContent = ({ elements = [], appState = {}, fileMap =
 
 const buildEditGenerationPrompt = ({ prompt, currentWhiteboardSummary = '' }) => {
   if (!currentWhiteboardSummary) {
-    return `请基于以下修改要求，输出修改后的完整白板：\n${prompt}`
+    return `请基于以下修改要求，输出修改后的完整画布：\n${prompt}`
   }
   return [
-    '请基于当前白板内容进行定向修改，并输出修改后的完整白板。',
+    '请基于当前画布内容进行定向修改，并输出修改后的完整画布。',
     '不要解释过程，不要保留与修改目标无关的冗余旧结构。',
-    `当前白板摘要：\n${currentWhiteboardSummary}`,
+    `当前画布摘要：\n${currentWhiteboardSummary}`,
     `修改要求：\n${prompt}`,
   ].join('\n\n')
 }
@@ -389,7 +389,7 @@ export const requestActiveWhiteboardGeneration = ({ noteId, prompt, action = WHI
 
 export const applyWhiteboardGenerationToNote = async ({ note, prompt, action = WHITEBOARD_AI_ACTIONS.APPEND, updateNote }) => {
   if (!isWhiteboardNote(note)) {
-    throw new Error('当前笔记不是白板')
+    throw new Error('当前笔记不是画布')
   }
   if (typeof updateNote !== 'function') {
     throw new Error('缺少笔记更新能力')
@@ -412,7 +412,7 @@ export const applyWhiteboardGenerationToNote = async ({ note, prompt, action = W
   })
 
   if (result?.success === false) {
-    throw new Error(result.error || '白板写入失败')
+    throw new Error(result.error || '画布写入失败')
   }
 
   return nextData
@@ -424,12 +424,12 @@ const buildWhiteboardActionMessage = (result = {}) => {
     ? ` 部分区块未生成：${result.warnings.slice(0, 2).join('；')}${result.warnings.length > 2 ? '；...' : ''}`
     : ''
   if (action === WHITEBOARD_AI_ACTIONS.REPLACE) {
-    return `已清空当前白板并重新生成 ${result.addedCount || 0} 个元素。${warningText}`
+    return `已清空当前画布并重新生成 ${result.addedCount || 0} 个元素。${warningText}`
   }
   if (action === WHITEBOARD_AI_ACTIONS.EDIT) {
-    return `已基于当前白板完成修改，生成 ${result.addedCount || 0} 个元素。${warningText}`
+    return `已基于当前画布完成修改，生成 ${result.addedCount || 0} 个元素。${warningText}`
   }
-  return `已在当前白板插入 ${result.addedCount || 0} 个元素。${warningText}`
+  return `已在当前画布插入 ${result.addedCount || 0} 个元素。${warningText}`
 }
 
 export const handleWhiteboardAIRequest = async ({ note, prompt, messages = [], updateNote, loadNotes }) => {

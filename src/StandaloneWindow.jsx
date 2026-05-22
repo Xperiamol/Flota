@@ -111,8 +111,17 @@ function StandaloneWindow() {
         const result = await window.electronAPI.settings.getAll()
         if (result?.success && result.data) {
           const s = result.data
-          if (s.theme) setThemeMode(resolveTheme(s.theme))
-          if (s.customThemeColor) setPrimaryColor(s.customThemeColor)
+          if (s.theme) {
+            setThemeMode(resolveTheme(s.theme))
+            store.setTheme?.(s.theme)
+          }
+          if (s.customThemeColor) {
+            setPrimaryColor(s.customThemeColor)
+            store.setPrimaryColor?.(s.customThemeColor)
+          }
+          if (s.whiteboardStyle) {
+            store.setWhiteboardStyle?.(s.whiteboardStyle)
+          }
         }
       } catch {}
     }
@@ -123,8 +132,17 @@ function StandaloneWindow() {
     // 监听设置变更（用户在主窗口修改时实时同步）
     const unsubSetting = window.electronAPI.settings.onSettingChanged((data) => {
       if (!data?.key) return
-      if (data.key === 'theme') setThemeMode(resolveTheme(data.value))
-      if (data.key === 'customThemeColor') setPrimaryColor(data.value)
+      if (data.key === 'theme') {
+        setThemeMode(resolveTheme(data.value))
+        store.setTheme?.(data.value)
+      }
+      if (data.key === 'customThemeColor') {
+        setPrimaryColor(data.value)
+        store.setPrimaryColor?.(data.value)
+      }
+      if (data.key === 'whiteboardStyle') {
+        store.setWhiteboardStyle?.(data.value)
+      }
     })
 
     // 监听系统主题变化（仅 theme=system 时响应）

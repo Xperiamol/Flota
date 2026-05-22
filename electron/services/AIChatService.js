@@ -30,7 +30,7 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'get_current_note',
-      description: '获取用户当前正在编辑的笔记完整内容与类型信息。编辑前应先确认 note_type；白板笔记的 content 必须保持为完整有效的白板 JSON，不能拼接普通文本。',
+      description: '获取用户当前正在编辑的笔记完整内容与类型信息。编辑前应先确认 note_type；画布笔记的 content 必须保持为完整有效的画布 JSON，不能拼接普通文本。',
       parameters: { type: 'object', properties: {} }
     }
   },
@@ -55,7 +55,7 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'edit_note',
-      description: '编辑已有的笔记。可以修改标题、内容、标签或分类，只需提供要修改的字段。禁止通过该工具修改 whiteboard 笔记的 content；白板内容只能由前端白板 AI 生成/插入能力处理。',
+      description: '编辑已有的笔记。可以修改标题、内容、标签或分类，只需提供要修改的字段。禁止通过该工具修改 whiteboard 笔记的 content；画布内容只能由前端画布 AI 生成/插入能力处理。',
       parameters: {
         type: 'object',
         properties: {
@@ -329,7 +329,7 @@ class AIChatService {
   _validateNoteContentUpdate(existing, nextContent) {
     if (nextContent === undefined) return null;
     if ((existing?.note_type || 'markdown') !== 'whiteboard') return null;
-    return '白板内容不能通过 edit_note 直接修改，请使用白板 AI 生成/插入能力';
+    return '画布内容不能通过 edit_note 直接修改，请使用画布 AI 生成/插入能力';
   }
 
   // ─── 工具执行器 ───
@@ -591,7 +591,7 @@ class AIChatService {
 - 用简洁友好的中文回复
 - 需要查询用户数据时主动调用工具，不要猜测
 - 创建、编辑笔记/待办/记忆这类写入操作默认只生成待确认计划；拿到工具返回的 requiresConfirmation 后，必须清楚告诉用户等待确认，不要声称已经执行
-- 当前笔记类型为 whiteboard 时，不要调用 edit_note 修改 content；白板内容生成/插入由应用前端的白板 AI 能力处理
+- 当前笔记类型为 whiteboard 时，不要调用 edit_note 修改 content；画布内容生成/插入由应用前端的画布 AI 能力处理
 - 使用 Markdown 格式回复，善用列表和标题
 - 不确定时如实说明，不编造数据
 - 回复要简明扼要，避免冗余${profileSection}`;

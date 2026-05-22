@@ -3,7 +3,7 @@ import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer } from
 import { Extension, Mark } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
-import { Fragment } from '@tiptap/pm/model'
+import { Fragment, Slice } from '@tiptap/pm/model'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import Highlight from '@tiptap/extension-highlight'
@@ -17,7 +17,6 @@ import { TableRow } from '@tiptap/extension-table'
 import { TableHeader } from '@tiptap/extension-table'
 import { TableCell } from '@tiptap/extension-table'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
-import Typography from '@tiptap/extension-typography'
 import { Markdown } from 'tiptap-markdown'
 import { common, createLowlight } from 'lowlight'
 import { Box, IconButton, Typography as MuiTypography, TextField, Tooltip, Portal } from '@mui/material'
@@ -32,6 +31,7 @@ import LinkIcon from '@mui/icons-material/Link'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import { urlToWav } from '../utils/audioCodec'
 import { imageAPI } from '../api/imageAPI'
+import { replaceDataImagesInHtml } from '../utils/dataUrlImage'
 import { getImageResolver } from '../utils/ImageProtocolResolver'
 import { RICH_TEXT_EMPTY_LINE_SENTINEL, finalizeMarkdownForStorage, prepareMarkdownForDisplay } from '../markdown/index.js'
 import { useStore } from '../store/useStore'
@@ -102,9 +102,6 @@ const getLocalPathFromFileUrl = (fileUrl) => {
 const preprocessMarkdown = (md) => {
   if (!md) return md
   return prepareMarkdownForDisplay(md)
-    // 颜色：限制不跨行、不允许嵌套花括号
-    .replace(/\{color:([^}\n]+)\}([^\n]+?)\{\/color\}/g, (_, color, text) =>
-      `<span style="color: ${color}">${text}</span>`)
     // 带颜色高亮：限制不跨行
     .replace(/==(?:\{([^}\n]+)\})([^\n=]+?)==/g, (_, color, text) =>
       `<mark data-color="${color}">${text}</mark>`)
@@ -173,8 +170,10 @@ const TextColor = Mark.create({
     return {
       markdown: {
         serialize: {
-          open(_, mark) { return `{color:${rgbToHex(mark.attrs.color)}}` },
-          close() { return '{/color}' },
+          open(_, mark) { return `<span style="color:${rgbToHex(mark.attrs.color)}">` },
+          close() { return '</span>' },
+          mixable: true,
+          expelEnclosingWhitespace: true,
         },
         parse: {},
       },
@@ -513,11 +512,13 @@ const ImageNodeView = ({ node, selected, editor, getPos }) => {
     }
 
     // 相对路径（images/xxx.png）通过 ImageProtocolResolver 异步解析
+    // 解析未完成前不设置 displaySrc，避免浏览器对原始相对路径直接发起失败请求
+    setDisplaySrc(null)
     const resolver = getImageResolver()
     resolver.resolve(src).then((resolved) => {
-      if (!cancelled) setDisplaySrc(resolved || src)
+      if (!cancelled && resolved) setDisplaySrc(resolved)
     }).catch(() => {
-      if (!cancelled) setDisplaySrc(src)
+      if (!cancelled) setDisplaySrc(null)
     })
 
     return () => { cancelled = true }
@@ -2085,7 +2086,6 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
         // 代码块关闭拼写检查
         HTMLAttributes: { spellcheck: 'false' },
       }),
-      Typography,
       // Callout 装饰插件（blockquote 中的 [!type] 渲染为彩色卡片）
       CalloutDecoration,
       // 空段落保护：tiptap-markdown 会丢弃空 paragraph，存储前再剥离该不可见字符。
@@ -2096,11 +2096,12 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
         tightLists: true,
         tightListClass: 'tight',
         bulletListMarker: '-',
-        linkify: true,
-        // 保留单换行，避免 WYSIWYG 中可见换行在重新加载时被折叠为空格。
-        breaks: true,
-        transformPastedText: true,  // 粘贴纯文本时按 Markdown 解析
-        transformCopiedText: true,  // 复制时输出 Markdown
+        // 关闭 linkify / breaks / 粘贴文本二次解析：避免日志/代码类纯文本
+        // 在序列化时被反向 autolink、追加行尾续行符 \、或被识别成 emphasis。
+        linkify: false,
+        breaks: false,
+        transformPastedText: false,
+        transformCopiedText: true,
       }),
     ],
 
@@ -2122,29 +2123,63 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       attributes: { class: 'wysiwyg-editor-content', spellcheck: 'true' },
 
       // ── 拦截图片粘贴 ──────────────────────────────────────────────────────────
-      handlePaste: (_view, event) => {
-        const items = event.clipboardData?.items
-        if (!items) return false
-        const plainText = event.clipboardData?.getData('text/plain') || ''
-        const htmlText = (event.clipboardData?.getData('text/html') || '')
-          .replace(/<script[\s\S]*?<\/script>/gi, '')
-          .replace(/<style[\s\S]*?<\/style>/gi, '')
-          .replace(/<[^>]+>/g, '')
-          .replace(/&nbsp;/g, ' ')
-          .trim()
-        const hasTextualContent = Boolean(plainText.trim() || htmlText)
+      handlePaste: (view, event) => {
+        const data = event.clipboardData
+        if (!data) return false
 
+        const items = data.items || []
+        const plainText = data.getData('text/plain') || ''
+        const htmlText = data.getData('text/html') || ''
+        const hasTextualContent = Boolean(plainText.trim() || htmlText.trim())
+
+        // 1) 图片：仅在没有文本时拦截上传，避免把图文混排里的占位图替换掉文本
         for (let i = 0; i < items.length; i++) {
-          if (items[i].type.startsWith('image/')) {
-            if (hasTextualContent) {
-              return false
-            }
+          if (items[i].type?.startsWith('image/')) {
+            if (hasTextualContent) return false
             event.preventDefault()
             const blob = items[i].getAsFile()
-            if (blob) handleImageUpload(blob) // 使用 editorRef，无闭包失效问题
+            if (blob) handleImageUpload(blob)
             return true
           }
         }
+
+        // 2) 纯文本（无 HTML 富文本）：以原样字面量插入，绕开 markdown 二次解析。
+        //    避免 [], *, _, {color}, URL 等被识别后在保存时反向转义/包裹。
+        if (plainText && !htmlText.trim()) {
+          event.preventDefault()
+          const { state } = view
+          const { schema } = state
+          const lines = plainText.replace(/\r\n?/g, '\n').split('\n')
+          const paragraph = schema.nodes.paragraph
+          const nodes = lines.map((line) => paragraph.create(
+            null,
+            line ? schema.text(line) : null,
+          ))
+          const slice = new Slice(Fragment.fromArray(nodes), 1, 1)
+          view.dispatch(state.tr.replaceSelection(slice).scrollIntoView())
+          return true
+        }
+
+        // 3) 富文本 HTML：若包含 <img src="data:image/..."> 这种 base64 内联图（如飞书复制），
+        //    先把 data URL 持久化为本地图片文件，避免超长 data URL 被写入 markdown 后续被序列化破坏。
+        if (htmlText && /<img[^>]+src=(["'])data:image\//i.test(htmlText)) {
+          event.preventDefault()
+          replaceDataImagesInHtml(htmlText).then((processedHtml) => {
+            const ed = editorRef.current
+            if (!ed || ed.isDestroyed) return
+            // 用替换后的 HTML 走 TipTap 默认 HTML 解析路径（pasteHTML）
+            ed.commands.insertContent(processedHtml, {
+              parseOptions: { preserveWhitespace: 'full' },
+            })
+          }).catch((err) => {
+            console.warn('[WYSIWYGEditor] 处理粘贴 data URL 图片失败:', err)
+            const ed = editorRef.current
+            if (ed && !ed.isDestroyed) ed.commands.insertContent(htmlText)
+          })
+          return true
+        }
+
+        // 4) 其余（带 HTML 的富文本）交给 TipTap 默认 HTML 解析路径
         return false
       },
 

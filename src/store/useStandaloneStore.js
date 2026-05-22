@@ -20,8 +20,15 @@ export const useStandaloneStore = create((set, get) => ({
   // 编辑器模式
   editorMode: 'wysiwyg', // 'markdown' | 'wysiwyg'
   
-  // 主题模式
+  // 主题模式（与主窗口对齐：'light' | 'dark' | 'system'）
+  // 这里同时维护 themeMode（已解析的实际值，供外壳使用）和 theme（原始偏好，供 WhiteboardEditor 等共享组件使用）
   themeMode: 'light',
+  theme: 'system',
+  primaryColor: '#1976d2',
+  // 画布视觉风格：'neat' 规整 / 'sketchy' 手绘
+  whiteboardStyle: 'neat',
+  // 占位字段：与主 store 对齐，避免共享组件读到 undefined
+  currentView: null,
   
   // minibar模式
   minibarMode: false,
@@ -143,6 +150,15 @@ export const useStandaloneStore = create((set, get) => ({
   
   // 设置主题模式
   setThemeMode: (mode) => set({ themeMode: mode }),
+  
+  // 设置主题偏好（'light' | 'dark' | 'system'），与主 store 对齐
+  setTheme: (theme) => set({ theme }),
+  
+  // 设置主题色
+  setPrimaryColor: (color) => set({ primaryColor: color }),
+
+  // 设置画布视觉风格
+  setWhiteboardStyle: (style) => set({ whiteboardStyle: style === 'sketchy' ? 'sketchy' : 'neat' }),
   
   // 设置编辑器模式
   setEditorMode: (mode) => set({ editorMode: mode }),

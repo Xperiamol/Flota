@@ -2,37 +2,43 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Skeleton,
-  Collapse,
+  TextField,
+  InputAdornment,
   IconButton,
-  Typography
+  Typography,
+  alpha
 } from '@mui/material';
-import { ExpandMore as ExpandMoreIcon } from '@mui/icons-material';
+import {
+  LocalOffer as TagIcon,
+  Search as SearchIcon,
+  Clear as ClearIcon
+} from '@mui/icons-material';
 import { getTagColor } from '../utils/tagUtils';
 import BaseFilter from './BaseFilter';
 import FilterChip from './FilterChip';
 
 /**
  * 标签筛选组件
- * 在搜索框下方提供标签筛选功能
- * 支持展开/收起、多选筛选、清空筛选等功能
+ * 浮窗筛选器中的「标签」分组：
+ * - 顶部支持关键词搜索过滤
+ * - 标签整体走横向「瀑布流」（flex-wrap），不再每个根标签独占一行
+ * - 子标签以「父/子」完整名称的小芯片紧跟在所属父标签之后展示
  */
-const TagFilter = ({ 
-  selectedTags = [], 
-  onTagsChange, 
+const TagFilter = ({
+  selectedTags = [],
+  onTagsChange,
   showDeleted = false,
   isTodoFilter = false,
-  sx = {} 
+  sx = {}
 }) => {
   const [allTags, setAllTags] = useState([]);
-  const [isExpanded, setIsExpanded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [keyword, setKeyword] = useState('');
 
-  // 加载标签数据
   const loadTags = async () => {
     setIsLoading(true);
     try {
       if (isTodoFilter) {
-        // 获取待办事项标签统计
         const todoTagsResult = await window.electronAPI.todos.getTodoTagStats();
         if (todoTagsResult.success) {
           const validTags = todoTagsResult.data.filter(tag => tag.usage_count > 0);
@@ -40,14 +46,9 @@ const TagFilter = ({
         }
       } else {
         if (!window.electronAPI?.tags) return;
-        
-        // 首先重新计算标签使用次数，确保统计准确
         await window.electronAPI.tags.recalculateUsage();
-        
         const allTagsResult = await window.electronAPI.tags.getAll();
-        
         if (allTagsResult?.success) {
-          // 过滤掉使用次数为0的标签
           const validTags = allTagsResult.data.filter(tag => tag.usage_count > 0);
           setAllTags(validTags);
         }
@@ -59,131 +60,68 @@ const TagFilter = ({
     }
   };
 
-  // 组件挂载时加载标签
   useEffect(() => {
     loadTags();
   }, []);
 
-  // 切换标签选择状态
   const toggleTag = (tagName) => {
     const newSelectedTags = selectedTags.includes(tagName)
       ? selectedTags.filter(tag => tag !== tagName)
       : [...selectedTags, tagName];
-    
     onTagsChange?.(newSelectedTags);
   };
 
-  // 清空所有筛选
   const clearAllFilters = () => {
     onTagsChange?.([]);
   };
 
-  // 构建层级标签树
-  const tagGroups = useMemo(() => {
-    const groupMap = new Map(); // root -> { rootTag, children: [] }
+  // 把标签压成扁平瀑布流顺序：根标签 → 该根的子标签 → 下一个根...
+  // 这样视觉上既保留层级近邻关系，又能 flex-wrap 流动。
+  const orderedTags = useMemo(() => {
+    const groups = new Map(); // root -> { rootTag, children: [] }
     for (const tag of allTags) {
       const slashIdx = tag.name.indexOf('/');
       if (slashIdx > 0) {
         const root = tag.name.substring(0, slashIdx);
-        if (!groupMap.has(root)) groupMap.set(root, { rootTag: null, children: [] });
-        groupMap.get(root).children.push(tag);
+        if (!groups.has(root)) groups.set(root, { rootTag: null, children: [] });
+        groups.get(root).children.push(tag);
       } else {
-        if (!groupMap.has(tag.name)) groupMap.set(tag.name, { rootTag: null, children: [] });
-        groupMap.get(tag.name).rootTag = tag;
+        if (!groups.has(tag.name)) groups.set(tag.name, { rootTag: null, children: [] });
+        groups.get(tag.name).rootTag = tag;
       }
     }
-    // For implicit parents (children exist but no standalone parent tag), create a virtual root
-    for (const [root, group] of groupMap) {
-      if (!group.rootTag && group.children.length > 0) {
-        const totalCount = group.children.reduce((sum, c) => sum + (c.usage_count || 0), 0);
-        group.rootTag = { name: root, usage_count: totalCount, isVirtual: true };
+    // 隐式根（只有子没有独立的父）→ 虚拟根
+    for (const [root, g] of groups) {
+      if (!g.rootTag && g.children.length > 0) {
+        const totalCount = g.children.reduce((sum, c) => sum + (c.usage_count || 0), 0);
+        g.rootTag = { name: root, usage_count: totalCount, isVirtual: true };
       }
     }
-    return groupMap;
+    const ordered = [];
+    for (const [, g] of groups) {
+      if (g.rootTag && !g.rootTag.isVirtual) {
+        ordered.push({ ...g.rootTag, depth: 0, displayLabel: g.rootTag.name });
+      } else if (g.rootTag && g.rootTag.isVirtual) {
+        // 虚拟根不可点击（数据库里没有该 tag），只作占位
+        ordered.push({ ...g.rootTag, depth: 0, displayLabel: g.rootTag.name, isVirtual: true });
+      }
+      for (const child of g.children) {
+        ordered.push({
+          ...child,
+          depth: 1,
+          displayLabel: child.name // 完整 父/子，便于搜索匹配
+        });
+      }
+    }
+    return ordered;
   }, [allTags]);
 
-  const [expandedGroups, setExpandedGroups] = useState(new Set());
+  const filteredTags = useMemo(() => {
+    const kw = keyword.trim().toLowerCase();
+    if (!kw) return orderedTags;
+    return orderedTags.filter(tag => tag.displayLabel.toLowerCase().includes(kw));
+  }, [orderedTags, keyword]);
 
-  const toggleGroupExpand = (root) => {
-    setExpandedGroups(prev => {
-      const next = new Set(prev);
-      if (next.has(root)) next.delete(root); else next.add(root);
-      return next;
-    });
-  };
-
-  // 渲染层级标签树
-  const renderHierarchicalTags = () => (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-      {Array.from(tagGroups.entries()).map(([root, group]) => {
-        if (group.children.length === 0 && group.rootTag) {
-          // Standalone tag — flat chip
-          return (
-            <Box key={root} sx={{ display: 'inline-flex' }}>
-              <FilterChip
-                label={group.rootTag.name}
-                value={group.rootTag.name}
-                isSelected={selectedTags.includes(group.rootTag.name)}
-                onClick={toggleTag}
-                color={getTagColor(group.rootTag.name)}
-                count={group.rootTag.usage_count}
-              />
-            </Box>
-          );
-        }
-        // Group with children
-        const isExpanded = expandedGroups.has(root);
-        return (
-          <Box key={root}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <IconButton
-                size="small"
-                onClick={() => toggleGroupExpand(root)}
-                aria-label="展开收起标签组"
-                sx={{
-                  p: 0, width: 20, height: 20,
-                  transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',
-                  transition: 'transform 0.2s'
-                }}
-              >
-                <ExpandMoreIcon sx={{ fontSize: 16 }} />
-              </IconButton>
-              {group.rootTag && (
-                <FilterChip
-                  label={group.rootTag.name}
-                  value={group.rootTag.name}
-                  isSelected={selectedTags.includes(group.rootTag.name)}
-                  onClick={toggleTag}
-                  color={getTagColor(group.rootTag.name)}
-                  count={group.rootTag.usage_count}
-                />
-              )}
-              <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
-                {group.children.length}
-              </Typography>
-            </Box>
-            <Collapse in={isExpanded}>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, pl: 3, pt: 0.5, pb: 0.5 }}>
-                {group.children.map(child => (
-                  <FilterChip
-                    key={child.name}
-                    label={child.name.substring(root.length + 1)}
-                    value={child.name}
-                    isSelected={selectedTags.includes(child.name)}
-                    onClick={toggleTag}
-                    color={getTagColor(child.name)}
-                    count={child.usage_count}
-                  />
-                ))}
-              </Box>
-            </Collapse>
-          </Box>
-        );
-      })}
-    </Box>
-  );
-
-  // 渲染加载状态
   const renderLoadingState = () => (
     <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
       {Array.from({ length: 6 }).map((_, index) => (
@@ -197,33 +135,105 @@ const TagFilter = ({
     </Box>
   );
 
-  // 如果没有标签数据，不显示组件
   if (!isLoading && allTags.length === 0) {
     return null;
   }
 
-  // 渲染内容
   const renderContent = () => {
-    if (isLoading) {
-      return renderLoadingState();
-    }
+    if (isLoading) return renderLoadingState();
 
     return (
-      <Box>
-        {/* 层级标签树 */}
-        {renderHierarchicalTags()}
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+        {/* 标签搜索框 */}
+        <TextField
+          size="small"
+          variant="outlined"
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+          placeholder="搜索标签…"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+              </InputAdornment>
+            ),
+            endAdornment: keyword ? (
+              <InputAdornment position="end">
+                <IconButton
+                  size="small"
+                  onClick={() => setKeyword('')}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  sx={{ p: 0.25 }}
+                >
+                  <ClearIcon sx={{ fontSize: 14 }} />
+                </IconButton>
+              </InputAdornment>
+            ) : null,
+            sx: (theme) => ({
+              fontSize: 12,
+              borderRadius: 1.25,
+              bgcolor: alpha(theme.palette.text.primary, 0.04),
+              '& fieldset': { borderColor: 'transparent' },
+              '&:hover fieldset': { borderColor: alpha(theme.palette.text.primary, 0.12) },
+              '&.Mui-focused fieldset': { borderColor: theme.palette.primary.main }
+            })
+          }}
+        />
+
+        {/* 瀑布流标签 */}
+        {filteredTags.length === 0 ? (
+          <Typography variant="caption" sx={{ color: 'text.secondary', py: 0.5 }}>
+            没有匹配的标签
+          </Typography>
+        ) : (
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, alignItems: 'center' }}>
+            {filteredTags.map((tag) => {
+              if (tag.isVirtual) {
+                // 虚拟根：仅作为视觉锚点的纯文字标记，不可点击
+                return (
+                  <Typography
+                    key={`virtual-${tag.name}`}
+                    variant="caption"
+                    sx={(theme) => ({
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: alpha(theme.palette.text.primary, 0.5),
+                      px: 0.5
+                    })}
+                  >
+                    {tag.name}/
+                  </Typography>
+                );
+              }
+              const showLabel = tag.depth === 1
+                ? tag.name.substring(tag.name.indexOf('/') + 1)
+                : tag.name;
+              return (
+                <FilterChip
+                  key={tag.name}
+                  label={tag.depth === 1 ? `↳ ${showLabel}` : showLabel}
+                  value={tag.name}
+                  isSelected={selectedTags.includes(tag.name)}
+                  onClick={toggleTag}
+                  color={getTagColor(tag.name)}
+                  count={tag.usage_count}
+                />
+              );
+            })}
+          </Box>
+        )}
       </Box>
     );
   };
 
   return (
     <BaseFilter
-      title="标签筛选"
+      title="标签"
+      icon={<TagIcon />}
       selectedItems={selectedTags}
       onClearAll={clearAllFilters}
-      expandable={allTags.length > 0}
-      isExpanded={isExpanded}
-      onToggleExpand={() => setIsExpanded(!isExpanded)}
       sx={sx}
     >
       {renderContent()}

@@ -31,7 +31,7 @@ class StorageAdapter {
   }
 
   /**
-   * 获取所有笔记（包括白板），按 sync_id 索引
+   * 获取所有笔记（包括画布），按 sync_id 索引
    *
    * @param {boolean} [includeDeleted=true] - 是否包含已删除的项
    * @returns {Promise<Record<string, import('./types').NoteItem>>} sync_id -> NoteItem 映射
@@ -416,7 +416,7 @@ class StorageAdapter {
    */
   calculateNoteHash(note) {
     if (note.note_type === 'whiteboard') {
-      // 白板使用 JSON hash
+      // 画布使用 JSON hash
       return hashUtils.calculateJsonHash(
         {
           title: note.title,
