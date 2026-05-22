@@ -2,6 +2,12 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [3.1.5] - 2026-05-22
+
+### Changed / 更新内容
+- feat(filters): draggable filter popover with new dimensions and tag waterfall
+
+
 ## [3.1.4] - 2026-05-19
 
 ### Changed / 更新内容
