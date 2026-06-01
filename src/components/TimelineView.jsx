@@ -136,12 +136,40 @@ const isAudioRef = (src) => {
   return AUDIO_EXT.test(src)
 }
 
+const IMAGE_EXT = /\.(png|jpg|jpeg|gif|webp|bmp|svg|avif|ico)(?:\?|$)/i
+
+// 应用内附件路径（attachments/xxx.ext 或 app://attachments/xxx.ext）
+// 注意：图片本身可能也存在 attachments 目录中（图片语法），但我们用扩展名兜底区分
+const isAttachmentFileRef = (src) => {
+  if (!src) return false
+  const isInAttachments = /^(?:attachments|app:\/\/attachments)\//.test(src)
+  if (!isInAttachments) return false
+  if (IMAGE_EXT.test(src)) return false
+  if (isAudioRef(src)) return false
+  return true
+}
+
+// 任何"应放进 attachments 目录"的文件路径
+const isLocalFileLink = (src) => {
+  if (!src) return false
+  return src.startsWith('file://')
+    || src.startsWith('app://')
+    || /^(?:attachments|audio)\//.test(src)
+}
+
 const stripMarkdown = (content = '') => String(content)
   .replace(/!\[[^\]]*]\((audio\/[^)]+|app:\/\/audio\/[^)]+|[^)]+\.(?:m4a|mp3|wav|ogg|aac|opus|flac|webm))\)/gi, '[语音]')
-  .replace(/!\[[^\]]*]\([^)]+\)/g, '')
-  .replace(/\[([^\]]+)]\(([^)]+)\)/g, (_, label, url) => (
-    String(url).startsWith('file://') ? `[附件] ${label}` : url
-  ))
+  // 附件图片语法 ![name](attachments/...) → 附件占位（保留名称）
+  .replace(/!\[([^\]]*)]\(([^)]+)\)/g, (full, label, url) => {
+    if (isAttachmentFileRef(String(url || ''))) return `[附件] ${label || ''}`.trim()
+    return ''
+  })
+  .replace(/\[([^\]]+)]\(([^)]+)\)/g, (_, label, url) => {
+    const target = String(url || '')
+    // 本机 file://、应用内 attachments/、app:// 协议附件 → 全部当作附件占位（兼容老链接语法）
+    if (isLocalFileLink(target)) return `[附件] ${label}`
+    return target
+  })
   // 先吃掉完整 HTML 标签（必须在去掉 `>` 前完成）；编辑器富文本会以 <table>/<p> 等形式存为内容
   .replace(/<\/?[a-zA-Z][^>]*>/g, ' ')
   // 兜底：去除任何残留的孤立标签碎片，例如缺右尖括号的 `<table style="..."` 之类
@@ -243,6 +271,7 @@ const extractImages = (content = '') => {
     const src = match[1]?.trim()
     if (!src) continue
     if (isAudioRef(src)) continue
+    if (isAttachmentFileRef(src)) continue
     images.push(src)
   }
   return images
@@ -263,10 +292,26 @@ const extractAudios = (content = '') => {
 
 const extractFiles = (content = '') => {
   const files = []
-  const pattern = /\[([^\]]+)]\((file:\/\/[^)]+)\)/g
-  let match
-  while ((match = pattern.exec(String(content)))) {
-    files.push({ label: match[1], url: match[2] })
+  // 1) 新版：图片语法 ![name](attachments/xxx.ext) —— 仅当扩展名非图片/非音频
+  const imgPattern = /!\[([^\]]*)]\(([^)]+)\)/g
+  let m
+  while ((m = imgPattern.exec(String(content)))) {
+    const label = m[1]
+    const target = m[2]?.trim()
+    if (!target) continue
+    if (isAttachmentFileRef(target)) {
+      files.push({ label: label || target.split('/').pop(), url: target })
+    }
+  }
+  // 2) 老版兼容：链接语法 [name](attachments/...) / file:// / app://
+  const linkPattern = /(^|[^!])\[([^\]]+)]\(([^)]+)\)/g
+  while ((m = linkPattern.exec(String(content)))) {
+    const label = m[2]
+    const target = m[3]?.trim()
+    if (!target) continue
+    if (isLocalFileLink(target)) {
+      files.push({ label, url: target })
+    }
   }
   return files
 }
@@ -434,7 +479,7 @@ const appendDraftText = (current, text) => {
 const attachmentToMarkdown = (item) => {
   if (item.type === 'image') return item.markdown
   if (item.type === 'audio') return `![录音](${item.path})`
-  if (item.type === 'file') return `[${item.name}](${item.url})`
+  if (item.type === 'file') return `![${item.name}](${item.path})`
   return ''
 }
 
@@ -870,6 +915,29 @@ const TimelineView = ({ onTodoUpdated }) => {
     setFailedWhiteboardPreviews((prev) => prev[itemId] ? prev : { ...prev, [itemId]: true })
   }, [])
 
+  const importLocalFileAsAttachment = useCallback(async (filePath, fallbackName) => {
+    if (!filePath) return null
+    try {
+      const result = await window.electronAPI?.attachments?.saveFromPath?.(filePath, fallbackName)
+      if (result?.success && result.data?.relativePath) {
+        return {
+          name: result.data.displayName || fallbackName || '附件',
+          path: result.data.relativePath,
+          url: `app://${result.data.relativePath}`,
+        }
+      }
+      // 导入失败：明确告知用户，不再静默降级为 file://（避免变成不能云同步的本机链接）
+      const errMsg = result?.error || '未知原因'
+      console.warn('导入附件失败:', errMsg)
+      try { window.alert(`附件导入失败：${errMsg}`) } catch {}
+      return null
+    } catch (error) {
+      console.error('导入附件异常:', error)
+      try { window.alert(`附件导入失败：${error.message}`) } catch {}
+      return null
+    }
+  }, [])
+
   const handleAttachFile = async () => {
     try {
       const result = await window.electronAPI?.system?.showOpenDialog?.({
@@ -879,34 +947,44 @@ const TimelineView = ({ onTodoUpdated }) => {
 
       const filePath = result.filePaths[0]
       const fileName = filePath.split(/[\\/]/).pop() || '附件'
-      addAttachment({ type: 'file', name: fileName, url: getFileUrl(filePath) })
+      const imported = await importLocalFileAsAttachment(filePath, fileName)
+      if (imported) {
+        addAttachment({ type: 'file', ...imported })
+      }
     } catch (error) {
       console.error('选择时间轴附件失败:', error)
     }
   }
 
-  const handleDropFiles = (event) => {
+  const handleDropFiles = async (event) => {
     event.preventDefault()
     event.stopPropagation()
 
     const droppedFiles = Array.from(event.dataTransfer?.files || [])
-    droppedFiles.forEach((file) => {
+    for (const file of droppedFiles) {
       const filePath = getDroppedFilePath(file)
-      if (!filePath) return
-      addAttachment({
-        type: 'file',
-        name: file.name || filePath.split(/[\\/]/).pop() || '附件',
-        url: getFileUrl(filePath)
-      })
-    })
+      if (!filePath) continue
+      const imported = await importLocalFileAsAttachment(filePath, file.name)
+      if (imported) {
+        addAttachment({ type: 'file', ...imported })
+      }
+    }
   }
 
   const openTimelineFile = async (event, fileUrl) => {
     event.preventDefault()
     event.stopPropagation()
     try {
+      if (!fileUrl) return
       if (fileUrl.startsWith('file://')) {
         await window.electronAPI?.system?.openPath?.(getLocalPathFromFileUrl(fileUrl))
+      } else if (/^(?:attachments|audio|images)\//.test(fileUrl) || fileUrl.startsWith('app://')) {
+        // 应用内附件：用专用 IPC（system.openExternal 仅支持 http/https）
+        const cleaned = fileUrl.replace(/^app:\/\//, '')
+        const result = await window.electronAPI?.attachments?.open?.(cleaned)
+        if (result && result.success === false) {
+          window.alert(`打开失败：${result.error || '未知原因'}`)
+        }
       } else {
         await window.electronAPI?.system?.openExternal?.(fileUrl)
       }

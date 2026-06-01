@@ -15,6 +15,7 @@ if (isEnvPackaged) {
 }
 
 const fs = require('fs')
+const crypto = require('crypto')
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
 // ── 文件日志系统 ────────────────────────────────────────────────────────────────
@@ -143,9 +144,9 @@ function setupContentSecurityPolicy() {
     "default-src 'self' app:",
     `script-src ${scriptSrc}`,
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' app: data: blob: https:",
+    "img-src 'self' app: data: blob: https: http:",
     "font-src 'self' data:",
-    "media-src 'self' app: data: blob:",
+    "media-src 'self' app: data: blob: https: http:",
     `connect-src ${connectSrc}`,
     "object-src 'none'",
     "base-uri 'self'",
@@ -2332,6 +2333,96 @@ registerIpcHandlers([
   },
   { channel: 'image:save-from-path', handler: createImageServiceHandler('saveImageFromPath', '从路径保存图片失败') }
 ])
+
+// ── 通用附件文件保存（按内容 SHA-1 去重） ──
+const ATTACHMENT_DEFAULT_MAX_BYTES = 50 * 1024 * 1024  // 默认 50 MB
+
+const sanitizeAttachmentName = (raw) => {
+  const base = String(raw || '').split(/[\\/]/).pop() || 'file'
+  return base.replace(/[\\/:*?"<>|\x00-\x1F]/g, '_').slice(0, 120) || 'file'
+}
+
+const getAttachmentMaxBytes = async () => {
+  try {
+    const result = await services.settingsService?.getSetting?.('attachmentMaxSizeMB')
+    if (result?.success) {
+      const mb = Number(result.data)
+      if (Number.isFinite(mb)) return mb > 0 ? Math.floor(mb * 1024 * 1024) : 0  // 0 = 不限
+    }
+  } catch {}
+  return ATTACHMENT_DEFAULT_MAX_BYTES
+}
+
+const assertAttachmentSize = async (size) => {
+  const max = await getAttachmentMaxBytes()
+  if (max > 0 && size > max) {
+    const limitMb = Math.round(max / (1024 * 1024))
+    throw new Error(`文件大小 ${(size / 1024 / 1024).toFixed(1)} MB 超过限制 ${limitMb} MB`)
+  }
+}
+
+const writeAttachmentBuffer = (buf, originalName) => {
+  const dir = path.join(app.getPath('userData'), 'attachments')
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+  const displayName = sanitizeAttachmentName(originalName)
+  const sha1 = crypto.createHash('sha1').update(buf).digest('hex')
+  const ext = path.extname(displayName).toLowerCase()
+  const fileName = ext ? `${sha1}${ext}` : sha1
+  const fullPath = path.join(dir, fileName)
+  if (!fs.existsSync(fullPath)) fs.writeFileSync(fullPath, buf)
+  return { relativePath: `attachments/${fileName}`, displayName }
+}
+
+ipcMain.handle('attachments:save-from-path', async (_event, sourcePath, displayName) => {
+  try {
+    validateString(sourcePath, 'sourcePath')
+    if (!fs.existsSync(sourcePath)) throw new Error('源文件不存在')
+    const stat = fs.statSync(sourcePath)
+    if (!stat.isFile()) throw new Error('源不是文件')
+    await assertAttachmentSize(stat.size)
+    const buf = fs.readFileSync(sourcePath)
+    return { success: true, data: writeAttachmentBuffer(buf, displayName || path.basename(sourcePath)) }
+  } catch (error) {
+    console.error('保存附件失败:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('attachments:save-from-buffer', async (_event, buffer, fileName) => {
+  try {
+    validateString(fileName, 'fileName')
+    const buf = Buffer.from(buffer)
+    await assertAttachmentSize(buf.length)
+    return { success: true, data: writeAttachmentBuffer(buf, fileName) }
+  } catch (error) {
+    console.error('保存附件失败:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// 用系统默认应用打开应用内文件（仅限 attachments/、audio/、images/ 子目录，避免任意路径访问）
+ipcMain.handle('attachments:open', async (_event, refPath) => {
+  try {
+    validateString(refPath, 'refPath')
+    // 允许两种入参：'attachments/xxx.ext' 或 'app://attachments/xxx.ext'
+    const cleaned = String(refPath).replace(/^app:\/\//, '')
+    const m = cleaned.match(/^(attachments|audio|images)\/(.+)$/)
+    if (!m) throw new Error('非法的附件路径')
+    const subdir = m[1]
+    const fileName = m[2]
+    if (!fileName || fileName.includes('..') || /[\\/]/.test(fileName)) {
+      throw new Error('非法的附件文件名')
+    }
+    const fullPath = path.join(app.getPath('userData'), subdir, fileName)
+    if (!fs.existsSync(fullPath)) throw new Error('附件不存在')
+    const errorMessage = await shell.openPath(fullPath)
+    if (errorMessage) throw new Error(errorMessage)
+    return { success: true }
+  } catch (error) {
+    console.error('打开附件失败:', error)
+    return { success: false, error: error.message }
+  }
+})
 
 // ── 音频文件保存 ──
 ipcMain.handle('audio:save-from-buffer', async (event, buffer, fileName) => {

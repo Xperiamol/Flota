@@ -1312,19 +1312,29 @@ const NoteEditor = () => {
       return
     }
 
-    // 处理图片文件 - 插入到光标位置
     const files = Array.from(e.dataTransfer.files)
-    const imageFiles = files.filter(file => file.type.startsWith('image/'))
-    if (imageFiles.length === 0) return
+    if (files.length === 0) return
 
     try {
       let insertText = ''
-      for (const file of imageFiles) {
-        const arrayBuffer = await file.arrayBuffer()
-        const buffer = new Uint8Array(arrayBuffer)
-        const imagePath = await imageAPI.saveFromBuffer(buffer, file.name)
-        insertText += `![${file.name}](${imagePath})\n`
+      for (const file of files) {
+        const buffer = new Uint8Array(await file.arrayBuffer())
+        if (file.type.startsWith('image/')) {
+          const imagePath = await imageAPI.saveFromBuffer(buffer, file.name)
+          insertText += `![${file.name}](${imagePath})\n`
+        } else {
+          const result = await window.electronAPI?.attachments?.saveFromBuffer?.(buffer, file.name)
+          if (result?.success && result.data?.relativePath) {
+            const { relativePath, displayName } = result.data
+            // 用图片语法插入：渲染端检测到 attachments/ + 非图片扩展名 → 附件卡片
+            insertText += `![${displayName || file.name}](${relativePath})\n`
+          } else if (result?.error) {
+            try { window.alert(`附件 ${file.name} 保存失败：${result.error}`) } catch {}
+          }
+        }
       }
+
+      if (!insertText) return
 
       // 把光标先放到落点位置，再走统一插入工具，保留撤销栈
       textarea.focus()

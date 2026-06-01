@@ -189,22 +189,35 @@ const MarkdownPreview = ({
       }
 
       const link = target.closest?.('a[href]')
-      if (link?.href) {
-        const href = link.href
-        if (href.startsWith('file://')) {
+      if (link) {
+        const rawHref = link.getAttribute('href') || ''
+        const absHref = link.href || ''
+        // 优先按原始 href 识别应用内附件（attachments/ / audio/ / images/）
+        const cleaned = rawHref.replace(/^app:\/\//, '')
+        if (/^(?:attachments|audio|images)\//i.test(cleaned)) {
           e.preventDefault()
-          window.electronAPI?.system?.openPath?.(getLocalPathFromFileUrl(href))
+          window.electronAPI?.attachments?.open?.(cleaned).then((r) => {
+            if (r && r.success === false) {
+              try { window.alert(`打开失败：${r.error || '未知原因'}`) } catch {}
+            }
+          }).catch(() => {})
           return
         }
-        if (href.startsWith('app://')) {
+        if (absHref.startsWith('file://')) {
           e.preventDefault()
-          window.electronAPI?.system?.openExternal?.(href)
+          window.electronAPI?.system?.openPath?.(getLocalPathFromFileUrl(absHref))
+          return
+        }
+        if (absHref.startsWith('app://')) {
+          // 兜底（理论上已被上面的 cleaned 分支处理）
+          e.preventDefault()
+          window.electronAPI?.attachments?.open?.(absHref).catch(() => {})
           return
         }
         // 处理外部链接 - 用外部浏览器打开
-        if (href.startsWith('http://') || href.startsWith('https://')) {
+        if (absHref.startsWith('http://') || absHref.startsWith('https://')) {
           e.preventDefault()
-          window.electronAPI?.system?.openExternal?.(href)
+          window.electronAPI?.system?.openExternal?.(absHref)
         }
         return
       }
@@ -232,12 +245,54 @@ const MarkdownPreview = ({
 
       // 音频扩展名集合
       const audioExts = new Set(['.m4a', '.mp3', '.ogg', '.wav', '.aac', '.opus', '.flac', '.webm'])
+      const imageExts = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.avif', '.ico'])
 
       for (const img of images) {
         // 优先使用暂存的原始 src（相对路径已被前置处理移到 data-original-src 以避免浏览器预先请求失败）
         const originalSrc = img.getAttribute('data-original-src') || img.getAttribute('src')
 
         logger.log(`[MarkdownPreview] 图片原始路径:`, originalSrc)
+
+        // ── 附件文件（attachments/xxx.pdf 等非图片非音频）：替换为附件卡片 ──
+        if (originalSrc) {
+          const srcLower2 = originalSrc.toLowerCase()
+          const ext2Match = srcLower2.match(/\.([a-z0-9]+)(?:\?|$)/)
+          const ext2 = ext2Match ? '.' + ext2Match[1] : ''
+          const isInAttachments = /^(?:attachments|app:\/\/attachments)\//.test(originalSrc)
+          const isAttachmentFile = isInAttachments
+            && !audioExts.has(ext2)
+            && !imageExts.has(ext2)
+          if (isAttachmentFile) {
+            const filename = (img.getAttribute('alt') || '').trim()
+              || (originalSrc.split('/').pop() || '附件').replace(/^[a-f0-9]{40}\.?/, '')
+            const extLabel = (ext2.replace('.', '').toUpperCase() || '文件').slice(0, 4)
+            const card = document.createElement('span')
+            card.style.cssText = 'display:inline-flex;align-items:center;gap:8px;margin:6px 0;padding:8px 12px;border-radius:10px;background:var(--md-audio-bg,rgba(0,0,0,.04));cursor:pointer;max-width:100%;overflow:hidden;'
+            card.title = `打开 ${filename}`
+            const icon = document.createElement('span')
+            icon.style.cssText = 'flex-shrink:0;width:32px;height:32px;border-radius:6px;background:#1976d2;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;letter-spacing:.5px;'
+            icon.textContent = extLabel
+            const name = document.createElement('span')
+            name.style.cssText = 'font-size:13px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
+            name.textContent = filename
+            card.appendChild(icon)
+            card.appendChild(name)
+            card.onclick = async (e) => {
+              e.preventDefault(); e.stopPropagation()
+              try {
+                const result = await window.electronAPI?.attachments?.open?.(originalSrc)
+                if (result && result.success === false) {
+                  try { window.alert(`打开附件失败：${result.error || '未知原因'}`) } catch {}
+                }
+              } catch (err) {
+                try { window.alert(`打开附件失败：${err?.message || err}`) } catch {}
+              }
+            }
+            if (img.parentNode) img.parentNode.replaceChild(card, img)
+            logger.log(`[MarkdownPreview] 附件已替换为卡片:`, originalSrc)
+            continue
+          }
+        }
 
         // ── 音频文件：替换为 <audio> 播放器 ──
         if (originalSrc) {

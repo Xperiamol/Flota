@@ -196,6 +196,20 @@ const TextColor = Mark.create({
 
 // 音频扩展名集合
 const AUDIO_EXTS = new Set(['.m4a', '.mp3', '.ogg', '.wav', '.aac', '.opus', '.flac', '.webm'])
+const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.avif', '.ico'])
+
+const getExtFromSrc = (src) => {
+  if (!src) return ''
+  const lower = String(src).toLowerCase()
+  const m = lower.match(/\.([a-z0-9]+)(?:\?|$)/)
+  return m ? '.' + m[1] : ''
+}
+
+const isAttachmentRef = (src) => {
+  if (!src) return false
+  const s = String(src)
+  return s.startsWith('attachments/') || s.startsWith('app://attachments/')
+}
 
 // ─── Callout 装饰插件 ─────────────────────────────────────────────────────────
 // 在 WYSIWYG 中检测 blockquote 内的 [!type] 标记,渲染为彩色卡片
@@ -346,10 +360,16 @@ const EmptyParagraphPreserver = Extension.create({
 
 function isAudioSrc(src) {
   if (!src) return false
-  const lower = src.toLowerCase()
-  const extMatch = lower.match(/\.([a-z0-9]+)(?:\?|$)/)
-  const ext = extMatch ? '.' + extMatch[1] : ''
-  return AUDIO_EXTS.has(ext) || lower.startsWith('audio/') || lower.startsWith('app://audio/')
+  const lower = String(src).toLowerCase()
+  return AUDIO_EXTS.has(getExtFromSrc(lower)) || lower.startsWith('audio/') || lower.startsWith('app://audio/')
+}
+
+function isImageSrc(src) {
+  if (!src) return false
+  const lower = String(src).toLowerCase()
+  // 已确知是图片协议（base64、远程图）也按图片处理
+  if (lower.startsWith('data:image') || lower.startsWith('http://') || lower.startsWith('https://')) return true
+  return IMAGE_EXTS.has(getExtFromSrc(lower))
 }
 
 // ─── 音频播放器组件 ──────────────────────────────────────────────────────────
@@ -487,6 +507,50 @@ const AudioPlayerWidget = ({ src, selected, originalSrc, editor, getPos, nodeSiz
   )
 }
 
+// ─── 附件卡片（PDF/文档等非图片非音频） ───────────────────────────────────────
+const AttachmentCard = ({ src, alt, selected }) => {
+  const filename = (alt || '').trim() || (String(src).split('/').pop() || '附件').replace(/^[a-f0-9]{40}\.?/, '')
+  const ext = getExtFromSrc(src).replace('.', '').toUpperCase() || '文件'
+  const handleOpen = async (e) => {
+    e.preventDefault(); e.stopPropagation()
+    try {
+      const result = await window.electronAPI?.attachments?.open?.(src)
+      if (result && result.success === false) {
+        try { window.alert(`打开附件失败：${result.error || '未知原因'}`) } catch {}
+      }
+    } catch (err) {
+      try { window.alert(`打开附件失败：${err?.message || err}`) } catch {}
+    }
+  }
+  return (
+    <Box
+      component="span"
+      onClick={handleOpen}
+      onMouseDown={(e) => e.stopPropagation()}
+      sx={{
+        display: 'inline-flex', alignItems: 'center', gap: 1,
+        my: 0.75, px: 1.5, py: 1, borderRadius: '10px',
+        backgroundColor: 'action.hover', cursor: 'pointer',
+        outline: selected ? '2px solid #1976d2' : 'none',
+        maxWidth: '100%', overflow: 'hidden',
+        '&:hover': { backgroundColor: 'action.selected' },
+      }}
+      title={`打开 ${filename}`}
+    >
+      <Box sx={{
+        flexShrink: 0, width: 32, height: 32, borderRadius: '6px',
+        background: '#1976d2', color: '#fff',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 11, fontWeight: 600, letterSpacing: 0.5,
+      }}>{ext.slice(0, 4)}</Box>
+      <Box sx={{
+        fontSize: 13, lineHeight: 1.3, overflow: 'hidden',
+        textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}>{filename}</Box>
+    </Box>
+  )
+}
+
 const ImageNodeView = ({ node, selected, editor, getPos }) => {
   const { src, alt, title } = node.attrs
   // ✅ 初始值 null，避免 <img src=""> 触发浏览器下载当前页面的报错
@@ -494,9 +558,11 @@ const ImageNodeView = ({ node, selected, editor, getPos }) => {
   const [modalOpen, setModalOpen] = useState(false)
   const { showSuccess, showError } = useError()
   const isAudio = isAudioSrc(src)
+  const isAttachment = !isAudio && isAttachmentRef(src) && !isImageSrc(src)
 
   useEffect(() => {
     if (!src) return
+    if (isAttachment) return // 附件无需异步解析图片源
     let cancelled = false
 
     // 已经是可显示 URL（base64、http、app://）直接使用
@@ -554,12 +620,16 @@ const ImageNodeView = ({ node, selected, editor, getPos }) => {
 
   return (
     <NodeViewWrapper as="span" style={{ display: 'block' }} data-drag-handle>
+      {/* 附件文件（PDF/文档等）：渲染为卡片块 */}
+      {isAttachment && (
+        <AttachmentCard src={src} alt={alt} selected={selected} />
+      )}
       {/* 音频文件：渲染为自定义播放器 */}
-      {isAudio && displaySrc && (
+      {!isAttachment && isAudio && displaySrc && (
         <AudioPlayerWidget src={displaySrc} selected={selected} originalSrc={src} editor={editor} getPos={getPos} nodeSize={node.nodeSize} />
       )}
       {/* 普通图片 */}
-      {!isAudio && displaySrc && (
+      {!isAttachment && !isAudio && displaySrc && (
         <img
           src={displaySrc}
           alt={alt || ''}
@@ -583,7 +653,7 @@ const ImageNodeView = ({ node, selected, editor, getPos }) => {
         />
       )}
       {/* 加载中占位 */}
-      {!displaySrc && src && (
+      {!isAttachment && !displaySrc && src && (
         <Box sx={{ width: '100%', height: 80, backgroundColor: 'action.hover', borderRadius: 1,
           display: 'flex', alignItems: 'center', justifyContent: 'center', my: 1,
           fontSize: 12, color: 'text.disabled' }}>
@@ -1871,7 +1941,8 @@ const EditorContextMenu = ({ editor, menu, containerRef, undoBaseline, blockSele
   })
   const pasteText = () => run(async () => {
     const text = await navigator.clipboard?.readText?.()
-    if (text) editor.chain().focus().insertContent(text).run()
+    // 用 insertContentAt 而非 insertContent，让 tiptap-markdown 按 markdown 解析剪贴板文本
+    if (text) editor.chain().focus().insertContentAt(editor.state.selection.from, text).run()
   })
   const pastePlainText = () => run(async () => {
     const text = await navigator.clipboard?.readText?.()
@@ -2045,8 +2116,37 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
     }
   }
 
+  // ── 通用附件保存并插入卡片 ───────────────────────────────────────────────────
+  // 把非图片文件复制到 userData/attachments/，再插入图片节点（序列化回 markdown 是 ![name](attachments/xxx.ext)）
+  // 复用图片管线：ImageNodeView 检测到附件后渲染为 AttachmentCard
+  const handleAttachmentUpload = async (file, pos) => {
+    const ed = editorRef.current
+    if (!ed || !file) return
+    try {
+      const buffer = new Uint8Array(await file.arrayBuffer())
+      const fileName = file.name || `attachment_${Date.now()}`
+      const result = await window.electronAPI?.attachments?.saveFromBuffer?.(buffer, fileName)
+      if (!result?.success || !result.data?.relativePath) {
+        const msg = result?.error || '未知原因'
+        console.warn('[WYSIWYGEditor] 附件保存失败:', msg)
+        try { window.alert(`附件保存失败：${msg}`) } catch {}
+        return
+      }
+      const { relativePath, displayName } = result.data
+      const label = (displayName || fileName).replace(/[\[\]]/g, '')
+      // 直接传 markdown：tiptap-markdown 重写了 insertContentAt 会按 markdown 解析
+      const insertPos = typeof pos === 'number' ? pos : ed.state.selection.from
+      ed.chain().focus().insertContentAt(insertPos, `![${label}](${relativePath})`).run()
+    } catch (error) {
+      console.error('[WYSIWYGEditor] 附件保存失败:', error)
+    }
+  }
+
+  const handleAttachmentUploadRef = useRef(null)
+
   // 每次渲染都更新 ref，确保 editorProps 闭包用到的是最新版本
   handleImageUploadRef.current = handleImageUpload
+  handleAttachmentUploadRef.current = handleAttachmentUpload
 
   const editor = useEditor({
     extensions: [
@@ -2143,6 +2243,15 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
           }
         }
 
+        // 1.5) 非图片文件粘贴：导入到 attachments/ 并插入链接
+        const files = Array.from(data.files || [])
+        const nonImageFiles = files.filter(f => f && !f.type?.startsWith('image/'))
+        if (nonImageFiles.length > 0 && !hasTextualContent) {
+          event.preventDefault()
+          nonImageFiles.forEach(file => handleAttachmentUploadRef.current?.(file))
+          return true
+        }
+
         // 2) 纯文本（无 HTML 富文本）：以原样字面量插入，绕开 markdown 二次解析。
         //    避免 [], *, _, {color}, URL 等被识别后在保存时反向转义/包裹。
         if (plainText && !htmlText.trim()) {
@@ -2207,21 +2316,26 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
         if (/^file:\/\//i.test(href)) {
           event.preventDefault()
           event.stopPropagation()
-          window.electronAPI?.system?.openPath?.(getLocalPathFromFileUrl(href))
+          // file:// → 转为本地路径走 openPath
+          try {
+            const localPath = decodeURIComponent(new URL(href).pathname)
+            window.electronAPI?.system?.openPath?.(localPath)
+          } catch {
+            window.electronAPI?.system?.openPath?.(href.replace(/^file:\/\//, ''))
+          }
           return true
         }
 
-        if (/^app:\/\//i.test(href)) {
+        // 应用内附件（attachments/、audio/、images/ 或 app:// 前缀）：走专用 IPC
+        const cleaned = href.replace(/^app:\/\//, '')
+        if (/^(?:attachments|audio|images)\//i.test(cleaned)) {
           event.preventDefault()
           event.stopPropagation()
-          window.electronAPI?.system?.openExternal?.(href)
-          return true
-        }
-
-        if (/^(?:attachments|audio)\//i.test(href)) {
-          event.preventDefault()
-          event.stopPropagation()
-          window.electronAPI?.system?.openExternal?.(`app://${href.replace(/^\/+/, '')}`)
+          window.electronAPI?.attachments?.open?.(cleaned).then((r) => {
+            if (r && r.success === false) {
+              try { window.alert(`打开失败：${r.error || '未知原因'}`) } catch {}
+            }
+          }).catch(() => {})
           return true
         }
 
@@ -2266,8 +2380,10 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
 
     const onDrop = (e) => {
       const files = Array.from(e.dataTransfer?.files || [])
+      if (!files.length) return
       const imageFiles = files.filter(f => f.type.startsWith('image/'))
-      if (!imageFiles.length) return  // 非图片文件，让 ProseMirror 自行处理
+      const otherFiles = files.filter(f => !f.type.startsWith('image/'))
+      if (!imageFiles.length && !otherFiles.length) return
       e.preventDefault()
       e.stopPropagation()
       // 计算鼠标落点对应的文档位置（按落点插入，不再插到当前光标）
@@ -2280,6 +2396,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
         // posAtCoords 在边界可能抛错，回退到当前光标
       }
       imageFiles.forEach(file => handleImageUploadRef.current?.(file, dropPos))
+      otherFiles.forEach(file => handleAttachmentUploadRef.current?.(file, dropPos))
     }
 
     dom.addEventListener('dragover', onDragOver, { capture: true })

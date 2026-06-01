@@ -2,6 +2,25 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [3.1.6] - 2026-06-01
+
+### Added / 新增
+- 新增通用附件上传：拖入 / 粘贴 / 复制 PDF、Word、Excel 等任意文件，自动按内容 SHA-1 去重存入 `attachments/` 并支持云同步。
+- 新增"附件最大文件大小"设置项（默认 50 MB，可设为 0 不限），超过限制会有明确提示。
+- 新增附件块状卡片渲染：编辑器和预览中的附件以蓝色图标 + 文件名的卡片展示，与录音块视觉一致，单击用系统默认应用打开。
+
+### Changed / 变更
+- 统一时间轴和笔记编辑器的附件拖入行为，所有入口走相同的存储与渲染管线。
+- 改善 WebDAV 同步错误信息：附带具体请求方法和路径，便于定位坚果云流量耗尽等问题。
+- CSP 放行 `http:` 图片源，修复内网图片被拦截。
+
+### Fixed / 修复
+- 修复拖入文件后显示成 `<a href="attachments/...">…</a>` 字面 HTML 的问题（tiptap-markdown 的 `insertContent` vs `insertContentAt` 行为差异）。
+- 修复点击应用内附件链接时被 `system:open-external` 的 URL 校验拒绝的问题；新增 `attachments:open` 专用 IPC，限定仅可打开 `attachments/`、`audio/`、`images/` 白名单目录，并校验文件名防止路径穿越。
+- 修复附件保存失败被静默吞掉的问题，现会以弹窗提示具体原因。
+- 修复粘贴附件时未识别 `attachments/` 路径导致预览出现链接占位的问题。
+
+
 ## [3.1.5] - 2026-05-22
 
 ### Changed / 更新内容

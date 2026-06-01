@@ -150,8 +150,8 @@ function runWYSIWYG(editor, before, after, placeholder, getSelected) {
   }
   // clear format
   if (before === '__clearFormat__') return c.unsetAllMarks().clearNodes().run()
-  // fallback
-  return c.insertContent(before + (placeholder || '文本') + after).run()
+  // fallback：插入字面字符（含 markdown 修饰符），用 insertContentAt 让 tiptap-markdown 按 markdown 解析
+  return c.insertContentAt(editor.state.selection.from, before + (placeholder || '文本') + after).run()
 }
 
 function execWYSIWYGCommand(editor, def) {

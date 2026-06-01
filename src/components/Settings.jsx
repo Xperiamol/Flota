@@ -568,7 +568,8 @@ const Settings = () => {
         userName: '',
         language: 'zh-CN',
         defaultMinibarMode: false,
-        mcpEnabled: false
+        mcpEnabled: false,
+        attachmentMaxSizeMB: 50
     });
     const [shortcuts, setShortcuts] = useState(DEFAULT_SHORTCUTS);
     const [shortcutConflicts, setShortcutConflicts] = useState({});
@@ -1189,6 +1190,24 @@ const Settings = () => {
                             action={<ChipSelector options={SUPPORTED_LANGUAGES} value={settings.language}
                                 onChange={v => handleSettingChange('language', v)}
                                 getKey={o => o.code} getLabel={o => o.nativeName} getIcon={() => <LanguageIcon />} />}
+                        />
+                        <SettingRow
+                            primary="附件最大大小 (MB)"
+                            secondary="超过此大小的文件无法添加为附件，0 表示不限制"
+                            action={(
+                                <TextField
+                                    size="small"
+                                    type="number"
+                                    inputProps={{ min: 0, step: 1, style: { textAlign: 'right', width: 80 } }}
+                                    value={Number.isFinite(Number(settings.attachmentMaxSizeMB)) ? Number(settings.attachmentMaxSizeMB) : 50}
+                                    onChange={(e) => setSettings(prev => ({ ...prev, attachmentMaxSizeMB: e.target.value }))}
+                                    onBlur={(e) => {
+                                        const raw = Number(e.target.value)
+                                        const value = Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 50
+                                        handleSettingChange('attachmentMaxSizeMB', value)
+                                    }}
+                                />
+                            )}
                         />
                     </List>
                     </Paper>

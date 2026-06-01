@@ -310,6 +310,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     resolveSource: inv('audio:resolve-source')
   },
 
+  // 通用附件 API（按 SHA-1 内容去重存到 attachments/）
+  attachments: {
+    saveFromPath: inv('attachments:save-from-path'),
+    saveFromBuffer: inv('attachments:save-from-buffer'),
+    open: inv('attachments:open'),
+  },
+
   // 插件商店与插件运行时 API
   pluginStore: {
     listAvailable: inv('plugin-store:list-available'),

@@ -227,23 +227,49 @@ class WebDAVClient {
     if (error.response) {
       const status = error.response.status;
       const statusText = error.response.statusText;
+      // 提取请求方法 + URL 路径，便于定位是哪一步失败
+      const method = (error.config?.method || '').toUpperCase();
+      const url = error.config?.url || '';
+      let pathInfo = '';
+      try {
+        pathInfo = url ? new URL(url).pathname : '';
+      } catch (_) {
+        pathInfo = url;
+      }
+      const where = method && pathInfo ? ` [${method} ${pathInfo}]` : '';
+      // 提取服务器返回的 body（部分 WebDAV 服务会在 body 里写明原因，比如坚果云的限流文案）
+      let serverDetail = '';
+      const data = error.response.data;
+      if (typeof data === 'string' && data.trim()) {
+        serverDetail = data.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+      } else if (data && typeof data === 'object' && data.message) {
+        serverDetail = String(data.message).slice(0, 160);
+      }
+      const detailSuffix = serverDetail ? `（${serverDetail}）` : '';
 
       if (status === 401) {
-        return new Error('WebDAV 认证失败：用户名或密码错误');
+        return new Error(`WebDAV 认证失败：用户名或密码错误${where}${detailSuffix}`);
       } else if (status === 403) {
-        return new Error('WebDAV 权限不足：无法访问该资源');
+        return new Error(
+          `WebDAV 权限不足或存储空间/流量耗尽${where}${detailSuffix}。` +
+          `坚果云常见原因：① 当月免费流量已用完（1GB/3GB）；② 应用密码未开启写权限；③ 同步盘已满或文件被锁定。`
+        );
       } else if (status === 404) {
-        return new Error('WebDAV 资源不存在');
+        return new Error(`WebDAV 资源不存在${where}${detailSuffix}`);
       } else if (status === 405) {
-        return new Error('WebDAV 不支持该操作');
+        return new Error(`WebDAV 不支持该操作${where}${detailSuffix}`);
       } else if (status === 409) {
-        return new Error('WebDAV 资源冲突 (409): 可能父目录不存在或资源已存在');
+        return new Error(`WebDAV 资源冲突 (409)${where}：可能父目录不存在或资源已存在${detailSuffix}`);
+      } else if (status === 423) {
+        return new Error(`WebDAV 资源被锁定 (423)${where}${detailSuffix}`);
+      } else if (status === 429) {
+        return new Error(`WebDAV 请求过于频繁 (429)${where}：已达到坚果云每 30 分钟的请求次数上限${detailSuffix}`);
       } else if (status === 507) {
-        return new Error('WebDAV 存储空间不足');
+        return new Error(`WebDAV 存储空间不足${where}${detailSuffix}`);
       } else if (status >= 500) {
-        return new Error(`WebDAV 服务器错误 (${status}): ${statusText}`);
+        return new Error(`WebDAV 服务器错误 (${status})${where}: ${statusText}${detailSuffix}`);
       } else {
-        return new Error(`WebDAV 请求失败 (${status}): ${statusText}`);
+        return new Error(`WebDAV 请求失败 (${status})${where}: ${statusText}${detailSuffix}`);
       }
     } else if (error.code) {
       const networkErrors = {
@@ -346,8 +372,12 @@ class WebDAVClient {
       });
     } catch (error) {
       // 405 表示目录已存在，409 可能表示父目录不存在或冲突
-      if (error.message.includes('不支持该操作') || error.message.includes('冲突')) {
-        // 忽略，可能是目录已存在
+      // 部分 WebDAV 服务（含坚果云）对已存在目录会直接返 403，这里也吞掉避免误报
+      if (
+        error.message.includes('不支持该操作') ||
+        error.message.includes('冲突') ||
+        error.message.includes('权限不足')
+      ) {
         return;
       }
       throw error;
