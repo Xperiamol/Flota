@@ -43,6 +43,7 @@ import { useStore } from '../store/useStore'
 import { createTodo, deleteTodo, fetchTodos, toggleTodoComplete, updateTodo } from '../api/todoAPI'
 import ImagePreviewModal, { canvasToPngBlob } from './ImagePreviewModal'
 import { getImageResolver } from '../utils/ImageProtocolResolver'
+import { getLocalPathFromFileUrl } from '../utils/fileUrl'
 import { toListResult } from '../utils/todoDisplayUtils'
 import AudioRecordButton from './AudioRecordButton'
 import MarkdownPreview from './MarkdownPreview'
@@ -272,6 +273,8 @@ const extractImages = (content = '') => {
     if (!src) continue
     if (isAudioRef(src)) continue
     if (isAttachmentFileRef(src)) continue
+    // 跳过超长 data URL：时间轴卡片不展示内联 base64 图片，避免触发 ERR_INVALID_URL
+    if (src.startsWith('data:')) continue
     images.push(src)
   }
   return images
@@ -481,14 +484,6 @@ const attachmentToMarkdown = (item) => {
   if (item.type === 'audio') return `![录音](${item.path})`
   if (item.type === 'file') return `![${item.name}](${item.path})`
   return ''
-}
-
-const getLocalPathFromFileUrl = (url) => {
-  try {
-    return decodeURIComponent(new URL(url).pathname)
-  } catch {
-    return url.replace(/^file:\/\//, '')
-  }
 }
 
 const getDroppedFilePath = (file) => {
@@ -1101,13 +1096,14 @@ const TimelineView = ({ onTodoUpdated }) => {
 
     return (
       <Stack spacing={0.75} sx={sx}>
-        {audios.map((src) => {
+        {audios.map((src, index) => {
           const resolved = resolvedAudios[src]
+          const itemKey = `${src}-${index}`
 
           if (resolved?.missing) {
             return (
               <Box
-                key={src}
+                key={itemKey}
                 onClick={(event) => event.stopPropagation()}
                 sx={{
                   px: 1.25,
@@ -1125,7 +1121,7 @@ const TimelineView = ({ onTodoUpdated }) => {
 
           if (!resolved?.url) {
             return (
-              <Typography key={src} sx={{ fontSize: 13, color: 'text.secondary' }}>
+              <Typography key={itemKey} sx={{ fontSize: 13, color: 'text.secondary' }}>
                 录音加载中...
               </Typography>
             )
@@ -1133,7 +1129,7 @@ const TimelineView = ({ onTodoUpdated }) => {
 
           return (
             <Box
-              key={src}
+              key={itemKey}
               onClick={(event) => event.stopPropagation()}
               sx={{
                 width: 'min(460px, 100%)',
@@ -1320,9 +1316,9 @@ const TimelineView = ({ onTodoUpdated }) => {
             )}
             {timelineFiles.length > 0 && (
               <Stack spacing={0.5} sx={{ mt: 0.75 }}>
-                {timelineFiles.map((file) => (
+                {timelineFiles.map((file, index) => (
                   <Chip
-                    key={file.url}
+                    key={`${file.url}-${index}`}
                     icon={<AttachFile fontSize="small" />}
                     label={file.label}
                     size="small"
@@ -1351,12 +1347,12 @@ const TimelineView = ({ onTodoUpdated }) => {
                   maxWidth: 260
                 }}
               >
-                {timelineImages.map((src) => {
+                {timelineImages.map((src, index) => {
                   const displaySrc = getDisplayImageSrc(src)
                   if (!displaySrc) return null
                   return (
                     <Box
-                      key={src}
+                      key={`${src}-${index}`}
                       component="img"
                       src={displaySrc}
                       alt="时间轴图片预览"
@@ -1790,9 +1786,9 @@ const TimelineView = ({ onTodoUpdated }) => {
                 {renderAudioPlayers(detailPopover.item.audios)}
                 {detailPopover.item.files?.length > 0 && (
                   <Stack spacing={0.5}>
-                    {detailPopover.item.files.map((file) => (
+                    {detailPopover.item.files.map((file, index) => (
                       <Chip
-                        key={file.url}
+                        key={`${file.url}-${index}`}
                         icon={<AttachFile fontSize="small" />}
                         label={file.label}
                         size="small"
@@ -1835,12 +1831,12 @@ const TimelineView = ({ onTodoUpdated }) => {
                 )}
                 {detailPopover.item.images?.length > 0 && (
                   <Box sx={{ display: 'flex', gap: 0.75, overflowX: 'auto', pb: 0.5 }}>
-                    {detailPopover.item.images.map((src) => {
+                    {detailPopover.item.images.map((src, index) => {
                       const displaySrc = getDisplayImageSrc(src)
                       if (!displaySrc) return null
                       return (
                         <Box
-                          key={src}
+                          key={`${src}-${index}`}
                           component="img"
                           src={displaySrc}
                           alt="时间轴图片预览"

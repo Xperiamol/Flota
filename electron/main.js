@@ -1343,6 +1343,7 @@ registerIpcHandlers([
     'note:batch-permanent-delete': 'batchPermanentDeleteNotes',
     'note:batch-set-tags': 'batchSetTags',
     'note:get-stats': 'getStats',
+    'note:get-activity-heatmap': 'getActivityHeatmap',
     'note:export': 'exportNotes',
     'note:import': 'importNotes'
   }).map(([channel, methodName]) => ({

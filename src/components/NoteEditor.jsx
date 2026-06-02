@@ -12,7 +12,11 @@ import {
   Stack,
   Chip,
   Alert,
-  Snackbar
+  Snackbar,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText
 } from '@mui/material'
 import {
   AutoMode as AutoSaveIcon,
@@ -30,7 +34,8 @@ import {
   Error as ErrorIcon,
   Close as CloseIcon,
   KeyboardArrowUp as CollapseToolbarIcon,
-  KeyboardArrowDown as ExpandToolbarIcon
+  KeyboardArrowDown as ExpandToolbarIcon,
+  MoreHoriz as MoreIcon
 } from '@mui/icons-material'
 import { useStore } from '../store/useStore'
 import { useStandaloneContext } from './StandaloneProvider'
@@ -124,6 +129,10 @@ const NoteEditor = () => {
   const contentRef = useRef(null)
   const titleRef = useRef(null)
   const wysiwygEditorRef = useRef(null)
+  // 顶部工具栏自适应：窗口窄时把右侧操作图标收纳进“更多”菜单
+  const toolbarPaperRef = useRef(null)
+  const [actionVisibleCount, setActionVisibleCount] = useState(99)
+  const [actionMenuAnchor, setActionMenuAnchor] = useState(null)
   // WYSIWYG editor 实例存到 state，避免 ref 在首次渲染时为 null 导致工具栏拿不到
   const [wysiwygEditor, setWysiwygEditor] = useState(null)
   const [blockSelectActive, setBlockSelectActive] = useState(false)
@@ -1401,6 +1410,34 @@ const NoteEditor = () => {
     }
   }, [isMinibarMode])
 
+  // 顶部工具栏自适应：窗口窄时把右侧操作图标收纳进“更多”菜单
+  const totalToolbarActions = (isStandaloneMode ? 0 : 1) + 4 + (noteType === 'whiteboard' ? 1 : 0)
+  useEffect(() => {
+    const el = toolbarPaperRef.current
+    if (!el) return
+    // 固定占位预留（保存状态 + 分隔线 + 标题最小宽 + 标签按钮 + 类型切换 + 折叠按钮 + 内边距）
+    const RESERVE = 430
+    const ITEM_W = 38   // IconButton 32 + gap
+    const MORE_W = 38
+
+    const compute = () => {
+      const available = el.clientWidth - RESERVE
+      if (available >= totalToolbarActions * ITEM_W) {
+        setActionVisibleCount(totalToolbarActions)
+        return
+      }
+      // 需要“更多”按钮，预留其宽度
+      const count = Math.max(0, Math.floor((available - MORE_W) / ITEM_W))
+      setActionVisibleCount(Math.min(count, totalToolbarActions))
+    }
+
+    compute()
+    const ro = new ResizeObserver(compute)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [totalToolbarActions])
+
+
   if (!selectedNoteId) {
     return (
       <Box
@@ -1467,6 +1504,59 @@ const NoteEditor = () => {
     { label: '更新', value: formatLastSaved(noteUpdatedAt) || '未知' },
     { label: '状态', value: currentNote?.is_pinned ? '已置顶' : hasUnsavedChanges ? '有未保存更改' : '已保存' },
   ]
+  // 顶部工具栏右侧操作项（数据驱动，便于窗口变窄时溢出收纳）
+  const toolbarActions = [
+    !isStandaloneMode && {
+      key: 'standalone',
+      label: t('notes.openInNewWindow'),
+      icon: <WindowIcon sx={{ fontSize: 18 }} />,
+      onClick: handleOpenStandalone,
+    },
+    {
+      key: 'fullscreen',
+      label: isFullscreen ? t('notes.exitFullscreen') : t('notes.fullscreen'),
+      icon: isFullscreen ? <FullscreenExitIcon sx={{ fontSize: 18 }} /> : <FullscreenIcon sx={{ fontSize: 18 }} />,
+      active: isFullscreen,
+      onClick: handleToggleFullscreen,
+    },
+    {
+      key: 'pin',
+      label: currentNote?.is_pinned ? t('notes.unpinNote') : t('notes.pinNote'),
+      icon: currentNote?.is_pinned ? <PinIcon color="primary" sx={{ fontSize: 18 }} /> : <PinOutlinedIcon sx={{ fontSize: 18 }} />,
+      onClick: handleTogglePin,
+    },
+    {
+      key: 'related',
+      label: relatedOpen ? '隐藏笔记详情' : '显示笔记详情',
+      icon: <RelatedIcon sx={{ fontSize: 18 }} />,
+      active: relatedOpen,
+      onClick: handleToggleRelatedContext,
+    },
+    {
+      key: 'ai',
+      label: resolvedAICommandCenterOpen ? '关闭 AI 小窗' : '打开 AI 小窗',
+      icon: <AIIcon sx={{ fontSize: 18 }} />,
+      active: resolvedAICommandCenterOpen,
+      onClick: () => {
+        if (isStandaloneMode) {
+          setStandaloneAICommandCenterOpen(prev => !prev)
+          return
+        }
+        if (!aiCommandCenterEnabled) setAiCommandCenterEnabled(true)
+        setAiCommandCenterOpen(!aiCommandCenterOpen)
+      },
+    },
+    noteType === 'whiteboard' && {
+      key: 'export-png',
+      label: t('common.exportPngTooltip'),
+      icon: <GetAppIcon sx={{ fontSize: 18 }} />,
+      onClick: () => whiteboardExportFunc?.(),
+    },
+  ].filter(Boolean)
+
+  const visibleActions = toolbarActions.slice(0, actionVisibleCount)
+  const overflowActions = toolbarActions.slice(actionVisibleCount)
+
   return (
     <Box
       ref={editorContainerRef}
@@ -1529,6 +1619,7 @@ const NoteEditor = () => {
 
       {/* 工具栏 - 调整高度 */}
       <Paper
+        ref={toolbarPaperRef}
         elevation={0}
         sx={{
           px: 1,
@@ -1842,103 +1933,57 @@ const NoteEditor = () => {
           p: 0.25, borderRadius: '10px',
           bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(15, 23, 42, 0.06)'
         }}>
-          {!isStandaloneMode && (
-            <Tooltip title={t('notes.openInNewWindow')}>
+          {visibleActions.map((action) => (
+            <Tooltip key={action.key} title={action.label}>
               <IconButton
-                onClick={handleOpenStandalone}
+                onClick={action.onClick}
                 size="small"
-                sx={{ borderRadius: '8px' }}
+                sx={{
+                  borderRadius: '8px',
+                  color: action.active ? 'primary.main' : 'text.secondary',
+                  bgcolor: action.active
+                    ? (theme) => theme.palette.mode === 'dark' ? 'rgba(96,165,250,0.16)' : 'rgba(25,118,210,0.1)'
+                    : 'transparent',
+                }}
               >
-                <WindowIcon sx={{ fontSize: 18 }} />
+                {action.icon}
+              </IconButton>
+            </Tooltip>
+          ))}
+
+          {overflowActions.length > 0 && (
+            <Tooltip title="更多操作">
+              <IconButton
+                onClick={(e) => setActionMenuAnchor(e.currentTarget)}
+                size="small"
+                sx={{
+                  borderRadius: '8px',
+                  color: actionMenuAnchor ? 'primary.main' : 'text.secondary',
+                }}
+              >
+                <MoreIcon sx={{ fontSize: 18 }} />
               </IconButton>
             </Tooltip>
           )}
 
-          <Tooltip title={isFullscreen ? t('notes.exitFullscreen') : t('notes.fullscreen')}>
-            <IconButton
-              onClick={handleToggleFullscreen}
-              size="small"
-              sx={{
-                borderRadius: '8px',
-                color: isFullscreen ? 'primary.main' : 'text.secondary',
-                bgcolor: isFullscreen
-                  ? (theme) => theme.palette.mode === 'dark' ? 'rgba(96,165,250,0.16)' : 'rgba(25,118,210,0.1)'
-                  : 'transparent',
-              }}
-            >
-              {isFullscreen ? (
-                <FullscreenExitIcon sx={{ fontSize: 18 }} />
-              ) : (
-                <FullscreenIcon sx={{ fontSize: 18 }} />
-              )}
-            </IconButton>
-          </Tooltip>
-
-          <Tooltip title={currentNote?.is_pinned ? t('notes.unpinNote') : t('notes.pinNote')}>
-            <IconButton
-              onClick={handleTogglePin}
-              size="small"
-              sx={{ borderRadius: '8px' }}
-            >
-              {currentNote?.is_pinned ? (
-                <PinIcon color="primary" sx={{ fontSize: 18 }} />
-              ) : (
-                <PinOutlinedIcon sx={{ fontSize: 18 }} />
-              )}
-            </IconButton>
-          </Tooltip>
-
-          <Tooltip title={relatedOpen ? '隐藏笔记详情' : '显示笔记详情'}>
-            <IconButton
-              onClick={handleToggleRelatedContext}
-              size="small"
-              sx={{
-                borderRadius: '8px',
-                color: relatedOpen ? 'primary.main' : 'text.secondary',
-                bgcolor: relatedOpen
-                  ? (theme) => theme.palette.mode === 'dark' ? 'rgba(96,165,250,0.16)' : 'rgba(25,118,210,0.1)'
-                  : 'transparent',
-              }}
-            >
-              <RelatedIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-          </Tooltip>
-
-          <Tooltip title={resolvedAICommandCenterOpen ? '关闭 AI 小窗' : '打开 AI 小窗'}>
-            <IconButton
-              onClick={() => {
-                if (isStandaloneMode) {
-                  setStandaloneAICommandCenterOpen(prev => !prev)
-                  return
-                }
-                if (!aiCommandCenterEnabled) setAiCommandCenterEnabled(true)
-                setAiCommandCenterOpen(!aiCommandCenterOpen)
-              }}
-              size="small"
-              sx={{
-                borderRadius: '8px',
-                color: resolvedAICommandCenterOpen ? 'primary.main' : 'text.secondary',
-                bgcolor: resolvedAICommandCenterOpen
-                  ? (theme) => theme.palette.mode === 'dark' ? 'rgba(96,165,250,0.14)' : 'rgba(25,118,210,0.09)'
-                  : 'transparent',
-              }}
-            >
-              <AIIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-          </Tooltip>
-
-          {/* 画布模式：导出PNG */}
-          {noteType === 'whiteboard' && (
-            <Tooltip title={t('common.exportPngTooltip')}>
-              <IconButton
-                onClick={() => whiteboardExportFunc?.()}
-                size="small"
-                sx={{ borderRadius: '8px' }}
+          <Menu
+            anchorEl={actionMenuAnchor}
+            open={Boolean(actionMenuAnchor)}
+            onClose={() => setActionMenuAnchor(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+          >
+            {overflowActions.map((action) => (
+              <MenuItem
+                key={action.key}
+                onClick={() => { action.onClick(); setActionMenuAnchor(null) }}
+                selected={action.active}
               >
-                <GetAppIcon sx={{ fontSize: 18 }} />
-              </IconButton>
-            </Tooltip>
-          )}
+                <ListItemIcon>{action.icon}</ListItemIcon>
+                <ListItemText>{action.label}</ListItemText>
+              </MenuItem>
+            ))}
+          </Menu>
 
           <Tooltip title={t('notes.collapseToolbar')}>
             <IconButton

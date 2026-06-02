@@ -145,6 +145,32 @@ class ChangeLogDAO {
   }
 
   /**
+   * 按本地日期统计实体的活动次数（用于活动热力图）
+   * 统计 create/update/restore 三类编辑活动，delete 不计入
+   * @param {string} entityType - 实体类型 ('note' 或 'todo')
+   * @param {number} days - 统计最近天数
+   * @returns {Object} { 'YYYY-MM-DD': count, ... }
+   */
+  getDailyActivityCounts(entityType, days = 90) {
+    const db = this.getDB();
+    const stmt = db.prepare(`
+      SELECT date(created_at, 'localtime') AS day, COUNT(*) AS count
+      FROM changes
+      WHERE entity_type = ?
+        AND operation IN ('create', 'update', 'restore')
+        AND date(created_at, 'localtime') >= date('now', 'localtime', ?)
+      GROUP BY day
+    `);
+
+    const rows = stmt.all(entityType, `-${Math.max(0, days - 1)} days`);
+    const result = {};
+    for (const row of rows) {
+      result[row.day] = row.count;
+    }
+    return result;
+  }
+
+  /**
    * 清理已同步的旧变更记录
    * @param {number} daysToKeep - 保留天数
    */

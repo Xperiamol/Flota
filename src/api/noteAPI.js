@@ -24,6 +24,7 @@ export const batchSetNoteTags = (params) => invoke('note:batch-set-tags', params
 
 export const searchNotes = (query, options) => invoke('note:search', query, options);
 export const fetchNoteStats = () => invoke('note:get-stats');
+export const fetchActivityHeatmap = (days = 90) => invoke('note:get-activity-heatmap', days);
 export const exportNotes = (options) => invoke('note:export', options);
 export const importNotes = (data) => invoke('note:import', data);
 

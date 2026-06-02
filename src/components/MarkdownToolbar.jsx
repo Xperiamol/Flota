@@ -29,6 +29,7 @@ import {
   HorizontalRule as DividerIcon,
   FormatClear as ClearFormatIcon,
   ArrowDropDown as DropdownIcon,
+  MoreHoriz as MoreIcon,
   AutoFixHigh as RewriteIcon,
   Summarize as SummarizeIcon,
   Translate as TranslateIcon,
@@ -219,6 +220,51 @@ const MarkdownToolbar = ({
     const missing = DEFAULT_TOOLBAR_ORDER.filter(id => id !== '|' && !saved.includes(id))
     return missing.length ? [...saved, '|', ...missing] : saved
   }, [toolbarOrder])
+
+  // ── 自适应宽度：测量容器宽度，溢出的项隐藏到“更多”菜单 ────────────────────────
+  const containerRef = React.useRef(null)
+  const [visibleCount, setVisibleCount] = React.useState(effectiveOrder.length)
+  const [overflowAnchor, setOverflowAnchor] = React.useState(null)
+
+  React.useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const VIEW_MODE_RESERVE = (viewMode && onViewModeChange) ? 130 : 0
+    const MORE_BTN_RESERVE = 36
+    const ITEM_W = 36 // IconButton 32 + gap
+    const SEP_W = 9
+    const PADDING = 16
+
+    const compute = () => {
+      const total = el.clientWidth - PADDING - VIEW_MODE_RESERVE
+      // 计算累计宽度，超出就截断
+      let used = 0
+      let i = 0
+      for (; i < effectiveOrder.length; i++) {
+        const id = effectiveOrder[i]
+        const w = id === '|' ? SEP_W : ITEM_W
+        // 预留“更多”按钮位置（除非剩余项目刚好都能放下）
+        const reserve = i < effectiveOrder.length - 1 ? MORE_BTN_RESERVE : 0
+        if (used + w + reserve > total) break
+        used += w
+      }
+      setVisibleCount(i)
+    }
+
+    compute()
+    const ro = new ResizeObserver(compute)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [effectiveOrder, viewMode, onViewModeChange])
+
+  const visibleOrder = React.useMemo(
+    () => effectiveOrder.slice(0, visibleCount),
+    [effectiveOrder, visibleCount]
+  )
+  const overflowOrder = React.useMemo(
+    () => effectiveOrder.slice(visibleCount).filter((id) => id !== '|'),
+    [effectiveOrder, visibleCount]
+  )
 
   const insertText = (before, after = '', placeholder = '') => {
     if (editorMode === 'wysiwyg' && editor) {
@@ -451,6 +497,7 @@ const MarkdownToolbar = ({
 
   return (
     <Box
+      ref={containerRef}
       sx={{
         display: 'flex', alignItems: 'center', gap: 0.25,
         px: 1, py: 0.5,
@@ -458,10 +505,22 @@ const MarkdownToolbar = ({
         bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(30,41,59,0.5)' : 'rgba(255,255,255,0.7)',
         backdropFilter: 'blur(20px) saturate(180%)',
         WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-        flexWrap: 'wrap', minHeight: 40,
+        flexWrap: 'nowrap', minHeight: 40, overflow: 'hidden',
       }}
     >
-      {effectiveOrder.map((id, index) => renderItem(id, index))}
+      {visibleOrder.map((id, index) => renderItem(id, index))}
+
+      {overflowOrder.length > 0 && (
+        <Tooltip title="更多" placement="bottom">
+          <IconButton
+            size="small"
+            onClick={(e) => setOverflowAnchor(e.currentTarget)}
+            sx={btnSx}
+          >
+            <MoreIcon />
+          </IconButton>
+        </Tooltip>
+      )}
 
       {/* ── 编辑/预览模式切换 ── */}
       {viewMode && onViewModeChange && (
@@ -508,6 +567,20 @@ const MarkdownToolbar = ({
       )}
 
       {/* ── 弹出菜单 ── */}
+      <Menu
+        anchorEl={overflowAnchor}
+        open={Boolean(overflowAnchor)}
+        onClose={() => setOverflowAnchor(null)}
+        slotProps={{ paper: { sx: { borderRadius: '10px' } } }}
+      >
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.25, p: 0.5, maxWidth: 280 }}>
+          {overflowOrder.map((id, idx) => (
+            <Box key={id} onClick={() => setOverflowAnchor(null)} sx={{ display: 'inline-flex' }}>
+              {renderItem(id, idx)}
+            </Box>
+          ))}
+        </Box>
+      </Menu>
       <Menu anchorEl={calloutAnchor} open={Boolean(calloutAnchor)} onClose={() => setCalloutAnchor(null)}
         slotProps={{ paper: { sx: { borderRadius: '10px' } } }}>
         {calloutTypes.map((c) => (

@@ -2,6 +2,29 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [3.2.0] - 2026-06-02
+
+### Added / 新增
+- 表格在窗口底部新增常驻浮动横向滚动条，过宽表格不再需要拉到最下面才能左右滚动（`useFloatingTableScrollbar`）。
+- 笔记编辑器大工具栏与编辑器内工具栏在窗口宽度不足时自动按优先级折叠到「更多」菜单，避免按钮重叠。
+- AI 长笔记上下文管理：短笔记直接全文注入；长笔记仅注入元信息、目录大纲、首尾预览，并新增 `read_current_note` / `search_in_current_note` / `summarize_current_note_section` 三个工具，AI 可按需读取或摘要任意段落。
+- 个人中心活跃度热力图改为基于变更日志（`changes` 表）的真实编辑次数统计，新增 `note:get-activity-heatmap` IPC。
+
+### Changed / 变更
+- 同步状态弹窗：当 provider 为 webdav 时，待办与其它项时间/失败状态展示统一。
+- 抽取 `src/utils/fileUrl.js` 集中处理本地资源路径解析，减少各组件重复实现。
+- 精简 `AIChatService` 中三个新工具的样板代码，统一 `_getCurrentNoteLines` 辅助方法。
+
+### Fixed / 修复
+- 修复 AI 工具读取长笔记时只能拿到开头内容的问题（前端 `formatNoteContentForAI` 与后端 `truncate` 串联截断）。
+- 修复 `AIChatView` / `AICommandCenter` 渲染代码块时控制台 `<pre> cannot appear as a descendant of <p>` 警告。
+- 修复 `TimelineView` 同一图片/附件/录音 url 出现多次时 React `key` 重复警告（5 处）。
+- 修复历史笔记中残留的内联 `data:image/...` base64 图片在时间轴卡片渲染时触发 `ERR_INVALID_URL` 的问题。
+
+### Removed / 清理
+- 删除 12+ 个冗余文件：`OPPOSans R.ttf`、`docs/site/index.html`、`SyncConfigPage`、`SyncProviderSettings`、`syncRegistry`、`ConflictResolver`、`RetryHelper` 以及 4 个废弃 `scripts/`，并清理 `tagUtils` / `shortcutUtils` / `aiContextUtils` 中的死代码。
+
+
 ## [3.1.6] - 2026-06-01
 
 ### Added / 新增

@@ -8,6 +8,8 @@ import ImagePreviewModal, { canvasToPngBlob } from './ImagePreviewModal'
 import '../markdown/markdown.css'
 import 'highlight.js/styles/github.css'
 import logger from '../utils/logger'
+import useFloatingTableScrollbar from '../hooks/useFloatingTableScrollbar'
+import { getLocalPathFromFileUrl } from '../utils/fileUrl'
 
 const ALLOWED_TAGS = new Set([
   'A', 'ABBR', 'B', 'BLOCKQUOTE', 'BR', 'CODE', 'DEL', 'DIV', 'EM', 'H1', 'H2',
@@ -25,14 +27,6 @@ const ALLOWED_ATTRS = new Set([
 const isSafeUrl = (value) => {
   if (!value) return true
   return /^(https?:|mailto:|app:|file:|data:image\/|#|\/(?!\/))/i.test(value)
-}
-
-const getLocalPathFromFileUrl = (fileUrl) => {
-  try {
-    return decodeURIComponent(String(fileUrl).replace(/^file:\/\//i, ''))
-  } catch (_) {
-    return String(fileUrl).replace(/^file:\/\//i, '')
-  }
 }
 
 const sanitizeStyle = (style) => {
@@ -99,6 +93,7 @@ const MarkdownPreview = ({
   const { showSuccess, showError } = useError()
   const [renderedHTML, setRenderedHTML] = useState('')
   const previewRef = useRef(null)
+  useFloatingTableScrollbar(previewRef, { selector: 'table' })
   const [previewImage, setPreviewImage] = useState(null)
 
   // 创建 Markdown 渲染器实例（使用 useMemo 避免重复创建）

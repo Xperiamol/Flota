@@ -30,8 +30,55 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'get_current_note',
-      description: '获取用户当前正在编辑的笔记完整内容与类型信息。编辑前应先确认 note_type；画布笔记的 content 必须保持为完整有效的画布 JSON，不能拼接普通文本。',
+      description: '获取用户当前正在编辑的笔记元信息和首尾内容预览。返回 title、note_type、total_lines、preview_head/tail 与目录大纲。如果笔记很长，preview 不是完整内容——使用 read_current_note 按行区间读取或 search_in_current_note 搜索关键词定位。编辑前应先确认 note_type；画布笔记的 content 必须保持为完整有效的画布 JSON，不能拼接普通文本。',
       parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_current_note',
+      description: '按行区间读取当前笔记内容。当 get_current_note 返回的 total_lines 较大、需要查看具体段落时使用。',
+      parameters: {
+        type: 'object',
+        properties: {
+          start_line: { type: 'number', description: '起始行号（从 1 开始）' },
+          line_count: { type: 'number', description: '读取行数，默认 200，最大 1000' }
+        },
+        required: ['start_line']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'search_in_current_note',
+      description: '在当前笔记中搜索关键词，返回匹配行的上下文片段。比 read_current_note 更快定位长笔记里的关键内容。',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: '搜索关键词（不区分大小写）' },
+          context_lines: { type: 'number', description: '每个匹配前后保留几行上下文，默认 3' },
+          max_matches: { type: 'number', description: '最多返回匹配数，默认 8' }
+        },
+        required: ['query']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'summarize_current_note_section',
+      description: '让 AI 自己再调一次模型，对当前笔记的指定行区间生成精炼摘要。仅在 read_current_note 一次拿不下、又需要把握中段全貌时使用（会消耗额外 token）。',
+      parameters: {
+        type: 'object',
+        properties: {
+          start_line: { type: 'number', description: '起始行号（从 1 开始）' },
+          end_line: { type: 'number', description: '结束行号（包含）' },
+          focus: { type: 'string', description: '关注重点，例如「主要论点」「数据结论」（可选）' }
+        },
+        required: ['start_line', 'end_line']
+      }
     }
   },
   {
@@ -362,17 +409,71 @@ class AIChatService {
         if (this._currentNoteGetter) {
           const note = await this._currentNoteGetter();
           if (note) {
-            return JSON.stringify({
-              id: note.id,
-              title: note.title,
-              content: note.content,
-              note_type: note.note_type || 'markdown',
-              tags: note.tags,
-              category: note.category
-            });
+            return JSON.stringify(this._buildCurrentNoteSummary(note));
           }
         }
         return JSON.stringify({ error: '当前没有打开的笔记' });
+      }
+
+      case 'read_current_note': {
+        const ctx = await this._getCurrentNoteLines('按行读取');
+        if (ctx.error) return JSON.stringify(ctx.error);
+        const { lines, total } = ctx;
+        const start = Math.max(1, Math.floor(Number(args.start_line) || 1));
+        const count = Math.min(1000, Math.max(1, Math.floor(Number(args.line_count) || 200)));
+        if (start > total) {
+          return JSON.stringify({ error: `start_line ${start} 超过笔记总行数 ${total}`, total_lines: total });
+        }
+        const end = Math.min(total, start + count - 1);
+        return JSON.stringify({
+          start_line: start,
+          end_line: end,
+          total_lines: total,
+          content: lines.slice(start - 1, end).join('\n'),
+          has_more: end < total
+        });
+      }
+
+      case 'search_in_current_note': {
+        const query = String(args.query || '').trim();
+        if (!query) return JSON.stringify({ error: '搜索关键词不能为空' });
+        const ctx = await this._getCurrentNoteLines('文本搜索');
+        if (ctx.error) return JSON.stringify(ctx.error);
+        const { lines, total } = ctx;
+        const ctxN = Math.min(20, Math.max(0, Math.floor(Number(args.context_lines) ?? 3)));
+        const maxMatches = Math.min(30, Math.max(1, Math.floor(Number(args.max_matches) || 8)));
+        const lower = query.toLowerCase();
+        const matches = [];
+        for (let i = 0; i < total && matches.length < maxMatches; i++) {
+          if (!lines[i].toLowerCase().includes(lower)) continue;
+          const from = Math.max(1, i + 1 - ctxN);
+          const to = Math.min(total, i + 1 + ctxN);
+          matches.push({ line: i + 1, context_start: from, context_end: to, snippet: lines.slice(from - 1, to).join('\n') });
+        }
+        return JSON.stringify({ total_lines: total, matches, truncated: matches.length >= maxMatches });
+      }
+
+      case 'summarize_current_note_section': {
+        const ctx = await this._getCurrentNoteLines('区间摘要');
+        if (ctx.error) return JSON.stringify(ctx.error);
+        const { lines, total } = ctx;
+        const start = Math.max(1, Math.floor(Number(args.start_line) || 1));
+        const end = Math.min(total, Math.max(start, Math.floor(Number(args.end_line) || start)));
+        if (start > total) return JSON.stringify({ error: `start_line ${start} 超过笔记总行数 ${total}` });
+        const segment = lines.slice(start - 1, end).join('\n');
+        const MAX_SEG = 30000;
+        const sliced = segment.length > MAX_SEG ? `${segment.slice(0, MAX_SEG)}\n…(已截断 ${segment.length - MAX_SEG} 字符)` : segment;
+        const focus = String(args.focus || '').trim();
+        try {
+          const result = await this.aiService.chat([
+            { role: 'system', content: `你是笔记摘要助手。对用户提供的笔记片段做精炼总结，覆盖主要论点、关键数据、结论和待办事项。${focus ? `\n关注重点：${focus}` : ''}\n用简洁中文，分点列出。不要复述原文。` },
+            { role: 'user', content: `笔记片段（第 ${start}-${end} 行，共 ${total} 行）：\n\n${sliced}` }
+          ], { temperature: 0.3, maxTokens: 800 });
+          if (!result.success) return JSON.stringify({ error: result.error || '摘要失败', start_line: start, end_line: end });
+          return JSON.stringify({ start_line: start, end_line: end, total_lines: total, summary: result.data?.content || '' });
+        } catch (error) {
+          return JSON.stringify({ error: `摘要失败: ${error.message}`, start_line: start, end_line: end });
+        }
       }
 
       case 'create_note': {
@@ -581,6 +682,11 @@ class AIChatService {
 - 查看、搜索、添加和更新记忆库条目
 - 写作辅助、翻译、问答等通用任务
 
+## 长笔记上下文策略
+- 系统会自动注入「当前笔记」上下文。短笔记直接给全文；长笔记只给元信息、目录大纲、首尾预览，中段被省略。
+- 当看到「⚠️ 内容已省略中段」或 total_lines 很大时：先调用 search_in_current_note(query) 用关键词定位，或用 read_current_note(start_line, line_count) 按目录大纲指向的行号读取需要的段落。
+- 不要在长笔记上凭首尾预览臆测中段内容；不确定时主动读取。
+
 ## 记忆档案管理
 - 【高价值才保存】只有当信息长期有效、可复用、对未来回答有明显帮助时，才调用 add_memory；临时任务、一次性上下文、当前笔记里已经明确存在的信息不要重复保存。
 - 【先查再写】保存或更新记忆前优先用 search_memory 检查是否已有相似记忆；相似时优先 update_memory，避免重复和冲突。
@@ -597,6 +703,68 @@ class AIChatService {
 - 回复要简明扼要，避免冗余${profileSection}`;
   }
 
+  /**
+   * 取当前 markdown 笔记并按行切分；whiteboard 或无打开笔记时返回 error。
+   */
+  async _getCurrentNoteLines(action = '读取') {
+    if (!this._currentNoteGetter) return { error: { error: '当前没有打开的笔记' } };
+    const note = await this._currentNoteGetter();
+    if (!note) return { error: { error: '当前没有打开的笔记' } };
+    if ((note.note_type || 'markdown') === 'whiteboard') {
+      return { error: { error: `画布笔记不支持${action}` } };
+    }
+    const lines = String(note.content || '').split('\n');
+    return { note, lines, total: lines.length };
+  }
+
+  /**
+   * 构造当前笔记的元信息+预览（首尾+目录大纲）。
+   * 短笔记可以直接给完整内容；长笔记给摘要，模型按需调用 read/search 工具。
+   */
+  _buildCurrentNoteSummary(note, { headLines = 60, tailLines = 30, maxOutline = 40 } = {}) {
+    const noteType = note.note_type || 'markdown';
+    const base = {
+      id: note.id,
+      title: note.title || '未命名',
+      note_type: noteType,
+      tags: note.tags,
+      category: note.category
+    };
+
+    if (noteType === 'whiteboard') {
+      return { ...base, content: note.content };
+    }
+
+    const text = String(note.content || '');
+    const lines = text.split('\n');
+    const total = lines.length;
+
+    // 短笔记直接给全文
+    if (text.length <= 8000) {
+      return { ...base, total_lines: total, total_chars: text.length, content: text };
+    }
+
+    const head = lines.slice(0, headLines).join('\n');
+    const tail = lines.slice(Math.max(0, total - tailLines)).join('\n');
+    const outline = [];
+    for (let i = 0; i < total && outline.length < maxOutline; i++) {
+      const m = lines[i].match(/^(#{1,6})\s+(.+?)\s*$/);
+      if (m) outline.push({ line: i + 1, level: m[1].length, text: m[2].slice(0, 80) });
+    }
+
+    return {
+      ...base,
+      total_lines: total,
+      total_chars: text.length,
+      preview_head_lines: Math.min(headLines, total),
+      preview_tail_lines: Math.min(tailLines, Math.max(0, total - headLines)),
+      preview_head: head,
+      preview_tail: tail,
+      outline,
+      hint: '内容较长，使用 read_current_note(start_line, line_count) 按区间读取，或 search_in_current_note(query) 搜索关键词。'
+    };
+  }
+
   _buildContextSection(contextPackage = {}) {
     const sections = [];
     const truncate = (text, max = 1800) => {
@@ -606,17 +774,34 @@ class AIChatService {
 
     if (contextPackage.currentNote) {
       const note = contextPackage.currentNote;
-      sections.push([
+      const noteType = note.note_type || 'markdown';
+      const meta = [
         '### 当前笔记',
         `ID: ${note.id || '未知'}`,
         `标题: ${note.title || '未命名'}`,
-        `类型: ${note.note_type || 'markdown'}`,
+        `类型: ${noteType}`,
         note.timeLabel ? `时间: ${note.timeLabel}` : '',
         note.stalenessLabel ? `时效性: ${note.stalenessLabel}` : '',
         note.updated_at ? `最近修改: ${note.updated_at}` : '',
-        note.tags ? `标签: ${note.tags}` : '',
-        `内容:\n${truncate(note.content)}`
-      ].filter(Boolean).join('\n'));
+        note.tags ? `标签: ${note.tags}` : ''
+      ].filter(Boolean);
+
+      const rawContent = String(note.content || '');
+      // 短笔记直接全文注入；长笔记给目录大纲+首尾预览，模型按需调用 read/search
+      if (noteType === 'whiteboard' || rawContent.length <= 12000) {
+        meta.push(`内容:\n${truncate(rawContent, 24000)}`);
+      } else {
+        const summary = this._buildCurrentNoteSummary({ ...note, content: rawContent }, { headLines: 80, tailLines: 40 });
+        meta.push(
+          `规模: ${summary.total_lines} 行 / 约 ${summary.total_chars} 字符`,
+          summary.outline.length ? `目录大纲:\n${summary.outline.map(o => `  L${o.line}  ${'#'.repeat(o.level)} ${o.text}`).join('\n')}` : '',
+          `开头预览（前 ${summary.preview_head_lines} 行）:\n${summary.preview_head}`,
+          `结尾预览（后 ${summary.preview_tail_lines} 行）:\n${summary.preview_tail}`,
+          '⚠️ 内容已省略中段。如需查看具体段落，调用 read_current_note(start_line, line_count) 或 search_in_current_note(query)。'
+        );
+      }
+
+      sections.push(meta.filter(Boolean).join('\n'));
     }
 
     if (Array.isArray(contextPackage.relatedNotes) && contextPackage.relatedNotes.length > 0) {

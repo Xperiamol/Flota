@@ -29,6 +29,7 @@ import {
 import { heroCardSx, createSoftGlassCardSx } from '../styles/commonStyles';
 import { useStore } from '../store/useStore';
 import { fetchTodoStats } from '../api/todoAPI';
+import { fetchActivityHeatmap } from '../api/noteAPI';
 import { fetchInstalledPlugins } from '../api/pluginAPI';
 import { useTranslation } from '../utils/i18n';
 import TimeZoneUtils from '../utils/timeZoneUtils';
@@ -102,6 +103,7 @@ const Profile = () => {
   const { showError } = useError();
   const { notes, userAvatar, theme, primaryColor, setCurrentView, setSettingsTabValue, setTodoNavigationRequest, userName, christmasMode } = useStore();
   const [todoStats, setTodoStats] = useState(null);
+  const [activityCounts, setActivityCounts] = useState(null);
   const [installedPlugins, setInstalledPlugins] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -126,6 +128,12 @@ const Profile = () => {
         const pluginsResult = await fetchInstalledPlugins();
         if (Array.isArray(pluginsResult)) {
           setInstalledPlugins(pluginsResult);
+        }
+
+        // 加载基于变更日志的真实活动数据（精确到每天的编辑次数）
+        const heatmapResult = await fetchActivityHeatmap(90);
+        if (heatmapResult?.success && heatmapResult.data) {
+          setActivityCounts(heatmapResult.data);
         }
 
       } catch (err) {
@@ -234,49 +242,42 @@ const Profile = () => {
   }), [profileCardSx, theme]);
 
   // 计算笔记活动热力图数据（过去90天）
+  // 优先使用后端变更日志的真实活动次数（精确到每天的编辑频次）；
+  // 后端数据不可用时，回退到基于 created_at/updated_at 时间戳的近似估算。
   const getHeatmapData = () => {
     const days = 90;
     const today = new Date();
     const heatmapData = [];
 
-    // 创建日期到笔记数量的映射（区分创建和更新）
+    // 日期 -> 当天活动次数
     const dateCountMap = {};
 
-    notes.forEach(note => {
-      if (!note.is_deleted) {
-        // 统计创建时间
+    if (activityCounts) {
+      // 后端已按本地日期分组，直接使用
+      Object.assign(dateCountMap, activityCounts);
+    } else {
+      // 兜底：基于笔记时间戳（每条笔记每天最多计 1 次创建 + 1 次更新）
+      notes.forEach(note => {
+        if (note.is_deleted) return;
         if (note.created_at) {
-          const createdDate = new Date(note.created_at);
-          const createdDateKey = formatLocalDateKey(createdDate);
-          if (!dateCountMap[createdDateKey]) {
-            dateCountMap[createdDateKey] = { created: 0, updated: 0 };
-          }
-          dateCountMap[createdDateKey].created += 1;
+          const key = formatLocalDateKey(new Date(note.created_at));
+          dateCountMap[key] = (dateCountMap[key] || 0) + 1;
         }
-
-        // 统计更新时间（如果更新时间与创建时间不同）
         if (note.updated_at && note.updated_at !== note.created_at) {
-          const updatedDate = new Date(note.updated_at);
-          const updatedDateKey = formatLocalDateKey(updatedDate);
-          if (!dateCountMap[updatedDateKey]) {
-            dateCountMap[updatedDateKey] = { created: 0, updated: 0 };
-          }
-          dateCountMap[updatedDateKey].updated += 1;
+          const key = formatLocalDateKey(new Date(note.updated_at));
+          dateCountMap[key] = (dateCountMap[key] || 0) + 1;
         }
-      }
-    });
+      });
+    }
 
     // 生成过去90天的数据
     for (let i = days - 1; i >= 0; i--) {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
       const dateKey = formatLocalDateKey(date);
-      const counts = dateCountMap[dateKey] || { created: 0, updated: 0 };
-      const totalCount = counts.created + counts.updated;
+      const totalCount = dateCountMap[dateKey] || 0;
       heatmapData.push({
         date: dateKey,
-        created: counts.created,
-        updated: counts.updated,
         count: totalCount,
         level: totalCount === 0 ? 0 : totalCount <= 2 ? 1 : totalCount <= 5 ? 2 : totalCount <= 8 ? 3 : 4
       });
@@ -309,7 +310,7 @@ const Profile = () => {
       .map(([word, count]) => ({ word, count }));
   };
 
-  const heatmapData = useMemo(() => getHeatmapData(), [notes]);
+  const heatmapData = useMemo(() => getHeatmapData(), [notes, activityCounts]);
   const topWords = useMemo(() => getTopWords(), [notes]);
   const weeks = useMemo(() => {
     const chunks = [];
@@ -586,10 +587,8 @@ const Profile = () => {
                         title={
                           <Box>
                             <Typography variant="caption" display="block">{day.date}</Typography>
-                            <Typography variant="caption" display="block">创建: {day.created} 篇</Typography>
-                            <Typography variant="caption" display="block">更新: {day.updated} 篇</Typography>
                             <Typography variant="caption" display="block" sx={{ fontWeight: 600 }}>
-                              总计: {day.count} 次活动
+                              {day.count} 次活动
                             </Typography>
                           </Box>
                         }

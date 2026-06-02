@@ -78,16 +78,6 @@ export const SHORTCUT_CATEGORIES = {
   },
 };
 
-// 解析快捷键字符串
-export const parseShortcut = (shortcut) => {
-  if (!shortcut) return { keys: [], display: '' };
-  
-  const keys = shortcut.split('+').map(key => key.trim());
-  const display = keys.join(' + ');
-  
-  return { keys, display };
-};
-
 // 格式化快捷键显示
 export const formatShortcutDisplay = (shortcut) => {
   if (!shortcut) return '';

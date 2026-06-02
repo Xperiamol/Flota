@@ -96,65 +96,6 @@ export const validateTags = (tags) => {
 };
 
 /**
- * 从标签数组中移除重复项
- * @param {Array} tags - 标签数组
- * @returns {Array} 去重后的标签数组
- */
-export const deduplicateTags = (tags) => {
-  const parsedTags = parseTags(tags);
-  return [...new Set(parsedTags)];
-};
-
-/**
- * 合并多个标签数组
- * @param {...Array} tagArrays - 多个标签数组
- * @returns {Array} 合并后的标签数组
- */
-export const mergeTags = (...tagArrays) => {
-  const allTags = [];
-  
-  for (const tags of tagArrays) {
-    allTags.push(...parseTags(tags));
-  }
-  
-  return deduplicateTags(allTags);
-};
-
-/**
- * 检查标签是否匹配搜索查询
- * @param {Array} tags - 标签数组
- * @param {string} query - 搜索查询
- * @returns {boolean} 是否匹配
- */
-export const tagsMatchQuery = (tags, query) => {
-  if (!query || !query.trim()) {
-    return true;
-  }
-  
-  const parsedTags = parseTags(tags);
-  const lowerQuery = query.toLowerCase().trim();
-  
-  return parsedTags.some(tag => 
-    tag.toLowerCase().includes(lowerQuery)
-  );
-};
-
-/**
- * 高亮标签中的匹配文本
- * @param {string} tagName - 标签名称
- * @param {string} query - 搜索查询
- * @returns {string} 高亮后的HTML字符串
- */
-export const highlightTagMatch = (tagName, query) => {
-  if (!query || !query.trim()) {
-    return tagName;
-  }
-  
-  const regex = new RegExp(`(${query.trim()})`, 'gi');
-  return tagName.replace(regex, '<mark>$1</mark>');
-};
-
-/**
  * 获取标签的显示颜色（基于标签名称生成一致的颜色）
  * @param {string} tagName - 标签名称
  * @returns {string} 颜色值
@@ -176,44 +117,11 @@ export const getTagColor = (tagName) => {
   return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
 };
 
-/**
- * 格式化标签显示文本
- * @param {Array} tags - 标签数组
- * @param {number} maxDisplay - 最大显示数量
- * @returns {Object} 格式化结果
- */
-export const formatTagsDisplay = (tags, maxDisplay = 3) => {
-  const parsedTags = parseTags(tags);
-  
-  if (parsedTags.length === 0) {
-    return {
-      displayTags: [],
-      hiddenCount: 0,
-      hasMore: false
-    };
-  }
-  
-  const displayTags = parsedTags.slice(0, maxDisplay);
-  const hiddenCount = Math.max(0, parsedTags.length - maxDisplay);
-  
-  return {
-    displayTags,
-    hiddenCount,
-    hasMore: hiddenCount > 0,
-    allTags: parsedTags
-  };
-};
-
 export default {
   parseTags,
   formatTags,
   normalizeTags,
   validateTagName,
   validateTags,
-  deduplicateTags,
-  mergeTags,
-  tagsMatchQuery,
-  highlightTagMatch,
-  getTagColor,
-  formatTagsDisplay
+  getTagColor
 };

@@ -33,8 +33,10 @@ import { urlToWav } from '../utils/audioCodec'
 import { imageAPI } from '../api/imageAPI'
 import { replaceDataImagesInHtml } from '../utils/dataUrlImage'
 import { getImageResolver } from '../utils/ImageProtocolResolver'
+import { getLocalPathFromFileUrl } from '../utils/fileUrl'
 import { RICH_TEXT_EMPTY_LINE_SENTINEL, finalizeMarkdownForStorage, prepareMarkdownForDisplay } from '../markdown/index.js'
 import { useStore } from '../store/useStore'
+import useFloatingTableScrollbar from '../hooks/useFloatingTableScrollbar'
 import { useError } from './ErrorProvider'
 import AIAssistPanel from './AIAssistPanel'
 import ImagePreviewModal, { canvasToPngBlob } from './ImagePreviewModal'
@@ -91,14 +93,6 @@ const rgbToHex = (c) => {
 
 // 加载 markdown 前的预处理：将自定义格式转回 HTML，使 TipTap parser 识别
 // 使用更严格的正则，限制不跨段落，避免误匹配跨行内容
-const getLocalPathFromFileUrl = (fileUrl) => {
-  try {
-    return decodeURIComponent(String(fileUrl).replace(/^file:\/\//i, ''))
-  } catch (_) {
-    return String(fileUrl).replace(/^file:\/\//i, '')
-  }
-}
-
 const preprocessMarkdown = (md) => {
   if (!md) return md
   return prepareMarkdownForDisplay(md)
@@ -2087,6 +2081,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
   // 始终指向最新 editor，供粘贴/拖放等异步回调使用
   const editorRef = useRef(null)
   const overlayContainerRef = useRef(null)
+  useFloatingTableScrollbar(overlayContainerRef)
 
   // 始终指向最新 handleImageUpload，供 editorProps 闭包使用
   const handleImageUploadRef = useRef(null)

@@ -38,7 +38,7 @@ const QUICK_PROMPTS = [
 
 const mdComponents = {
   p: ({ children }) => (
-    <Typography component="p" variant="body2" sx={{ my: 0.4, lineHeight: 1.65 }}>
+    <Typography component="div" variant="body2" sx={{ my: 0.4, lineHeight: 1.65 }}>
       {children}
     </Typography>
   ),

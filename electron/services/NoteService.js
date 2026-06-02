@@ -599,6 +599,20 @@ class NoteService extends EventEmitter {
   }
 
   /**
+   * 获取笔记活动热力图数据（基于变更日志，精确到每天的真实活动次数）
+   * @param {number} days - 统计最近天数
+   */
+  async getActivityHeatmap(days = 90) {
+    try {
+      const counts = this.noteDAO.changeLog.getDailyActivityCounts('note', days);
+      return { success: true, data: counts };
+    } catch (error) {
+      console.error('获取笔记活动热力图失败:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
    * 导出笔记
    */
   async exportNotes(options = {}) {

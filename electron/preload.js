@@ -93,6 +93,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     batchPermanentDelete: inv('note:batch-permanent-delete'),
     batchSetTags: inv('note:batch-set-tags'),
     getStats: inv('note:get-stats'),
+    getActivityHeatmap: inv('note:get-activity-heatmap'),
     export: inv('note:export'),
     import: inv('note:import'),
     onNoteCreated: listen('note:created'),

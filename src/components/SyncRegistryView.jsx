@@ -190,6 +190,11 @@ const SyncRegistryView = ({ onOpenSettings }) => {
           : providerSelections.todos === 'google-calendar' 
           ? googleCalStatus?.data?.lastSync 
           : caldavStatus?.data?.lastSync,
+        error: providerSelections.todos === 'nutcloud'
+          ? (nutcloudV3?.lastError || null)
+          : providerSelections.todos === 'google-calendar'
+          ? (googleCalStatus?.data?.error || null)
+          : (caldavStatus?.data?.error || null),
       },
     ];
 

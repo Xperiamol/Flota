@@ -10,8 +10,6 @@ export const getNoteTagsText = (tags) => {
   return String(tags || '')
 }
 
-export const getNoteText = (note) => `${note?.title || ''}\n${getNoteTagsText(note?.tags)}\n${note?.content || ''}`.toLowerCase()
-
 const STOP_WORDS = new Set([
   'the', 'and', 'for', 'with', 'this', 'that', 'from', 'have', 'has',
   '一个', '这个', '那个', '什么', '怎么', '以及', '或者', '但是', '然后', '因为', '所以'
@@ -192,10 +190,6 @@ const getRelatedNoteSignals = (note, query, currentNote) => {
   return { score, reasons }
 }
 
-export const scoreRelatedNote = (note, query, currentNote) => {
-  return getRelatedNoteSignals(note, query, currentNote).score
-}
-
 export const getRelatedNotes = ({ notes = [], selectedNoteId, query = '', limit = 5 }) => {
   const currentNote = notes.find(note => String(note.id) === String(selectedNoteId))
   const baseQuery = `${query}\n${currentNote?.title || ''}\n${getNoteTagsText(currentNote?.tags)}\n${truncateText(currentNote?.content, 1600)}`
@@ -271,15 +265,17 @@ export const normalizeMemories = (memories = [], limit = 5) => (
     })
 )
 
-export const formatNoteContentForAI = (note, max = 2400) => {
+export const formatNoteContentForAI = (note, max = 0) => {
   if (!note) return ''
   if ((note.note_type || 'markdown') !== 'whiteboard') {
-    return truncateText(note.content, max)
+    // max=0 表示不截断（由后端按预算决定切片策略）
+    return max > 0 ? truncateText(note.content, max) : String(note.content || '')
   }
 
   try {
     const summary = summarizeWhiteboardContentForAI(note.content)
-    return truncateText(`画布摘要:\n${summary}`, max)
+    const text = `画布摘要:\n${summary}`
+    return max > 0 ? truncateText(text, max) : text
   } catch (_) {
     return '画布摘要：当前画布内容解析失败。'
   }
@@ -297,7 +293,7 @@ export const buildContextPackageFromNotes = ({ notes = [], todos = [], memories 
       title: currentNote.title,
       note_type: currentNote.note_type || 'markdown',
       tags: getNoteTagsText(currentNote.tags),
-      content: formatNoteContentForAI(currentNote, 2400),
+      content: formatNoteContentForAI(currentNote, 0),
       updated_at: updatedAt,
       created_at: createdAt,
       timeLabel: formatContextTime(updatedAt || createdAt),
