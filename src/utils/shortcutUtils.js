@@ -29,6 +29,10 @@ export const DEFAULT_SHORTCUTS = {
     id: 'panels.aiCommandCenter', name: '切换问 AI 窗口', description: '在非输入区域打开或关闭悬浮问 AI 窗口',
     category: 'panels', defaultKey: 'CmdOrCtrl+K', currentKey: 'CmdOrCtrl+K', type: 'local',
   },
+  'panels.noteNavigator': {
+    id: 'panels.noteNavigator', name: '切换笔记导航', description: '打开或关闭笔记导航小窗（大纲 / 最近笔记快速跳转）',
+    category: 'panels', defaultKey: 'CmdOrCtrl+J', currentKey: 'CmdOrCtrl+J', type: 'local',
+  },
   'panels.commandPalette': {
     id: 'panels.commandPalette', name: '打开命令面板', description: '打开命令面板并搜索命令',
     category: 'panels', defaultKey: 'CmdOrCtrl+Shift+P', currentKey: 'CmdOrCtrl+Shift+P', type: 'local',

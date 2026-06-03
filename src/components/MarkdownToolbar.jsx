@@ -231,24 +231,23 @@ const MarkdownToolbar = ({
     if (!el) return
     const VIEW_MODE_RESERVE = (viewMode && onViewModeChange) ? 130 : 0
     const MORE_BTN_RESERVE = 36
-    const ITEM_W = 36 // IconButton 32 + gap
+    const ITEM_W = 36
     const SEP_W = 9
     const PADDING = 16
 
     const compute = () => {
       const total = el.clientWidth - PADDING - VIEW_MODE_RESERVE
-      // 计算累计宽度，超出就截断
       let used = 0
       let i = 0
       for (; i < effectiveOrder.length; i++) {
         const id = effectiveOrder[i]
         const w = id === '|' ? SEP_W : ITEM_W
-        // 预留“更多”按钮位置（除非剩余项目刚好都能放下）
         const reserve = i < effectiveOrder.length - 1 ? MORE_BTN_RESERVE : 0
         if (used + w + reserve > total) break
         used += w
       }
-      setVisibleCount(i)
+      setOverflowAnchor(null)
+      setVisibleCount((prev) => (prev === i ? prev : i))
     }
 
     compute()
@@ -257,10 +256,6 @@ const MarkdownToolbar = ({
     return () => ro.disconnect()
   }, [effectiveOrder, viewMode, onViewModeChange])
 
-  const visibleOrder = React.useMemo(
-    () => effectiveOrder.slice(0, visibleCount),
-    [effectiveOrder, visibleCount]
-  )
   const overflowOrder = React.useMemo(
     () => effectiveOrder.slice(visibleCount).filter((id) => id !== '|'),
     [effectiveOrder, visibleCount]
@@ -499,7 +494,7 @@ const MarkdownToolbar = ({
     <Box
       ref={containerRef}
       sx={{
-        display: 'flex', alignItems: 'center', gap: 0.25,
+        display: 'flex', alignItems: 'center', gap: 0,
         px: 1, py: 0.5,
         borderBottom: 1, borderColor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
         bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(30,41,59,0.5)' : 'rgba(255,255,255,0.7)',
@@ -508,9 +503,39 @@ const MarkdownToolbar = ({
         flexWrap: 'nowrap', minHeight: 40, overflow: 'hidden',
       }}
     >
-      {visibleOrder.map((id, index) => renderItem(id, index))}
+      {effectiveOrder.map((id, index) => {
+        const hidden = index >= visibleCount
+        const visibleWidth = id === '|' ? 10 : 36
+        return (
+          <Box
+            key={`toolbar-item-${id}-${index}`}
+            sx={{
+              maxWidth: hidden ? 0 : visibleWidth,
+              mr: hidden ? 0 : 0.25,
+              opacity: hidden ? 0 : 1,
+              transform: hidden ? 'translateX(6px) scale(0.92)' : 'translateX(0) scale(1)',
+              transformOrigin: 'right center',
+              overflow: 'hidden',
+              pointerEvents: hidden ? 'none' : 'auto',
+              transition: 'max-width 160ms ease, margin-right 160ms ease, opacity 140ms ease, transform 160ms ease'
+            }}
+          >
+            {renderItem(id, index)}
+          </Box>
+        )
+      })}
 
-      {overflowOrder.length > 0 && (
+      <Box
+        sx={{
+          maxWidth: overflowOrder.length > 0 ? 36 : 0,
+          mr: overflowOrder.length > 0 ? 0.25 : 0,
+          opacity: overflowOrder.length > 0 ? 1 : 0,
+          transform: overflowOrder.length > 0 ? 'scale(1)' : 'scale(0.92)',
+          overflow: 'hidden',
+          pointerEvents: overflowOrder.length > 0 ? 'auto' : 'none',
+          transition: 'max-width 160ms ease, margin-right 160ms ease, opacity 140ms ease, transform 160ms ease'
+        }}
+      >
         <Tooltip title="更多" placement="bottom">
           <IconButton
             size="small"
@@ -520,7 +545,7 @@ const MarkdownToolbar = ({
             <MoreIcon />
           </IconButton>
         </Tooltip>
-      )}
+      </Box>
 
       {/* ── 编辑/预览模式切换 ── */}
       {viewMode && onViewModeChange && (

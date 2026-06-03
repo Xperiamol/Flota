@@ -16,11 +16,13 @@ import {
   Menu,
   MenuItem,
   ListItemIcon,
-  ListItemText
+  ListItemText,
+  useMediaQuery
 } from '@mui/material'
 import {
   AutoMode as AutoSaveIcon,
   AutoAwesome as AIIcon,
+  Explore as NavIcon,
   InfoOutlined as RelatedIcon,
   PushPin as PinIcon,
   PushPinOutlined as PinOutlinedIcon,
@@ -51,6 +53,7 @@ import WYSIWYGEditor from './WYSIWYGEditor'
 import AIAssistPanel from './AIAssistPanel'
 import RelatedContextPanel from './RelatedContextPanel'
 import AICommandCenter from './AICommandCenter'
+import NoteNavigator from './NoteNavigator'
 import { useDebouncedSave } from '../hooks/useDebouncedSave'
 import { imageAPI } from '../api/imageAPI'
 import { convertMarkdownToWhiteboard, convertWhiteboardToMarkdown, extractImageUrls } from '../utils/markdownToWhiteboardConverter'
@@ -86,6 +89,8 @@ const NoteEditor = () => {
   const aiCommandCenterOpen = useStore((state) => state.aiCommandCenterOpen)
   const setAiCommandCenterEnabled = useStore((state) => state.setAiCommandCenterEnabled)
   const setAiCommandCenterOpen = useStore((state) => state.setAiCommandCenterOpen)
+  const noteNavigatorOpen = useStore((state) => state.noteNavigatorOpen)
+  const setNoteNavigatorOpen = useStore((state) => state.setNoteNavigatorOpen)
   const initializeMainSettings = useStore((state) => state.initializeSettings)
   const userAvatar = useStore((state) => state.userAvatar)
 
@@ -123,11 +128,14 @@ const NoteEditor = () => {
   const [fullscreenToolbarExpanded, setFullscreenToolbarExpanded] = useState(false)
   const [minibarToolbarExpanded, setMinibarToolbarExpanded] = useState(false)
   const [standaloneAICommandCenterOpen, setStandaloneAICommandCenterOpen] = useState(false)
+  const [standaloneNoteNavigatorOpen, setStandaloneNoteNavigatorOpen] = useState(false)
   const [relatedAnchorEl, setRelatedAnchorEl] = useState(null)
   const [tagAnchorEl, setTagAnchorEl] = useState(null)
   const editorContainerRef = useRef(null)
   const contentRef = useRef(null)
   const titleRef = useRef(null)
+  const tagButtonRef = useRef(null)
+  const typeSwitchRef = useRef(null)
   const wysiwygEditorRef = useRef(null)
   // 顶部工具栏自适应：窗口窄时把右侧操作图标收纳进“更多”菜单
   const toolbarPaperRef = useRef(null)
@@ -138,9 +146,13 @@ const NoteEditor = () => {
   const [blockSelectActive, setBlockSelectActive] = useState(false)
 
   const currentNote = notes.find(note => note.id === selectedNoteId)
+  const compactToolbar = useMediaQuery('(max-width: 1180px)')
   const resolvedAICommandCenterOpen = isStandaloneMode
     ? standaloneAICommandCenterOpen
     : aiCommandCenterOpen
+  const resolvedNoteNavigatorOpen = isStandaloneMode
+    ? standaloneNoteNavigatorOpen
+    : noteNavigatorOpen
   const persistedNoteType = currentNote?.note_type || 'markdown'
   const selectedNoteIdRef = useRef(selectedNoteId)
   const prevNoteIdRef = useRef(null)
@@ -1410,58 +1422,6 @@ const NoteEditor = () => {
     }
   }, [isMinibarMode])
 
-  // 顶部工具栏自适应：窗口窄时把右侧操作图标收纳进“更多”菜单
-  const totalToolbarActions = (isStandaloneMode ? 0 : 1) + 4 + (noteType === 'whiteboard' ? 1 : 0)
-  useEffect(() => {
-    const el = toolbarPaperRef.current
-    if (!el) return
-    // 固定占位预留（保存状态 + 分隔线 + 标题最小宽 + 标签按钮 + 类型切换 + 折叠按钮 + 内边距）
-    const RESERVE = 430
-    const ITEM_W = 38   // IconButton 32 + gap
-    const MORE_W = 38
-
-    const compute = () => {
-      const available = el.clientWidth - RESERVE
-      if (available >= totalToolbarActions * ITEM_W) {
-        setActionVisibleCount(totalToolbarActions)
-        return
-      }
-      // 需要“更多”按钮，预留其宽度
-      const count = Math.max(0, Math.floor((available - MORE_W) / ITEM_W))
-      setActionVisibleCount(Math.min(count, totalToolbarActions))
-    }
-
-    compute()
-    const ro = new ResizeObserver(compute)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [totalToolbarActions])
-
-
-  if (!selectedNoteId) {
-    return (
-      <Box
-        sx={{
-          height: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'text.secondary',
-          overflow: 'hidden'
-        }}
-      >
-        <Box sx={{ textAlign: 'center' }}>
-          <Typography variant="h6" gutterBottom>
-            {t('common.selectNoteToEdit')}
-          </Typography>
-          <Typography variant="body2">
-            {t('common.selectOrCreateNote')}
-          </Typography>
-        </Box>
-      </Box>
-    )
-  }
-
   // 根据遮罩透明度设置获取对应的透明度值
   const getMaskOpacityValue = (isDark) => {
     const opacityMap = {
@@ -1479,6 +1439,16 @@ const NoteEditor = () => {
   const tagPopoverOpen = Boolean(tagAnchorEl)
   const primaryTagLabel = noteTags.length > 0 ? `#${noteTags[0]}` : '# 标签'
   const hiddenTagCount = Math.max(noteTags.length - 1, 0)
+  const toolbarMeasureSignature = [
+    selectedNoteId,
+    title,
+    primaryTagLabel,
+    hiddenTagCount,
+    noteType,
+    isStandaloneMode,
+    compactToolbar,
+    toolbarsHidden
+  ].join('|')
   const handleTagsChange = (newTags) => {
     setTags(newTags)
     setHasUnsavedChanges(true)
@@ -1546,6 +1516,19 @@ const NoteEditor = () => {
         setAiCommandCenterOpen(!aiCommandCenterOpen)
       },
     },
+    noteType !== 'whiteboard' && {
+      key: 'navigator',
+      label: resolvedNoteNavigatorOpen ? '关闭笔记导航' : '打开笔记导航',
+      icon: <NavIcon sx={{ fontSize: 18 }} />,
+      active: resolvedNoteNavigatorOpen,
+      onClick: () => {
+        if (isStandaloneMode) {
+          setStandaloneNoteNavigatorOpen(prev => !prev)
+          return
+        }
+        setNoteNavigatorOpen(!noteNavigatorOpen)
+      },
+    },
     noteType === 'whiteboard' && {
       key: 'export-png',
       label: t('common.exportPngTooltip'),
@@ -1554,8 +1537,82 @@ const NoteEditor = () => {
     },
   ].filter(Boolean)
 
-  const visibleActions = toolbarActions.slice(0, actionVisibleCount)
+  // 顶部工具栏自适应：左侧标题区是 flex:1 minWidth:0，会无限压缩到 min-content，
+  // 仅靠 scrollWidth 检测在中等宽度场景下永远测不到溢出，所以这里改成
+  // 「实测左侧固定块宽度 + 标题最小宽度」决定剩余空间能放下多少 action。
+  const totalToolbarActions = toolbarActions.length
+
+  const computeFromClientWidth = useCallback((clientWidth) => {
+    // 实测左侧固定块（不受 flex 压缩影响，flexShrink:0）
+    const tagW = tagButtonRef.current?.offsetWidth || (compactToolbar ? 80 : 110)
+    const typeW = typeSwitchRef.current?.offsetWidth || (compactToolbar ? 88 : 180)
+    const statusW = 32
+    const dividerW = 9
+    const titleMinW = 140 // 标题保留可用宽度
+    const gapW = 16 // 各区块之间的 gap/padding 累计估算
+    const baseline = statusW + dividerW + titleMinW + tagW + typeW + gapW
+
+    const perAction = 36
+    const reserved = 36 // 「更多」按钮
+    const usable = clientWidth - baseline
+    if (usable <= 0) return 0
+    if (usable >= totalToolbarActions * perAction) return totalToolbarActions
+    return Math.max(0, Math.min(totalToolbarActions, Math.floor((usable - reserved) / perAction)))
+  }, [compactToolbar, totalToolbarActions])
+
+  // 容器尺寸变化时按阈值映射算可见数
+  useEffect(() => {
+    const el = toolbarPaperRef.current
+    if (!el || toolbarsHidden) return
+    const apply = () => {
+      const next = computeFromClientWidth(el.clientWidth)
+      setActionMenuAnchor(null)
+      setActionVisibleCount((prev) => (prev === next ? prev : next))
+    }
+    apply()
+    const ro = new ResizeObserver(apply)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [computeFromClientWidth, toolbarsHidden])
+
+  // 笔记切换 / 标签 / 类型变化等左侧固定区宽度变化时也重测一次
+  // 用 rAF 等浏览器布局稳定后再读 tagButtonRef/typeSwitchRef 的真实宽度
+  useEffect(() => {
+    const el = toolbarPaperRef.current
+    if (!el || toolbarsHidden) return
+    const raf = requestAnimationFrame(() => {
+      const next = computeFromClientWidth(el.clientWidth)
+      setActionMenuAnchor(null)
+      setActionVisibleCount((prev) => (prev === next ? prev : next))
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [toolbarMeasureSignature, computeFromClientWidth, toolbarsHidden])
+
   const overflowActions = toolbarActions.slice(actionVisibleCount)
+
+  if (!selectedNoteId) {
+    return (
+      <Box
+        sx={{
+          height: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'text.secondary',
+          overflow: 'hidden'
+        }}
+      >
+        <Box sx={{ textAlign: 'center' }}>
+          <Typography variant="h6" gutterBottom>
+            {t('common.selectNoteToEdit')}
+          </Typography>
+          <Typography variant="body2">
+            {t('common.selectOrCreateNote')}
+          </Typography>
+        </Box>
+      </Box>
+    )
+  }
 
   return (
     <Box
@@ -1809,6 +1866,7 @@ const NoteEditor = () => {
 
           <Tooltip title={noteTags.length > 0 ? '管理标签' : '添加标签'}>
             <Button
+              ref={tagButtonRef}
               disableRipple
               onClick={(event) => setTagAnchorEl(event.currentTarget)}
               sx={(theme) => ({
@@ -1875,14 +1933,14 @@ const NoteEditor = () => {
         </Box>
 
         {/* 笔记类型切换 - 移到工具栏 */}
-        <Box sx={{
+        <Box ref={typeSwitchRef} sx={{
           display: 'flex', alignItems: 'center', gap: '3px',
           flexShrink: 0,
           bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)',
           borderRadius: '12px', p: '3px',
         }}>
-          {[{ value: 'markdown', icon: <ArticleIcon sx={{ fontSize: 15, mr: 0.5 }} />, label: 'Markdown' },
-            { value: 'whiteboard', icon: <WhiteboardIcon sx={{ fontSize: 15, mr: 0.5 }} />, label: '画布' }].map((item) => {
+          {[{ value: 'markdown', Icon: ArticleIcon, label: 'Markdown' },
+            { value: 'whiteboard', Icon: WhiteboardIcon, label: '画布' }].map((item) => {
             const isActive = noteType === item.value;
             return (
               <Button
@@ -1892,7 +1950,7 @@ const NoteEditor = () => {
                 variant={isActive ? 'contained' : 'text'}
                 onClick={() => isActive ? null : handleNoteTypeChange(item.value)}
                 sx={{
-                  px: 1.5, py: 0.4, minWidth: 0, fontSize: '0.78rem', fontWeight: 600,
+                  px: compactToolbar ? 0.9 : 1.5, py: 0.4, minWidth: 0, fontSize: '0.78rem', fontWeight: 600,
                   borderRadius: '9px', textTransform: 'none', lineHeight: 1.5,
                   letterSpacing: '0.01em',
                   transition: 'all 0.25s cubic-bezier(.4,0,.2,1)',
@@ -1921,37 +1979,65 @@ const NoteEditor = () => {
                   }),
                 }}
               >
-                {item.icon}{item.label}
+                <item.Icon sx={{ fontSize: 15, mr: compactToolbar ? 0 : 0.5 }} />
+                {!compactToolbar && item.label}
               </Button>
             );
           })}
         </Box>
 
         <Box sx={{
-          display: 'flex', alignItems: 'center', gap: 0.5,
+          display: 'flex', alignItems: 'center', gap: 0,
           flexShrink: 0,
           p: 0.25, borderRadius: '10px',
           bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(15, 23, 42, 0.06)'
         }}>
-          {visibleActions.map((action) => (
-            <Tooltip key={action.key} title={action.label}>
-              <IconButton
-                onClick={action.onClick}
-                size="small"
+          {toolbarActions.map((action, index) => {
+            const hidden = index >= actionVisibleCount
+            return (
+              <Box
+                key={action.key}
                 sx={{
-                  borderRadius: '8px',
-                  color: action.active ? 'primary.main' : 'text.secondary',
-                  bgcolor: action.active
-                    ? (theme) => theme.palette.mode === 'dark' ? 'rgba(96,165,250,0.16)' : 'rgba(25,118,210,0.1)'
-                    : 'transparent',
+                  maxWidth: hidden ? 0 : 36,
+                  mr: hidden ? 0 : 0.5,
+                  opacity: hidden ? 0 : 1,
+                  transform: hidden ? 'translateX(6px) scale(0.92)' : 'translateX(0) scale(1)',
+                  transformOrigin: 'right center',
+                  overflow: 'hidden',
+                  pointerEvents: hidden ? 'none' : 'auto',
+                  transition: 'max-width 160ms ease, margin-right 160ms ease, opacity 140ms ease, transform 160ms ease'
                 }}
               >
-                {action.icon}
-              </IconButton>
-            </Tooltip>
-          ))}
+                <Tooltip title={action.label}>
+                  <IconButton
+                    onClick={action.onClick}
+                    size="small"
+                    sx={{
+                      borderRadius: '8px',
+                      color: action.active ? 'primary.main' : 'text.secondary',
+                      bgcolor: action.active
+                        ? (theme) => theme.palette.mode === 'dark' ? 'rgba(96,165,250,0.16)' : 'rgba(25,118,210,0.1)'
+                        : 'transparent',
+                    }}
+                  >
+                    {action.icon}
+                  </IconButton>
+                </Tooltip>
+              </Box>
+            )
+          })}
 
-          {overflowActions.length > 0 && (
+          <Box
+            sx={{
+              maxWidth: overflowActions.length > 0 ? 36 : 0,
+              mr: overflowActions.length > 0 ? 0.5 : 0,
+              opacity: overflowActions.length > 0 ? 1 : 0,
+              transform: overflowActions.length > 0 ? 'scale(1)' : 'scale(0.92)',
+              overflow: 'hidden',
+              pointerEvents: overflowActions.length > 0 ? 'auto' : 'none',
+              transition: 'max-width 160ms ease, margin-right 160ms ease, opacity 140ms ease, transform 160ms ease'
+            }}
+          >
             <Tooltip title="更多操作">
               <IconButton
                 onClick={(e) => setActionMenuAnchor(e.currentTarget)}
@@ -1964,7 +2050,7 @@ const NoteEditor = () => {
                 <MoreIcon sx={{ fontSize: 18 }} />
               </IconButton>
             </Tooltip>
-          )}
+          </Box>
 
           <Menu
             anchorEl={actionMenuAnchor}
@@ -2438,6 +2524,21 @@ const NoteEditor = () => {
           loadNotesOverride={standaloneContext?.loadNote ? () => standaloneContext.loadNote(selectedNoteId) : undefined}
           userAvatarOverride={userAvatar}
           positionPersistKey="flota.aiCommandCenter.standalone.position"
+        />
+      )}
+
+      {isStandaloneMode && noteType !== 'whiteboard' && (
+        <NoteNavigator
+          open={standaloneNoteNavigatorOpen}
+          onClose={() => setStandaloneNoteNavigatorOpen(false)}
+          portalContainer={editorContainerRef.current}
+          notes={notes}
+          selectedNoteId={selectedNoteId}
+          noteContent={content}
+          onSelectNote={(noteId) => {
+            store.setSelectedNoteId(noteId)
+          }}
+          positionPersistKey="flota.noteNavigator.standalone.position"
         />
       )}
 

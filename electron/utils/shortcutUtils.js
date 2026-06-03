@@ -58,6 +58,15 @@ const DEFAULT_SHORTCUTS = {
     category: 'panels',
     type: 'local'
   },
+  'panels.noteNavigator': {
+    id: 'panels.noteNavigator',
+    name: '切换笔记导航',
+    description: '打开或关闭笔记导航小窗（大纲 / 最近笔记快速跳转）',
+    defaultKey: 'CmdOrCtrl+J',
+    currentKey: 'CmdOrCtrl+J',
+    category: 'panels',
+    type: 'local'
+  },
   'panels.commandPalette': {
     id: 'panels.commandPalette',
     name: '打开命令面板',

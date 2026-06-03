@@ -93,6 +93,8 @@ const useStore = create(
                 aiCommandRequest: null,
                 aiCommandCenterEnabled: true,
                 aiCommandCenterOpen: false,
+                // 笔记导航小窗（大纲/最近笔记快速跳转）
+                noteNavigatorOpen: false,
                 // 工具栏按钮排序（null = 使用默认排序）
                 toolbarOrder: null,
                 // 浮动面板自定义格式项（null = 不显示额外格式项）
@@ -253,6 +255,8 @@ const useStore = create(
                 setAiCommandCenterOpen: (open) => set((state) => ({
                     aiCommandCenterOpen: Boolean(open) && state.aiCommandCenterEnabled
                 })),
+
+                setNoteNavigatorOpen: (open) => set({ noteNavigatorOpen: Boolean(open) }),
 
                 setToolbarOrder: (order) => set({ toolbarOrder: order }),
 

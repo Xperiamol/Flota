@@ -37,6 +37,7 @@ import TodoEditDialog from './components/TodoEditDialog'
 import CreateTodoModal from './components/CreateTodoModal'
 import CommandPalette from './components/CommandPalette'
 import AICommandCenter from './components/AICommandCenter'
+import NoteNavigator from './components/NoteNavigator'
 import { ErrorProvider } from './components/ErrorProvider'
 import logger from './utils/logger'
 
@@ -68,7 +69,7 @@ import { PluginNotificationListener } from './utils/PluginNotificationListener'
 import shortcutManager from './utils/ShortcutManager'
 
 function App() {
-  const { theme, primaryColor, loadNotes, currentView, initializeSettings, setCurrentView, createNote, batchDeleteNotes, batchDeleteTodos, batchCompleteTodos, batchRestoreNotes, batchPermanentDeleteNotes, getAllTags, batchSetTags, selectedNoteId, setSelectedNoteId, updateNoteInList, aiDeleteConv, aiCommandCenterEnabled, aiCommandCenterOpen, setAiCommandCenterOpen, maskOpacity, christmasMode, backgroundPattern, patternOpacity, wallpaperPath } = useStore()
+  const { theme, primaryColor, notes, loadNotes, currentView, initializeSettings, setCurrentView, createNote, batchDeleteNotes, batchDeleteTodos, batchCompleteTodos, batchRestoreNotes, batchPermanentDeleteNotes, getAllTags, batchSetTags, selectedNoteId, setSelectedNoteId, updateNoteInList, aiDeleteConv, aiCommandCenterEnabled, aiCommandCenterOpen, setAiCommandCenterOpen, noteNavigatorOpen, setNoteNavigatorOpen, maskOpacity, christmasMode, backgroundPattern, patternOpacity, wallpaperPath } = useStore()
   const refreshPluginCommands = useStore((state) => state.refreshPluginCommands)
   const addPluginCommand = useStore((state) => state.addPluginCommand)
   const removePluginCommand = useStore((state) => state.removePluginCommand)
@@ -355,6 +356,7 @@ function App() {
       const shortcuts = shortcutManager.shortcuts || {}
       const aiShortcut = shortcuts['panels.aiCommandCenter']?.currentKey
       const commandPaletteShortcut = shortcuts['panels.commandPalette']?.currentKey
+      const noteNavigatorShortcut = shortcuts['panels.noteNavigator']?.currentKey
 
       if (
         aiCommandCenterEnabled &&
@@ -362,6 +364,9 @@ function App() {
       ) {
         e.preventDefault()
         setAiCommandCenterOpen(!aiCommandCenterOpen)
+      } else if (isShortcutMatch(e, noteNavigatorShortcut)) {
+        e.preventDefault()
+        setNoteNavigatorOpen(!noteNavigatorOpen)
       } else if (isShortcutMatch(e, commandPaletteShortcut)) {
         e.preventDefault()
         setCommandPaletteOpen((open) => !open)
@@ -380,7 +385,7 @@ function App() {
       mounted = false
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [aiCommandCenterEnabled, aiCommandCenterOpen])
+  }, [aiCommandCenterEnabled, aiCommandCenterOpen, noteNavigatorOpen, setNoteNavigatorOpen])
 
   useEffect(() => {
     const unsubscribe = subscribePluginEvents((event) => {
@@ -1276,6 +1281,17 @@ function App() {
           open={aiCommandCenterEnabled && aiCommandCenterOpen}
           onClose={() => setAiCommandCenterOpen(false)}
           portalContainer={aiCommandCenterPortalContainer}
+        />
+
+        <NoteNavigator
+          open={noteNavigatorOpen}
+          onClose={() => setNoteNavigatorOpen(false)}
+          portalContainer={aiCommandCenterPortalContainer}
+          notes={notes}
+          selectedNoteId={selectedNoteId}
+          noteContent={notes.find(n => n.id === selectedNoteId)?.content || ''}
+          onSelectNote={(noteId) => setSelectedNoteId(noteId)}
+          positionPersistKey="flota.noteNavigator.position"
         />
 
         <Suspense fallback={null}>

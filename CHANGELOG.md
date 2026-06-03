@@ -2,6 +2,21 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [3.2.1] - 2026-06-03
+
+### Added / 新增
+- 新增「笔记导航小窗」（默认快捷键 `CmdOrCtrl+J`）：仿 AI 小窗的浮动玻璃面板，左上角入口在 AI 按钮右侧；展示当前笔记大纲（H1~H6）+ 最近笔记列表，支持搜索、点击大纲条目平滑滚动到对应位置、点击列表项快速切换笔记。Standalone 独立窗口模式同样支持，浮窗位置分别独立持久化（`flota.noteNavigator.position` / `flota.noteNavigator.standalone.position`）。
+
+### Fixed / 修复
+- **彻底修复笔记编辑器顶部工具栏在某些窗口宽度下不自动折叠/展开的问题**：之前使用 `scrollWidth` 真实溢出检测，但左侧标题区是 `flex:1 minWidth:0` 会无限压缩到 min-content，导致中等宽度场景永远测不到溢出。改为「实测左侧固定块（标签按钮 / 类型切换器）宽度 + 标题最小可视宽度」做阈值映射，标题不长时也能在窗口稍变窄就立即开始折叠。
+- 修复重新打开笔记时上方工具栏不重新计算可见数的问题：新增 `toolbarMeasureSignature` 触发重测；修复因此引入的 `Cannot access ... before initialization` 与 `Rendered more hooks than during the previous render` 错误（抽出 `computeFromClientWidth` `useCallback`、把 `if (!selectedNoteId) return` 早退移到所有 Hook 之后）。
+- 修复尝试基于 `useLayoutEffect` 兜底导致的「`Maximum update depth exceeded`」死循环。
+
+### Changed / 变更
+- 上下两个工具栏的折叠/展开微动画完全统一：`max-width 160ms ease, margin-right 160ms ease, opacity 140ms ease, transform 160ms ease`，且「更多」按钮的弹出/隐藏与图标项使用同一组过渡。
+- 笔记导航小窗与 AI 小窗一致地从应用顶层渲染，非全屏 portal 到 `document.body`、笔记 fullscreen 时 portal 到全屏元素，确保面板永远位于最顶层 stacking context，不再被祖先 `transform/filter` 等限制。
+- `compactToolbar` 模式（`max-width: 1180px`）下笔记类型切换按钮只显示图标，节省横向空间。
+
 ## [3.2.0] - 2026-06-02
 
 ### Added / 新增
