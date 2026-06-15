@@ -18,6 +18,7 @@ import { fetchInstalledPlugins } from '../api/pluginAPI'
 import { normalizeTags } from '../utils/tagUtils'
 import { searchNotesAPI } from '../api/searchAPI'
 import logger from '../utils/logger'
+import { useLinkGraph } from './useLinkGraph'
 
 const IS_MACOS =
     typeof navigator !== 'undefined' &&
@@ -411,6 +412,13 @@ const useStore = create(
                             whiteboardElementCounts: elementCounts,
                             isLoading: false
                         })
+
+                        // 重建双链索引
+                        try {
+                            useLinkGraph.getState().rebuildFromNotes(normalized)
+                        } catch (e) {
+                            console.warn('rebuild link graph failed:', e)
+                        }
                     } catch (error) {
                         console.error('Failed to load notes:', error)
                         set({ isLoading: false })
@@ -437,6 +445,7 @@ const useStore = create(
                                 notes: [newNote, ...state.notes],
                                 selectedNoteId: newNote.id
                             }))
+                            try { useLinkGraph.getState().indexNote(newNote) } catch {}
                             return { success: true, data: newNote }
                         }
                         return { success: false, error: result?.error || 'Failed to create note' }
@@ -492,6 +501,13 @@ const useStore = create(
                                 })
                             }))
 
+                            // 增量更新双链索引（仅文本笔记需要扫 [[]]，画布跳过）
+                            try {
+                                if (updatedNote.note_type !== 'whiteboard') {
+                                    useLinkGraph.getState().indexNote(updatedNote)
+                                }
+                            } catch {}
+
                             return { success: true, data: updatedNote }
                         }
                         return { success: false, error: result?.error || 'Failed to update note' }
@@ -499,6 +515,51 @@ const useStore = create(
                         console.error('Failed to update note:', error)
                         return { success: false, error: error.message }
                     }
+                },
+
+                // 全库重写所有 [[oldTitle]] / [[oldTitle|alias]] / [[oldTitle#section]] -> newTitle 部分
+                // 调用方在 title 改名后调用；返回受影响的笔记数量。
+                renameWikiLinks: async (oldTitle, newTitle) => {
+                    if (!oldTitle || !newTitle || oldTitle === newTitle) return { success: true, affected: 0 }
+                    // 用大小写不敏感正则；保留 | 后别名与 # 后章节
+                    const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+                    const re = new RegExp(`\\[\\[(${escape(oldTitle)})((?:\\|[^\\]\\n]*)?(?:#[^\\]\\n]*)?)\\]\\]`, 'gi')
+                    const state = get()
+                    const targets = []
+                    // 把代码块/行内代码用占位符抠掉再做替换，避免误改代码示例里的 [[oldTitle]]
+                    const PLACEHOLDER = (i) => `\u0000WLR${i}\u0000`
+                    const maskCode = (text) => {
+                        const buckets = []
+                        const masked = text
+                            .replace(/```[\s\S]*?```/g, (m) => { buckets.push(m); return PLACEHOLDER(buckets.length - 1) })
+                            .replace(/~~~[\s\S]*?~~~/g, (m) => { buckets.push(m); return PLACEHOLDER(buckets.length - 1) })
+                            .replace(/`[^`\n]*`/g, (m) => { buckets.push(m); return PLACEHOLDER(buckets.length - 1) })
+                        return { masked, buckets }
+                    }
+                    const restore = (text, buckets) => text.replace(/\u0000WLR(\d+)\u0000/g, (_, idx) => buckets[Number(idx)] || '')
+                    state.notes.forEach((n) => {
+                        if (!n || typeof n.content !== 'string' || n.note_type === 'whiteboard') return
+                        re.lastIndex = 0
+                        if (!re.test(n.content)) return
+                        const { masked, buckets } = maskCode(n.content)
+                        re.lastIndex = 0
+                        if (!re.test(masked)) return
+                        re.lastIndex = 0
+                        const replaced = masked.replace(re, (_, _t, suffix) => `[[${newTitle}${suffix || ''}]]`)
+                        const newContent = restore(replaced, buckets)
+                        if (newContent !== n.content) targets.push({ id: n.id, content: newContent })
+                    })
+                    if (targets.length === 0) return { success: true, affected: 0 }
+
+                    // 串行更新，避免接口并发；由 updateNote 内部触发索引更新
+                    for (const { id, content } of targets) {
+                        try {
+                            await get().updateNote(id, { content })
+                        } catch (e) {
+                            console.warn('[renameWikiLinks] 更新失败:', id, e)
+                        }
+                    }
+                    return { success: true, affected: targets.length }
                 },
 
                 deleteNote: async (id) => {
@@ -510,6 +571,7 @@ const useStore = create(
                                 selectedNoteId: state.selectedNoteId === id ? null : state.selectedNoteId,
                                 whiteboardElementCounts: { ...state.whiteboardElementCounts, [id]: undefined }
                             }))
+                            try { useLinkGraph.getState().removeNote(id) } catch {}
                             return { success: true }
                         }
                         return { success: false, error: result?.error || 'Failed to delete note' }
@@ -542,6 +604,7 @@ const useStore = create(
                                 selectedNoteId: state.selectedNoteId === id ? null : state.selectedNoteId,
                                 whiteboardElementCounts: { ...state.whiteboardElementCounts, [id]: undefined }
                             }))
+                            try { useLinkGraph.getState().removeNote(id) } catch {}
                             return { success: true }
                         }
                         return { success: false, error: result?.error || 'Failed to permanently delete note' }
@@ -571,6 +634,7 @@ const useStore = create(
                                 notes: state.notes.filter(note => !ids.includes(note.id)),
                                 selectedNoteId: ids.includes(state.selectedNoteId) ? null : state.selectedNoteId
                             }))
+                            try { ids.forEach((id) => useLinkGraph.getState().removeNote(id)) } catch {}
                             return { success: true }
                         }
                         return { success: false, error: result?.error || 'Failed to batch delete notes' }
@@ -604,6 +668,7 @@ const useStore = create(
                                 notes: state.notes.filter(note => !ids.includes(note.id)),
                                 selectedNoteId: ids.includes(state.selectedNoteId) ? null : state.selectedNoteId
                             }))
+                            try { ids.forEach((id) => useLinkGraph.getState().removeNote(id)) } catch {}
                             return { success: true }
                         }
                         return { success: false, error: result?.error || 'Failed to batch permanent delete notes' }

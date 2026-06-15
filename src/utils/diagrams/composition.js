@@ -31,7 +31,7 @@ export const IR_VERSION = 1
 export const KNOWN_BLOCK_KINDS = new Set([
   'architecture',
   'flowchart', 'sequence', 'class', 'state', 'er',
-  'mindmap', 'gantt', 'fishbone', 'timeline', 'quadrant', 'pie',
+  'mindmap', 'hierarchy', 'gantt', 'fishbone', 'timeline', 'quadrant', 'pie',
 ])
 
 /**
@@ -50,6 +50,7 @@ export const BLOCK_TIER = {
   er: 1,
 
   mindmap: 2,
+  hierarchy: 2,
   fishbone: 2,
   timeline: 2,
   quadrant: 2,

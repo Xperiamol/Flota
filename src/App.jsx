@@ -1,4 +1,4 @@
-import React, { useEffect, useState, lazy, Suspense, useCallback, useRef } from 'react'
+import React, { useEffect, useState, lazy, Suspense, useCallback, useRef, useMemo } from 'react'
 import ReactDOM from 'react-dom/client'
 import * as MaterialUI from '@mui/material'
 import * as MaterialIcons from '@mui/icons-material'
@@ -23,35 +23,36 @@ import {
   Close as CloseIcon
 } from '@mui/icons-material'
 import { useStore } from './store/useStore'
+import { usePluginViewByNavId } from './store/usePluginViews'
 import { createAppTheme } from './styles/theme'
 import { generatePatternCSS } from './utils/patternStyles'
 import { initI18n } from './utils/i18n'
-import Toolbar from './components/Toolbar'
-import NoteEditor from './components/NoteEditor'
-import TitleBar from './components/TitleBar'
-import Sidebar from './components/Sidebar'
-import MultiSelectToolbar from './components/MultiSelectToolbar'
-import TagSelectionDialog from './components/TagSelectionDialog'
-import DragAnimationProvider from './components/DragAnimationProvider'
-import TodoEditDialog from './components/TodoEditDialog'
-import CreateTodoModal from './components/CreateTodoModal'
-import CommandPalette from './components/CommandPalette'
-import AICommandCenter from './components/AICommandCenter'
-import NoteNavigator from './components/NoteNavigator'
-import { ErrorProvider } from './components/ErrorProvider'
+import Toolbar from './components/layout/Toolbar'
+import NoteEditor from './components/editor/NoteEditor'
+import TitleBar from './components/layout/TitleBar'
+import Sidebar from './components/layout/Sidebar'
+import MultiSelectToolbar from './components/layout/MultiSelectToolbar'
+import TagSelectionDialog from './components/layout/TagSelectionDialog'
+import DragAnimationProvider from './components/common/DragAnimationProvider'
+import TodoEditDialog from './components/todos/TodoEditDialog'
+import CreateTodoModal from './components/todos/CreateTodoModal'
+import CommandPalette from './components/layout/CommandPalette'
+import AICommandCenter from './components/ai/AICommandCenter'
+import NoteNavigator from './components/editor/NoteNavigator'
+import { ErrorProvider } from './components/common/ErrorProvider'
 import logger from './utils/logger'
 
 // 懒加载非首屏组件，减少初始bundle大小
-const TodoView = lazy(() => import('./components/TodoView'))
-const CalendarView = lazy(() => import('./components/CalendarView'))
-const TimelineView = lazy(() => import('./components/TimelineView'))
-const Settings = lazy(() => import('./components/Settings'))
-const PluginStore = lazy(() => import('./components/PluginStore'))
-const SecondarySidebar = lazy(() => import('./components/SecondarySidebar'))
-const Profile = lazy(() => import('./components/Profile'))
-const AIChatView = lazy(() => import('./components/AIChatView'))
-const ConflictResolutionDialog = lazy(() => import('./components/ConflictResolutionDialog'))
-const ChristmasDecorations = lazy(() => import('./components/ChristmasSnow'))
+const TodoView = lazy(() => import('./components/todos/TodoView'))
+const CalendarView = lazy(() => import('./components/notes/CalendarView'))
+const TimelineView = lazy(() => import('./components/notes/TimelineView'))
+const Settings = lazy(() => import('./components/settings/Settings'))
+const PluginStore = lazy(() => import('./components/plugins/PluginStore'))
+const SecondarySidebar = lazy(() => import('./components/layout/SecondarySidebar'))
+const Profile = lazy(() => import('./components/settings/Profile'))
+const AIChatView = lazy(() => import('./components/ai/AIChatView'))
+const ConflictResolutionDialog = lazy(() => import('./components/sync/ConflictResolutionDialog'))
+const ChristmasDecorations = lazy(() => import('./components/common/ChristmasSnow'))
 
 // 加载指示器组件
 const LoadingFallback = () => (
@@ -70,6 +71,14 @@ import shortcutManager from './utils/ShortcutManager'
 
 function App() {
   const { theme, primaryColor, notes, loadNotes, currentView, initializeSettings, setCurrentView, createNote, batchDeleteNotes, batchDeleteTodos, batchCompleteTodos, batchRestoreNotes, batchPermanentDeleteNotes, getAllTags, batchSetTags, selectedNoteId, setSelectedNoteId, updateNoteInList, aiDeleteConv, aiCommandCenterEnabled, aiCommandCenterOpen, setAiCommandCenterOpen, noteNavigatorOpen, setNoteNavigatorOpen, maskOpacity, christmasMode, backgroundPattern, patternOpacity, wallpaperPath } = useStore()
+  const currentPluginView = usePluginViewByNavId(currentView)
+
+  // 当用户处于某个插件视图、但插件被禁用/卸载导致视图消失时，自动切回笔记
+  useEffect(() => {
+    if (currentView === 'graph' && !currentPluginView) {
+      setCurrentView('notes')
+    }
+  }, [currentView, currentPluginView, setCurrentView])
   const refreshPluginCommands = useStore((state) => state.refreshPluginCommands)
   const addPluginCommand = useStore((state) => state.addPluginCommand)
   const removePluginCommand = useStore((state) => state.removePluginCommand)
@@ -187,7 +196,10 @@ function App() {
   }
   const [resolvedTheme, setResolvedTheme] = useState(() => resolveDisplayTheme(theme))
 
-  const appTheme = createAppTheme(resolvedTheme, primaryColor)
+  const appTheme = useMemo(
+    () => createAppTheme(resolvedTheme, primaryColor),
+    [resolvedTheme, primaryColor]
+  )
 
   // 让 CSS 可以基于真实主题模式做分支（例如 hljs 暗色高亮覆盖）
   useEffect(() => {
@@ -737,7 +749,7 @@ function App() {
     return () => {
       unsubscribe && unsubscribe()
     }
-  }, [checkForUpdates, initializeSettings, loadNotes, setAppVersion])
+  }, [])
 
   // 在插件窗口打开时注入 UI Bridge 和依赖
   useEffect(() => {
@@ -1120,6 +1132,14 @@ function App() {
                     )}
                     {currentView === 'calendar' && <CalendarView currentDate={calendarCurrentDate} onDateChange={setCalendarCurrentDate} onTodoSelect={setSelectedTodo} selectedDate={selectedDate} onSelectedDateChange={setSelectedDate} refreshToken={calendarRefreshTrigger} showCompleted={calendarShowCompleted} onShowCompletedChange={setCalendarShowCompleted} onTodoUpdated={handleTodoUpdated} viewMode={calendarViewMode} />}
                     {currentView === 'timeline' && <TimelineView onTodoUpdated={handleTodoUpdated} />}
+                    {currentPluginView && (
+                      <Suspense fallback={<LoadingFallback />}>
+                        {(() => {
+                          const Comp = currentPluginView.lazyComponent
+                          return <Comp />
+                        })()}
+                      </Suspense>
+                    )}
                     {currentView === 'settings' && <Settings />}
                     {currentView === 'plugins' && (
                       <Box sx={{ p: 3, height: '100%', boxSizing: 'border-box' }}>

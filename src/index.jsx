@@ -1,9 +1,29 @@
 import React from 'react'
+import * as ReactNamespace from 'react'
 import ReactDOM from 'react-dom/client'
+import * as ReactDOMNamespace from 'react-dom'
+import * as MaterialUI from '@mui/material'
+import * as MaterialIcons from '@mui/icons-material'
+import * as MuiStyles from '@mui/material/styles'
 import { CacheProvider } from '@emotion/react'
 import createCache from '@emotion/cache'
+import { useStore } from './store/useStore'
+import { stripMarkdownToPreviewText } from './utils/markdownTextUtils'
+import { floatingGlassSx } from './utils/floatingGlassSx'
 import App from './App.jsx'
 import './styles/index.css'
+
+// 把宿主单例暴露给插件视图模块（避免双 React 实例 / 双 MUI 主题上下文）
+window.__flotaHost__ = Object.freeze({
+  version: 1,
+  React: ReactNamespace,
+  ReactDOM: ReactDOMNamespace,
+  MaterialUI,
+  MaterialIcons,
+  MuiStyles,
+  store: { useStore },
+  utils: { stripMarkdownToPreviewText, floatingGlassSx }
+})
 
 // 创建主应用的emotion cache
 const emotionCache = createCache({

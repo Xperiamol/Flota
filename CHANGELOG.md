@@ -2,6 +2,40 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [3.3.0] - 2026-06-15
+
+### Added / 新增
+- **AI 助手「联网搜索」**：新增 `electron/services/websearch/` 服务（默认对接 feedcoop `/search_api/web_search`），AI 设置面板可配置开关 / 服务商 / API Key / 端点 / 返回数，工具循环可在对话中直接检索网络结果。
+- **AI 助手「长文档生成」管线**：新增 `electron/services/longtask/`，引入 Planner → SectionAgent → Merge 三段式流式写作（按章节滚动摘要续写、字数估算、可中断），对话中以 `LongDocSteps` 步骤树展示规划/逐章/归并进度，可点开成稿笔记。
+- **切换笔记自动 AI 标注**：新增 `useAIAutoAnnotate` hook 与 `ai_auto_title_enabled` / `ai_auto_tags_enabled` 设置，对空标题笔记自动生成标题、对内容自动推荐并合并标签。
+- **双链 `[[wiki-link]]` 体系**：新增 tiptap 扩展 `WikiLinkMark` / `WikiLinkSuggestion`，配套 `BacklinksPanel`、`UnlinkedMentionsPanel`、`WikiLinkHoverPreview`、`WikiLinkSuggestionPopup` 组件，新增 `useLinkGraph` 双链索引（自动跳过代码块与行内代码），笔记重命名时全库改写 `[[old]]` → `[[new]]`，保留 `|别名` 与 `#章节`。
+- **一级侧栏「最近笔记」轨道**：新增 `RecentNotesRail` 组件 + `useRecentNotes` store（不限数、tab 语义稳定排序、记滚动百分比、不持久化）。
+- **知识图谱视图改为「真分离」插件**：内置 `knowledge-graph` 插件通过 manifest `capabilities.views` 声明，运行时经新增的 `app://plugin/<id>/<rel>` 协议按需 ESM 加载、由 esbuild 预编译，禁用插件后主应用 dist 不再包含图谱代码。新增 `usePluginViews` / `usePluginEnabled` store，主侧栏改为数据驱动渲染插件视图（含 `DynamicIcon` 名称解析）。
+- 新增 `src/utils/aiCore/`（contextBuilder / intentRouter）、`aiIntentUtils.js`（写作场景意图路由）、`floatingGlassSx.js`（浮窗统一玻璃风样式）。
+- AI 配置新增 `ai_limit_max_tokens` 开关与 `ai_vision_enabled` 多模态开关。
+
+### Changed / 变更
+- **主进程瘦身重构**：`electron/main.js` 拆出 16 个 IPC handler 模块到 `electron/ipc/`（ai / attachments / dataIO / media / mem0 / note / pluginStore / setting / shortcut / stt / system / systemMisc / tag / whiteboard / window 等），main.js 仅保留启动编排与协议注册；CSP `script-src` 加入 `app:` 来源。
+- **AI 服务层重写**：原 `AIChatService.js` 重写为 `electron/services/aichat/` 子模块（tools/dispatcher、stream/streamRequest + sseParser + toolLoop、systemPrompt、memoryContext、noteSummary、PendingActionStore），与新增 longtask、websearch 共同构成 AI 服务层。
+- **组件目录大规模重组**：`src/components/` 按职责拆为 `ai/ common/ editor/ filters/ layout/ notes/ plugins/ settings/ sync/ todos/` 子目录，全部 import 路径同步更新。
+- 主入口 `src/index.jsx` 注入冻结的 `window.__flotaHost__` 宿主单例（React / MUI / 主题工具 / store / utils），插件视图共享主应用 React 实例，避免双 React / 双 MUI 主题上下文。
+- `PluginManager.preinstallExamplePlugins` 支持按 `manifest.version` 自动升级覆盖内置示例插件。
+- `App.jsx` 的 `appTheme` 改为 `useMemo` 缓存，并修正初始化 effect 依赖避免重复触发；插件视图统一以 `Suspense + lazyComponent` 渲染。
+
+### Fixed / 修复
+- 当用户停留在某插件视图（如图谱）时该插件被禁用/卸载，自动回退到「笔记」视图，避免空白页。
+- 修复插件视图选择器在每次 store 通知时返回新数组导致 React `getSnapshot should be cached` 警告与无限重渲染。
+- `AIService.saveConfig` 仅在字段存在时写入联网搜索 / Vision / auto-title / auto-tags 等字段，避免被 `undefined` 覆盖。
+- 双链索引与全库改名正确跳过 ``` / ~~~ 围栏代码块与行内 `` ` `` 代码，不再误改代码示例中的 `[[xxx]]` 字面量。
+
+### Removed / 清理
+- 删除 `electron/services/AIChatService.js`（1105 行单体），逻辑全部并入 `electron/services/aichat/`。
+- 删除内置示例插件 `ai-task-planner`（README / icon / index.js / manifest / planner-mui.html）及 `plugins/registry.json` / README 中的对应条目，由 `knowledge-graph` 取代为「视图贡献」类示例。
+- 删除 `src/components/notes/GraphView.jsx`（1085 行），其全部逻辑随 `knowledge-graph` 插件包发布。
+- 移除 `main.js` 中随 IPC 拆分一同失效的 imports（ipcMain / dialog / clipboard / crypto / https / ImageStorageService / getLocalUsageStats 等）。
+- 精简 `window.__flotaHost__`：移除未被任何插件视图使用的 `ReactJSXRuntime / Emotion / Zustand` 三个 import 与暴露字段。
+- 简化 `usePluginViews.js` 中 `React.lazy` 加载器：移除冗余的 `Component.default || Component` 二次解包。
+
 ## [3.2.1] - 2026-06-03
 
 ### Added / 新增

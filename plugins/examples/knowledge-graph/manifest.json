@@ -1,0 +1,46 @@
+{
+	"id": "knowledge-graph",
+	"name": "Knowledge Graph (Built-in)",
+	"version": "1.1.0",
+	"description": "以力导向图展示笔记之间的双向链接关系，支持搜索、聚焦、缩放、孤立点过滤等交互。启用后，主侧栏会出现「图谱」入口。",
+	"author": {
+		"name": "Flota 团队",
+		"email": "team@Flota.app",
+		"url": "https://github.com/Xperiamol"
+	},
+	"homepage": "https://github.com/Xperiamol",
+	"repository": "https://github.com/Xperiamol/Flota",
+	"license": "MIT",
+	"categories": [
+		"视图",
+		"知识管理"
+	],
+	"tags": [
+		"graph",
+		"links",
+		"visualization"
+	],
+	"icon": "icon.svg",
+	"entry": "index.js",
+	"permissions": {
+		"notes:read": true
+	},
+	"runtime": {
+		"type": "worker",
+		"timeout": 10000
+	},
+	"capabilities": {
+		"views": [
+			{
+				"id": "knowledge-graph.main",
+				"title": "图谱",
+				"tooltip": "知识图谱",
+				"icon": "Hub",
+				"surface": "main:view",
+				"viewModule": "view/index.js",
+				"navId": "graph"
+			}
+		]
+	},
+	"minAppVersion": "2.0.0"
+}

@@ -225,8 +225,17 @@ class PluginManager extends EventEmitter {
 				const alreadyInstalled = await this.pathExists(targetPath)
 
 				if (alreadyInstalled) {
-					this.logger.debug(`[PluginManager] 示例插件已安装: ${manifest.id}`)
-					skippedCount++
+					const installedManifest = await this.readManifestFromPath(targetPath)
+					const installedVersion = installedManifest?.version || '0.0.0'
+					if (compareVersions(manifest.version, installedVersion) > 0) {
+						this.logger.info(`[PluginManager] 升级示例插件 ${manifest.id}: ${installedVersion} -> ${manifest.version}`)
+						await fsp.rm(targetPath, { recursive: true, force: true })
+						await this.copyDirectory(examplePath, targetPath)
+						installedCount++
+					} else {
+						this.logger.debug(`[PluginManager] 示例插件已安装: ${manifest.id} (v${installedVersion})`)
+						skippedCount++
+					}
 					continue
 				}
 

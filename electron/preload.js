@@ -289,8 +289,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getConfig: inv('ai:get-config'),
     saveConfig: inv('ai:save-config'),
     testConnection: inv('ai:test-connection'),
+    testWebSearch: inv('ai:test-web-search'),
     getProviders: inv('ai:get-providers'),
     chat: inv('ai:chat'),
+    autoAnnotate: inv('ai:auto-annotate'),
     chatStream: (messages, options) => ipcRenderer.invoke('ai:chat-stream', { messages, options }),
     cancelStream: (requestId) => ipcRenderer.invoke('ai:cancel-stream', requestId),
     executePendingAction: inv('ai:execute-pending-action'),
@@ -316,6 +318,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     saveFromPath: inv('attachments:save-from-path'),
     saveFromBuffer: inv('attachments:save-from-buffer'),
     open: inv('attachments:open'),
+    readAsDataURL: inv('attachments:read-as-data-url'),
   },
 
   // 插件商店与插件运行时 API

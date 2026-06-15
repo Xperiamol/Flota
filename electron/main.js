@@ -1,6 +1,5 @@
-const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, shell, Tray, Menu, nativeImage, protocol, nativeTheme, net, session } = require('electron')
+const { app, BrowserWindow, Notification, shell, Tray, Menu, nativeImage, protocol, nativeTheme, net, session } = require('electron')
 const path = require('path')
-const https = require('https')
 
 // 加载环境变量
 // 在打包环境中，.env 文件位于 resources 目录
@@ -15,7 +14,6 @@ if (isEnvPackaged) {
 }
 
 const fs = require('fs')
-const crypto = require('crypto')
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
 // ── 文件日志系统 ────────────────────────────────────────────────────────────────
@@ -102,10 +100,10 @@ const BackupService = require('./services/BackupService')
 const ShortcutService = require('./services/ShortcutService')
 const NotificationService = require('./services/NotificationService')
 const ImageService = require('./services/ImageService')
-const { getInstance: getImageStorageInstance } = require('./services/ImageStorageService')
 const PluginManager = require('./services/PluginManager')
 const AIService = require('./services/AIService')
-const AIChatService = require('./services/AIChatService')
+const AIChatService = require('./services/aichat')
+const WebSearchService = require('./services/websearch')
 const MCPDownloader = require('./services/MCPDownloader')
 const { setupMCPHandlers } = require('./ipc/mcpHandlers')
 const STTService = require('./services/STTService')
@@ -118,7 +116,7 @@ const { getInstance: getSyncIPCHandler } = require('./ipc/SyncIPCHandler')
 const { getInstance: getNetworkService } = require('./services/NetworkService')
 const { getInstance: getOfflineSyncQueue } = require('./services/OfflineSyncQueue')
 const { getInstance: getLogger } = require('./services/LoggerService')
-const { getLocalUsageStats } = require('./utils/storageUsage')
+
 
 // 保持对窗口对象的全局引用，如果不这样做，当JavaScript对象被垃圾回收时，窗口将自动关闭
 let mainWindow
@@ -135,8 +133,8 @@ function setupContentSecurityPolicy() {
   cspConfigured = true
 
   const scriptSrc = isDev
-    ? "'self' 'unsafe-eval' http://localhost:5174"
-    : "'self'"
+    ? "'self' 'unsafe-eval' app: http://localhost:5174"
+    : "'self' app:"
   const connectSrc = isDev
     ? "'self' app: https: http://localhost:* ws://localhost:*"
     : "'self' app: https:"
@@ -622,6 +620,7 @@ async function initializeServices() {
     
     services.aiService = new AIService(settingDAO)
     services.sttService = new STTService(settingDAO)
+    services.webSearchService = new WebSearchService(services.aiService)
     // AI Chat 助手服务（需在 mem0Service 初始化后设置）
     services.aiChatService = null // 延迟到后面初始化
     
@@ -647,7 +646,8 @@ async function initializeServices() {
       logger.info('Main', '所有AI服务初始化完成')
       // 初始化 AI Chat 助手服务
       services.aiChatService = new AIChatService(
-        services.aiService, services.noteDAO, services.todoDAO, services.mem0Service
+        services.aiService, services.noteDAO, services.todoDAO, services.mem0Service,
+        services.webSearchService
       )
       services.aiChatService.setCurrentNoteGetter(async () => {
         // 通过 IPC 向渲染进程请求当前笔记ID，再从DAO获取
@@ -721,6 +721,10 @@ async function initializeServices() {
 
     // 初始化窗口管理器
     windowManager = new WindowManager(services.settingsService)
+
+    // windowManager 就绪后再注册依赖它的 IPC 处理器，避免闭包捕获 undefined
+    const { registerWindowHandlers } = require('./ipc/windowHandlers')
+    registerWindowHandlers(windowManager)
 
     // 初始化快捷键服务
     shortcutService = new ShortcutService()
@@ -963,6 +967,7 @@ if (!gotTheLock) {
         // app://images/abc.png -> images/abc.png
         // app://audio/abc.m4a -> audio/abc.m4a
         // app://wallpaper/current.jpg?t=123 -> wallpaper/current.jpg
+        // app://plugin/<pluginId>/<relPath> -> 插件目录下的资源
         let relativePath = url.replace('app://', '')
         // 去除查询参数
         const qIdx = relativePath.indexOf('?')
@@ -975,6 +980,62 @@ if (!gotTheLock) {
         }
 
         console.log('[Protocol] 处理 app:// 请求:', relativePath)
+
+        // 插件资源分支：app://plugin/<pluginId>/<relPath>
+        if (normalized.startsWith('plugin/') || normalized.startsWith('plugin' + path.sep)) {
+          const rest = normalized.slice('plugin/'.length).split(/[\\/]/)
+          const pluginId = rest.shift()
+          const subPath = rest.join('/')
+          if (!pluginId || !subPath) {
+            return new Response('Bad Request', { status: 400 })
+          }
+          if (!pluginManager) {
+            return new Response('Plugin manager not ready', { status: 503 })
+          }
+          const snapshot = pluginManager.getPluginStateSnapshot(pluginId)
+          if (!snapshot || !snapshot.enabled) {
+            return new Response('Plugin disabled', { status: 404 })
+          }
+          const pluginPath = pluginManager.getPluginPath(pluginId)
+          if (!pluginPath) {
+            return new Response('Plugin not found', { status: 404 })
+          }
+          const fullPluginPath = path.resolve(pluginPath)
+          const resolved = path.resolve(path.join(fullPluginPath, subPath))
+          if (!resolved.startsWith(fullPluginPath + path.sep) && resolved !== fullPluginPath) {
+            return new Response('Forbidden', { status: 403 })
+          }
+          if (!fs.existsSync(resolved)) {
+            return new Response('File not found', { status: 404 })
+          }
+          const ext = path.extname(resolved).toLowerCase()
+          const pluginMime = {
+            '.js': 'text/javascript; charset=utf-8',
+            '.mjs': 'text/javascript; charset=utf-8',
+            '.jsx': 'text/javascript; charset=utf-8',
+            '.css': 'text/css; charset=utf-8',
+            '.json': 'application/json; charset=utf-8',
+            '.svg': 'image/svg+xml',
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif',
+            '.webp': 'image/webp',
+            '.html': 'text/html; charset=utf-8',
+            '.txt': 'text/plain; charset=utf-8'
+          }[ext] || 'application/octet-stream'
+          const data = fs.readFileSync(resolved)
+          const headers = {
+            'Content-Type': pluginMime,
+            'Cache-Control': 'no-cache'
+          }
+          const origin = request?.headers?.get?.('origin') || ''
+          if (isDev && (origin === 'http://localhost:5174' || origin === 'http://127.0.0.1:5174')) {
+            headers['Access-Control-Allow-Origin'] = origin
+            headers['Vary'] = 'Origin'
+          }
+          return new Response(data, { headers })
+        }
 
         // 获取完整路径
         // 音频文件存储在 userData/audio/，壁纸在 userData/wallpaper/，图片在 userData/images/
@@ -1185,24 +1246,21 @@ app.on('activate', () => {
 
 // ============= IPC 处理程序 =============
 
-const { validateImagePath, validateRelativePath, validateString, validateUrl } = require('./utils/ipcValidator')
-
-const registerIpcHandlers = (handlers) => {
-  for (const { channel, handler } of handlers) {
-    ipcMain.handle(channel, handler)
-  }
-}
-
-const createServicePassthroughHandler = (getService, methodName) => {
-  // ipcMain.handle will always pass (event, ...args). We must drop `event`,
-  // otherwise services will receive the IPC event object as their first arg.
-  return async (_event, ...args) => {
-    const service = getService()
-    return await service[methodName](...args)
-  }
-}
-
-const getEventWindow = (event) => BrowserWindow.fromWebContents(event.sender)
+const { validateRelativePath } = require('./utils/ipcValidator')
+const { registerAIHandlers } = require('./ipc/aiHandlers')
+const { registerMem0Handlers } = require('./ipc/mem0Handlers')
+const { registerPluginStoreHandlers } = require('./ipc/pluginStoreHandlers')
+const { registerSystemMiscHandlers } = require('./ipc/systemMiscHandlers')
+const { registerSystemHandlers } = require('./ipc/systemHandlers')
+const { registerShortcutHandlers } = require('./ipc/shortcutHandlers')
+const { registerAttachmentsHandlers } = require('./ipc/attachmentsHandlers')
+const { registerMediaHandlers } = require('./ipc/mediaHandlers')
+const { registerWhiteboardHandlers } = require('./ipc/whiteboardHandlers')
+const { registerNoteHandlers } = require('./ipc/noteHandlers')
+const { registerSettingHandlers } = require('./ipc/settingHandlers')
+const { registerDataIOHandlers } = require('./ipc/dataIOHandlers')
+const { registerTagHandlers } = require('./ipc/tagHandlers')
+const { registerSttHandlers } = require('./ipc/sttHandlers')
 
 // 插件商店相关
 const ensurePluginManager = () => {
@@ -1212,1413 +1270,48 @@ const ensurePluginManager = () => {
   return pluginManager
 }
 
-// 简单委托的插件 handler（表驱动）
-const pluginSimpleHandlers = {
-  'plugin-store:list-available':  { method: 'listAvailablePlugins',  fallback: [] },
-  'plugin-store:list-installed':  { method: 'listInstalledPlugins',  fallback: [] },
-  'plugin-store:scan-local':      { method: 'scanLocalPlugins',      fallback: [] },
-  'plugin-store:get-details':     { method: 'getPluginDetails',      fallback: null },
-  'plugin-store:install':         { method: 'installPlugin',         wrap: true },
-  'plugin-store:uninstall':       { method: 'uninstallPlugin',       wrap: true, noData: true },
-  'plugin-store:enable':          { method: 'enablePlugin',          wrap: true },
-  'plugin-store:disable':         { method: 'disablePlugin',         wrap: true },
-  'plugin-store:execute-command': { method: 'executeCommand',        wrap: true },
-}
-
-for (const [channel, cfg] of Object.entries(pluginSimpleHandlers)) {
-  ipcMain.handle(channel, async (event, ...args) => {
-    try {
-      const manager = ensurePluginManager()
-      const result = await manager[cfg.method](...args)
-      return cfg.wrap ? { success: true, ...(cfg.noData ? {} : { data: result }) } : result
-    } catch (error) {
-      console.error(`${channel} 失败:`, error)
-      return cfg.wrap ? { success: false, error: error.message } : cfg.fallback
-    }
-  })
-}
-
-// 需要额外逻辑的插件 handler（保留手写）
-ipcMain.handle('plugin-store:open-plugin-folder', async (event, pluginId) => {
-  try {
-    const manager = ensurePluginManager()
-    const pluginPath = manager.getPluginPath(pluginId)
-    if (!pluginPath) return { success: false, error: '插件未安装' }
-    const { shell } = require('electron')
-    await shell.openPath(pluginPath)
-    return { success: true }
-  } catch (error) {
-    console.error('打开插件目录失败:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('plugin-store:open-plugins-directory', async () => {
-  try {
-    const { shell } = require('electron')
-    const isDev = process.env.NODE_ENV === 'development'
-    const localPluginsPath = isDev
-      ? path.join(app.getAppPath(), 'plugins', 'examples')
-      : path.join(process.resourcesPath, 'plugins', 'examples')
-    await shell.openPath(localPluginsPath)
-    return { success: true }
-  } catch (error) {
-    console.error('打开插件目录失败:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('plugin-store:load-plugin-file', async (event, pluginId, filePath) => {
-  try {
-    const manager = ensurePluginManager()
-    const pluginPath = manager.getPluginPath(pluginId)
-    if (!pluginPath) return { success: false, error: '插件未安装' }
-
-    const safeSub = validateRelativePath(filePath.replace(/^\//, ''))
-    const fullPath = path.join(pluginPath, safeSub)
-    if (!fullPath.startsWith(path.resolve(pluginPath))) {
-      return { success: false, error: '路径不合法' }
-    }
-    if (!fs.existsSync(fullPath)) return { success: false, error: '文件不存在' }
-
-    const content = fs.readFileSync(fullPath, 'utf8')
-    return { success: true, content, baseUrl: `file://${pluginPath}/` }
-  } catch (error) {
-    console.error(`读取插件文件失败: ${pluginId}/${filePath}`, error)
-    return { success: false, error: error.message }
-  }
-})
+registerPluginStoreHandlers(ensurePluginManager, validateRelativePath)
 
 // ==================== 云同步相关 IPC ====================
 // 注意：这些旧的处理器已被删除，新的处理器在 SyncIPCHandler 中统一管理
 
-// 数据库调试相关（用于排查持久化问题）
-ipcMain.handle('db:get-info', async () => {
-  try {
-    const dbManager = DatabaseManager.getInstance()
-    return dbManager.getInfo()
-  } catch (err) {
-    return { error: err?.message || 'unknown error' }
-  }
-})
+// 数据库 / 日志 / 设置自启 / 代理 / 备份 / 网络
+registerSystemMiscHandlers(services, getLogger)
 
-// 数据库修复
-ipcMain.handle('db:repair', async () => {
-  try {
-    const dbManager = DatabaseManager.getInstance()
-    return await dbManager.repairDatabase()
-  } catch (err) {
-    getLogger().error('Main', '数据库修复失败', err)
-    return { success: false, error: err?.message || 'unknown error' }
-  }
-})
+// 笔记 / 设置 IPC
+registerNoteHandlers(services)
+registerSettingHandlers(services)
 
-// 打开日志目录
-ipcMain.handle('log:open-dir', async () => {
-  const { shell } = require('electron')
-  const logPath = getLogger().getLogPath()
-  await shell.openPath(logPath)
-  return { success: true, path: logPath }
-})
+// 开机自启 / 代理 已迁至 systemMiscHandlers
 
-// ===== 表驱动 IPC（收益最大：大量透传/模板化） =====
-registerIpcHandlers([
-  // 笔记相关 IPC
-  ...Object.entries({
-    'note:create': 'createNote',
-    'note:get-by-id': 'getNoteById',
-    'note:get-all': 'getNotes',
-    'note:get-pinned': 'getPinnedNotes',
-    'note:get-deleted': 'getDeletedNotes',
-    'note:get-recently-modified': 'getRecentlyModifiedNotes',
-    'note:update': 'updateNote',
-    'note:delete': 'deleteNote',
-    'note:restore': 'restoreNote',
-    'note:permanent-delete': 'permanentDeleteNote',
-    'note:toggle-pin': 'togglePinNote',
-    'note:search': 'searchNotes',
-    'note:batch-update': 'batchUpdateNotes',
-    'note:batch-delete': 'batchDeleteNotes',
-    'note:batch-restore': 'batchRestoreNotes',
-    'note:batch-permanent-delete': 'batchPermanentDeleteNotes',
-    'note:batch-set-tags': 'batchSetTags',
-    'note:get-stats': 'getStats',
-    'note:get-activity-heatmap': 'getActivityHeatmap',
-    'note:export': 'exportNotes',
-    'note:import': 'importNotes'
-  }).map(([channel, methodName]) => ({
-    channel,
-    handler: createServicePassthroughHandler(() => services.noteService, methodName)
-  })),
-  {
-    channel: 'note:auto-save',
-    handler: async (event, id, content) => {
-      return await services.noteService.autoSaveNote(id, { content })
-    }
-  },
+// 数据导入导出 / Obsidian IPC
+registerDataIOHandlers(services)
 
-  // 设置相关 IPC
-  ...Object.entries({
-    'setting:get': 'getSetting',
-    'setting:get-multiple': 'getSettings',
-    'setting:get-all': 'getAllSettings',
-    'setting:get-by-type': 'getSettingsByType',
-    'setting:get-theme': 'getThemeSettings',
-    'setting:get-window': 'getWindowSettings',
-    'setting:get-editor': 'getEditorSettings',
-    'setting:set-multiple': 'setSettings',
-    'setting:delete': 'deleteSetting',
-    'setting:delete-multiple': 'deleteMultipleSettings',
-    'setting:reset-all': 'resetToDefaults',
-    'setting:search': 'searchSettings',
-    'setting:get-stats': 'getSettingsStats',
-    'setting:export': 'exportSettings',
-    'setting:import': 'importSettings',
-    'setting:select-wallpaper': 'selectWallpaper'
-  }).map(([channel, methodName]) => ({
-    channel,
-    handler: createServicePassthroughHandler(() => services.settingsService, methodName)
-  })),
-  {
-    channel: 'setting:set',
-    handler: async (event, key, value) => {
-      // 自动推断类型
-      let type = 'string'
-      if (typeof value === 'boolean') {
-        type = 'boolean'
-      } else if (typeof value === 'number') {
-        type = 'number'
-      } else if (Array.isArray(value)) {
-        type = 'array'
-      } else if (typeof value === 'object' && value !== null) {
-        type = 'object'
-      }
-      return await services.settingsService.setSetting(key, value, type)
-    }
-  }
-])
-
-// 开机自启相关IPC处理
-ipcMain.handle('setting:set-auto-launch', async (event, enabled) => {
-  try {
-    app.setLoginItemSettings({
-      openAtLogin: enabled,
-      path: process.execPath
-    })
-    await services.settingsService.setSetting('autoLaunch', enabled, 'boolean', '开机自启')
-    return { success: true }
-  } catch (error) {
-    console.error('设置开机自启失败:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('setting:get-auto-launch', async (event) => {
-  try {
-    const loginItemSettings = app.getLoginItemSettings()
-    return loginItemSettings.openAtLogin
-  } catch (error) {
-    console.error('获取开机自启状态失败:', error)
-    return false
-  }
-})
-
-// 代理配置IPC处理
-ipcMain.handle('proxy:get-config', async (event) => {
-  const result = services.proxyService.getConfig();
-  return { success: true, data: result };
-})
-
-ipcMain.handle('proxy:save-config', async (event, config) => {
-  return services.proxyService.saveConfig(config);
-})
-
-ipcMain.handle('proxy:test', async (event, config) => {
-  return services.proxyService.testConnection(config);
-})
-
-// 数据导入导出IPC处理
-registerIpcHandlers(
-  Object.entries({
-    'data:export-notes': 'exportNotes',
-    'data:export-settings': 'exportSettings',
-    'data:import-notes': 'importNotes',
-    'data:import-settings': 'importSettings',
-    'data:import-folder': 'importFolder',
-    'data:get-supported-formats': 'getSupportedFormats',
-    'data:get-stats': 'getStats',
-    'data:select-file': 'selectFile'
-  }).map(([channel, methodName]) => ({
-    channel,
-    handler: createServicePassthroughHandler(() => services.dataImportService, methodName)
-  }))
-)
-
-// Obsidian 导入导出 IPC 处理
-registerIpcHandlers([
-  {
-    channel: 'data:import-obsidian-vault',
-    handler: async (event, options) => {
-      try {
-        return await services.dataImportService.importObsidianVault(options)
-      } catch (error) {
-        console.error('导入 Obsidian vault 失败:', error)
-        return { success: false, error: error.message }
-      }
-    }
-  },
-  {
-    channel: 'data:export-to-obsidian',
-    handler: async (event, options) => {
-      try {
-        return await services.dataImportService.exportToObsidian(options)
-      } catch (error) {
-        console.error('导出到 Obsidian 失败:', error)
-        return { success: false, error: error.message }
-      }
-    }
-  },
-  {
-    channel: 'data:get-importer-config',
-    handler: async (event, importerName) => {
-      try {
-        const config = services.dataImportService.getImporterConfig(importerName)
-        return { success: true, data: config }
-      } catch (error) {
-        console.error('获取导入器配置失败:', error)
-        return { success: false, error: error.message }
-      }
-    }
-  },
-  {
-    channel: 'data:update-importer-config',
-    handler: async (event, { importerName, config }) => {
-      try {
-        const success = services.dataImportService.updateImporterConfig(importerName, config)
-        return { success, data: success }
-      } catch (error) {
-        console.error('更新导入器配置失败:', error)
-        return { success: false, error: error.message }
-      }
-    }
-  },
-  {
-    channel: 'data:get-exporter-config',
-    handler: async (event, exporterName) => {
-      try {
-        const config = services.dataImportService.getExporterConfig(exporterName)
-        return { success: true, data: config }
-      } catch (error) {
-        console.error('获取导出器配置失败:', error)
-        return { success: false, error: error.message }
-      }
-    }
-  },
-  {
-    channel: 'data:update-exporter-config',
-    handler: async (event, { exporterName, config }) => {
-      try {
-        const success = services.dataImportService.updateExporterConfig(exporterName, config)
-        return { success, data: success }
-      } catch (error) {
-        console.error('更新导出器配置失败:', error)
-        return { success: false, error: error.message }
-      }
-    }
-  },
-  {
-    channel: 'data:get-available-importers-exporters',
-    handler: async () => {
-      try {
-        const data = services.dataImportService.getAvailableImportersAndExporters()
-        return { success: true, data }
-      } catch (error) {
-        console.error('获取可用导入导出器失败:', error)
-        return { success: false, error: error.message }
-      }
-    }
-  }
-])
-
-// 本地备份/恢复 IPC 处理
-ipcMain.handle('backup:create', async () => {
-  return await services.backupService.createBackup()
-})
-
-ipcMain.handle('backup:restore', async () => {
-  return await services.backupService.restoreBackup()
-})
+// 本地备份/恢复 已迁至 systemMiscHandlers
 
 // AI 相关 IPC 处理
-const createTryCatchHandler = (serviceName, methodName, errorMsg) => {
-  return async (event, ...args) => {
-    try {
-      const service = services[serviceName]
-      return await service[methodName](...args)
-    } catch (error) {
-      console.error(`${errorMsg}:`, error)
-      return { success: false, error: error.message }
-    }
-  }
-}
+registerAIHandlers(services, activeAIStreams)
 
-registerIpcHandlers([
-  { channel: 'ai:get-config', handler: createTryCatchHandler('aiService', 'getConfig', '获取AI配置失败') },
-  { channel: 'ai:save-config', handler: createTryCatchHandler('aiService', 'saveConfig', '保存AI配置失败') },
-  { channel: 'ai:test-connection', handler: createTryCatchHandler('aiService', 'testConnection', '测试AI连接失败') },
-  { channel: 'ai:get-providers', handler: createTryCatchHandler('aiService', 'getProviders', '获取AI提供商列表失败') },
-  { channel: 'ai:chat', handler: createTryCatchHandler('aiService', 'chat', 'AI聊天失败') }
-])
-
-ipcMain.handle('ai:execute-pending-action', async (_event, actionId) => {
-  try {
-    if (!services.aiChatService) {
-      return { success: false, error: 'AI助手服务尚未初始化，请稍后重试' }
-    }
-    return await services.aiChatService.executePendingAction(actionId)
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
-})
-
-// AI Chat 助手流式聊天
-ipcMain.handle('ai:chat-stream', async (event, { messages, options }) => {
-  const requestId = options?.requestId || `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
-  const abortController = new AbortController()
-  activeAIStreams.set(requestId, abortController)
-
-  try {
-    if (!services.aiChatService) {
-      return { success: false, error: 'AI助手服务尚未初始化，请稍后重试' }
-    }
-
-    const win = BrowserWindow.fromWebContents(event.sender)
-    const result = await services.aiChatService.chatStream(
-      messages,
-      (chunk) => {
-        if (win && !win.isDestroyed()) {
-          win.webContents.send('ai:chat-chunk', { ...chunk, requestId })
-        }
-      },
-      { ...options, abortSignal: abortController.signal }
-    )
-
-    if (abortController.signal.aborted && !result?.success) {
-      return { success: false, cancelled: true, requestId, error: '已取消生成' }
-    }
-
-    return { ...result, requestId }
-  } catch (error) {
-    if (abortController.signal.aborted) {
-      return { success: false, cancelled: true, requestId, error: '已取消生成' }
-    }
-    console.error('AI流式聊天失败:', error)
-    return { success: false, requestId, error: error.message }
-  } finally {
-    activeAIStreams.delete(requestId)
-  }
-})
-
-// 取消指定 AI 流式请求
-ipcMain.handle('ai:cancel-stream', async (event, requestId) => {
-  try {
-    const controller = activeAIStreams.get(requestId)
-    if (!controller) {
-      return { success: false, error: '请求不存在或已结束' }
-    }
-    controller.abort()
-    return { success: true, requestId }
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
-})
-
-// STT (Speech-to-Text) 相关 IPC 处理
-registerIpcHandlers([
-  { channel: 'stt:get-config', handler: createTryCatchHandler('sttService', 'getConfig', '获取STT配置失败') },
-  { channel: 'stt:save-config', handler: createTryCatchHandler('sttService', 'saveConfig', '保存STT配置失败') },
-  { channel: 'stt:test-connection', handler: createTryCatchHandler('sttService', 'testConnection', '测试STT连接失败') },
-  {
-    channel: 'stt:transcribe',
-    handler: async (event, { audioFile, options }) => {
-      try {
-        let resolvedFile = audioFile
-        // 渲染进程传来的 WAV buffer（用于 WebM 等需客户端解码的格式）
-        if (Array.isArray(audioFile)) {
-          resolvedFile = Buffer.from(audioFile)
-        } else if (audioFile && typeof audioFile === 'string' && !path.isAbsolute(audioFile)) {
-          // 相对路径（如 audio/xxx.m4a）→ 绝对路径
-          resolvedFile = path.join(app.getPath('userData'), audioFile)
-        }
-        return await services.sttService.transcribe(resolvedFile, options)
-      } catch (error) {
-        console.error('语音转文字失败:', error)
-        return { success: false, error: error.message }
-      }
-    }
-  }
-])
+// STT 相关 IPC
+registerSttHandlers(services)
 
 // Mem0 记忆管理相关 IPC 处理
-registerIpcHandlers([
-  {
-    channel: 'mem0:add',
-    handler: async (event, { userId, content, options }) => {
-      try {
-        return await services.mem0Service.addMemory(userId, content, options)
-      } catch (error) {
-        console.error('添加记忆失败:', error)
-        return { success: false, error: error.message }
-      }
-    }
-  },
-  {
-    channel: 'mem0:search',
-    handler: async (event, { userId, query, options }) => {
-      try {
-        const results = await services.mem0Service.searchMemories(userId, query, options)
-        return { success: true, results }
-      } catch (error) {
-        console.error('搜索记忆失败:', error)
-        return { success: false, error: error.message, results: [] }
-      }
-    }
-  },
-  {
-    channel: 'mem0:get',
-    handler: async (event, { userId, options }) => {
-      try {
-        const memories = await services.mem0Service.getMemories(userId, options)
-        return { success: true, memories }
-      } catch (error) {
-        console.error('获取记忆列表失败:', error)
-        return { success: false, error: error.message, memories: [] }
-      }
-    }
-  },
-  {
-    channel: 'mem0:delete',
-    handler: async (event, { memoryId }) => {
-      try {
-        const deleted = await services.mem0Service.deleteMemory(memoryId)
-        return { success: deleted }
-      } catch (error) {
-        console.error('删除记忆失败:', error)
-        return { success: false, error: error.message }
-      }
-    }
-  },
-  {
-    channel: 'mem0:clear',
-    handler: async (event, { userId }) => {
-      try {
-        const count = await services.mem0Service.clearUserMemories(userId)
-        return { success: true, count }
-      } catch (error) {
-        console.error('清除记忆失败:', error)
-        return { success: false, error: error.message }
-      }
-    }
-  },
-  {
-    channel: 'mem0:stats',
-    handler: async (event, { userId }) => {
-      try {
-        const stats = await services.mem0Service.getStats(userId)
-        return { success: true, stats }
-      } catch (error) {
-        console.error('获取统计信息失败:', error)
-        return { success: false, error: error.message }
-      }
-    }
-  },
-  {
-    channel: 'mem0:is-available',
-    handler: async () => {
-      try {
-        return { available: services.mem0Service.isAvailable() }
-      } catch (error) {
-        return { available: false }
-      }
-    }
-  }
-])
+registerMem0Handlers(services)
 
-// mem0:cleanup — 生命周期治理（TTL + 衰减 + 孤儿清理）
-ipcMain.handle('mem0:cleanup', async (event) => {
-  try {
-    if (!services.mem0Service?.isAvailable()) {
-      return { success: false, error: 'Mem0 未初始化' }
-    }
-    const result = await services.mem0Service.cleanupMemories('current_user')
-    return { success: true, ...result }
-  } catch (error) {
-    console.error('[Mem0] cleanup 失败:', error)
-    return { success: false, error: error.message }
-  }
-})
+// 窗口管理 / 开发者工具 / 网络状态 已迁至 windowHandlers + systemMiscHandlers
+// 注意：registerWindowHandlers 在 app.whenReady 中 windowManager 创建后调用
 
-// 历史数据迁移 - 使用 migrationService 实现去重
-ipcMain.handle('mem0:migrate-historical', async (event) => {
-  try {
-    console.log('[Mem0] 开始迁移历史数据(使用去重服务)...')
-    const userId = 'current_user'
-    const result = await services.migrationService.migrateAll(userId)
-    console.log('[Mem0] 迁移完成:', result)
-    return result
-  } catch (error) {
-    console.error('[Mem0] 迁移历史数据失败:', error)
-    return { success: false, error: error.message, memoryCount: 0, skippedCount: 0 }
-  }
-})
+// 应用更新检查 / 系统相关 IPC 已迁至 ipc/systemHandlers.js
+registerSystemHandlers({ isDev })
 
-// ===== 云同步相关 IPC：已由 SyncIPCHandler 统一管理 =====
+// 标签相关 IPC
+registerTagHandlers(services)
 
-// 窗口管理IPC处理
-registerIpcHandlers([
-  // 窗口管理 IPC
-  {
-    channel: 'window:ready',
-    handler: async () => {
-      // 页面已准备就绪的通知（由 dom-ready 事件自动处理显示，此处仅作确认）
-      console.log('收到窗口准备就绪通知')
-      return true
-    }
-  },
-  {
-    // 渲染进程启动后拉取大体积初始化数据（避免 URL 超长 431 错误）
-    channel: 'window:get-init-data',
-    handler: async (event) => {
-      try {
-        const win = require('electron').BrowserWindow.fromWebContents(event.sender)
-        if (!win) return { success: false, error: 'window not found' }
-        for (const [id, w] of windowManager.windows) {
-          if (w === win) {
-            const data = windowManager.pendingWindowData.get(id)
-            windowManager.pendingWindowData.delete(id)
-            return { success: true, data }
-          }
-        }
-        return { success: false, error: 'no pending data' }
-      } catch (e) {
-        return { success: false, error: e.message }
-      }
-    }
-  },
-  {
-    channel: 'window:minimize',
-    handler: async (event) => {
-      const window = getEventWindow(event)
-      if (window) window.minimize()
-      return true
-    }
-  },
-  {
-    channel: 'window:maximize',
-    handler: async (event) => {
-      const window = getEventWindow(event)
-      if (window) {
-        if (window.isMaximized()) {
-          window.unmaximize()
-        } else {
-          window.maximize()
-        }
-      }
-      return true
-    }
-  },
-  {
-    channel: 'window:close',
-    handler: async (event) => {
-      const window = getEventWindow(event)
-      if (window) window.close()
-      return true
-    }
-  },
-  {
-    channel: 'window:hide',
-    handler: async (event) => {
-      const window = getEventWindow(event)
-      if (window) window.hide()
-      return true
-    }
-  },
-  {
-    channel: 'window:show',
-    handler: async (event) => {
-      const window = getEventWindow(event)
-      if (window) window.show()
-      return true
-    }
-  },
-  {
-    channel: 'window:focus',
-    handler: async (event) => {
-      const window = getEventWindow(event)
-      if (window) window.focus()
-      return true
-    }
-  },
-  {
-    channel: 'window:is-maximized',
-    handler: async (event) => {
-      const window = getEventWindow(event)
-      return window ? window.isMaximized() : false
-    }
-  },
-  {
-    channel: 'window:is-minimized',
-    handler: async (event) => {
-      const window = getEventWindow(event)
-      return window ? window.isMinimized() : false
-    }
-  },
-  {
-    channel: 'window:is-visible',
-    handler: async (event) => {
-      const window = getEventWindow(event)
-      return window ? window.isVisible() : false
-    }
-  },
-  {
-    channel: 'window:is-focused',
-    handler: async (event) => {
-      const window = getEventWindow(event)
-      return window ? window.isFocused() : false
-    }
-  },
-  {
-    channel: 'window:get-bounds',
-    handler: async (event) => {
-      const window = getEventWindow(event)
-      return window ? window.getBounds() : null
-    }
-  },
-  {
-    channel: 'window:set-bounds',
-    handler: async (event, bounds) => {
-      const window = getEventWindow(event)
-      if (window) window.setBounds(bounds)
-      return true
-    }
-  },
-  {
-    channel: 'window:get-size',
-    handler: async (event) => {
-      const window = getEventWindow(event)
-      return window ? window.getSize() : null
-    }
-  },
-  {
-    channel: 'window:set-size',
-    handler: async (event, width, height) => {
-      const window = getEventWindow(event)
-      if (window) window.setSize(width, height)
-      return true
-    }
-  },
-  {
-    channel: 'window:get-position',
-    handler: async (event) => {
-      const window = getEventWindow(event)
-      return window ? window.getPosition() : null
-    }
-  },
-  {
-    channel: 'window:set-position',
-    handler: async (event, x, y) => {
-      const window = getEventWindow(event)
-      if (window) window.setPosition(x, y)
-      return true
-    }
-  },
-  {
-    channel: 'window:create-note-window',
-    handler: async (event, noteId, options) => {
-      return await windowManager.createNoteWindow(noteId, options)
-    }
-  },
-  {
-    channel: 'window:is-note-open',
-    handler: async (event, noteId) => {
-      try {
-        const isOpen = windowManager.isNoteOpenInWindow(noteId)
-        return { success: true, isOpen }
-      } catch (error) {
-        console.error('检查笔记窗口状态失败:', error)
-        return { success: false, error: error.message, isOpen: false }
-      }
-    }
-  },
-  {
-    channel: 'window:create-todo-window',
-    handler: async (event, todoListId) => {
-      return await windowManager.createTodoWindow(todoListId)
-    }
-  },
-  {
-    channel: 'window:get-all',
-    handler: async () => {
-      return windowManager.getAllWindows()
-    }
-  },
-  {
-    channel: 'window:get-by-id',
-    handler: async (event, id) => {
-      return windowManager.getWindowById(id)
-    }
-  },
-  {
-    channel: 'window:close-window',
-    handler: async (event, id) => {
-      return windowManager.closeWindow(id)
-    }
-  }
-])
-
-ipcMain.handle('window:toggle-dev-tools', async (event) => {
-  try {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (window) {
-      // 检查开发者工具是否已打开
-      if (window.webContents.isDevToolsOpened()) {
-        // 如果已打开，则关闭
-        window.webContents.closeDevTools()
-        console.log('[Main] 开发者工具已关闭')
-      } else {
-        // 如果未打开，则打开
-        window.webContents.openDevTools()
-        console.log('[Main] 开发者工具已打开')
-      }
-      return { success: true }
-    } else {
-      return { success: false, error: '窗口不存在' }
-    }
-  } catch (error) {
-    console.error('切换开发者工具失败:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-// 网络状态 IPC
-ipcMain.handle('network:is-online', () => {
-  return services.networkService ? services.networkService.isOnline : true
-})
-
-ipcMain.handle('network:get-offline-queue-length', () => {
-  return services.offlineSyncQueue ? services.offlineSyncQueue.length : 0
-})
-
-const RELEASES_PAGE_URL = 'https://github.com/Xperiamol/Flota/releases'
-const LATEST_RELEASE_API_URL = 'https://api.github.com/repos/Xperiamol/Flota/releases/latest'
-const LATEST_RELEASE_WEB_URL = 'https://github.com/Xperiamol/Flota/releases/latest'
-
-const normalizeVersion = (value) => String(value || '')
-  .trim()
-  .replace(/^v/i, '')
-  .split('-')[0]
-
-const compareVersions = (a, b) => {
-  const left = normalizeVersion(a).split('.').map((part) => Number.parseInt(part, 10) || 0)
-  const right = normalizeVersion(b).split('.').map((part) => Number.parseInt(part, 10) || 0)
-  const length = Math.max(left.length, right.length)
-  for (let index = 0; index < length; index += 1) {
-    const diff = (left[index] || 0) - (right[index] || 0)
-    if (diff !== 0) return diff
-  }
-  return 0
-}
-
-const extractVersionFromReleaseUrl = (url) => {
-  const matched = String(url || '').match(/\/releases\/tag\/v?([^/?#]+)/i)
-  return matched ? normalizeVersion(matched[1]) : ''
-}
-
-const resolveLatestReleaseRedirect = (url, headers = {}) => new Promise((resolve, reject) => {
-  const request = https.request(url, {
-    method: 'HEAD',
-    headers,
-  }, (response) => {
-    const location = response.headers.location
-    if (response.statusCode >= 300 && response.statusCode < 400 && location) {
-      resolve(new URL(location, url).toString())
-      return
-    }
-    reject(new Error(`Unexpected status ${response.statusCode || 'unknown'} while resolving latest release redirect`))
-  })
-
-  request.on('error', reject)
-  request.setTimeout(8000, () => request.destroy(new Error('Timeout while resolving latest release redirect')))
-  request.end()
-})
-
-async function checkForAppUpdates() {
-  const currentVersion = app.getVersion()
-  const headers = {
-    Accept: 'application/vnd.github+json',
-    'User-Agent': `Flota/${currentVersion}`,
-    'X-GitHub-Api-Version': '2022-11-28',
-  }
-
-  try {
-    const response = await net.fetch(LATEST_RELEASE_API_URL, { headers })
-    if (response.ok) {
-      const release = await response.json()
-      const latestVersion = normalizeVersion(release?.tag_name || release?.name || '')
-      if (!latestVersion) throw new Error('Latest version missing in release payload')
-      return {
-        success: true,
-        data: {
-          currentVersion,
-          latestVersion,
-          hasUpdate: compareVersions(latestVersion, currentVersion) > 0,
-          downloadUrl: release?.html_url || RELEASES_PAGE_URL,
-          publishedAt: release?.published_at || '',
-          source: 'github-api',
-        },
-      }
-    }
-  } catch (error) {
-    console.warn('[update-check] GitHub API check failed, fallback to releases page:', error?.message || error)
-  }
-
-  try {
-    const finalUrl = await resolveLatestReleaseRedirect(LATEST_RELEASE_WEB_URL, {
-      'User-Agent': `Flota/${currentVersion}`,
-    })
-    const latestVersion = extractVersionFromReleaseUrl(finalUrl)
-    if (!latestVersion) throw new Error('Failed to parse latest version from release redirect URL')
-    return {
-      success: true,
-      data: {
-        currentVersion,
-        latestVersion,
-        hasUpdate: compareVersions(latestVersion, currentVersion) > 0,
-        downloadUrl: finalUrl === LATEST_RELEASE_WEB_URL ? RELEASES_PAGE_URL : finalUrl,
-        publishedAt: '',
-        source: 'github-release-page',
-      },
-    }
-  } catch (error) {
-    console.error('[update-check] Release page fallback failed:', error)
-    return {
-      success: false,
-      error: error?.message || 'Check for updates failed',
-      data: {
-        currentVersion,
-        latestVersion: '',
-        hasUpdate: false,
-        downloadUrl: RELEASES_PAGE_URL,
-        publishedAt: '',
-        source: 'github-release-page',
-      },
-    }
-  }
-}
-
-// 系统相关IPC处理
-registerIpcHandlers([
-  // 系统相关 IPC
-  { channel: 'system:get-platform', handler: async () => process.platform },
-  { channel: 'system:get-version', handler: async () => app.getVersion() },
-  { channel: 'system:check-for-updates', handler: async () => checkForAppUpdates() },
-  { channel: 'system:get-path', handler: async (event, name) => app.getPath(name) },
-  {
-    channel: 'system:get-storage-usage',
-    handler: async () => {
-      const userDataPath = app.getPath('userData')
-      return await getLocalUsageStats(userDataPath)
-    }
-  },
-  {
-    channel: 'system:show-open-dialog',
-    handler: async (event, options) => {
-      const window = getEventWindow(event)
-      return await dialog.showOpenDialog(window, options)
-    }
-  },
-  {
-    channel: 'system:show-save-dialog',
-    handler: async (event, options) => {
-      const window = getEventWindow(event)
-      return await dialog.showSaveDialog(window, options)
-    }
-  },
-  {
-    channel: 'system:show-message-box',
-    handler: async (event, options) => {
-      const window = getEventWindow(event)
-      return await dialog.showMessageBox(window, options)
-    }
-  },
-  {
-    channel: 'system:write-text',
-    handler: async (event, text) => {
-      clipboard.writeText(text)
-      return true
-    }
-  },
-  { channel: 'system:read-text', handler: async () => clipboard.readText() }
-])
-
-ipcMain.handle('system:show-notification', async (event, options) => {
-  // 确保通知包含应用图标
-  if (!options.icon) {
-    const iconPath = isDev
-      ? path.join(__dirname, '../logo.png')
-      : path.join(process.resourcesPath, 'logo.png')
-
-    if (fs.existsSync(iconPath)) {
-      options.icon = nativeImage.createFromPath(iconPath)
-    }
-  }
-
-  const notification = new Notification(options)
-  notification.show()
-  return { success: true }
-})
-
-
-
-// 打开数据文件夹
-ipcMain.handle('system:open-data-folder', async (event) => {
-  try {
-    const dbManager = DatabaseManager.getInstance()
-    const dbPath = dbManager.getDatabasePath()
-    const dbDir = path.dirname(dbPath)
-
-    await shell.openPath(dbDir)
-    return { success: true }
-  } catch (error) {
-    console.error('打开数据文件夹失败:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-// 打开外部链接
-ipcMain.handle('system:open-external', async (event, url) => {
-  try {
-    validateUrl(url)
-    await shell.openExternal(url)
-    return { success: true }
-  } catch (error) {
-    console.error('打开外部链接失败:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-// 打开本地文件或目录
-ipcMain.handle('system:open-path', async (_event, targetPath) => {
-  try {
-    validateString(targetPath, '文件路径')
-    const errorMessage = await shell.openPath(targetPath)
-    if (errorMessage) throw new Error(errorMessage)
-    return { success: true }
-  } catch (error) {
-    console.error('打开本地路径失败:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-// 读取图片文件并转换为base64
-ipcMain.handle('system:read-image-as-base64', async (event, filePath) => {
-  try {
-    const safePath = validateImagePath(filePath)
-    const imageData = fs.readFileSync(safePath)
-    const ext = path.extname(safePath).toLowerCase().substring(1)
-    const mimeType = {
-      'jpg': 'jpeg',
-      'jpeg': 'jpeg',
-      'png': 'png',
-      'gif': 'gif',
-      'bmp': 'bmp',
-      'webp': 'webp'
-    }[ext] || 'jpeg'
-
-    const base64Image = `data:image/${mimeType};base64,${imageData.toString('base64')}`
-    return base64Image
-  } catch (error) {
-    console.error('读取图片文件失败:', error)
-    throw new Error('读取图片文件失败: ' + error.message)
-  }
-})
-
-// 标签相关IPC处理
-registerIpcHandlers([
-  ...Object.entries({
-    'tag:get-all': 'getAllTags',
-    'tag:search': 'searchTags',
-    'tag:get-suggestions': 'getTagSuggestions',
-    'tag:get-stats': 'getTagStats',
-    'tag:delete': 'deleteTag',
-    'tag:cleanup': 'cleanupUnusedTags',
-    'tag:recalculate-usage': 'recalculateTagUsage'
-  }).map(([channel, methodName]) => ({
-    channel,
-    handler: createServicePassthroughHandler(() => services.tagService, methodName)
-  })),
-  {
-    channel: 'tag:get-popular',
-    handler: async (event, limit) => {
-      return await services.tagService.getAllTags({ limit, orderBy: 'usage_count', order: 'DESC' })
-    }
-  },
-  {
-    channel: 'tags:getPopular',
-    handler: async (event, limit) => {
-      return await services.tagService.getPopularTags(limit)
-    }
-  }
-])
-
-registerIpcHandlers([{
-  channel: 'tag:batch-delete',
-  handler: async (event, tagNames) => {
-    const results = []
-    for (const tagName of tagNames) {
-      const result = await services.tagService.deleteTag(tagName)
-      results.push(result)
-    }
-    return { success: true, data: results }
-  }
-}])
-
-// 快捷键相关的IPC处理程序
-const createShortcutHandler = (methodName, errorMsg) => {
-  return async (event, ...args) => {
-    try {
-      if (!shortcutService) {
-        throw new Error('快捷键服务未初始化')
-      }
-      const result = await shortcutService[methodName](...args)
-      return { success: true, data: result }
-    } catch (error) {
-      console.error(`${errorMsg}:`, error)
-      return { success: false, error: error.message }
-    }
-  }
-}
-
-registerIpcHandlers([
-  { channel: 'shortcut:update', handler: createShortcutHandler('updateShortcut', '更新快捷键失败') },
-  { channel: 'shortcut:reset', handler: createShortcutHandler('resetShortcut', '重置快捷键失败') },
-  { channel: 'shortcut:reset-all', handler: createShortcutHandler('resetAllShortcuts', '重置所有快捷键失败') },
-  { channel: 'shortcut:get-all', handler: createShortcutHandler('getAllShortcuts', '获取快捷键配置失败') }
-])
-
-// 图片相关 IPC 处理器
-const createImageServiceHandler = (methodName, errorMsg, wrapData = true) => {
-  return async (event, ...args) => {
-    try {
-      const result = await services.imageService[methodName](...args)
-      return wrapData ? { success: true, data: result } : result
-    } catch (error) {
-      console.error(`${errorMsg}:`, error)
-      return { success: false, error: error.message }
-    }
-  }
-}
-
-registerIpcHandlers([
-  {
-    channel: 'image:save-from-buffer',
-    handler: async (event, buffer, fileName) => {
-      try {
-        const imagePath = await services.imageService.saveImage(Buffer.from(buffer), fileName)
-        return { success: true, data: imagePath }
-      } catch (error) {
-        console.error('保存图片失败:', error)
-        return { success: false, error: error.message }
-      }
-    }
-  },
-  { channel: 'image:save-from-path', handler: createImageServiceHandler('saveImageFromPath', '从路径保存图片失败') }
-])
-
-// ── 通用附件文件保存（按内容 SHA-1 去重） ──
-const ATTACHMENT_DEFAULT_MAX_BYTES = 50 * 1024 * 1024  // 默认 50 MB
-
-const sanitizeAttachmentName = (raw) => {
-  const base = String(raw || '').split(/[\\/]/).pop() || 'file'
-  return base.replace(/[\\/:*?"<>|\x00-\x1F]/g, '_').slice(0, 120) || 'file'
-}
-
-const getAttachmentMaxBytes = async () => {
-  try {
-    const result = await services.settingsService?.getSetting?.('attachmentMaxSizeMB')
-    if (result?.success) {
-      const mb = Number(result.data)
-      if (Number.isFinite(mb)) return mb > 0 ? Math.floor(mb * 1024 * 1024) : 0  // 0 = 不限
-    }
-  } catch {}
-  return ATTACHMENT_DEFAULT_MAX_BYTES
-}
-
-const assertAttachmentSize = async (size) => {
-  const max = await getAttachmentMaxBytes()
-  if (max > 0 && size > max) {
-    const limitMb = Math.round(max / (1024 * 1024))
-    throw new Error(`文件大小 ${(size / 1024 / 1024).toFixed(1)} MB 超过限制 ${limitMb} MB`)
-  }
-}
-
-const writeAttachmentBuffer = (buf, originalName) => {
-  const dir = path.join(app.getPath('userData'), 'attachments')
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-  const displayName = sanitizeAttachmentName(originalName)
-  const sha1 = crypto.createHash('sha1').update(buf).digest('hex')
-  const ext = path.extname(displayName).toLowerCase()
-  const fileName = ext ? `${sha1}${ext}` : sha1
-  const fullPath = path.join(dir, fileName)
-  if (!fs.existsSync(fullPath)) fs.writeFileSync(fullPath, buf)
-  return { relativePath: `attachments/${fileName}`, displayName }
-}
-
-ipcMain.handle('attachments:save-from-path', async (_event, sourcePath, displayName) => {
-  try {
-    validateString(sourcePath, 'sourcePath')
-    if (!fs.existsSync(sourcePath)) throw new Error('源文件不存在')
-    const stat = fs.statSync(sourcePath)
-    if (!stat.isFile()) throw new Error('源不是文件')
-    await assertAttachmentSize(stat.size)
-    const buf = fs.readFileSync(sourcePath)
-    return { success: true, data: writeAttachmentBuffer(buf, displayName || path.basename(sourcePath)) }
-  } catch (error) {
-    console.error('保存附件失败:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('attachments:save-from-buffer', async (_event, buffer, fileName) => {
-  try {
-    validateString(fileName, 'fileName')
-    const buf = Buffer.from(buffer)
-    await assertAttachmentSize(buf.length)
-    return { success: true, data: writeAttachmentBuffer(buf, fileName) }
-  } catch (error) {
-    console.error('保存附件失败:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-// 用系统默认应用打开应用内文件（仅限 attachments/、audio/、images/ 子目录，避免任意路径访问）
-ipcMain.handle('attachments:open', async (_event, refPath) => {
-  try {
-    validateString(refPath, 'refPath')
-    // 允许两种入参：'attachments/xxx.ext' 或 'app://attachments/xxx.ext'
-    const cleaned = String(refPath).replace(/^app:\/\//, '')
-    const m = cleaned.match(/^(attachments|audio|images)\/(.+)$/)
-    if (!m) throw new Error('非法的附件路径')
-    const subdir = m[1]
-    const fileName = m[2]
-    if (!fileName || fileName.includes('..') || /[\\/]/.test(fileName)) {
-      throw new Error('非法的附件文件名')
-    }
-    const fullPath = path.join(app.getPath('userData'), subdir, fileName)
-    if (!fs.existsSync(fullPath)) throw new Error('附件不存在')
-    const errorMessage = await shell.openPath(fullPath)
-    if (errorMessage) throw new Error(errorMessage)
-    return { success: true }
-  } catch (error) {
-    console.error('打开附件失败:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-// ── 音频文件保存 ──
-ipcMain.handle('audio:save-from-buffer', async (event, buffer, fileName) => {
-  try {
-    validateString(fileName, 'fileName')
-    const audioDir = path.join(app.getPath('userData'), 'audio')
-    if (!fs.existsSync(audioDir)) fs.mkdirSync(audioDir, { recursive: true })
-    const safeName = path.basename(fileName)
-    if (safeName !== fileName && fileName.includes('..')) throw new Error('文件名不合法')
-    const filePath = path.join(audioDir, safeName)
-    fs.writeFileSync(filePath, Buffer.from(buffer))
-    return { success: true, data: `audio/${safeName}` }
-  } catch (error) {
-    console.error('保存音频失败:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('audio:resolve-source', async (_event, source) => {
-  try {
-    validateString(source, '音频路径')
-
-    if (/^(https?:|file:|data:audio)/i.test(source)) {
-      return { success: true, data: source }
-    }
-
-    let relativePath = decodeURIComponent(source.replace(/^app:\/\//, '').replace(/^\/+/, ''))
-    if (!relativePath.startsWith('audio/')) {
-      relativePath = `audio/${path.basename(relativePath)}`
-    }
-
-    const normalized = path.normalize(relativePath)
-    if (normalized.startsWith('..') || path.isAbsolute(normalized) || !normalized.startsWith(`audio${path.sep}`)) {
-      return { success: false, error: '音频路径不合法' }
-    }
-
-    const fullPath = path.join(app.getPath('userData'), normalized)
-    if (!fs.existsSync(fullPath)) {
-      return { success: false, error: '录音文件不存在' }
-    }
-
-    return { success: true, data: `app://${normalized.replace(/\\/g, '/')}` }
-  } catch (error) {
-    console.error('解析音频路径失败:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('image:select-file', async () => {
-  try {
-    const result = await dialog.showOpenDialog({
-      title: '选择图片',
-      properties: ['openFile'],
-      filters: [
-        { name: '图片文件', extensions: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'] },
-        { name: '所有文件', extensions: ['*'] }
-      ]
-    })
-
-    if (result.canceled || !result.filePaths.length) {
-      return { success: false, error: '用户取消选择' }
-    }
-
-    const filePath = result.filePaths[0]
-    const fileName = path.basename(filePath)
-
-    if (!services.imageService.isSupportedImageType(fileName)) {
-      return { success: false, error: '不支持的图片格式' }
-    }
-
-    const imagePath = await services.imageService.saveImageFromPath(filePath, fileName)
-    return { success: true, data: { imagePath, fileName } }
-  } catch (error) {
-    console.error('选择图片失败:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-registerIpcHandlers([
-  {
-    channel: 'image:get-path',
-    handler: async (event, relativePath) => {
-      try {
-        const fullPath = services.imageService.getImagePath(relativePath)
-        if (fs.existsSync(fullPath)) {
-          return { success: true, data: fullPath }
-        } else {
-          return { success: false, error: '图片文件不存在' }
-        }
-      } catch (error) {
-        console.error('获取图片路径失败:', error)
-        return { success: false, error: error.message }
-      }
-    }
-  },
-  { channel: 'image:get-base64', handler: createImageServiceHandler('getBase64', '获取图片base64失败') },
-  { channel: 'image:delete', handler: createImageServiceHandler('deleteImage', '删除图片失败') }
-])
-
-// 画布图片存储 IPC 处理器
-ipcMain.handle('whiteboard:save-images', async (event, files) => {
-  try {
-    const imageStorage = getImageStorageInstance()
-    const fileMap = await imageStorage.saveWhiteboardImages(files)
-
-    // 自动上传新保存的图片到云端（V3 同步）
-    try {
-      const { getInstance: getV3SyncService } = require('./services/sync/V3SyncService')
-      const v3Service = getV3SyncService()
-
-      if (v3Service && v3Service.isEnabled && v3Service.uploadImage) {
-        const uploadPromises = Object.entries(fileMap).map(async ([fileId, fileInfo]) => {
-          try {
-            const localPath = path.join(
-              app.getPath('userData'),
-              'images',
-              'whiteboard',
-              fileInfo.fileName
-            )
-            const relativePath = `images/whiteboard/${fileInfo.fileName}`
-
-            await v3Service.uploadImage(localPath, relativePath)
-            console.log(`[图片自动上传] 成功: ${fileInfo.fileName}`)
-          } catch (error) {
-            console.error(`[图片自动上传] 失败: ${fileInfo.fileName}`, error)
-            // 不阻塞保存流程
-          }
-        })
-
-        // 后台上传，不阻塞保存
-        Promise.all(uploadPromises).catch(err =>
-          console.error('[图片自动上传] 批量上传出错:', err)
-        )
-      }
-    } catch (error) {
-      console.error('[图片自动上传] 初始化失败:', error)
-      // 不阻塞保存流程
-    }
-
-    return { success: true, data: fileMap }
-  } catch (error) {
-    console.error('保存画布图片失败:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-// 简单委托的画布 handler（表驱动）
-const whiteboardSimpleHandlers = {
-  'whiteboard:load-images':      { method: 'loadWhiteboardImages' },
-  'whiteboard:load-image':       { method: 'loadWhiteboardImage' },
-  'whiteboard:delete-images':    { method: 'deleteWhiteboardImages', noData: true },
-  'whiteboard:get-storage-stats':{ method: 'getStorageStats' },
-}
-
-for (const [channel, cfg] of Object.entries(whiteboardSimpleHandlers)) {
-  ipcMain.handle(channel, async (event, ...args) => {
-    try {
-      const imageStorage = getImageStorageInstance()
-      const result = await imageStorage[cfg.method](...args)
-      return cfg.noData ? { success: true } : { success: true, data: result }
-    } catch (error) {
-      console.error(`${channel} 失败:`, error)
-      return { success: false, error: error.message }
-    }
-  })
-}
-
-// 保存画布预览图（PNG），供移动端只读查看
-ipcMain.handle('whiteboard:save-preview', async (event, { syncId, pngBase64 }) => {
-  try {
-    if (!syncId || !pngBase64) return { success: false, error: '参数缺失' }
-    const previewDir = path.join(app.getPath('userData'), 'images', 'whiteboard-preview')
-    await require('fs').promises.mkdir(previewDir, { recursive: true })
-    const filePath = path.join(previewDir, `${syncId}.png`)
-    const buffer = Buffer.from(pngBase64, 'base64')
-    await require('fs').promises.writeFile(filePath, buffer)
-
-    // 自动上传预览图到云端（V3 同步）
-    try {
-      const { getInstance: getV3SyncService } = require('./services/sync/V3SyncService')
-      const v3Service = getV3SyncService()
-      if (v3Service && v3Service.isEnabled && v3Service.uploadImage) {
-        const relativePath = `images/whiteboard-preview/${syncId}.png`
-        v3Service.uploadImage(filePath, relativePath).catch(err =>
-          console.error('[画布预览上传] 失败:', err)
-        )
-      }
-    } catch (_) { /* 不阻塞 */ }
-
-    return { success: true }
-  } catch (error) {
-    console.error('保存画布预览图失败:', error)
-    return { success: false, error: error.message }
-  }
-})
+// 快捷键 / 图片 / 音频 / 附件 / 画布 已迁至独立 ipc 模块
+registerShortcutHandlers(() => services.shortcutService)
+registerMediaHandlers(services)
+registerAttachmentsHandlers(services)
+registerWhiteboardHandlers()
 
 // 应用退出时清理资源
 let isQuittingApp = false;

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useError } from '../components/ErrorProvider';
+import { useError } from '../components/common/ErrorProvider';
 
 /**
  * 插件通知监听器

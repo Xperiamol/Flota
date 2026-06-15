@@ -7,6 +7,8 @@ const { EventEmitter } = require('events');
 const { getInstance: getLogger } = require('./LoggerService');
 const { encryptValue, decryptValue } = require('../utils/secureValue');
 
+const isEnabledSetting = (value) => value === true || value === 'true' || value === 1 || value === '1';
+
 class AIService extends EventEmitter {
   constructor(settingDAO) {
     super();
@@ -110,7 +112,15 @@ class AIService extends EventEmitter {
       { key: 'ai_api_url', value: '', type: 'string', description: '自定义API地址' },
       { key: 'ai_model', value: 'gpt-3.5-turbo', type: 'string', description: 'AI模型' },
       { key: 'ai_temperature', value: '0.7', type: 'number', description: '温度参数' },
-      { key: 'ai_max_tokens', value: '2000', type: 'number', description: '最大token数' }
+      { key: 'ai_limit_max_tokens', value: 'false', type: 'boolean', description: '是否限制最大输出token数' },
+      { key: 'ai_max_tokens', value: '2000', type: 'number', description: '最大token数' },
+      { key: 'web_search_enabled', value: 'false', type: 'boolean', description: '联网搜索开关' },
+      { key: 'web_search_provider', value: 'feedcoop', type: 'string', description: '联网搜索服务商' },
+      { key: 'web_search_api_key', value: '', type: 'string', description: '联网搜索 API 密钥' },
+      { key: 'web_search_api_url', value: '', type: 'string', description: '联网搜索自定义端点' },
+      { key: 'web_search_count', value: '5', type: 'number', description: '联网搜索返回结果数' },
+      { key: 'ai_auto_title_enabled', value: 'false', type: 'boolean', description: '切换笔记时自动 AI 生成空标题' },
+      { key: 'ai_auto_tags_enabled', value: 'false', type: 'boolean', description: '切换笔记时自动 AI 推荐标签' }
     ];
 
     defaults.forEach(({ key, value, type, description }) => {
@@ -134,7 +144,16 @@ class AIService extends EventEmitter {
       const apiUrlSetting = this.settingDAO.get('ai_api_url');
       const modelSetting = this.settingDAO.get('ai_model');
       const temperatureSetting = this.settingDAO.get('ai_temperature');
+      const limitMaxTokensSetting = this.settingDAO.get('ai_limit_max_tokens');
       const maxTokensSetting = this.settingDAO.get('ai_max_tokens');
+      const visionEnabledSetting = this.settingDAO.get('ai_vision_enabled');
+      const webSearchEnabledSetting = this.settingDAO.get('web_search_enabled');
+      const webSearchProviderSetting = this.settingDAO.get('web_search_provider');
+      const webSearchApiKeySetting = this.settingDAO.get('web_search_api_key');
+      const webSearchApiUrlSetting = this.settingDAO.get('web_search_api_url');
+      const webSearchCountSetting = this.settingDAO.get('web_search_count');
+      const autoTitleSetting = this.settingDAO.get('ai_auto_title_enabled');
+      const autoTagsSetting = this.settingDAO.get('ai_auto_tags_enabled');
 
       const config = {
         enabled: enabledSetting ? enabledSetting.value : false,
@@ -143,7 +162,16 @@ class AIService extends EventEmitter {
         apiUrl: apiUrlSetting ? apiUrlSetting.value : '',
         model: modelSetting ? modelSetting.value : 'gpt-3.5-turbo',
         temperature: temperatureSetting ? temperatureSetting.value : 0.7,
-        maxTokens: maxTokensSetting ? maxTokensSetting.value : 2000
+        limitMaxTokens: limitMaxTokensSetting ? limitMaxTokensSetting.value : false,
+        maxTokens: maxTokensSetting ? maxTokensSetting.value : 2000,
+        visionEnabled: visionEnabledSetting ? visionEnabledSetting.value : false,
+        webSearchEnabled: webSearchEnabledSetting ? webSearchEnabledSetting.value : false,
+        webSearchProvider: webSearchProviderSetting ? webSearchProviderSetting.value : 'feedcoop',
+        webSearchApiKey: webSearchApiKeySetting ? decryptValue(webSearchApiKeySetting.value) : '',
+        webSearchApiUrl: webSearchApiUrlSetting ? webSearchApiUrlSetting.value : '',
+        webSearchCount: webSearchCountSetting ? webSearchCountSetting.value : 5,
+        autoTitleEnabled: autoTitleSetting ? autoTitleSetting.value : false,
+        autoTagsEnabled: autoTagsSetting ? autoTagsSetting.value : false
       };
 
       return {
@@ -164,7 +192,7 @@ class AIService extends EventEmitter {
    */
   async saveConfig(config) {
     try {
-      const { enabled, provider, apiKey, apiUrl, model, temperature, maxTokens } = config;
+      const { enabled, provider, apiKey, apiUrl, model, temperature, limitMaxTokens, maxTokens } = config;
 
       // 使用 SettingDAO.set() 方法，让DAO自己处理类型转换
       this.settingDAO.set('ai_enabled', enabled, 'boolean', 'AI功能开关');
@@ -173,7 +201,34 @@ class AIService extends EventEmitter {
       this.settingDAO.set('ai_api_url', apiUrl || '', 'string', '自定义API地址');
       this.settingDAO.set('ai_model', model, 'string', 'AI模型');
       this.settingDAO.set('ai_temperature', temperature, 'number', '温度参数');
+      this.settingDAO.set('ai_limit_max_tokens', isEnabledSetting(limitMaxTokens), 'boolean', '是否限制最大输出token数');
       this.settingDAO.set('ai_max_tokens', maxTokens, 'number', '最大token数');
+      if (config.visionEnabled !== undefined) {
+        this.settingDAO.set('ai_vision_enabled', isEnabledSetting(config.visionEnabled), 'boolean', '是否启用图片理解（多模态）');
+      }
+
+      // 联网搜索配置（仅在字段存在时写入，避免覆盖为 undefined）
+      if (config.webSearchEnabled !== undefined) {
+        this.settingDAO.set('web_search_enabled', isEnabledSetting(config.webSearchEnabled), 'boolean', '联网搜索开关');
+      }
+      if (config.webSearchProvider !== undefined) {
+        this.settingDAO.set('web_search_provider', config.webSearchProvider || 'feedcoop', 'string', '联网搜索服务商');
+      }
+      if (config.webSearchApiKey !== undefined) {
+        this.settingDAO.set('web_search_api_key', encryptValue(config.webSearchApiKey || ''), 'string', '联网搜索 API 密钥');
+      }
+      if (config.webSearchApiUrl !== undefined) {
+        this.settingDAO.set('web_search_api_url', config.webSearchApiUrl || '', 'string', '联网搜索自定义端点');
+      }
+      if (config.webSearchCount !== undefined) {
+        this.settingDAO.set('web_search_count', config.webSearchCount, 'number', '联网搜索返回结果数');
+      }
+      if (config.autoTitleEnabled !== undefined) {
+        this.settingDAO.set('ai_auto_title_enabled', isEnabledSetting(config.autoTitleEnabled), 'boolean', '切换笔记时自动 AI 生成空标题');
+      }
+      if (config.autoTagsEnabled !== undefined) {
+        this.settingDAO.set('ai_auto_tags_enabled', isEnabledSetting(config.autoTagsEnabled), 'boolean', '切换笔记时自动 AI 推荐标签');
+      }
 
       // 触发配置更改事件
       this.emit('config-changed', config);

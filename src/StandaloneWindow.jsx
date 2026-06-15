@@ -8,12 +8,12 @@ import {
 } from '@mui/material'
 import { createAppTheme } from './styles/theme'
 import './styles/index.css'
-import TitleBar from './components/TitleBar'
-import NoteEditor from './components/NoteEditor'
-import TodoList from './components/TodoList'
-import StandaloneProvider, { useStandaloneContext } from './components/StandaloneProvider'
+import TitleBar from './components/layout/TitleBar'
+import NoteEditor from './components/editor/NoteEditor'
+import TodoList from './components/todos/TodoList'
+import StandaloneProvider, { useStandaloneContext } from './components/common/StandaloneProvider'
 import { useStandaloneStore } from './store/useStandaloneStore'
-import { ErrorProvider } from './components/ErrorProvider'
+import { ErrorProvider } from './components/common/ErrorProvider'
 import logger from './utils/logger'
 
 /**

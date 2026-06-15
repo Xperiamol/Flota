@@ -15,6 +15,7 @@ import logger from './logger'
 import { computeOffset, DIAGRAM_THEME } from './diagrams/shared'
 import { renderMermaidNative } from './diagrams/mermaidNative'
 import { renderMindmap } from './diagrams/mindmap'
+import { renderHierarchy } from './diagrams/hierarchy'
 import { renderGantt } from './diagrams/gantt'
 import { renderFishbone } from './diagrams/fishbone'
 import { renderTimeline, renderQuadrant, renderPie } from './diagrams/extras'
@@ -36,6 +37,12 @@ const BLOCK_TYPES = {
   er: { label: 'ER 图', tier: 1, use: '数据库表设计、实体关系', dslHint: 'erDiagram\n  CUSTOMER ||--o{ ORDER : 下单' },
 
   mindmap: { label: '思维导图', tier: 2, use: '主题归纳、知识树', dslHint: 'mindmap\n  root((中心))\n    分支A\n      子节点' },
+  hierarchy: {
+    label: '层级结构图',
+    tier: 2,
+    use: '栏目结构、组织架构、分类树、主题分层',
+    dslHint: 'hierarchy\n科技日报\n  - 头版要闻\n    - 政策解读\n  - 海外科技新突破\n    - 国际科技',
+  },
   gantt: { label: '甘特图', tier: 2, use: '项目排期、依赖关系', dslHint: 'gantt\n  title 计划\n  dateFormat YYYY-MM-DD\n  section 阶段一\n  任务A :a1, 2025-01-01, 3d' },
   fishbone: { label: '鱼骨图', tier: 2, use: '根因分析', dslHint: 'fishbone\nproblem: 项目延期\nbone: 人\n  - 招聘困难\nbone: 流程\n  - 评审冗长' },
   timeline: { label: '时间轴', tier: 2, use: '历史事件/里程碑', dslHint: 'timeline\n  title 项目里程碑\n  2024-01 : 启动\n  2024-03 : 原型完成' },
@@ -122,6 +129,105 @@ const safeJsonExtract = (text) => {
   try { return JSON.parse(s.slice(start, end + 1)) } catch (e) {
     logger.warn('[outline] JSON 解析失败:', e.message)
     return null
+  }
+}
+
+const inferDiagramIntentHeuristically = (text) => {
+  const s = String(text || '')
+  if (!s.trim()) return { mode: 'single', blockType: 'mindmap', reason: '空请求默认思维导图' }
+  if (/对比.*流程|同时.*流程|流程.*时间轴|一张图.*包含|作战图|全景图|看板|汇总到一张|多个图|组合图|复合图/.test(s)) {
+    return { mode: 'composition', blockType: null, reason: '复合画布关键词' }
+  }
+  if (/组织架构|层级图|树状图|分类树|栏目结构|目录结构|架构层级|父子关系|分层结构/.test(s)) {
+    return { mode: 'single', blockType: 'hierarchy', reason: '层级结构关键词' }
+  }
+  if (/流程图|流程|步骤|审批|决策树|流转|SOP/.test(s)) {
+    return { mode: 'single', blockType: 'flowchart', reason: '流程关键词' }
+  }
+  if (/思维导图|脑图|发散|主题归纳|知识图谱|知识树/.test(s)) {
+    return { mode: 'single', blockType: 'mindmap', reason: '思维导图关键词' }
+  }
+  if (/鱼骨图|根因|原因分析|因果分析/.test(s)) {
+    return { mode: 'single', blockType: 'fishbone', reason: '鱼骨图关键词' }
+  }
+  if (/时间轴|里程碑|发展历程|演进/.test(s)) {
+    return { mode: 'single', blockType: 'timeline', reason: '时间轴关键词' }
+  }
+  if (/甘特|排期|项目计划|项目进度/.test(s)) {
+    return { mode: 'single', blockType: 'gantt', reason: '甘特图关键词' }
+  }
+  if (/四象限|优先级矩阵|重要紧急|象限图/.test(s)) {
+    return { mode: 'single', blockType: 'quadrant', reason: '四象限关键词' }
+  }
+  if (/饼图|占比|份额|比例构成/.test(s)) {
+    return { mode: 'single', blockType: 'pie', reason: '饼图关键词' }
+  }
+  if (/时序图|交互时序|请求链路|调用链/.test(s)) {
+    return { mode: 'single', blockType: 'sequence', reason: '时序关键词' }
+  }
+  if (/类图|对象关系|类关系|继承关系/.test(s)) {
+    return { mode: 'single', blockType: 'class', reason: '类图关键词' }
+  }
+  if (/ER图|实体关系|数据库表|表结构/.test(s)) {
+    return { mode: 'single', blockType: 'er', reason: 'ER 关键词' }
+  }
+  if (/状态图|状态机|状态流转/.test(s)) {
+    return { mode: 'single', blockType: 'state', reason: '状态图关键词' }
+  }
+  if (/架构图|技术架构|系统架构|分层架构|能力地图/.test(s)) {
+    return { mode: 'single', blockType: 'architecture', reason: '架构关键词' }
+  }
+  return { mode: 'composition', blockType: null, reason: '默认交给组合规划' }
+}
+
+const buildDiagramIntentMessages = (userRequest) => {
+  const blockList = Object.entries(BLOCK_TYPES)
+    .map(([k, v]) => `- ${k}: ${v.label}，适合 ${v.use}`)
+    .join('\n')
+  return [
+    {
+      role: 'system',
+      content: `你是 Flota 白板图型路由器。请判断用户更适合：
+1. 单一图型 single：从下列 blockType 中选一个
+2. 复合画布 composition：需要多个区块/便签/连接线组合
+
+可选 blockType：
+${blockList}
+
+要求：
+- 栏目结构、组织架构、分类树、目录结构，优先用 hierarchy
+- 简单单主题，优先 single，不要滥用 composition
+- 只有明显要求多图区块拼装、作战图、总览画布时，才返回 composition
+- 返回严格 JSON，不要 Markdown：
+{"mode":"single"|"composition","blockType":"flowchart"|"mindmap"|null,"reason":"简短中文原因","confidence":0.0}`,
+    },
+    { role: 'user', content: userRequest },
+  ]
+}
+
+const classifyDiagramIntent = async (userRequest) => {
+  const heuristic = inferDiagramIntentHeuristically(userRequest)
+  try {
+    const res = await window.electronAPI.ai.chat(
+      buildDiagramIntentMessages(userRequest),
+      { temperature: 0, maxTokens: 220 },
+    )
+    const parsed = safeJsonExtract(res?.data?.content || '')
+    if (!parsed || (parsed.mode !== 'single' && parsed.mode !== 'composition')) {
+      return heuristic
+    }
+    if (parsed.mode === 'single' && !KNOWN_BLOCK_KINDS.has(parsed.blockType)) {
+      return heuristic
+    }
+    return {
+      mode: parsed.mode,
+      blockType: parsed.mode === 'single' ? parsed.blockType : null,
+      reason: parsed.reason || heuristic.reason,
+      confidence: typeof parsed.confidence === 'number' ? parsed.confidence : undefined,
+    }
+  } catch (e) {
+    logger.warn('[diagramIntent] 分类失败，回退启发式:', e.message)
+    return heuristic
   }
 }
 
@@ -304,6 +410,7 @@ const SIMPLE_RENDERERS = {
     return { elements: r.elements, files: r.files || {} }
   },
   mindmap: (dsl, off) => Promise.resolve(wrapPlain(renderMindmap(dsl, off))),
+  hierarchy: (dsl, off) => Promise.resolve(({ elements: renderHierarchy(dsl, off).elements, files: {} })),
   gantt: (dsl, off) => Promise.resolve(wrapPlain(renderGantt(dsl, off))),
   fishbone: (dsl, off) => Promise.resolve(wrapPlain(renderFishbone(dsl, off))),
   timeline: (dsl, off) => Promise.resolve(wrapPlain(renderTimeline(dsl, off))),
@@ -322,19 +429,35 @@ export async function aiGenerateExcalidrawElements(description, existingElements
   const offsets = computeOffset(existingElements)
   logger.log('[aiExcalidrawGenerator] 输入:', description, 'offset:', offsets)
   const looksLikeArchitecture = /架构图|技术架构|系统架构|架构设计|分层架构|能力地图/.test(String(description || ''))
+  const diagramIntent = await classifyDiagramIntent(description)
+  logger.log('[aiExcalidrawGenerator] 图型意图:', diagramIntent)
 
   let outline
-  try {
-    outline = await planComposition(description)
-  } catch (e) {
-    if (looksLikeArchitecture) {
-      logger.warn('[aiExcalidrawGenerator] 架构图规划失败，直接尝试官方 block-beta:', e.message)
-      const dsl = await generateDsl('architecture', description)
-      return SIMPLE_RENDERERS.architecture(dsl, offsets)
+  if (diagramIntent.mode === 'single' && diagramIntent.blockType) {
+    outline = {
+      title: '',
+      nodes: [{
+        id: 'b1',
+        kind: 'block',
+        blockType: diagramIntent.blockType,
+        summary: description,
+        layout: { region: 'center' },
+      }],
+      connectors: [],
     }
-    logger.warn('[aiExcalidrawGenerator] 规划失败，回退单 mindmap:', e.message)
-    const dsl = await generateDsl('mindmap', description)
-    return wrapPlain(renderMindmap(dsl, offsets))
+  } else {
+    try {
+      outline = await planComposition(description)
+    } catch (e) {
+      if (looksLikeArchitecture) {
+        logger.warn('[aiExcalidrawGenerator] 架构图规划失败，直接尝试官方 block-beta:', e.message)
+        const dsl = await generateDsl('architecture', description)
+        return SIMPLE_RENDERERS.architecture(dsl, offsets)
+      }
+      logger.warn('[aiExcalidrawGenerator] 规划失败，回退单 mindmap:', e.message)
+      const dsl = await generateDsl('mindmap', description)
+      return wrapPlain(renderMindmap(dsl, offsets))
+    }
   }
 
   // 单区块场景走快路径，避免不必要的 IR 编排开销

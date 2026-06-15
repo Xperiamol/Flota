@@ -28,11 +28,15 @@ const measure = (label) => {
 const detectDAG = (nodes, edges) => {
   // 简单环检测
   const inDeg = new Map(nodes.map((n) => [n.id, 0]))
+  const originalInDeg = new Map(nodes.map((n) => [n.id, 0]))
+  const outDeg = new Map(nodes.map((n) => [n.id, 0]))
   const adj = new Map(nodes.map((n) => [n.id, []]))
   for (const e of edges) {
     if (!adj.has(e.from) || !inDeg.has(e.to)) continue
     adj.get(e.from).push(e.to)
     inDeg.set(e.to, inDeg.get(e.to) + 1)
+    originalInDeg.set(e.to, originalInDeg.get(e.to) + 1)
+    outDeg.set(e.from, outDeg.get(e.from) + 1)
   }
   const queue = []
   for (const [id, d] of inDeg) if (d === 0) queue.push(id)
@@ -55,10 +59,16 @@ const detectDAG = (nodes, edges) => {
     }
     if (!layered.has(id)) layered.set(id, layer)
   }
-  return { isDAG: visited === nodes.length, layers: layered }
+  return {
+    isDAG: visited === nodes.length,
+    layers: layered,
+    roots: [...originalInDeg.entries()].filter(([, d]) => d === 0).map(([id]) => id),
+    maxInDeg: Math.max(0, ...originalInDeg.values()),
+    maxOutDeg: Math.max(0, ...outDeg.values()),
+  }
 }
 
-const layoutDAG = (nodes, edges, sizes, layers) => {
+const layoutDAG = (nodes, edges, sizes, layers, direction = 'tb') => {
   // 按 layer 分桶
   const buckets = new Map()
   for (const n of nodes) {
@@ -93,6 +103,40 @@ const layoutDAG = (nodes, edges, sizes, layers) => {
     const arr = buckets.get(k)
     return Math.max(...arr.map((n) => sizes.get(n.id).height))
   })
+  const layerWidths = layerKeys.map((k) => {
+    const arr = buckets.get(k)
+    return Math.max(...arr.map((n) => sizes.get(n.id).width))
+  })
+
+  if (direction === 'lr') {
+    const positions = new Map()
+    const colHeights = layerKeys.map((k) => {
+      const arr = buckets.get(k)
+      return arr.reduce((sum, n) => sum + sizes.get(n.id).height, 0) + (arr.length - 1) * GAP_Y
+    })
+    const maxColH = Math.max(...colHeights, 0)
+    let cursorX = PADDING
+    for (let li = 0; li < layerKeys.length; li++) {
+      const arr = buckets.get(layerKeys[li])
+      let cursorY = PADDING + (maxColH - colHeights[li]) / 2
+      for (const n of arr) {
+        const sz = sizes.get(n.id)
+        positions.set(n.id, {
+          x: cursorX + (layerWidths[li] - sz.width) / 2,
+          y: cursorY,
+          w: sz.width,
+          h: sz.height,
+        })
+        cursorY += sz.height + GAP_Y
+      }
+      cursorX += layerWidths[li] + GAP_X
+    }
+    return {
+      positions,
+      width: cursorX + PADDING,
+      height: maxColH + PADDING * 2,
+    }
+  }
 
   let cursorY = PADDING
   let maxRowW = 0
@@ -205,9 +249,10 @@ export const layoutFreeform = (graph) => {
   const edges = graph.edges || []
   const sizes = new Map(nodes.map((n) => [n.id, measure(n.label || n.id)]))
   if (nodes.length === 0) return { positions: new Map(), width: 0, height: 0, sizes }
-  const { isDAG, layers } = detectDAG(nodes, edges)
+  const { isDAG, layers, roots, maxInDeg, maxOutDeg } = detectDAG(nodes, edges)
+  const direction = isDAG && roots.length === 1 && maxInDeg <= 1 && maxOutDeg > 1 ? 'lr' : 'tb'
   const result = isDAG && nodes.length <= 60
-    ? layoutDAG(nodes, edges, sizes, layers)
+    ? layoutDAG(nodes, edges, sizes, layers, direction)
     : layoutForce(nodes, edges, sizes)
   result.sizes = sizes
   return result

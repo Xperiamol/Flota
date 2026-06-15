@@ -43,6 +43,7 @@ class SettingsService extends EventEmitter {
   static VALIDATION_RULES = {
     ai_api_url: (v) => !v || /^https?:\/\/.+/.test(v) ? null : 'API地址必须以 http:// 或 https:// 开头',
     ai_temperature: (v) => { const n = Number(v); return n >= 0 && n <= 2 ? null : '温度参数必须在 0-2 之间'; },
+    ai_limit_max_tokens: (v) => typeof v === 'boolean' || v === 'true' || v === 'false' ? null : '最大输出限制开关必须为布尔值',
     ai_max_tokens: (v) => { const n = Number(v); return Number.isInteger(n) && n >= 1 && n <= 128000 ? null : 'Token数必须为 1-128000 的整数'; },
     auto_save_interval: (v) => { const n = Number(v); return Number.isInteger(n) && n >= 1000 && n <= 300000 ? null : '自动保存间隔必须在 1000-300000ms 之间'; },
 

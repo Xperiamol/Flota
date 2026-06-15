@@ -1,4 +1,5 @@
 import { createTheme, alpha } from '@mui/material/styles';
+import { EASING, DURATION_MS } from '../utils/animationConfig';
 
 /**
  * Create the application theme based on mode and primary color
@@ -27,12 +28,45 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
         : '1px solid rgba(0, 0, 0, 0.08)'; // Darker border for light mode
     const glassBlur = 'blur(6px)';
 
+    // Surface tokens — 用于替换全应用的 rgba(255,255,255,0.x) / rgba(0,0,0,0.x) 硬编码
+    const surface = {
+        // 玻璃态：浅/重两档
+        glassLight: isDark ? alpha('#1e293b', 0.58) : alpha('#ffffff', 0.74),
+        glassHeavy: isDark ? alpha('#1e293b', 0.82) : alpha('#ffffff', 0.92),
+        // 半透明覆盖：用于 hover/active/selected 等
+        hover:    isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.04)',
+        active:   isDark ? 'rgba(255,255,255,0.10)' : 'rgba(15,23,42,0.06)',
+        pressed:  isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,23,42,0.08)',
+        // 细分割线
+        subtleBorder:  isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)',
+        strongBorder:  isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,23,42,0.12)',
+        // 阴影
+        shadowSoft:   isDark ? '0 4px 16px rgba(0,0,0,0.32)' : '0 4px 16px rgba(15,23,42,0.06)',
+        shadowMedium: isDark ? '0 12px 32px rgba(0,0,0,0.4)' : '0 12px 32px rgba(15,23,42,0.10)',
+    };
+
     return createTheme({
         palette: {
             mode: validMode,
             primary: {
                 main: primaryColor,
             },
+            secondary: {
+                main: isDark ? '#a78bfa' : '#7c3aed',
+            },
+            error: {
+                main: isDark ? '#f87171' : '#dc2626',
+            },
+            warning: {
+                main: isDark ? '#fbbf24' : '#d97706',
+            },
+            info: {
+                main: isDark ? '#60a5fa' : '#2563eb',
+            },
+            success: {
+                main: isDark ? '#34d399' : '#059669',
+            },
+            divider: surface.subtleBorder,
             background: {
                 default: backgroundDefault,
                 paper: backgroundPaper,
@@ -40,10 +74,33 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
             text: {
                 primary: isDark ? '#f1f5f9' : '#1e293b',
                 secondary: isDark ? '#94a3b8' : '#64748b',
-            }
+            },
+            action: {
+                hover: surface.hover,
+                selected: surface.active,
+                disabledBackground: surface.hover,
+                focus: alpha(primaryColor, 0.16),
+            },
         },
         shape: {
-            borderRadius: 16, // Unified rounded corners
+            borderRadius: 16,
+        },
+        transitions: {
+            easing: {
+                easeInOut: EASING.standard,
+                easeOut: EASING.decelerate,
+                easeIn: EASING.accelerate,
+                sharp: EASING.emphasize,
+            },
+            duration: {
+                shortest: DURATION_MS.fast,
+                shorter: DURATION_MS.fast,
+                short: DURATION_MS.normal,
+                standard: DURATION_MS.normal,
+                complex: DURATION_MS.slow,
+                enteringScreen: DURATION_MS.slow,
+                leavingScreen: DURATION_MS.normal,
+            },
         },
         typography: {
             fontFamily: [
@@ -52,6 +109,9 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                 'BlinkMacSystemFont',
                 '"Segoe UI"',
                 'Roboto',
+                '"PingFang SC"',
+                '"Microsoft YaHei"',
+                '"Noto Sans SC"',
                 '"Helvetica Neue"',
                 'Arial',
                 'sans-serif',
@@ -403,6 +463,7 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                 backdropFilter: glassBlur,
                 border: glassBorder,
             },
+            surface,
             gradients: {
                 primary: `linear-gradient(135deg, ${primaryColor} 0%, ${alpha(primaryColor, 0.8)} 100%)`,
             }

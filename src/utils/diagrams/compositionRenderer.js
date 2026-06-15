@@ -21,6 +21,7 @@ import {
 } from './shared'
 import { renderMermaidNative } from './mermaidNative'
 import { renderMindmap } from './mindmap'
+import { renderHierarchy } from './hierarchy'
 import { renderGantt } from './gantt'
 import { renderFishbone } from './fishbone'
 import { renderTimeline, renderQuadrant, renderPie } from './extras'
@@ -43,6 +44,10 @@ const renderBlock = async (node) => {
     }
     case 'mindmap':
       return { ...computeBoundingBox(renderMindmap(dsl, { offsetX: 0, offsetY: 0 })), files: {}, tier: 2 }
+    case 'hierarchy': {
+      const rendered = renderHierarchy(dsl, { offsetX: 0, offsetY: 0 })
+      return { ...computeBoundingBox(rendered.elements), files: {}, tier: 2 }
+    }
     case 'gantt':
       return { ...computeBoundingBox(renderGantt(dsl, offsets)), files: {}, tier: 2 }
     case 'fishbone':
@@ -55,6 +60,65 @@ const renderBlock = async (node) => {
       return { ...computeBoundingBox(renderPie(dsl, offsets)), files: {}, tier: 2 }
     default:
       throw new Error(`未实现的 block 类型: ${blockType}`)
+  }
+}
+
+const getBoxCenter = (box) => ({
+  x: box.x + box.w / 2,
+  y: box.y + box.h / 2,
+})
+
+const getPortPoint = (box, side) => {
+  if (side === 'left') return { x: box.x, y: box.y + box.h / 2 }
+  if (side === 'right') return { x: box.x + box.w, y: box.y + box.h / 2 }
+  if (side === 'top') return { x: box.x + box.w / 2, y: box.y }
+  return { x: box.x + box.w / 2, y: box.y + box.h }
+}
+
+const choosePortSides = (fromBox, toBox) => {
+  const a = getBoxCenter(fromBox)
+  const b = getBoxCenter(toBox)
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return dx >= 0 ? ['right', 'left'] : ['left', 'right']
+  }
+  return dy >= 0 ? ['bottom', 'top'] : ['top', 'bottom']
+}
+
+const orthogonalPointsBetweenBoxes = (fromBox, toBox) => {
+  const [fromSide, toSide] = choosePortSides(fromBox, toBox)
+  const start = getPortPoint(fromBox, fromSide)
+  const end = getPortPoint(toBox, toSide)
+  const dx = end.x - start.x
+  const dy = end.y - start.y
+  if (Math.abs(dx) < 12 || Math.abs(dy) < 12) {
+    return { start, points: [[0, 0], [dx, dy]] }
+  }
+  if (fromSide === 'left' || fromSide === 'right') {
+    const midX = start.x + dx / 2
+    return {
+      start,
+      points: [[0, 0], [midX - start.x, 0], [midX - start.x, dy], [dx, dy]],
+    }
+  }
+  const midY = start.y + dy / 2
+  return {
+    start,
+    points: [[0, 0], [0, midY - start.y], [dx, midY - start.y], [dx, dy]],
+  }
+}
+
+const getLabelPositionFromPolyline = (start, points) => {
+  if (!Array.isArray(points) || points.length < 2) {
+    return { x: start.x, y: start.y }
+  }
+  const midIndex = Math.max(0, Math.floor((points.length - 1) / 2))
+  const a = points[midIndex]
+  const b = points[midIndex + 1] || points[midIndex]
+  return {
+    x: start.x + (a[0] + b[0]) / 2,
+    y: start.y + (a[1] + b[1]) / 2,
   }
 }
 
@@ -89,15 +153,11 @@ const renderFreeformNode = (node) => {
     const a = positions.get(e.from)
     const b = positions.get(e.to)
     if (!a || !b) continue
-    const sx = a.x + a.w / 2
-    const sy = a.y + a.h
-    const ex = b.x + b.w / 2
-    const ey = b.y
-    const midY = (sy + ey) / 2
+    const routed = orthogonalPointsBetweenBoxes(a, b)
     elements.push(makeArrow({
-      x: sx,
-      y: sy,
-      points: [[0, 0], [0, midY - sy], [ex - sx, midY - sy], [ex - sx, ey - sy]],
+      x: routed.start.x,
+      y: routed.start.y,
+      points: routed.points,
       stroke: DIAGRAM_THEME.line,
       strokeWidth: 1.5,
     }))
@@ -342,19 +402,15 @@ const renderConnector = (conn, anchorMap) => {
   const a = anchorMap.get(conn.from)
   const b = anchorMap.get(conn.to)
   if (!a || !b) return []
-  // 简化：从 a 中心到 b 中心，但锚到边缘
-  const dx = b.cx - a.cx
-  const dy = b.cy - a.cy
-  const ang = Math.atan2(dy, dx)
-  const sx = a.cx + Math.cos(ang) * (a.width / 2)
-  const sy = a.cy + Math.sin(ang) * (a.height / 2)
-  const ex = b.cx - Math.cos(ang) * (b.width / 2)
-  const ey = b.cy - Math.sin(ang) * (b.height / 2)
+  const routed = orthogonalPointsBetweenBoxes(
+    { x: a.x, y: a.y, w: a.width, h: a.height },
+    { x: b.x, y: b.y, w: b.width, h: b.height },
+  )
   const elements = [
     makeArrow({
-      x: sx,
-      y: sy,
-      points: [[0, 0], [ex - sx, ey - sy]],
+      x: routed.start.x,
+      y: routed.start.y,
+      points: routed.points,
       stroke: conn.style?.stroke || DIAGRAM_THEME.semantics.accent.stroke,
       strokeWidth: 2,
       dashed: !!conn.dashed,
@@ -362,9 +418,10 @@ const renderConnector = (conn, anchorMap) => {
   ]
   if (conn.label) {
     const m = measureTextBlock(conn.label, 12)
+    const labelPos = getLabelPositionFromPolyline(routed.start, routed.points)
     elements.push(makeRect({
-      x: (sx + ex) / 2 - (m.width + 16) / 2,
-      y: (sy + ey) / 2 - (m.height + 8) / 2,
+      x: labelPos.x - (m.width + 16) / 2,
+      y: labelPos.y - (m.height + 8) / 2,
       width: m.width + 16,
       height: m.height + 8,
       bg: '#ffffff',
@@ -373,8 +430,8 @@ const renderConnector = (conn, anchorMap) => {
       rounded: true,
     }))
     elements.push(makeText({
-      x: (sx + ex) / 2 - m.width / 2,
-      y: (sy + ey) / 2 - m.height / 2,
+      x: labelPos.x - m.width / 2,
+      y: labelPos.y - m.height / 2,
       text: conn.label,
       fontSize: 12,
       color: DIAGRAM_THEME.textSecondary,

@@ -139,7 +139,6 @@ runtime.onActivate(async () => {
 - 🚀 **[开发者指南](./plugins/docs/development-guide.md)** - 完整的开发者指南
 - 💡 **[示例插件](./plugins/examples/)** - 学习参考
   - [random-note](./plugins/examples/random-note/) - 简单命令示例
-  - [ai-task-planner](./plugins/examples/ai-task-planner/) - 自定义窗口示例
 
 #### 插件特性
 

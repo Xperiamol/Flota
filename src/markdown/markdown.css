@@ -85,12 +85,14 @@
 }
 
 .markdown-wiki-link-not-found {
-  color: #ef4444;
-  text-decoration: line-through;
+  color: #94a3b8;
+  text-decoration: underline dashed;
+  text-underline-offset: 2px;
 }
 
 .markdown-wiki-link-not-found:hover {
-  background-color: #fee2e2;
+  background-color: rgba(148, 163, 184, 0.15);
+  color: #64748b;
 }
 
 /* Wiki 嵌入样式 */
@@ -102,12 +104,38 @@
   background-color: #f9fafb;
 }
 
+/* 别名/章节：在 WYSIWYG 编辑器中保留原始 `[[Foo|别名]]` / `[[Foo#章节]]` 文本以便编辑（类 Obsidian 源代码模式）；
+   预览侧由 markdown-it wikiLink 插件渲染为别名文本与 data-wiki-section。
+   data-wiki-alias / data-wiki-section 仍写在 <a> 上，供点击/索引使用。 */
+
+/* 章节高亮闪烁（双链点击带 #section 跳转后定位） */
+.wiki-section-flash {
+  animation: wiki-section-flash-anim 1.5s ease-out;
+}
+@keyframes wiki-section-flash-anim {
+  0%   { background-color: rgba(59, 130, 246, 0.35); }
+  100% { background-color: transparent; }
+}
+
 .markdown-wiki-link-embed-placeholder {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   color: #6b7280;
 }
+
+.markdown-wiki-link-embed-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px dashed rgba(0, 0, 0, 0.1);
+}
+
+.markdown-wiki-link-embed-body > :first-child { margin-top: 0; }
+.markdown-wiki-link-embed-body > :last-child { margin-bottom: 0; }
+
 
 .markdown-wiki-link-embed-icon {
   font-size: 1.25rem;
@@ -122,11 +150,16 @@
   .markdown-wiki-link:hover {
     background-color: #1e3a8a;
   }
-  
-  .markdown-wiki-link-not-found:hover {
-    background-color: #7f1d1d;
+
+  .markdown-wiki-link-not-found {
+    color: #64748b;
   }
-  
+
+  .markdown-wiki-link-not-found:hover {
+    background-color: rgba(100, 116, 139, 0.18);
+    color: #94a3b8;
+  }
+
   .markdown-wiki-link-embed {
     background-color: #1f2937;
     border-color: #374151;

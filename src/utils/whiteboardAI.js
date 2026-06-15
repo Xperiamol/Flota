@@ -1,4 +1,6 @@
-import { aiGenerateExcalidrawElements } from './aiExcalidrawGenerator'
+// 动态导入 aiExcalidrawGenerator 以避免首屏加载 Excalidraw 依赖（~1.3MB）
+const loadAIGenerator = () =>
+  import('./aiExcalidrawGenerator').then(m => m.aiGenerateExcalidrawElements)
 
 export const WHITEBOARD_AI_GENERATE_EVENT = 'flota:whiteboard-ai-generate'
 export const WHITEBOARD_AI_ACTIONS = {
@@ -51,13 +53,6 @@ export const inferWhiteboardActionFromPrompt = (prompt = '') => {
   }
 
   return WHITEBOARD_AI_ACTIONS.APPEND
-}
-
-const hasExplicitWhiteboardIntent = (prompt = '') => {
-  const text = String(prompt || '').trim().toLowerCase()
-  if (!text) return false
-
-  return /(画个?|画一[个张幅]|生成|绘制|出个图|做成图|转成图|整理成图|流程图|架构图|时序图|类图|er图|鱼骨图|思维导图|甘特图|时间轴|四象限|在画布上|插入到画布|加到画布|补到画布|重画|重做|替换当前画布|修改画布|调整画布)/.test(text)
 }
 
 const trimInline = (text = '', max = 32) => {
@@ -321,6 +316,7 @@ export const generateWhiteboardElementsByAction = async ({
   }
 
   if (normalizedAction === WHITEBOARD_AI_ACTIONS.REPLACE) {
+    const aiGenerateExcalidrawElements = await loadAIGenerator()
     const r = unwrap(await aiGenerateExcalidrawElements(String(prompt || '').trim(), []))
     return {
       action: normalizedAction,
@@ -334,6 +330,7 @@ export const generateWhiteboardElementsByAction = async ({
 
   if (normalizedAction === WHITEBOARD_AI_ACTIONS.EDIT) {
     const editPrompt = buildEditGenerationPrompt({ prompt, currentWhiteboardSummary })
+    const aiGenerateExcalidrawElements = await loadAIGenerator()
     const r = unwrap(await aiGenerateExcalidrawElements(editPrompt, []))
     return {
       action: normalizedAction,
@@ -345,6 +342,7 @@ export const generateWhiteboardElementsByAction = async ({
     }
   }
 
+  const aiGenerateExcalidrawElements = await loadAIGenerator()
   const r = unwrap(await aiGenerateExcalidrawElements(prompt, activeElements))
   const nextElements = [...activeElements, ...r.elements]
 
@@ -432,20 +430,114 @@ const buildWhiteboardActionMessage = (result = {}) => {
   return `已在当前画布插入 ${result.addedCount || 0} 个元素。${warningText}`
 }
 
+const buildCreateWhiteboardMessages = ({ prompt, messages = [] }) => {
+  const recentMessages = getRecentConversationContext(messages, prompt)
+  return [
+    {
+      role: 'system',
+      content: `你是 Flota 的"新建画布"判定器。用户当前不在画布笔记里。判断用户最新一句话是否想"新建一张画布/白板并在其中绘制图形"（如流程图、架构图、思维导图、时序图等），并提炼要绘制的内容。
+
+只输出一个 JSON 对象，禁止解释、Markdown、代码块。
+
+输出格式：
+{
+  "create": true | false,
+  "title": "为这张画布起一个简短标题(<=16字)",
+  "groundedRequest": "可直接交给图表生成器使用的完整中文说明，包含真实主题、节点、关系或步骤",
+  "reason": "一句简短原因"
+}
+
+规则：
+1. 只有当用户明确想"生成/绘制/画出"一张图或画布时，create 才为 true。
+2. 普通问答、总结、写文字、写文档，create 一律为 false。
+3. 如果用户明确指定图表类型（如"画甘特图/鱼骨图/思维导图"），把偏好写在 groundedRequest 开头，如"以鱼骨图呈现：……"。
+4. groundedRequest 必须是描述要画什么的中文说明，不要直接输出 Mermaid 或其他 DSL。
+5. 有歧义时 create 设为 false。`
+    },
+    {
+      role: 'user',
+      content: JSON.stringify({ prompt, recentConversation: recentMessages })
+    }
+  ]
+}
+
+export const groundNewWhiteboardRequest = async ({ prompt, messages = [] }) => {
+  const res = await window.electronAPI.ai.chat(
+    buildCreateWhiteboardMessages({ prompt, messages }),
+    { temperature: 0, maxTokens: 400 }
+  )
+  if (!res?.success || !res.data?.content) {
+    throw new Error(res?.error || '新建画布判定失败')
+  }
+  const parsed = parseModelJsonObject(res.data.content, '新建画布判定结果格式错误')
+  return {
+    create: parsed?.create === true,
+    title: String(parsed?.title || '').trim(),
+    groundedRequest: String(parsed?.groundedRequest || '').trim(),
+    reason: String(parsed?.reason || '').trim(),
+  }
+}
+
+// 在 AI 对话里"新建一张画布并生成内容"。当前笔记不是画布时才触发。
+export const handleCreateWhiteboardRequest = async ({ note, prompt, messages = [], createNote, updateNote, loadNotes }) => {
+  if (isWhiteboardNote(note)) return null
+  if (typeof createNote !== 'function' || typeof updateNote !== 'function') return null
+
+  // 不做正则预筛，直接由模型 grounding 判定 create=true/false。
+  let groundedRequest = ''
+  let title = ''
+  try {
+    const grounded = await groundNewWhiteboardRequest({ prompt, messages })
+    if (!grounded.create) return null
+    groundedRequest = grounded.groundedRequest
+    title = grounded.title
+  } catch (_) {
+    // 模型失败不再凭关键词兜底，直接走通用 chat 分支
+    return null
+  }
+
+  const generationPrompt = groundedRequest || String(prompt || '').trim()
+
+  // 1) 新建空白画布笔记
+  const created = await createNote({
+    note_type: 'whiteboard',
+    title: title || '未命名画布',
+    content: buildWhiteboardContent({}),
+  })
+  if (!created?.success || !created.data?.id) {
+    throw new Error(created?.error || '创建画布笔记失败')
+  }
+  const newNote = created.data
+
+  // 2) 从零生成画布元素并写入
+  const result = await applyWhiteboardGenerationToNote({
+    note: newNote,
+    prompt: generationPrompt,
+    action: WHITEBOARD_AI_ACTIONS.REPLACE,
+    updateNote,
+  })
+  await loadNotes?.()
+
+  return {
+    content: `已创建画布《${newNote.title || '未命名画布'}》并生成 ${result.addedCount || 0} 个元素。`,
+    result,
+    noteId: newNote.id,
+  }
+}
+
 export const handleWhiteboardAIRequest = async ({ note, prompt, messages = [], updateNote, loadNotes }) => {
   if (!isWhiteboardNote(note)) {
     return null
   }
 
+  // 不再做正则预筛，直接交给模型分类。失败时保守回退为 chat（不动画布）。
   try {
     const intentResult = await classifyWhiteboardIntent({ note, prompt, messages })
     if (intentResult.intent !== WHITEBOARD_AI_INTENTS.WHITEBOARD) {
       return null
     }
   } catch (_) {
-    if (!hasExplicitWhiteboardIntent(prompt)) {
-      return null
-    }
+    return null
   }
 
   let action = inferWhiteboardActionFromPrompt(prompt)

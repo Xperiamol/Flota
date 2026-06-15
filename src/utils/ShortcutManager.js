@@ -154,7 +154,9 @@ class ShortcutManager {
               return;
             }
           } else {
-            console.warn(`未找到快捷键处理函数: ${shortcutId}`);
+            // 当前上下文未提供该 handler 是合法情况（例如编辑器 Cmd+1~6 由 ProseMirror 原生处理），
+            // 只记录到 logger 不刷 console.warn
+            logger.log(`未找到快捷键处理函数（继续冒泡）: ${shortcutId}`);
           }
         }
       }

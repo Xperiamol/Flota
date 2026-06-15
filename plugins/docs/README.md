@@ -158,13 +158,6 @@
   - 数据访问和 UI 操作
   - 错误处理
 
-### 高级示例
-
-- **[ai-task-planner](../examples/ai-task-planner/)** - AI 任务规划助手
-  - 自定义 UI 窗口
-  - 待办事项操作
-  - AI 推理集成
-
 ## 🔧 开发工具
 
 ### 本地开发
@@ -418,8 +411,6 @@ if (emotionCache && CacheProvider) {
 - `CacheProvider` 必须在最外层，包裹整个应用
 - `ThemeProvider` 在 `CacheProvider` 内部
 - 这样 Material-UI 组件的样式会自动注入到 iframe 的 `<head>` 中
-
-**参考示例**: `plugins/examples/ai-task-planner/planner-mui.html`
 
 ## 🔗 相关链接
 

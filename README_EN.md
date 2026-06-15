@@ -138,7 +138,6 @@ runtime.onActivate(async () => {
 - 🚀 **[Development Guide](./plugins/docs/development-guide.md)** - Complete developer guide
 - 💡 **[Example Plugins](./plugins/examples/)** - Learning references
   - [random-note](./plugins/examples/random-note/) - Simple command example
-  - [ai-task-planner](./plugins/examples/ai-task-planner/) - Custom window example
 
 #### Plugin Features
 

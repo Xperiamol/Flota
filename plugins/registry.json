@@ -70,9 +70,9 @@
     "icon": "icon.svg"
   },
   {
-    "id": "ai-task-planner",
-    "name": "AI Task Planner (Built-in)",
-    "description": "使用 AI 智能拆解任务为可执行的待办事项，并提供可视化编辑界面。支持优先级设置、截止日期规划和批量创建待办。",
+    "id": "knowledge-graph",
+    "name": "Knowledge Graph (Built-in)",
+    "description": "以力导向图展示笔记之间的双向链接关系，支持搜索、聚焦、缩放、孤立点过滤等交互。启用后，主侧栏会出现「图谱」入口。",
     "version": "1.0.0",
     "author": {
       "name": "Flota 团队",
@@ -83,31 +83,23 @@
     "repository": "https://github.com/Xperiamol/Flota",
     "source": {
       "type": "directory",
-      "path": "plugins/examples/ai-task-planner"
+      "path": "plugins/examples/knowledge-graph"
     },
     "tags": [
-      "ai",
-      "tasks",
-      "productivity",
-      "planning",
-      "todos"
+      "graph",
+      "links",
+      "visualization"
     ],
     "categories": [
-      "效率",
-      "AI"
+      "视图",
+      "知识管理"
     ],
     "featured": true,
     "permissions": [
-      "todos:read",
-      "todos:write",
-      "ai:inference",
-      "ui:open-window",
-      "notifications:show",
-      "storage:read",
-      "storage:write"
+      "notes:read"
     ],
     "minAppVersion": "2.0.0",
-    "shortDescription": "AI 智能任务规划与拆解",
+    "shortDescription": "把笔记双链关系以力导向图可视化",
     "icon": "icon.svg"
   }
 ]
