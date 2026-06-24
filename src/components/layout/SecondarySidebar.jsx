@@ -22,7 +22,6 @@ import {
   GetApp as ImportIcon,
   Keyboard as KeyboardIcon,
   Cloud as CloudIcon,
-  AutoAwesome as AIIcon,
   Memory as MemoryIcon,
   Wifi as WifiIcon,
   Info as InfoIcon,
@@ -38,6 +37,7 @@ import {
   RestartAlt as ResetIcon,
   Tag as TagIcon
 } from '@mui/icons-material';
+import FlotaAIIcon from '../common/FlotaAIIcon';
 import { useStore } from '../../store/useStore';
 import NoteList from '../notes/NoteList';
 import TodoList from '../todos/TodoList';
@@ -103,6 +103,14 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
   const aiSwitchConv = useStore((state) => state.aiSwitchConv);
   const aiDeleteConv = useStore((state) => state.aiDeleteConv);
   const aiNewChat = useStore((state) => state.aiNewChat);
+  const selectedNoteId = useStore((state) => state.selectedNoteId);
+  const aiNoteConversationMap = useStore((state) => state.aiNoteConversationMap);
+  // 列表高亮必须与对话正文（AIChatView）用同一个"当前对话"公式，否则会出现
+  // "高亮的是 A、正文显示的是 B"的错位——这正是 AI 功能页列表切换的 bug 根源。
+  // 浮窗没有列表所以从不暴露此错位。
+  const aiCurrentConvId = selectedNoteId != null
+    ? (aiNoteConversationMap?.[String(selectedNoteId)] || null)
+    : (aiActiveConvId || null);
   const notesAll = useStore((state) => state.notes);
   const timelineFilter = useStore((state) => state.timelineFilter);
   const setTimelineFilter = useStore((state) => state.setTimelineFilter);
@@ -577,7 +585,7 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
           { id: 0, name: t('settings.general'), icon: <SettingsIcon /> },
           { id: 1, name: t('settings.appearance'), icon: <PaletteIcon /> },
           { id: 2, name: t('settings.shortcuts'), icon: <KeyboardIcon /> },
-          { id: 3, name: t('settings.ai'), icon: <AIIcon /> },
+          { id: 3, name: t('settings.ai'), icon: <FlotaAIIcon sx={{ fontSize: 22 }} /> },
           { id: 4, name: t('settings.stt'), icon: <STTIcon /> },
           { id: 5, name: t('settings.memory'), icon: <MemoryIcon /> },
           { id: 6, name: t('settings.cloud'), icon: <CloudIcon /> },
@@ -647,7 +655,7 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
                 {aiConversations.map((conv) => (
                   <ListItemButton
                     key={conv.id}
-                    selected={aiMultiSelectMode ? aiSelectedConvIds.includes(conv.id) : conv.id === aiActiveConvId}
+                    selected={aiMultiSelectMode ? aiSelectedConvIds.includes(conv.id) : conv.id === aiCurrentConvId}
                     onClick={() => {
                       if (aiMultiSelectMode) {
                         toggleAiSelected(conv.id);
@@ -657,7 +665,7 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
                     }}
                     onContextMenu={(e) => handleAiContextMenu(e, conv)}
                     sx={{
-                      ...sidebarItemSx(aiMultiSelectMode ? aiSelectedConvIds.includes(conv.id) : conv.id === aiActiveConvId),
+                      ...sidebarItemSx(aiMultiSelectMode ? aiSelectedConvIds.includes(conv.id) : conv.id === aiCurrentConvId),
                       '&:hover .del-btn': { opacity: 1 },
                     }}
                   >
@@ -674,7 +682,7 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
                       primary={(
                         <Typography noWrap sx={{
                           fontSize: 13,
-                          fontWeight: conv.id === aiActiveConvId ? 600 : 400
+                          fontWeight: conv.id === aiCurrentConvId ? 600 : 400
                         }}>
                           {conv.title || '新对话'}
                         </Typography>
@@ -733,7 +741,7 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
                   }
                   closeAiContextMenu();
                 }}
-                disabled={aiMultiSelectMode || !aiContextMenu?.conv?.id || aiContextMenu?.conv?.id === aiActiveConvId}
+                disabled={aiMultiSelectMode || !aiContextMenu?.conv?.id || aiContextMenu?.conv?.id === aiCurrentConvId}
               >
                 切换到此对话
               </MenuItem>

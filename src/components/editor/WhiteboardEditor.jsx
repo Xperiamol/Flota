@@ -27,6 +27,7 @@ import { canvasToPngBlob } from '../common/ImagePreviewModal'
 import '@excalidraw/excalidraw/index.css'
 import logger from '../../utils/logger'
 import { renderMermaidNative } from '../../utils/diagrams/mermaidNative'
+import { getWhiteboardPreviewKey } from '../../utils/whiteboardPreview'
 
 const createExcalidrawGlassTokens = ({ isDark, accent }) => {
   const islandBg = isDark
@@ -773,8 +774,8 @@ const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
     },
     '& .excalidraw .Dialog, & .excalidraw .Modal__content, & .excalidraw .HelpDialog, & .excalidraw .ConfirmDialog': {
       backgroundColor: `${menuBg} !important`,
-      backdropFilter: 'blur(22px) saturate(180%)',
-      WebkitBackdropFilter: 'blur(22px) saturate(180%)',
+      backdropFilter: 'blur(20px) saturate(180%)',
+      WebkitBackdropFilter: 'blur(20px) saturate(180%)',
       border: menuBorder,
       boxShadow: `${menuShadow} !important`,
       borderRadius: '16px !important',
@@ -800,10 +801,18 @@ const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
       boxShadow: `${menuShadow} !important`,
       borderRadius: '14px !important',
     },
+    '& .excalidraw section.App-mobile-menu, & .excalidraw .App-mobile-menu, & .excalidraw section.App-mobile-menu .panelColumn, & .excalidraw section.App-mobile-menu .picker-content, & .excalidraw section.App-mobile-menu .picker-container': {
+      backgroundColor: `${menuBg} !important`,
+      backdropFilter: 'blur(20px) saturate(180%)',
+      WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+      border: menuBorder,
+      boxShadow: `${menuShadow} !important`,
+      borderRadius: '14px !important',
+    },
     '& .excalidraw .picker .color-picker-content--default': {
       background: 'transparent !important',
     },
-    '& .excalidraw .picker-content, & .excalidraw .picker-container': {
+    '& .excalidraw .picker .picker-content, & .excalidraw .picker .picker-container': {
       background: 'transparent !important',
     },
     '& .excalidraw input, & .excalidraw textarea, & .excalidraw select': {
@@ -1814,8 +1823,8 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
       // 使用 SVG→Canvas 方式保证清晰度，scale: 2 兼顾质量与文件大小
       try {
         const note = notes?.find(n => n.id === currentNoteId)
-        const syncId = note?.sync_id
-        if (syncId && window.electronAPI?.whiteboard?.savePreview) {
+        const previewKey = getWhiteboardPreviewKey(note || { id: currentNoteId })
+        if (previewKey && window.electronAPI?.whiteboard?.savePreview) {
           exportToSvg({
             elements,
             appState: { ...appState, exportWithDarkMode: false },
@@ -1850,7 +1859,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
                 img.src = svgUrl
               })
             })
-            .then(base64 => window.electronAPI.whiteboard.savePreview(syncId, base64))
+            .then(base64 => window.electronAPI.whiteboard.savePreview(previewKey, base64))
             .catch(err => console.warn('[WhiteboardEditor] 预览图导出失败:', err))
         }
       } catch (_) { /* 预览导出失败不影响主保存 */ }
@@ -1956,6 +1965,11 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
 
       detail.handled = true
       try {
+        // ── 事务化（问题5）：先把"生成 + 持久化"全部跑通，最后才提交到画布 UI。
+        // 任何一步失败都在提交 UI 之前抛出，这样既不会留下空白/半保存画布，
+        // 也不会出现"UI 显示成功但其实没存盘"的假成功。
+
+        // 1) 取最新场景 + 生成（纯计算，不碰 UI）
         const existingElements = excalidrawAPI.getSceneElements().filter(e => !e.isDeleted)
         const appState = excalidrawAPI.getAppState()
         const files = excalidrawAPI.getFiles()
@@ -1978,40 +1992,20 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
           appState: result.appState,
           files: nextFiles,
         }
-        latestSceneRef.current = nextScene
-        hasUnsavedChangesRef.current = true
-        setHasUnsavedChanges(true)
-
-        // 与切换笔记一致，走 initialData + 重挂载路径，确保自研生成器产出的元素
-        // 也能被 Excalidraw 内核正确归一化、立即渲染（仅 updateScene 在缺 index 等字段时会失败）
-        isApplyingRemoteDataRef.current = true
-        setInitialData(nextScene)
-        setExcalidrawKey(`excalidraw-${noteId || 'unknown'}-${Date.now()}`)
-
-        // 把生成器产出的图片资源注入 Excalidraw 资源系统（block-beta/gantt/pie 等回退会产 image 元素）
-        if (excalidrawAPI?.addFiles && result.fileMap && Object.keys(result.fileMap).length > 0) {
-          try {
-            const filesPayload = Object.values(result.fileMap).filter(Boolean)
-            if (filesPayload.length > 0) excalidrawAPI.addFiles(filesPayload)
-          } catch (fileErr) {
-            logger.warn('[WhiteboardEditor] addFiles 失败:', fileErr)
-          }
-        }
-
-        let persistedFileMap = {}
-        if (nextFiles && Object.keys(nextFiles).length > 0) {
-          const saveImagesResult = await window.electronAPI.whiteboard.saveImages(nextFiles)
-          if (saveImagesResult.success) {
-            persistedFileMap = saveImagesResult.data || {}
-          } else {
-            throw new Error(saveImagesResult.error || '保存图片失败')
-          }
-        }
-
         const persistedAppState = {
           viewBackgroundColor: nextScene.appState?.viewBackgroundColor,
           currentItemFontFamily: nextScene.appState?.currentItemFontFamily,
           gridSize: nextScene.appState?.gridSize,
+        }
+
+        // 2) 持久化：先存图片拿到 fileName 引用，再写 note。任一失败直接抛出，UI 不动。
+        let persistedFileMap = {}
+        if (nextFiles && Object.keys(nextFiles).length > 0) {
+          const saveImagesResult = await window.electronAPI.whiteboard.saveImages(nextFiles)
+          if (!saveImagesResult.success) {
+            throw new Error(saveImagesResult.error || '保存图片失败')
+          }
+          persistedFileMap = saveImagesResult.data || {}
         }
 
         const updateResult = await updateNote(noteId, {
@@ -2024,6 +2018,24 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
         })
         if (!updateResult?.success) {
           throw new Error(updateResult?.error || '保存画布失败')
+        }
+
+        // 3) 提交到画布 UI（持久化已成功，此后不会再失败）。
+        // 与切换笔记一致，走 initialData + 重挂载路径，确保自研生成器产出的元素
+        // 也能被 Excalidraw 内核正确归一化、立即渲染（仅 updateScene 在缺 index 等字段时会失败）
+        latestSceneRef.current = nextScene
+        isApplyingRemoteDataRef.current = true
+        setInitialData(nextScene)
+        setExcalidrawKey(`excalidraw-${noteId || 'unknown'}-${Date.now()}`)
+
+        // 把生成器产出的图片资源注入 Excalidraw 资源系统（block-beta/gantt/pie 等回退会产 image 元素）
+        if (excalidrawAPI?.addFiles && result.fileMap && Object.keys(result.fileMap).length > 0) {
+          try {
+            const filesPayload = Object.values(result.fileMap).filter(Boolean)
+            if (filesPayload.length > 0) excalidrawAPI.addFiles(filesPayload)
+          } catch (fileErr) {
+            logger.warn('[WhiteboardEditor] addFiles 失败:', fileErr)
+          }
         }
 
         lastSavedSceneRef.current = serializeScene(

@@ -35,16 +35,37 @@ const runToolCalls = async ({
     try { args = JSON.parse(tc.function.arguments || '{}'); } catch (_) {}
 
     onChunk({ type: 'tool_start', name: fnName, args });
-    logger?.info?.('AIChatService', `Executing tool: ${fnName}`, args);
+    logger?.info?.('AIChatService', `Executing tool: ${fnName}`, {
+      requestId: options.requestId || null,
+      conversationId: options.conversationId || null,
+      name: fnName,
+    });
 
     const toolResult = await executeTool(fnName, args, {
       requireConfirmation: options.requireConfirmation !== false,
       disabledTools: options.disabledTools,
+      actionContext: options.actionContext || null,
       onChunk,
       abortSignal
     });
     // 通知前端时剔除 dataURL，避免对话历史持久化数 MB 的 base64
     const parsed = safeJsonParse(toolResult);
+    if (parsed && (parsed.error || parsed.success === false)) {
+      logger?.warn?.('AIChatService', `Tool failed: ${fnName}`, {
+        requestId: options.requestId || null,
+        conversationId: options.conversationId || null,
+        name: fnName,
+        actionId: parsed.actionId || null,
+        error: parsed.error || null,
+      });
+    } else if (parsed && parsed.requiresConfirmation) {
+      logger?.info?.('AIChatService', `Tool pending: ${fnName}`, {
+        requestId: options.requestId || null,
+        conversationId: options.conversationId || null,
+        name: fnName,
+        actionId: parsed.actionId || null,
+      });
+    }
     const publicResult = parsed && parsed.delivered_image
       ? JSON.stringify({ ok: true, path: parsed.path })
       : toolResult;

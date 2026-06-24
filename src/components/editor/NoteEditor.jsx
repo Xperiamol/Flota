@@ -22,7 +22,6 @@ import {
 } from '@mui/material'
 import {
   AutoMode as AutoSaveIcon,
-  AutoAwesome as AIIcon,
   Explore as NavIcon,
   InfoOutlined as RelatedIcon,
   PushPin as PinIcon,
@@ -56,6 +55,7 @@ import BacklinksPanel from './BacklinksPanel'
 import UnlinkedMentionsPanel from './UnlinkedMentionsPanel'
 import WikiLinkHoverPreview from './WikiLinkHoverPreview'
 import AICommandCenter from '../ai/AICommandCenter'
+import FlotaAIIcon from '../common/FlotaAIIcon'
 import NoteNavigator from './NoteNavigator'
 import { useDebouncedSave } from '../../hooks/useDebouncedSave'
 import { imageAPI } from '../../api/imageAPI'
@@ -752,47 +752,13 @@ const NoteEditor = () => {
     // 而 SyntheticEvent 在事件回调结束后会被回收，直接 event.currentTarget 会变 undefined。
     const target = event?.currentTarget || null
     setRelatedAnchorEl((prev) => {
-      if (prev) {
-        // 用户主动点击关闭：抑制 hover 自动重开，直到鼠标离开按钮
-        relatedHoverSuppressedRef.current = true
-        return null
-      }
+      if (prev) return null
       return target
     })
   }
 
   const handleCloseRelatedContext = () => {
     setRelatedAnchorEl(null)
-  }
-
-  // 笔记详情 Popover：hover 触发开/关，鼠标可在按钮与 Popover 之间穿梭
-  const relatedHoverTimerRef = useRef(0)
-  const relatedHoverSuppressedRef = useRef(false)
-  const cancelRelatedHoverTimer = () => {
-    if (relatedHoverTimerRef.current) {
-      clearTimeout(relatedHoverTimerRef.current)
-      relatedHoverTimerRef.current = 0
-    }
-  }
-  useEffect(() => () => cancelRelatedHoverTimer(), [])
-  const handleRelatedTriggerEnter = (event) => {
-    if (relatedHoverSuppressedRef.current) return // click 关闭后压制
-    cancelRelatedHoverTimer()
-    const target = event.currentTarget
-    relatedHoverTimerRef.current = setTimeout(() => {
-      setRelatedAnchorEl((prev) => prev || target)
-    }, 220)
-  }
-  const handleRelatedHoverLeave = () => {
-    // 鼠标离开按钮后解除压制（下次 hover 才能再开）
-    relatedHoverSuppressedRef.current = false
-    cancelRelatedHoverTimer()
-    relatedHoverTimerRef.current = setTimeout(() => {
-      setRelatedAnchorEl(null)
-    }, 240)
-  }
-  const handleRelatedPaperEnter = () => {
-    cancelRelatedHoverTimer()
   }
 
   // 跳转到笔记后定位到指定章节（按标题文本匹配，大小写不敏感）
@@ -1824,13 +1790,11 @@ const NoteEditor = () => {
       icon: <RelatedIcon sx={{ fontSize: 18 }} />,
       active: relatedOpen,
       onClick: handleToggleRelatedContext,
-      onMouseEnter: handleRelatedTriggerEnter,
-      onMouseLeave: handleRelatedHoverLeave,
     },
     {
       key: 'ai',
       label: resolvedAICommandCenterOpen ? '关闭 AI 小窗' : '打开 AI 小窗',
-      icon: <AIIcon sx={{ fontSize: 18 }} />,
+      icon: <FlotaAIIcon sx={{ fontSize: 20 }} />,
       active: resolvedAICommandCenterOpen,
       onClick: () => {
         if (isStandaloneMode) {
@@ -2753,13 +2717,9 @@ const NoteEditor = () => {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         disableRestoreFocus
-        sx={{ pointerEvents: 'none' }}
         slotProps={{
           paper: {
-            onMouseEnter: handleRelatedPaperEnter,
-            onMouseLeave: handleRelatedHoverLeave,
             sx: (theme) => ({
-              pointerEvents: 'auto',
               mt: 0.25,
               width: 336,
               maxWidth: 'calc(100vw - 32px)',

@@ -1,4 +1,7 @@
 // 动态导入 aiExcalidrawGenerator 以避免首屏加载 Excalidraw 依赖（~1.3MB）
+import { stripMarkdownToPreviewText } from './markdownTextUtils'
+import logger from './logger'
+
 const loadAIGenerator = () =>
   import('./aiExcalidrawGenerator').then(m => m.aiGenerateExcalidrawElements)
 
@@ -15,6 +18,20 @@ export const WHITEBOARD_AI_INTENTS = {
 
 export const isWhiteboardNote = (note) => (note?.note_type || 'markdown') === 'whiteboard'
 
+const WHITEBOARD_DIAGRAM_TYPE_LABELS = {
+  auto: '',
+  mindmap: '思维导图',
+  flowchart: '流程图',
+  architecture: '架构图',
+  sequence: '时序图',
+  hierarchy: '层级结构图',
+  fishbone: '鱼骨图',
+  timeline: '时间轴',
+  gantt: '甘特图',
+  quadrant: '四象限图',
+  pie: '饼图',
+}
+
 const truncateText = (text = '', max = 1200) => {
   const value = String(text || '').trim()
   return value.length > max ? `${value.slice(0, max)}...` : value
@@ -30,6 +47,45 @@ const getRecentConversationContext = (messages = [], prompt = '') => {
       role: message.role,
       content: truncateText(message.content, 1000),
     }))
+}
+
+const buildCurrentNoteContext = (note = null) => {
+  if (!note || isWhiteboardNote(note)) return null
+  const raw = typeof note.content === 'string' ? note.content : ''
+  const preview = stripMarkdownToPreviewText(raw).slice(0, 1800).trim()
+  return {
+    id: note.id,
+    title: String(note.title || '').trim(),
+    noteType: note.note_type || 'markdown',
+    contentPreview: preview,
+  }
+}
+
+const buildWhiteboardGenerationPrompt = ({ prompt, diagramType = 'auto', sourceNote = null }) => {
+  const text = String(prompt || '').trim()
+  const typeKey = String(diagramType || 'auto').trim().toLowerCase()
+  const typeLabel = WHITEBOARD_DIAGRAM_TYPE_LABELS[typeKey] || ''
+  const currentNoteContext = buildCurrentNoteContext(sourceNote)
+
+  return [
+    typeLabel ? `以${typeLabel}呈现：${text}` : text,
+    currentNoteContext
+      ? `参考当前笔记内容生成，不要替换成其他故事或通用示例。\n当前笔记标题：${currentNoteContext.title || '未命名'}\n当前笔记内容摘要：${currentNoteContext.contentPreview || '（空）'}`
+      : ''
+  ].filter(Boolean).join('\n\n')
+}
+
+const resolveNoteById = (notes = [], id) => {
+  if (id == null || id === '') return null
+  return (Array.isArray(notes) ? notes : []).find((note) => String(note?.id) === String(id)) || null
+}
+
+// 从待确认动作的上下文快照里取出"动作被提出时所在的笔记 id"。
+// 用户确认前可能已经切走，快照比实时 currentNote 更能代表用户当时的真实意图。
+const resolveContextNoteId = (actionContext) => {
+  if (!actionContext || typeof actionContext !== 'object') return null
+  const id = actionContext.selectedNoteId ?? actionContext.currentNoteId
+  return id == null || id === '' ? null : id
 }
 
 export const normalizeWhiteboardAction = (action, fallback = WHITEBOARD_AI_ACTIONS.APPEND) => {
@@ -53,6 +109,19 @@ export const inferWhiteboardActionFromPrompt = (prompt = '') => {
   }
 
   return WHITEBOARD_AI_ACTIONS.APPEND
+}
+
+const deriveFallbackWhiteboardTitle = (prompt = '', note = null) => {
+  const text = String(prompt || '').trim()
+  const baseTitle = String(note?.title || '').trim()
+
+  if (/思维导图|脑图/i.test(text)) return baseTitle ? `${baseTitle}·思维导图` : '思维导图'
+  if (/流程图/i.test(text)) return baseTitle ? `${baseTitle}·流程图` : '流程图'
+  if (/架构图/i.test(text)) return baseTitle ? `${baseTitle}·架构图` : '架构图'
+  if (/时序图/i.test(text)) return baseTitle ? `${baseTitle}·时序图` : '时序图'
+  if (/甘特图/i.test(text)) return baseTitle ? `${baseTitle}·甘特图` : '甘特图'
+  if (/鱼骨图/i.test(text)) return baseTitle ? `${baseTitle}·鱼骨图` : '鱼骨图'
+  return baseTitle ? `${baseTitle}·画布` : '未命名画布'
 }
 
 const trimInline = (text = '', max = 32) => {
@@ -212,7 +281,7 @@ export const classifyWhiteboardIntent = async ({ note, prompt, messages = [] }) 
     : ''
   const res = await window.electronAPI.ai.chat(
     buildIntentClassificationMessages({ prompt, note, messages, currentWhiteboardSummary }),
-    { temperature: 0, maxTokens: 220 }
+    { temperature: 0 }
   )
 
   if (!res?.success || !res.data?.content) {
@@ -233,7 +302,7 @@ export const groundWhiteboardRequest = async ({ note, prompt, messages = [] }) =
     : ''
   const res = await window.electronAPI.ai.chat(
     buildGroundingMessages({ prompt, note, messages, currentWhiteboardSummary, actionHint }),
-    { temperature: 0, maxTokens: 400 }
+    { temperature: 0 }
   )
 
   if (!res?.success || !res.data?.content) {
@@ -356,6 +425,14 @@ export const generateWhiteboardElementsByAction = async ({
   }
 }
 
+const normalizeWhiteboardGenerationError = (error) => {
+  const message = String(error?.message || error || '')
+  if (/fetch failed|network|网络|ECONN|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|socket|timeout|超时|aborted|abort/i.test(message)) {
+    return new Error('画布生成失败：网络请求失败，请检查网络或 AI 配置后重试')
+  }
+  return error instanceof Error ? error : new Error(message || '画布生成失败')
+}
+
 export const generateAndAppendWhiteboardElements = async ({ prompt, elements = [], appState = {}, fileMap = {} }) =>
   generateWhiteboardElementsByAction({
     action: WHITEBOARD_AI_ACTIONS.APPEND,
@@ -430,143 +507,144 @@ const buildWhiteboardActionMessage = (result = {}) => {
   return `已在当前画布插入 ${result.addedCount || 0} 个元素。${warningText}`
 }
 
-const buildCreateWhiteboardMessages = ({ prompt, messages = [] }) => {
-  const recentMessages = getRecentConversationContext(messages, prompt)
-  return [
-    {
-      role: 'system',
-      content: `你是 Flota 的"新建画布"判定器。用户当前不在画布笔记里。判断用户最新一句话是否想"新建一张画布/白板并在其中绘制图形"（如流程图、架构图、思维导图、时序图等），并提炼要绘制的内容。
-
-只输出一个 JSON 对象，禁止解释、Markdown、代码块。
-
-输出格式：
-{
-  "create": true | false,
-  "title": "为这张画布起一个简短标题(<=16字)",
-  "groundedRequest": "可直接交给图表生成器使用的完整中文说明，包含真实主题、节点、关系或步骤",
-  "reason": "一句简短原因"
-}
-
-规则：
-1. 只有当用户明确想"生成/绘制/画出"一张图或画布时，create 才为 true。
-2. 普通问答、总结、写文字、写文档，create 一律为 false。
-3. 如果用户明确指定图表类型（如"画甘特图/鱼骨图/思维导图"），把偏好写在 groundedRequest 开头，如"以鱼骨图呈现：……"。
-4. groundedRequest 必须是描述要画什么的中文说明，不要直接输出 Mermaid 或其他 DSL。
-5. 有歧义时 create 设为 false。`
-    },
-    {
-      role: 'user',
-      content: JSON.stringify({ prompt, recentConversation: recentMessages })
-    }
-  ]
-}
-
-export const groundNewWhiteboardRequest = async ({ prompt, messages = [] }) => {
-  const res = await window.electronAPI.ai.chat(
-    buildCreateWhiteboardMessages({ prompt, messages }),
-    { temperature: 0, maxTokens: 400 }
-  )
-  if (!res?.success || !res.data?.content) {
-    throw new Error(res?.error || '新建画布判定失败')
-  }
-  const parsed = parseModelJsonObject(res.data.content, '新建画布判定结果格式错误')
-  return {
-    create: parsed?.create === true,
-    title: String(parsed?.title || '').trim(),
-    groundedRequest: String(parsed?.groundedRequest || '').trim(),
-    reason: String(parsed?.reason || '').trim(),
-  }
-}
-
-// 在 AI 对话里"新建一张画布并生成内容"。当前笔记不是画布时才触发。
-export const handleCreateWhiteboardRequest = async ({ note, prompt, messages = [], createNote, updateNote, loadNotes }) => {
-  if (isWhiteboardNote(note)) return null
-  if (typeof createNote !== 'function' || typeof updateNote !== 'function') return null
-
-  // 不做正则预筛，直接由模型 grounding 判定 create=true/false。
-  let groundedRequest = ''
-  let title = ''
-  try {
-    const grounded = await groundNewWhiteboardRequest({ prompt, messages })
-    if (!grounded.create) return null
-    groundedRequest = grounded.groundedRequest
-    title = grounded.title
-  } catch (_) {
-    // 模型失败不再凭关键词兜底，直接走通用 chat 分支
-    return null
+export const executeCreateWhiteboardToolAction = async ({
+  args = {},
+  currentNote = null,
+  notes = [],
+  actionContext = null,
+  createNote,
+  deleteNote,
+  updateNote,
+  loadNotes,
+}) => {
+  if (typeof createNote !== 'function' || typeof updateNote !== 'function') {
+    throw new Error('缺少画布创建能力')
   }
 
-  const generationPrompt = groundedRequest || String(prompt || '').trim()
+  const rawPrompt = String(args.prompt || '').trim()
+  if (!rawPrompt) throw new Error('缺少画布生成描述')
 
-  // 1) 新建空白画布笔记
+  const useCurrentNoteContext = args.use_current_note_context !== false
+  const snapshotNote = resolveNoteById(notes, resolveContextNoteId(actionContext))
+  const explicitSourceNote = resolveNoteById(notes, args.source_note_id)
+  const sourceNote = explicitSourceNote || (useCurrentNoteContext ? (snapshotNote || currentNote) : null)
+  const title = String(args.title || '').trim() || deriveFallbackWhiteboardTitle(rawPrompt, sourceNote)
+  const generationPrompt = buildWhiteboardGenerationPrompt({
+    prompt: rawPrompt,
+    diagramType: args.diagram_type || 'auto',
+    sourceNote,
+  })
+
   const created = await createNote({
     note_type: 'whiteboard',
-    title: title || '未命名画布',
+    title,
     content: buildWhiteboardContent({}),
+    selectAfterCreate: false,
   })
   if (!created?.success || !created.data?.id) {
     throw new Error(created?.error || '创建画布笔记失败')
   }
-  const newNote = created.data
 
-  // 2) 从零生成画布元素并写入
-  const result = await applyWhiteboardGenerationToNote({
-    note: newNote,
-    prompt: generationPrompt,
-    action: WHITEBOARD_AI_ACTIONS.REPLACE,
-    updateNote,
-  })
+  const newNote = created.data
+  let result
+  try {
+    result = await applyWhiteboardGenerationToNote({
+      note: newNote,
+      prompt: generationPrompt,
+      action: WHITEBOARD_AI_ACTIONS.REPLACE,
+      updateNote,
+    })
+  } catch (error) {
+    if (typeof deleteNote === 'function') {
+      try {
+        await deleteNote(newNote.id)
+      } catch (cleanupError) {
+        console.warn('[executeCreateWhiteboardToolAction] 清理失败的空白画布失败:', cleanupError)
+      }
+    }
+    throw normalizeWhiteboardGenerationError(error)
+  }
+
   await loadNotes?.()
 
   return {
-    content: `已创建画布《${newNote.title || '未命名画布'}》并生成 ${result.addedCount || 0} 个元素。`,
-    result,
+    success: true,
     noteId: newNote.id,
+    title: newNote.title || title,
+    addedCount: result.addedCount || 0,
+    message: `已创建画布《${newNote.title || title}》并生成 ${result.addedCount || 0} 个元素。`,
+    result,
   }
 }
 
-export const handleWhiteboardAIRequest = async ({ note, prompt, messages = [], updateNote, loadNotes }) => {
-  if (!isWhiteboardNote(note)) {
-    return null
+export const executeUpdateWhiteboardToolAction = async ({
+  args = {},
+  currentNote = null,
+  notes = [],
+  actionContext = null,
+  updateNote,
+  loadNotes,
+  setSelectedNoteId,
+}) => {
+  if (typeof updateNote !== 'function') {
+    throw new Error('缺少画布更新能力')
   }
 
-  // 不再做正则预筛，直接交给模型分类。失败时保守回退为 chat（不动画布）。
-  try {
-    const intentResult = await classifyWhiteboardIntent({ note, prompt, messages })
-    if (intentResult.intent !== WHITEBOARD_AI_INTENTS.WHITEBOARD) {
-      return null
+  const rawPrompt = String(args.prompt || '').trim()
+  if (!rawPrompt) throw new Error('缺少画布修改描述')
+
+  // 目标画布解析（问题5）：
+  // - 显式传了 target_note_id：必须命中且是画布，否则直接失败，绝不静默回退到当前画布；
+  // - 未传 target_note_id：优先用动作被提出时的上下文快照笔记，其次回退当前画布。
+  let targetNote
+  if (args.target_note_id != null && args.target_note_id !== '') {
+    targetNote = resolveNoteById(notes, args.target_note_id)
+    if (!targetNote) {
+      throw new Error('未找到指定的目标画布，可能已被删除')
     }
-  } catch (_) {
-    return null
+  } else {
+    const snapshotNote = resolveNoteById(notes, resolveContextNoteId(actionContext))
+    targetNote = snapshotNote || currentNote
+  }
+  if (!targetNote || !isWhiteboardNote(targetNote)) {
+    throw new Error('未找到可修改的目标画布')
   }
 
-  let action = inferWhiteboardActionFromPrompt(prompt)
-  let groundedRequest = ''
-  try {
-    const grounded = await groundWhiteboardRequest({ note, prompt, messages })
-    action = normalizeWhiteboardAction(grounded.action, action)
-    groundedRequest = grounded.groundedRequest
-  } catch (error) {
-    groundedRequest = ''
-  }
+  const action = normalizeWhiteboardAction(
+    args.action,
+    inferWhiteboardActionFromPrompt(rawPrompt)
+  )
+  const generationPrompt = buildWhiteboardGenerationPrompt({
+    prompt: rawPrompt,
+    diagramType: args.diagram_type || 'auto',
+    sourceNote: null,
+  })
 
-  const generationPrompt = groundedRequest || String(prompt || '').trim()
-
+  // 若目标画布正在编辑器中打开，优先走实时 scene（问题8），避免用持久化的旧 content
+  // 覆盖用户未保存的改动；编辑器未接管时（detail.handled 仍为 false）才回退读持久化内容。
   const activeResult = await requestActiveWhiteboardGeneration({
-    noteId: note.id,
+    noteId: targetNote.id,
     prompt: generationPrompt,
     action,
   })
   const result = activeResult || await applyWhiteboardGenerationToNote({
-    note,
+    note: targetNote,
     prompt: generationPrompt,
     action,
     updateNote,
   })
+
+  setSelectedNoteId?.(targetNote.id)
   await loadNotes?.()
 
   return {
-    content: buildWhiteboardActionMessage(result),
+    success: true,
+    noteId: targetNote.id,
+    title: targetNote.title || '未命名画布',
+    addedCount: result.addedCount || 0,
+    action,
+    message: buildWhiteboardActionMessage(result),
     result,
   }
 }
+

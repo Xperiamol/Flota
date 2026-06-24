@@ -14,32 +14,26 @@
 import logger from './logger'
 import { computeOffset, DIAGRAM_THEME } from './diagrams/shared'
 import { renderMermaidNative } from './diagrams/mermaidNative'
-import { renderMindmap } from './diagrams/mindmap'
-import { renderHierarchy } from './diagrams/hierarchy'
-import { renderGantt } from './diagrams/gantt'
-import { renderFishbone } from './diagrams/fishbone'
-import { renderTimeline, renderQuadrant, renderPie } from './diagrams/extras'
-import { renderComposition } from './diagrams/compositionRenderer'
-import { IR_VERSION, KNOWN_BLOCK_KINDS, getBlockTier, validateIR, wrapSingleBlockAsIR } from './diagrams/composition'
+import { renderComposer } from './diagrams/composer'
+import { KNOWN_BLOCK_KINDS } from './diagrams/composition'
 
 // ─── 已注册图表类型元信息（供 AI 选用）─────────────
 //
 // 每个类型显式标注 tier：
-//   tier 1 — 官方 Mermaid 原生矢量（flowchart/sequence/class/state/er）
-//   tier 2 — 自研矢量渲染（mindmap/fishbone/gantt/timeline/quadrant/pie）
-//   tier 3 — 官方 Mermaid 图片快照（architecture，目前唯一）
+//   tier 1 — 官方 Mermaid 原生矢量（flowchart/sequence/class/state/er/hierarchy->flowchart）
+//   tier 2 — 自研矢量渲染（fishbone/gantt/timeline/quadrant/pie）
+//   tier 3 — 自研 composer 通用合成引擎（思维导图/总览/原型等一切默认走它）
 
 const BLOCK_TYPES = {
   flowchart: { label: '流程图', tier: 1, use: '步骤流程、分支决策', dslHint: 'flowchart TD\n  A[开始] --> B{判断}\n  B -->|是| C[执行]' },
   sequence: { label: '时序图', tier: 1, use: '多角色交互、API 调用', dslHint: 'sequenceDiagram\n  participant 用户\n  participant 服务\n  用户->>服务: 请求' },
   class: { label: '类图', tier: 1, use: '面向对象建模', dslHint: 'classDiagram\n  class Order {\n    +id\n    +submit()\n  }' },
   state: { label: '状态图', tier: 1, use: '状态机、UI 状态切换', dslHint: 'stateDiagram-v2\n  [*] --> 待处理\n  待处理 --> 进行中: 受理' },
-  er: { label: 'ER 图', tier: 1, use: '数据库表设计、实体关系', dslHint: 'erDiagram\n  CUSTOMER ||--o{ ORDER : 下单' },
+  er: { label: 'ER 图', tier: 1, use: '数据库表设计、实体关系', dslHint: 'erDiagram\n  CUSTOMER ||--o{ ORDER : places\n  CUSTOMER {\n    int id PK\n    string name\n    string email\n  }\n  ORDER {\n    int id PK\n    int customer_id FK\n    decimal total\n  }' },
 
-  mindmap: { label: '思维导图', tier: 2, use: '主题归纳、知识树', dslHint: 'mindmap\n  root((中心))\n    分支A\n      子节点' },
   hierarchy: {
     label: '层级结构图',
-    tier: 2,
+    tier: 1,
     use: '栏目结构、组织架构、分类树、主题分层',
     dslHint: 'hierarchy\n科技日报\n  - 头版要闻\n    - 政策解读\n  - 海外科技新突破\n    - 国际科技',
   },
@@ -57,68 +51,6 @@ const BLOCK_TYPES = {
   },
 }
 
-// ─── Stage A：画布规划（outline） ───────────────────
-
-const buildOutlineMessages = (userRequest) => {
-  const tierLabel = (t) => (t === 1 ? '★Tier1 原生可编辑' : t === 2 ? '☆Tier2 自研可编辑' : '◐Tier3 图片快照（不可拆图元）')
-  const blockList = Object.entries(BLOCK_TYPES).map(([k, v]) => `- ${k} (${v.label} | ${tierLabel(v.tier || getBlockTier(k))}): ${v.use}`).join('\n')
-  return [
-    {
-      role: 'system',
-      content: `你是 Flota 画布规划师，负责为用户素材设计一张完整的画布。
-你不是单选一种图，而是规划"由哪些区块/便签/分组/连接线组合成"。
-
-可选区块类型 (block)（带能力分层 tier）：
-${blockList}
-
-类型选择优先级（重要）：
-- 优先选 Tier1：原生可编辑、视觉最佳，能用就用
-- 其次选 Tier2：自研可编辑，覆盖 Tier1 不擅长的语义（如 思维导图/鱼骨/时间轴/四象限/饼图/甘特）
-- 仅当用户**明确**要求架构图/分层架构/能力地图/技术栈分层时，才使用 Tier3 (architecture)
-  Tier3 是图片快照，不可拆图元编辑，用户只能改 DSL 重画。不要为了"看起来高大上"滥用 Tier3。
-
-也可以使用：
-- freeform：自由节点边图，给一个 graph: { nodes:[{id,label}], edges:[{from,to,label?}] }
-- group：分组框（包住 children id 列表，画带标题的虚线圆角框）
-- sticky：便签便条 (color: yellow|pink|green|blue)
-- callout：文字标注/说明气泡
-- text：纯文字标题
-
-返回严格 JSON，禁止任何 Markdown 标记：
-{
-  "title": "<整张画布的标题，可选>",
-  "nodes": [
-    {
-      "id": "n1",
-      "kind": "block" | "freeform" | "group" | "sticky" | "callout" | "text",
-      "blockType": "<仅当 kind=block 时填，从可选区块类型里选一个>",
-      "summary": "<这个区块要画什么的中文说明，不要在 outline 阶段写 DSL>",
-      "graph": { "nodes":[...], "edges":[...] }, // 仅当 kind=freeform 时填
-      "children": ["n2","n3"], // 仅 group
-      "text": "...", // sticky/callout/text 必填
-      "color": "yellow", // sticky 可选
-      "title": "...", // group 标题
-      "layout": { "region": "left" | "right" | "top" | "bottom" | "center" | "absolute", "x": 0, "y": 0 }
-    }
-  ],
-  "connectors": [
-    { "from": "n1", "to": "n2", "label": "触发", "dashed": false }
-  ]
-}
-
-规划原则：
-1. 单一主题/单一图表 → 只输出 1 个 block 节点；不要为简单需求强行拼装
-2. 复合主题（如"项目作战图：流程+排期+根因"）→ 多 block + group 包裹 + connector 串联
-3. 节点 id 用 n1/n2/... 短字符串，禁止重复
-4. 已注册类型优先用 block；只有没合适类型时才用 freeform
-5. layout.region 默认按"主图 center / 辅图 left|right / 标题 top / 注解 bottom"安排
-6. 不要在 outline 里写 DSL，只写 summary。DSL 在下一阶段单独生成
-7. 禁止生成"图表规范/Mermaid 介绍"等元信息节点`,
-    },
-    { role: 'user', content: userRequest },
-  ]
-}
-
 const safeJsonExtract = (text) => {
   if (!text) return null
   let s = String(text).trim()
@@ -127,14 +59,89 @@ const safeJsonExtract = (text) => {
   const end = s.lastIndexOf('}')
   if (start === -1 || end <= start) return null
   try { return JSON.parse(s.slice(start, end + 1)) } catch (e) {
-    logger.warn('[outline] JSON 解析失败:', e.message)
+    logger.warn('[composer] JSON 解析失败:', e.message)
     return null
   }
 }
 
+const buildComposerRepairMessages = (userRequest, brokenOutput) => [
+  {
+    role: 'system',
+    content: `你是 Flota 的 JSON 修复器。你的唯一任务是把一段“接近合法 JSON、但格式损坏”的画布描述修成严格合法 JSON。
+
+要求：
+1. 只返回 JSON 本身，禁止 Markdown、解释、注释、前后说明
+2. 保留原有信息结构与语义，不要改成别的题材
+3. 输出结构必须符合：
+{
+  "title": "<可选>",
+  "layout": { "type": "stack.v"|"stack.h"|"grid", "gap"?: 32, "cols"?: 3, "align"?: "..." },
+  "children": [ ... ],
+  "connectors": [ { "from": "<id>", "to": "<id>", "label"?: "...", "dashed"?: false, "tone"?: "primary" } ]
+}
+4. children 必须是节点数组；节点结构为 { "type": "...", "props"?: { ... }, "children"?: [ ... ] }
+5. 不要输出 //、/* */、尾随逗号、半截字符串、半截括号
+6. 可读性优先：不要把大段正文塞进单个节点，主要信息优先用 h1/h2/h3/body，不要把核心内容放进 caption`,
+  },
+  {
+    role: 'user',
+    content: `原始用户需求：\n${String(userRequest || '')}\n\n待修复内容：\n${String(brokenOutput || '')}`,
+  },
+]
+
+const repairComposerJSON = async (userRequest, brokenOutput) => {
+  const res = await window.electronAPI.ai.chat(
+    buildComposerRepairMessages(userRequest, brokenOutput),
+    { temperature: 0, timeoutMs: 600000, bypassTokenLimit: true },
+  )
+  if (!res?.success || !res.data?.content) {
+    throw new Error(res?.error || 'Composer JSON 二次修复失败')
+  }
+  return res.data.content
+}
+
+const parseComposerCanvasResponse = async (userRequest, rawContent) => {
+  const parsed = safeJsonExtract(rawContent)
+  if (parsed) return parsed
+  logger.warn('[composer] 首次 JSON 解析失败，尝试二次 AI 修复')
+  const repairedContent = await repairComposerJSON(userRequest, rawContent)
+  const repaired = safeJsonExtract(repairedContent)
+  if (!repaired) {
+    throw new Error('Composer JSON 二次修复后仍不合法')
+  }
+  return repaired
+}
+
+const isContentBlockedError = (error) => /blocked|content.*blocked|machine outputted|安全|拦截|审核|风控/i.test(String(error?.message || error || ''))
+
+// 网络层错误（请求未成功发出/被中断/超时）：应直接向上抛出，由 UI 给用户明确反馈
+const isNetworkError = (error) => /fetch failed|network|网络|ECONN|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|socket|timeout|超时|aborted|abort/i.test(String(error?.message || error || ''))
+
+// 上游网关瞬时故障（502/503/504/429）：AI 服务商临时不可用，稍后重试即可恢复
+const isGatewayError = (error) => /请求失败 \((?:429|502|503|504)\)|\b(?:502|503|504)\b|bad gateway|gateway timeout|service unavailable|too many requests|rate limit/i.test(String(error?.message || error || ''))
+
+const normalizeWhiteboardError = (error) => {
+  if (isContentBlockedError(error)) return new Error('模型内容审核拦截，无法生成该画布')
+  if (isGatewayError(error)) return new Error('AI 服务暂时不可用（网关繁忙），请稍后重试')
+  if (isNetworkError(error)) return new Error('网络请求失败，请检查网络或 AI 配置后重试')
+  return error instanceof Error ? error : new Error(String(error || '画布生成失败'))
+}
+
+const shouldUseModelReflection = (error) => (
+  !isContentBlockedError(error) &&
+  !isGatewayError(error) &&
+  !isNetworkError(error)
+)
+
+const compactFeedbackPayload = (value, maxLen = 12000) => {
+  const s = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+  if (!s) return ''
+  return s.length > maxLen ? `${s.slice(0, maxLen)}\n...（内容过长已截断）` : s
+}
+
 const inferDiagramIntentHeuristically = (text) => {
   const s = String(text || '')
-  if (!s.trim()) return { mode: 'single', blockType: 'mindmap', reason: '空请求默认思维导图' }
+  if (!s.trim()) return { mode: 'composition', blockType: null, reason: '空请求默认交给组合规划' }
   if (/对比.*流程|同时.*流程|流程.*时间轴|一张图.*包含|作战图|全景图|看板|汇总到一张|多个图|组合图|复合图/.test(s)) {
     return { mode: 'composition', blockType: null, reason: '复合画布关键词' }
   }
@@ -145,7 +152,7 @@ const inferDiagramIntentHeuristically = (text) => {
     return { mode: 'single', blockType: 'flowchart', reason: '流程关键词' }
   }
   if (/思维导图|脑图|发散|主题归纳|知识图谱|知识树/.test(s)) {
-    return { mode: 'single', blockType: 'mindmap', reason: '思维导图关键词' }
+    return { mode: 'composition', blockType: null, reason: '思维导图/发散类交给 composer' }
   }
   if (/鱼骨图|根因|原因分析|因果分析/.test(s)) {
     return { mode: 'single', blockType: 'fishbone', reason: '鱼骨图关键词' }
@@ -199,7 +206,7 @@ ${blockList}
 - 简单单主题，优先 single，不要滥用 composition
 - 只有明显要求多图区块拼装、作战图、总览画布时，才返回 composition
 - 返回严格 JSON，不要 Markdown：
-{"mode":"single"|"composition","blockType":"flowchart"|"mindmap"|null,"reason":"简短中文原因","confidence":0.0}`,
+{"mode":"single"|"composition","blockType":"flowchart"|null,"reason":"简短中文原因","confidence":0.0}`,
     },
     { role: 'user', content: userRequest },
   ]
@@ -210,7 +217,7 @@ const classifyDiagramIntent = async (userRequest) => {
   try {
     const res = await window.electronAPI.ai.chat(
       buildDiagramIntentMessages(userRequest),
-      { temperature: 0, maxTokens: 220 },
+      { temperature: 0 },
     )
     const parsed = safeJsonExtract(res?.data?.content || '')
     if (!parsed || (parsed.mode !== 'single' && parsed.mode !== 'composition')) {
@@ -231,17 +238,157 @@ const classifyDiagramIntent = async (userRequest) => {
   }
 }
 
-const planComposition = async (userRequest) => {
+// ─── 路由收敛 ──────────────────────────────────────
+//
+// flowchart 家族（flowchart/sequence/class/state/er）→ Mermaid 原生矢量
+// 其余一切（思维导图/总览/原型/看板/分层图…）→ composer 自研通用合成引擎
+//
+// ER 曾迁移到自研 graph 引擎，但视觉上不如官方 Mermaid ER 渲染干净，重新走 Mermaid。
+
+const FLOWCHART_BLOCKTYPES = new Set(['flowchart', 'sequence', 'class', 'state', 'er'])
+
+const classifyCanvasRoute = (diagramIntent) => {
+  if (diagramIntent?.mode === 'single' && FLOWCHART_BLOCKTYPES.has(diagramIntent.blockType)) {
+    return { route: 'flowchart', blockType: diagramIntent.blockType }
+  }
+  return { route: 'composer', blockType: null }
+}
+
+// ─── Composer 通用画布：原语自由组合 ─────────────────
+//
+// 让 LLM 用「原语 + 布局容器」自由组合一棵节点树，由 composer 引擎两遍式布局。
+// LLM 永不算坐标，只描述结构。这是 flowchart/mindmap 之外的默认路径。
+
+const buildComposerMessages = (userRequest) => [
+  {
+    role: 'system',
+    content: `你是 Flota 画布合成器。你不输出 Mermaid，也不输出图片，而是用「原语 + 布局容器」组合出一棵节点树，由引擎自动排版。你永远不需要自己计算坐标。
+
+节点结构：{ "type": "<原语名>", "props": { ... }, "children": [ ... ] }
+
+可用布局容器（靠它们排列子节点，children 必填）：
+- stack.v  纵向堆叠。props: { gap?, padding?, align?: "stretch"|"center"|"end", bg?, stroke? }
+- stack.h  横向排列。props: { gap?, padding?, align?: "start"|"center"|"end"(纵向对齐), justify?: "start"|"center"|"end"|"between" }
+- grid     等分网格。props: { cols, gap?, padding? }
+- graph    分层关系图（流程图/ER/依赖图/拓扑/人物关系 用它）。props: { direction?: "TB"|"LR", edges: [{ from, to, label?, dashed?, tone? }] }。children 是图的节点（每个必须带 props.id），引擎按 edges 的依赖关系自动分层、错峰、避免连线交叉——你绝不要自己摆位置。
+- screen   设备外壳（手机/平板/桌面）。props: { device?: "phone"|"tablet"|"desktop"|"window", title?, accent? }，内部放 nav/list/button 等
+- group    带标题的虚线分组框。props: { title?, tone?, padding?, gap?, dashed? }
+
+可用内容原语（叶子，一般无 children）：
+- text     文字。props: { content, level?: "h1"|"h2"|"h3"|"body"|"caption", align?, color? }
+- card     卡片。props: { title?, body?, accent?/tone?, fill? }
+- callout  标注气泡。props: { text, tone? }
+- badge    徽标。props: { text/count, tone? }
+- icon     图标占位。props: { symbol(emoji或字符), size?, color? }
+- avatar   头像。props: { label?, size? }
+- image    占位图。props: { label?, ratio?, w?, h? }
+- divider  分割线（无 props）
+- nav.top  顶部导航。props: { title?, back?: true, actions?: ["保存"] }
+- nav.bottom 底部 tab 栏。props: { tabs: ["首页","我的"], active?: 0 }
+- input    输入框。props: { label?, placeholder?, value? }
+- button   按钮。props: { label, variant?: "primary"|"secondary"|"text", block?: true }
+- list     列表。props: { items: [ "纯文本" | { title, subtitle?, trailing?, checkbox?/done? } ] }
+- table    表格。props: { headers: [...], rows: [[...],[...]] }
+- rect/ellipse/line 原始图元（兜底用）。props: { w?, h?, fill?, stroke?, dashed? }
+
+tone/accent 取值：primary|success|warning|danger|accent|info|neutral
+
+任意节点都可加 props.id（字符串），用于在 connectors 里跨容器画箭头连线。
+
+返回严格 JSON，禁止 Markdown 代码块，禁止任何注释（不要写 // 或 /* */）：
+{
+  "title": "<画布标题，可选>",
+  "layout": { "type": "stack.v"|"stack.h"|"grid", "gap"?: 32, "cols"?: 3, "align"?: "..." },
+  "children": [ <顶层节点...> ],
+  "connectors": [ { "from": "<节点id>", "to": "<节点id>", "label"?: "触发", "dashed"?: false, "tone"?: "primary" } ]
+}
+
+few-shot 示例 1（移动端登录原型）：
+{"title":"登录页","children":[{"type":"screen","props":{"device":"phone","title":"欢迎登录"},"children":[{"type":"stack.v","props":{"gap":24,"padding":24},"children":[{"type":"stack.v","props":{"gap":8,"align":"center"},"children":[{"type":"avatar","props":{"size":64}},{"type":"text","props":{"content":"欢迎回来","level":"h2","align":"center"}}]},{"type":"stack.v","props":{"gap":16},"children":[{"type":"input","props":{"label":"手机号","placeholder":"请输入手机号"}},{"type":"input","props":{"label":"密码","placeholder":"请输入密码"}}]},{"type":"stack.v","props":{"gap":12},"children":[{"type":"button","props":{"label":"登录","variant":"primary"}},{"type":"button","props":{"label":"忘记密码？","variant":"text"}}]}]}]}]}
+
+few-shot 示例 2（看板 - 注重留白、虚线分组与轻量装饰）：
+{"title":"项目看板","layout":{"type":"grid","cols":3,"gap":32},"children":[{"type":"group","props":{"title":"📝 待办","tone":"neutral","padding":20,"gap":16,"dashed":true},"children":[{"type":"card","props":{"title":"需求评审","body":"周三前完成"}},{"type":"card","props":{"title":"接口联调","body":"等待后端提供 API"}},{"type":"badge","props":{"text":"2 项待处理","tone":"neutral"}}]},{"type":"group","props":{"title":"⏳ 进行中","tone":"warning","padding":20,"gap":16},"children":[{"type":"card","props":{"title":"首页视觉改版","body":"正在重构组件","tone":"warning"}},{"type":"callout","props":{"text":"本周优先保证主路径可用","tone":"warning"}}]},{"type":"group","props":{"title":"✅ 已完成","tone":"success","padding":20,"gap":16,"dashed":true},"children":[{"type":"card","props":{"title":"登录态优化","body":"已全量上线","tone":"success"}},{"type":"badge","props":{"text":"稳定运行","tone":"success"}}]}]}
+
+few-shot 示例 3（带连线的流程，优先使用 graph 自动排版）：
+{"title":"下单核心链路","children":[{"type":"graph","props":{"direction":"LR","edges":[{"from":"browse","to":"cart"},{"from":"cart","to":"order"},{"from":"order","to":"pay","label":"提交"},{"from":"pay","to":"done","label":"支付成功","tone":"success"},{"from":"pay","to":"cart","label":"支付失败","dashed":true,"tone":"danger"}]},"children":[{"type":"card","props":{"id":"browse","title":"1. 浏览商品","tone":"neutral"}},{"type":"card","props":{"id":"cart","title":"2. 购物车","tone":"neutral"}},{"type":"card","props":{"id":"order","title":"3. 提交订单","tone":"primary"}},{"type":"card","props":{"id":"pay","title":"4. 唤起支付","tone":"warning"}},{"type":"card","props":{"id":"done","title":"5. 交易完成","tone":"success"}}]}]}
+
+few-shot 示例 4（个人全景仪表盘 — 宽敞现代、允许不同分区风格混搭）：
+{"title":"个人星系全景图","layout":{"type":"stack.v","gap":40},"children":[{"type":"stack.h","props":{"gap":20,"align":"center"},"children":[{"type":"avatar","props":{"label":"叶","size":64}},{"type":"stack.v","props":{"gap":4},"children":[{"type":"text","props":{"content":"叶茂 Kevin","level":"h1"}},{"type":"text","props":{"content":"AI 工程师 · 创作者 · 在读硕士","level":"body","color":"#7c3aed"}}]},{"type":"badge","props":{"text":"已录取","tone":"success"}}]},{"type":"grid","props":{"cols":3,"gap":24},"children":[{"type":"card","props":{"title":"86%","body":"EvalAgent 评测准确率","tone":"primary"}},{"type":"card","props":{"title":"-75%","body":"评测成本大幅下降","tone":"success"}},{"type":"card","props":{"title":"-60%","body":"审批流程流转时长缩短","tone":"warning"}}]},{"type":"grid","props":{"cols":2,"gap":32},"children":[{"type":"group","props":{"title":"🔥 核心项目","tone":"danger","gap":16,"padding":24,"dashed":true},"children":[{"type":"list","props":{"items":["SQLReader（基于 MCP 协议）","Power BI 数据可视化大屏","Flota AI 记录与白板软件"]}},{"type":"callout","props":{"text":"偏工程产出，强调落地结果","tone":"danger"}}]},{"type":"group","props":{"title":"✍️ 创作宇宙","tone":"accent","gap":16,"padding":24},"children":[{"type":"list","props":{"items":[{"title":"《青藤书院的第七层》","subtitle":"民国悬疑 · 19 章"},{"title":"《镜中教室》","subtitle":"校园悬疑 · 双时间线"}]}},{"type":"badge","props":{"text":"持续更新","tone":"accent"}}]}]}]}
+
+few-shot 示例 5（系统/技术架构图 — 大模块分区，内部网格对齐，留白充足）：
+{"title":"电商系统分层架构","layout":{"type":"stack.v","gap":32},"children":[{"type":"stack.h","props":{"gap":16,"align":"center"},"children":[{"type":"icon","props":{"symbol":"⛳","size":28,"color":"#2563eb"}},{"type":"stack.v","props":{"gap":4},"children":[{"type":"text","props":{"content":"电商系统分层架构","level":"h1"}},{"type":"text","props":{"content":"按接入、业务、基础能力、数据存储分区展示，结构清晰","level":"body"}}]}]},{"type":"group","props":{"title":"接入层","tone":"primary","gap":20,"padding":24},"children":[{"type":"grid","props":{"cols":4,"gap":16},"children":[{"type":"card","props":{"title":"API Gateway","body":"鉴权 / 限流 / 路由","tone":"primary"}},{"type":"card","props":{"title":"Web BFF","body":"Web 端适配"}},{"type":"card","props":{"title":"App BFF","body":"移动端适配"}},{"type":"card","props":{"title":"H5 BFF","body":"活动页适配"}}]}]},{"type":"group","props":{"title":"业务服务层","tone":"success","gap":20,"padding":24},"children":[{"type":"grid","props":{"cols":5,"gap":16},"children":[{"type":"card","props":{"title":"用户服务","body":"注册 / 登录","tone":"success"}},{"type":"card","props":{"title":"商品服务","body":"SPU / SKU / 库存"}},{"type":"card","props":{"title":"订单服务","body":"下单 / 退款","tone":"success"}},{"type":"card","props":{"title":"营销服务","body":"优惠券 / 秒杀"}},{"type":"card","props":{"title":"搜索服务","body":"ES 索引 / 排序"}}]}]},{"type":"group","props":{"title":"基础能力层","tone":"warning","gap":20,"padding":24},"children":[{"type":"grid","props":{"cols":5,"gap":16},"children":[{"type":"card","props":{"title":"支付中台","body":"多渠道支付接入","tone":"warning"}},{"type":"card","props":{"title":"消息中心","body":"站内信 / Push"}},{"type":"card","props":{"title":"文件服务","body":"OSS / CDN"}},{"type":"card","props":{"title":"配置中心","body":"Apollo 配置管理"}},{"type":"card","props":{"title":"任务调度","body":"XXL-Job 分布式调度"}}]}]}]}
+
+可大胆使用的"丰富感"手法：
+- 顶部用 avatar + 标题 + badge 组合出"人物 / 主体头图"
+- 用 grid(cols:2~4) 摆一排 card 当"数据指标卡 / KPI"，标题写大数字、body 写说明、配 tone 上色
+- 不同主题分区用 group 包起来，标题带 emoji，整组上不同 tone（danger/accent/success…）拉开色彩层次
+- 可以适度混入不同区块风格：例如部分 group 用 dashed 虚线边框、部分 card 用更轻的 tone、局部搭配 badge / callout 做节奏变化，但不要整张图每个块都花哨
+- 列表项用 {title, subtitle} 结构而非纯文本，信息更立体
+- 关键信息用 callout 气泡 / badge 徽标点缀，icon 给条目加图标
+- 只有少量跨区重点关系才用 connectors；不要为了“看起来有关系”把所有卡片都连起来
+
+合成原则：
+1. 先想清楚整张画布的骨架用哪个容器（纵向流/横向分栏/网格/设备壳），再往里填内容原语
+2. 大胆嵌套、大胆铺量：容器里再放容器，组合出多分区 + 卡片墙 + 指标行，让画布饱满有信息量（信息类总览画布通常 15-40 个节点）。如果用户要架构图/能力地图/系统全景，必须至少 3 个 group 分区，每个分区内用 grid 放 3-6 张 card
+3. 主动调用多种原语：一张画布里尽量混用 card / list / badge / icon / callout / avatar / group，不要从头到尾只有 card 或只有文字
+4. 可读性优先于炫技：主要信息优先用 h1/h2/h3/body，caption 只用于次要辅助信息；不要把核心内容做成小字
+5. 禁止低对比文本：画布底色恒为浅色，绝不要输出接近白色/浅灰/浅黄等淡色文字；正文一律深色。不要假设深色主题
+6. 文字优先内嵌到块里：信息尽量用 card(title/body) / list(items) / group(title) / callout(text) / button(label) 这类自带容器的原语承载，让"字在块内"；尽量不要用裸 text 原语去标注另一个 rect/ellipse（容易错位、白字）。需要纯色块时优先用 card 而非 rect+text
+7. 不要把内容塞得过密：单个 card 或 list item 尽量控制在 2-4 行，太长就拆成多个 card/list/group；区块之间保留足够 gap/padding
+8. 用 tone/accent 给不同分区和卡片上色，制造视觉层次与重点，但不要牺牲对比度和可读性
+8.1. 允许有控制地探索风格变化：虚线边框、弱底色分区、局部 badge/callout 点缀都可以；但整张画布最多 1-2 种强调手法，避免杂乱
+9. 文字贴近用户真实素材，禁止"标题1/卡片A"这类占位词；数字、比例、专有名词照搬用户内容
+10. 原型类（App/网页/界面）用 screen + nav + input/button/list；信息类（看板/分层/总览/全景）用 grid/stack + group + 指标 card + list；架构图/系统分层图必须用 stack.v + 多个 group 分区，不要输出单一大网格
+11. 凡是"流转/因果/依赖/层级/实体关系"这类带连线的关系图（流程图、ER、依赖图、拓扑、人物关系），一律用 graph 容器：子节点各带 props.id，连线写在 graph 的 props.edges 里，引擎会自动分层排布、避免交叉。不要用 stack.h+connectors 去硬摆关系图，更不要用裸 line/arrow 手画。只有"分区之间的少量补充关系"才用顶层 connectors。系统架构/分层架构默认不要使用顶层 connectors，把依赖写进 card.body / callout；除非用户明确要求“调用链/链路/依赖箭头”
+12. 不要输出 Mermaid、SVG、伪代码或任何解释文字`,
+  },
+  { role: 'user', content: userRequest },
+]
+
+const validateComposerCanvasTree = (parsed) => {
+  if (!parsed) throw new Error('Composer 画布规划返回格式错误')
+  const hasChildren = Array.isArray(parsed.children) && parsed.children.length > 0
+  const isNode = parsed.type && typeof parsed.type === 'string'
+  if (!hasChildren && !isNode) throw new Error('Composer 画布无可渲染内容')
+  return parsed
+}
+
+const planComposerCanvas = async (userRequest) => {
+  const messages = buildComposerMessages(userRequest)
   const res = await window.electronAPI.ai.chat(
-    buildOutlineMessages(userRequest),
-    { temperature: 0.3, maxTokens: 1500 },
+    messages,
+    { temperature: 0.4, timeoutMs: 600000, bypassTokenLimit: true },
   )
   if (!res?.success || !res.data?.content) {
-    throw new Error(res?.error || '画布规划失败')
+    throw new Error(res?.error || 'Composer 画布规划失败')
   }
-  const parsed = safeJsonExtract(res.data.content)
-  if (!parsed) throw new Error('画布规划返回格式错误')
-  return parsed
+  const parsed = await parseComposerCanvasResponse(userRequest, res.data.content)
+  return validateComposerCanvasTree(parsed)
+}
+
+const replanComposerCanvasWithFeedback = async (userRequest, previousTree, generationError) => {
+  const messages = [
+    ...buildComposerMessages(userRequest),
+    {
+      role: 'assistant',
+      content: previousTree
+        ? compactFeedbackPayload(previousTree)
+        : '上一版没有产出可用的合法 JSON，或在渲染前就失败。',
+    },
+    {
+      role: 'user',
+      content: `上一版画布生成/渲染失败，错误如下：\n\n${String(generationError?.message || generationError || '')}\n\n请反思失败原因，重新输出一份**完整且可渲染**的 composer JSON。要求：\n1. 只输出 JSON，不要 Markdown 代码块、解释或注释\n2. 保留原始用户意图，但修复导致失败的结构/字段/连线/id/节点类型问题\n3. children 必须非空；如果有 connectors/graph.edges，from/to 必须引用真实存在的 props.id\n4. 不要输出 Mermaid、SVG、伪代码或自然语言说明`,
+    },
+  ]
+  const res = await window.electronAPI.ai.chat(
+    messages,
+    { temperature: 0.2, timeoutMs: 600000, bypassTokenLimit: true },
+  )
+  if (!res?.success || !res.data?.content) {
+    throw new Error(res?.error || 'Composer 画布反思重写失败')
+  }
+  const parsed = await parseComposerCanvasResponse(userRequest, res.data.content)
+  return validateComposerCanvasTree(parsed)
 }
 
 // ─── Stage B：为每个 block 生成具体 DSL ─────────────
@@ -251,7 +398,9 @@ const buildDslMessages = (blockType, summary) => {
   if (!def) throw new Error(`未知 block 类型: ${blockType}`)
   const extraRules = blockType === 'architecture'
     ? '\n5. 必须使用 Mermaid 官方 block-beta 语法，第一行必须是 block-beta\n6. 只允许使用 columns、块定义、箭头连接这类官方 block-beta 语法，禁止自定义 DSL\n7. 尽量按分层结构输出 3-5 个主块，每个块里概括一层能力，中文内容写在 ["..."] 标签里\n8. 优先生成适合技术架构/能力地图的分层块图，不要退化成流程图或思维导图\n9. 控制文本密度，单个块内最多 3-6 个短语，用 / 或换行分隔'
-    : ''
+    : blockType === 'er'
+      ? '\n5. 严格遵守 Mermaid erDiagram 语法：实体名用英文大写或下划线（如 USER、CHAT_LOG），不能用中文/空格/标点\n6. 实体名禁止使用 Mermaid 保留字（CLASS / ORDER / GROUP / TYPE / KEY / TABLE / INDEX / VIEW / DATABASE / SCHEMA / ENTITY / RELATION 等）。如果概念冲突，请加后缀或前缀（如 SCHOOL_CLASS、ORDER_INFO、USER_GROUP），不要写裸 CLASS / ORDER\n7. 实体属性块格式必须是 `<类型> <字段名> [PK|FK]`，每行一对，类型必须有（int/string/datetime/decimal/bool/text 等）。绝不能写裸字段名、不能省略类型，也不能在一行里堆多个属性\n8. 关系语法 `A ||--o{ B : 动词`，动词用英文小写（如 places/owns/has），不要用中文短语\n9. 标签描述（实体的中文名/字段中文释义）写在每行末尾的英文双引号 "中文" 里，例如 `string name "用户姓名"`\n10. 控制规模：4-10 个实体，每个实体 3-7 个属性'
+      : ''
   return [
     {
       role: 'system',
@@ -278,7 +427,7 @@ const stripCodeFence = (text) => String(text || '').trim()
 const generateDsl = async (blockType, summary) => {
   const res = await window.electronAPI.ai.chat(
     buildDslMessages(blockType, summary),
-    { temperature: 0.4 },
+    { temperature: 0.4, timeoutMs: 600000 },
   )
   if (!res?.success || !res.data?.content) {
     throw new Error(`${blockType} DSL 生成失败`)
@@ -286,109 +435,28 @@ const generateDsl = async (blockType, summary) => {
   return stripCodeFence(res.data.content)
 }
 
-// ─── 把 outline 填充成可渲染的 IR ────────────────────
-
-const materializeIR = async (outline) => {
-  const ir = {
-    version: IR_VERSION,
-    title: outline.title || '',
-    canvas: {},
-    nodes: [],
-    connectors: outline.connectors || [],
+const regenerateDslWithFeedback = async (blockType, summary, previousDsl, generationError) => {
+  const messages = [
+    ...buildDslMessages(blockType, summary),
+    { role: 'assistant', content: previousDsl },
+    {
+      role: 'user',
+      content: `上一版 DSL 生成/渲染失败，错误如下：\n\n${String(generationError?.message || generationError || '')}\n\n请根据错误信息反思并修正语法，重新输出**完整** DSL。要求：\n1. 只输出 DSL，不要解释、不要 Markdown 代码块\n2. 保留原始用户意图和图表类型\n3. 优先修复报错行附近的语法、保留字、字段格式、节点 id、关系写法问题\n4. 不要输出与该图型无关的语法`,
+    },
+  ]
+  const res = await window.electronAPI.ai.chat(
+    messages,
+    { temperature: 0.2, timeoutMs: 600000 },
+  )
+  if (!res?.success || !res.data?.content) {
+    throw new Error(res?.error || `${blockType} DSL 反思重写失败`)
   }
-  // 并行产 DSL
-  const dslJobs = []
-  const dslFailures = []
-  let dslBlockCount = 0
-  for (const node of outline.nodes || []) {
-    if (node.kind === 'block') {
-      dslBlockCount += 1
-      if (!KNOWN_BLOCK_KINDS.has(node.blockType)) {
-        logger.warn(`[outline] 未知 blockType=${node.blockType}，降级为 mindmap`)
-        node.blockType = 'mindmap'
-      }
-      dslJobs.push(generateDsl(node.blockType, node.summary || node.title || node.id).then((dsl) => {
-        ir.nodes.push({
-          id: node.id,
-          kind: 'block',
-          blockType: node.blockType,
-          tier: getBlockTier(node.blockType),
-          dsl,
-          layout: node.layout || { region: 'center' },
-        })
-      }).catch((err) => {
-        logger.warn(`[outline] block ${node.id} DSL 失败:`, err.message)
-        dslFailures.push({
-          id: node.id,
-          blockType: node.blockType,
-          message: err.message || 'DSL 生成失败',
-        })
-      }))
-    } else if (node.kind === 'freeform') {
-      ir.nodes.push({
-        id: node.id,
-        kind: 'freeform',
-        graph: node.graph || { nodes: [], edges: [] },
-        layout: node.layout || { region: 'center' },
-      })
-    } else if (node.kind === 'group') {
-      ir.nodes.push({
-        id: node.id,
-        kind: 'group',
-        title: node.title || '',
-        children: node.children || [],
-        color: node.color,
-        layout: node.layout || {},
-      })
-    } else if (node.kind === 'sticky' || node.kind === 'callout' || node.kind === 'text') {
-      ir.nodes.push({
-        id: node.id,
-        kind: node.kind,
-        text: node.text || '',
-        color: node.color,
-        fontSize: node.fontSize,
-        layout: node.layout || {},
-      })
-    }
-  }
-  await Promise.all(dslJobs)
-
-  if (dslFailures.length > 0) {
-    const failedIds = new Set(dslFailures.map(item => item.id))
-    const hasRenderableNode = ir.nodes.some((node) => {
-      if (!node || node.kind === 'group') return false
-      if (node.kind === 'freeform') return Array.isArray(node.graph?.nodes) && node.graph.nodes.length > 0
-      if (node.kind === 'sticky' || node.kind === 'callout' || node.kind === 'text') return Boolean(String(node.text || '').trim())
-      return true
-    })
-
-    if (dslFailures.length === dslBlockCount && !hasRenderableNode) {
-      throw new Error(`所有图表区块 DSL 生成失败: ${dslFailures.map(item => `${item.id}(${item.blockType})`).join(', ')}`)
-    }
-
-    ir.connectors = (ir.connectors || []).filter((connector) =>
-      !failedIds.has(connector?.from) && !failedIds.has(connector?.to)
-    )
-    ir.warnings = dslFailures.map(item => `区块 ${item.id}(${item.blockType}) 未生成: ${item.message}`)
-  }
-
-  if (!ir.nodes.some(node => node && node.kind !== 'group')) {
-    throw new Error('画布没有可渲染内容')
-  }
-
-  validateIR(ir)
-  return ir
+  return stripCodeFence(res.data.content)
 }
 
 // ─── 兼容旧路径：单一图表快路径 ─────────────────────
 
-const wrapPlain = (elements) => ({ elements, files: {} })
-
 const SIMPLE_RENDERERS = {
-  architecture: async (dsl, off) => {
-    const r = await renderMermaidNative(dsl, off)
-    return { elements: r.elements, files: r.files || {} }
-  },
   flowchart: async (dsl, off) => {
     const r = await renderMermaidNative(dsl, off)
     return { elements: r.elements, files: r.files || {} }
@@ -409,95 +477,83 @@ const SIMPLE_RENDERERS = {
     const r = await renderMermaidNative(dsl, off)
     return { elements: r.elements, files: r.files || {} }
   },
-  mindmap: (dsl, off) => Promise.resolve(wrapPlain(renderMindmap(dsl, off))),
-  hierarchy: (dsl, off) => Promise.resolve(({ elements: renderHierarchy(dsl, off).elements, files: {} })),
-  gantt: (dsl, off) => Promise.resolve(wrapPlain(renderGantt(dsl, off))),
-  fishbone: (dsl, off) => Promise.resolve(wrapPlain(renderFishbone(dsl, off))),
-  timeline: (dsl, off) => Promise.resolve(wrapPlain(renderTimeline(dsl, off))),
-  quadrant: (dsl, off) => Promise.resolve(wrapPlain(renderQuadrant(dsl, off))),
-  pie: (dsl, off) => Promise.resolve(wrapPlain(renderPie(dsl, off))),
 }
 
-const isSingleBlockOutline = (outline) =>
-  Array.isArray(outline?.nodes) &&
-  outline.nodes.length === 1 &&
-  outline.nodes[0].kind === 'block'
+const renderSimpleBlockWithReflection = async (blockType, description, offsets) => {
+  const dsl = await generateDsl(blockType, description)
+  try {
+    return await SIMPLE_RENDERERS[blockType](dsl, offsets)
+  } catch (firstError) {
+    if (!shouldUseModelReflection(firstError)) throw firstError
+    logger.warn(`[aiExcalidrawGenerator] ${blockType} 首次渲染失败，触发模型反思重写:`, firstError.message)
+    const fixedDsl = await regenerateDslWithFeedback(blockType, description, dsl, firstError)
+    try {
+      const result = await SIMPLE_RENDERERS[blockType](fixedDsl, offsets)
+      logger.log(`[aiExcalidrawGenerator] ${blockType} 反思重写后渲染成功`)
+      return result
+    } catch (secondError) {
+      throw new Error(`首次错误：${firstError.message || firstError}；反思重试后仍失败：${secondError.message || secondError}`)
+    }
+  }
+}
+
+const renderComposerTree = (tree, offsets) => {
+  const result = renderComposer(tree, offsets)
+  if ((result.elements || []).length > 0) {
+    return { elements: result.elements, files: result.files || {}, warnings: [] }
+  }
+  throw new Error('composer 渲染结果为空')
+}
+
+const renderComposerWithReflection = async (description, offsets) => {
+  let tree = null
+  try {
+    tree = await planComposerCanvas(description)
+    logger.log('[aiExcalidrawGenerator] 命中 composer 路径')
+    return renderComposerTree(tree, offsets)
+  } catch (firstError) {
+    if (!shouldUseModelReflection(firstError)) throw firstError
+    logger.warn('[aiExcalidrawGenerator] composer 首次生成/渲染失败，触发模型反思重写:', firstError.message)
+    try {
+      const fixedTree = await replanComposerCanvasWithFeedback(description, tree, firstError)
+      const result = renderComposerTree(fixedTree, offsets)
+      logger.log('[aiExcalidrawGenerator] composer 反思重写后渲染成功')
+      return result
+    } catch (secondError) {
+      throw new Error(`首次错误：${firstError.message || firstError}；反思重试后仍失败：${secondError.message || secondError}`)
+    }
+  }
+}
 
 // ─── 对外主入口 ────────────────────────────────────
 
 export async function aiGenerateExcalidrawElements(description, existingElements = []) {
   const offsets = computeOffset(existingElements)
   logger.log('[aiExcalidrawGenerator] 输入:', description, 'offset:', offsets)
-  const looksLikeArchitecture = /架构图|技术架构|系统架构|架构设计|分层架构|能力地图/.test(String(description || ''))
+
   const diagramIntent = await classifyDiagramIntent(description)
   logger.log('[aiExcalidrawGenerator] 图型意图:', diagramIntent)
 
-  let outline
-  if (diagramIntent.mode === 'single' && diagramIntent.blockType) {
-    outline = {
-      title: '',
-      nodes: [{
-        id: 'b1',
-        kind: 'block',
-        blockType: diagramIntent.blockType,
-        summary: description,
-        layout: { region: 'center' },
-      }],
-      connectors: [],
-    }
-  } else {
-    try {
-      outline = await planComposition(description)
-    } catch (e) {
-      if (looksLikeArchitecture) {
-        logger.warn('[aiExcalidrawGenerator] 架构图规划失败，直接尝试官方 block-beta:', e.message)
-        const dsl = await generateDsl('architecture', description)
-        return SIMPLE_RENDERERS.architecture(dsl, offsets)
-      }
-      logger.warn('[aiExcalidrawGenerator] 规划失败，回退单 mindmap:', e.message)
-      const dsl = await generateDsl('mindmap', description)
-      return wrapPlain(renderMindmap(dsl, offsets))
-    }
-  }
+  const { route, blockType } = classifyCanvasRoute(diagramIntent)
+  logger.log('[aiExcalidrawGenerator] 画布路由:', route, blockType || '')
 
-  // 单区块场景走快路径，避免不必要的 IR 编排开销
-  if (isSingleBlockOutline(outline)) {
-    const node = outline.nodes[0]
-    const blockType = KNOWN_BLOCK_KINDS.has(node.blockType) ? node.blockType : 'mindmap'
-    const dsl = await generateDsl(blockType, node.summary || description)
-    logger.log(`[aiExcalidrawGenerator] 单块路径 type=${blockType}`)
+  // ── 路由 1：flowchart 家族 → Mermaid 原生矢量 ──
+  // 失败就明确报错，绝不退回 composer「勉强渲染」（那会画出缠绕错乱的图）。
+  if (route === 'flowchart') {
     try {
-      return await SIMPLE_RENDERERS[blockType](dsl, offsets)
+      return await renderSimpleBlockWithReflection(blockType, description, offsets)
     } catch (err) {
-      if (blockType === 'architecture') {
-        logger.warn('[aiExcalidrawGenerator] 官方架构图渲染失败:', err.message)
-        throw err
-      }
-      logger.warn(`[aiExcalidrawGenerator] ${blockType} 渲染失败，回退 mindmap:`, err.message)
-      const fb = await generateDsl('mindmap', description)
-      return wrapPlain(renderMindmap(fb, offsets))
+      logger.warn(`[aiExcalidrawGenerator] ${blockType} 生成失败:`, err.message)
+      throw normalizeWhiteboardError(err)
     }
   }
 
-  // 多区块/复合路径：组装 IR 渲染
-  let ir
+  // ── 路由 2（默认）：composer 通用合成引擎（原语 + 布局容器）──
   try {
-    ir = await materializeIR(outline)
-  } catch (e) {
-    logger.warn('[aiExcalidrawGenerator] IR 物化失败，回退单 mindmap:', e.message)
-    const dsl = await generateDsl('mindmap', description)
-    return wrapPlain(renderMindmap(dsl, offsets))
-  }
-  logger.log('[aiExcalidrawGenerator] IR 节点数:', ir.nodes.length, 'connectors:', ir.connectors.length)
-  try {
-    const result = await renderComposition(ir, offsets)
-    if (Array.isArray(result)) return { ...wrapPlain(result), warnings: ir.warnings || [] }
-    return { elements: result.elements || [], files: result.files || {}, warnings: ir.warnings || [] }
+    return await renderComposerWithReflection(description, offsets)
   } catch (err) {
-    logger.error('[aiExcalidrawGenerator] IR 渲染失败:', err)
-    const firstBlock = ir.nodes.find((n) => n.kind === 'block')
-    if (firstBlock) return SIMPLE_RENDERERS[firstBlock.blockType](firstBlock.dsl, offsets)
-    throw err
+    logger.warn('[aiExcalidrawGenerator] composer 路径失败:', err.message)
+    throw normalizeWhiteboardError(err)
   }
 }
 
@@ -520,15 +576,4 @@ export async function aiConvertMarkdownToWhiteboard(markdownContent) {
     },
     fileMap,
   })
-}
-
-/**
- * 调试导出
- */
-export const __debug = {
-  planComposition,
-  generateDsl,
-  materializeIR,
-  BLOCK_TYPES,
-  wrapSingleBlockAsIR,
 }

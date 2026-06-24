@@ -45,6 +45,37 @@ export const containsCJK = (text = '') => /[\u4e00-\u9fa5]/.test(text)
 
 export const normalizeWhitespace = (text = '') => String(text).replace(/\s+/g, ' ').trim()
 
+// ─── 文字可读性护栏 ──────────────────────────────────
+// 画布底色恒为浅色，LLM 有时会按"深色主题"思路输出近白/浅色文字 → 浅底浅字不可见。
+// 这里在引擎层兜底：按文字与其背景的对比度，必要时换成深色或白色，保证始终能看清。
+const _parseHex = (c) => {
+  if (typeof c !== 'string') return null
+  let s = c.trim().toLowerCase()
+  if (s === 'white') s = '#ffffff'
+  if (s === 'black') s = '#000000'
+  const m3 = /^#([0-9a-f]{3})$/.exec(s)
+  if (m3) return [0, 1, 2].map((i) => parseInt(m3[1][i] + m3[1][i], 16))
+  const m6 = /^#([0-9a-f]{6})$/.exec(s)
+  if (m6) return [0, 2, 4].map((i) => parseInt(m6[1].slice(i, i + 2), 16))
+  return null
+}
+const _relLum = ([r, g, b]) => {
+  const f = (v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4) }
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+}
+const _contrast = (a, b) => {
+  const la = _relLum(a), lb = _relLum(b)
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+}
+export const ensureReadableTextColor = (color, bg = DIAGRAM_THEME.canvas) => {
+  const back = _parseHex(bg) || _parseHex(DIAGRAM_THEME.canvas)
+  const fg = _parseHex(color)
+  const darkOnLight = _relLum(back) > 0.5
+  if (!fg) return darkOnLight ? DIAGRAM_THEME.text : '#ffffff'
+  if (_contrast(fg, back) >= 2.6) return color
+  return darkOnLight ? DIAGRAM_THEME.text : '#ffffff'
+}
+
 export const wrapLabel = (text, maxChars = null) => {
   const normalized = normalizeWhitespace(text)
   if (!normalized) return ''
@@ -109,9 +140,10 @@ export const makeBase = (type) => ({
   locked: false,
 })
 
-export const makeText = ({ x, y, text, fontSize = 16, color, align = 'center', verticalAlign = 'middle', metrics }) => {
+export const makeText = ({ x, y, text, fontSize = 16, color, align = 'center', verticalAlign = 'middle', metrics, containerId = null, fontFamily = 1, bg = null }) => {
   const wrapped = String(text || '')
   const m = metrics || measureTextBlock(wrapped, fontSize)
+  const safeColor = ensureReadableTextColor(color || DIAGRAM_THEME.text, bg || DIAGRAM_THEME.canvas)
   return {
     ...makeBase('text'),
     x: snapToGrid(x),
@@ -120,14 +152,14 @@ export const makeText = ({ x, y, text, fontSize = 16, color, align = 'center', v
     height: m.height,
     text: wrapped,
     fontSize,
-    fontFamily: 1,
+    fontFamily,
     textAlign: align,
     verticalAlign,
     baseline: fontSize,
-    containerId: null,
+    containerId,
     originalText: wrapped,
     lineHeight: 1.25,
-    strokeColor: color || DIAGRAM_THEME.text,
+    strokeColor: safeColor,
     backgroundColor: 'transparent',
     roundness: null,
   }
@@ -149,6 +181,18 @@ export const makeRect = ({ x, y, width, height, bg, stroke, strokeWidth = 1, rou
 
 export const makeEllipse = ({ x, y, width, height, bg, stroke, strokeWidth = 1 }) => ({
   ...makeBase('ellipse'),
+  x: snapToGrid(x),
+  y: snapToGrid(y),
+  width: snapToGrid(width),
+  height: snapToGrid(height),
+  backgroundColor: bg || 'transparent',
+  strokeColor: stroke || DIAGRAM_THEME.line,
+  strokeWidth,
+  roughness: 0,
+})
+
+export const makeDiamond = ({ x, y, width, height, bg, stroke, strokeWidth = 1 }) => ({
+  ...makeBase('diamond'),
   x: snapToGrid(x),
   y: snapToGrid(y),
   width: snapToGrid(width),
@@ -181,23 +225,37 @@ export const makeLine = ({ x, y, points, stroke, strokeWidth = 1, dashed = false
   }
 }
 
-export const makeArrow = ({ x, y, points, stroke, strokeWidth = 2, dashed = false, endArrow = 'arrow' }) => {
-  const xs = points.map((p) => p[0])
-  const ys = points.map((p) => p[1])
+export const makeArrow = ({
+  x,
+  y,
+  points,
+  stroke,
+  strokeWidth = 2,
+  dashed = false,
+  endArrow = 'arrow',
+  startBinding = null,
+  endBinding = null,
+}) => {
+  // 最后一道护栏：任何 NaN/Infinity 坐标都会让 Excalidraw 生成 `<path d="MNaN…">` 直接崩溃。
+  // 这里把所有点钳成有限数，保证渲染层永不收到非法坐标。
+  const fin = (v) => (Number.isFinite(v) ? v : 0)
+  const safePoints = (Array.isArray(points) ? points : [[0, 0]]).map((p) => [fin(p?.[0]), fin(p?.[1])])
+  const xs = safePoints.map((p) => p[0])
+  const ys = safePoints.map((p) => p[1])
   return {
     ...makeBase('arrow'),
-    x: snapToGrid(x),
-    y: snapToGrid(y),
+    x: snapToGrid(fin(x)),
+    y: snapToGrid(fin(y)),
     width: Math.max(...xs) - Math.min(...xs) || 0,
     height: Math.max(...ys) - Math.min(...ys) || 0,
-    points: points.map(([px, py]) => [snapToGrid(px), snapToGrid(py)]),
+    points: safePoints.map(([px, py]) => [snapToGrid(px), snapToGrid(py)]),
     strokeColor: stroke || DIAGRAM_THEME.line,
     strokeWidth,
     strokeStyle: dashed ? 'dashed' : 'solid',
     roughness: 0,
     lastCommittedPoint: null,
-    startBinding: null,
-    endBinding: null,
+    startBinding,
+    endBinding,
     startArrowhead: null,
     endArrowhead: endArrow,
   }

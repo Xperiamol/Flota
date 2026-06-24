@@ -8,10 +8,11 @@ import {
   Tooltip,
   Typography
 } from '@mui/material';
-import { Tag as TagIcon, Clear as ClearIcon, AutoAwesome as AiIcon, Add as AddIcon } from '@mui/icons-material';
+import { Tag as TagIcon, Clear as ClearIcon, Add as AddIcon } from '@mui/icons-material';
 import { parseTags, formatTags, validateTags, getTagColor } from '../../utils/tagUtils';
 import { usePluginExtensions } from '../../hooks/usePluginExtensions';
 import logger from '../../utils/logger';
+import FlotaAIIcon from './FlotaAIIcon';
 
 /**
  * 标签输入组件
@@ -244,7 +245,7 @@ const TagInput = ({
                   disabled={disabled || !!executingExtension}
                   sx={{ p: 0.4 }}
                 >
-                  {isExecuting ? <CircularProgress size={15} /> : <AiIcon sx={{ fontSize: 17 }} />}
+                  {isExecuting ? <CircularProgress size={15} /> : <FlotaAIIcon sx={{ fontSize: 18 }} />}
                 </IconButton>
               </span>
             </Tooltip>

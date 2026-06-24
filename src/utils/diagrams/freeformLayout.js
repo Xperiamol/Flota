@@ -10,8 +10,8 @@ import { containsCJK, measureTextBlock, wrapLabel } from './shared'
 
 const MIN_W = 140
 const MIN_H = 56
-const GAP_X = 90
-const GAP_Y = 70
+const GAP_X = 130
+const GAP_Y = 100
 const PADDING = 30
 
 const measure = (label) => {
@@ -84,17 +84,24 @@ const layoutDAG = (nodes, edges, sizes, layers, direction = 'tb') => {
     if (adj.has(e.from)) adj.get(e.from).push(e.to)
     if (adj.has(e.to)) adj.get(e.to).push(e.from)
   }
-  for (let pass = 0; pass < 3; pass++) {
+  const sortByBarycenter = (currentLayer, refLayer) => {
+    const refPos = new Map(refLayer.map((n, i) => [n.id, i]))
+    currentLayer.sort((a, b) => {
+      const aN = (adj.get(a.id) || []).filter((x) => refPos.has(x))
+      const bN = (adj.get(b.id) || []).filter((x) => refPos.has(x))
+      const aB = aN.length ? aN.reduce((s, x) => s + refPos.get(x), 0) / aN.length : Infinity
+      const bB = bN.length ? bN.reduce((s, x) => s + refPos.get(x), 0) / bN.length : Infinity
+      return aB - bB
+    })
+  }
+  for (let pass = 0; pass < 8; pass++) {
+    // top-down 扫描：参考上一层位置
     for (let li = 1; li < layerKeys.length; li++) {
-      const prev = buckets.get(layerKeys[li - 1])
-      const prevPos = new Map(prev.map((n, i) => [n.id, i]))
-      buckets.get(layerKeys[li]).sort((a, b) => {
-        const aN = (adj.get(a.id) || []).filter((x) => prevPos.has(x))
-        const bN = (adj.get(b.id) || []).filter((x) => prevPos.has(x))
-        const aB = aN.length ? aN.reduce((s, x) => s + prevPos.get(x), 0) / aN.length : Infinity
-        const bB = bN.length ? bN.reduce((s, x) => s + prevPos.get(x), 0) / bN.length : Infinity
-        return aB - bB
-      })
+      sortByBarycenter(buckets.get(layerKeys[li]), buckets.get(layerKeys[li - 1]))
+    }
+    // bottom-up 扫描：参考下一层位置
+    for (let li = layerKeys.length - 2; li >= 0; li--) {
+      sortByBarycenter(buckets.get(layerKeys[li]), buckets.get(layerKeys[li + 1]))
     }
   }
 

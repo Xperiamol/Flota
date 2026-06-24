@@ -1,12 +1,11 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
-  Box, Typography, TextField, IconButton, Paper, CircularProgress,
+  Box, Typography, TextField, IconButton, Paper,
   Chip, Fade, Avatar, Menu, MenuItem, Button, Tooltip
 } from '@mui/material'
 import { useTheme, alpha } from '@mui/material/styles'
 import {
   Send as SendIcon,
-  AutoAwesome as SparkleIcon,
   ContentCopy as CopyIcon,
   Search as SearchIcon,
   CheckCircle as CheckIcon,
@@ -22,11 +21,17 @@ import {
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useStore } from '../../store/useStore'
+import { useShallow } from 'zustand/react/shallow'
 import LongDocSteps from './LongDocSteps'
+import FlotaAIIcon from '../common/FlotaAIIcon'
+import FlotaAIOrb from '../common/FlotaAIOrb'
 import { getContextSources, truncateText } from '../../utils/aiContextUtils'
-import { handleWhiteboardAIRequest, handleCreateWhiteboardRequest } from '../../utils/whiteboardAI'
 import { routeIntent } from '../../utils/aiCore/intentRouter'
 import { buildContext } from '../../utils/aiCore/contextBuilder'
+import { getMessagePendingActions, patchMessagePendingAction } from '../../utils/aiCore/pendingActions'
+import { buildMessageMetadata, createUserMessage, createAssistantMessage, extractPendingActions } from '../../utils/aiCore/messageModel'
+import { runPendingAction } from '../../utils/aiCore/pendingActionExecutor'
+import useAIStream from '../../hooks/useAIStream'
 
 // ─── Markdown 渲染（react-markdown + remark-gfm） ───
 
@@ -77,7 +82,7 @@ const MarkdownContent = React.memo(({ content }) => (
 ))
 
 // 切换 thinking 短语时直接换内容并伴随淡入动画，避免中间整段透明导致的"空白"
-const ThinkingPhrase = ({ text }) => {
+const TypewriterText = ({ text }) => {
   const [display, setDisplay] = useState(text || '')
   const [animKey, setAnimKey] = useState(0)
   useEffect(() => {
@@ -89,20 +94,54 @@ const ThinkingPhrase = ({ text }) => {
   return (
     <Typography
       key={animKey}
-      variant="body2"
-      color="text.secondary"
-      sx={{
+      component="span"
+      variant="caption"
+      sx={(theme) => ({
+        fontSize: 12,
+        lineHeight: 1.4,
+        color: alpha(theme.palette.text.primary, 0.7),
         animation: 'flota-thinking-fade 280ms ease',
         '@keyframes flota-thinking-fade': {
           '0%': { opacity: 0, transform: 'translateY(2px)' },
           '100%': { opacity: 1, transform: 'translateY(0)' }
         }
-      }}
+      })}
     >
-      {display}…
+      {display}
+      <Box component="span" sx={{ opacity: 0.5, ml: 0.25 }}>…</Box>
     </Typography>
   )
 }
+
+const ThinkingDots = ({ dotSize = 4, gap = 3 }) => (
+  <Box
+    sx={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: `${gap}px`,
+      '@keyframes flota-thinking-dot': {
+        '0%, 80%, 100%': { opacity: 0.35, transform: 'translateY(0) scale(0.92)' },
+        '40%': { opacity: 1, transform: 'translateY(-1.5px) scale(1)' }
+      }
+    }}
+  >
+    {[0, 1, 2].map((i) => (
+      <Box
+        key={i}
+        component="span"
+        sx={{
+          width: dotSize,
+          height: dotSize,
+          borderRadius: '50%',
+          bgcolor: 'currentColor',
+          animation: 'flota-thinking-dot 1.2s ease-in-out infinite',
+          animationDelay: `${i * 0.16}s`
+        }}
+      />
+    ))}
+  </Box>
+)
 
 // ─── 工具调用相关常量 ───
 
@@ -156,6 +195,8 @@ const TOOL_ICONS = {
   summarize_current_note_section: <ReadIcon fontSize="small" />,
   create_note: <NoteIcon fontSize="small" />,
   edit_note: <EditIcon fontSize="small" />,
+  create_whiteboard: <EditIcon fontSize="small" />,
+  update_whiteboard: <EditIcon fontSize="small" />,
   write_long_document: <NoteIcon fontSize="small" />,
   search_todos: <CheckIcon fontSize="small" />,
   get_today_todos: <CalendarIcon fontSize="small" />,
@@ -165,6 +206,50 @@ const TOOL_ICONS = {
   add_memory: <MemoryIcon fontSize="small" />,
   update_memory: <MemoryIcon fontSize="small" />,
   list_memories: <MemoryIcon fontSize="small" />,
+}
+
+const TOOL_AVATAR_ICON = {
+  search_notes: SearchIcon,
+  web_search: SearchIcon,
+  get_current_note: NoteIcon,
+  read_current_note: ReadIcon,
+  read_note_image: ImageIcon,
+  search_in_current_note: SearchIcon,
+  summarize_current_note_section: ReadIcon,
+  create_note: NoteIcon,
+  edit_note: EditIcon,
+  create_whiteboard: EditIcon,
+  update_whiteboard: EditIcon,
+  write_long_document: NoteIcon,
+  search_todos: CheckIcon,
+  get_today_todos: CalendarIcon,
+  create_todo: CheckIcon,
+  create_todos: CheckIcon,
+  search_memory: MemoryIcon,
+  add_memory: MemoryIcon,
+  update_memory: MemoryIcon,
+  list_memories: MemoryIcon,
+}
+
+const LoadingAvatarContent = ({ activeTool, iconSize = 14 }) => {
+  const targetKey = activeTool && TOOL_AVATAR_ICON[activeTool] ? activeTool : '__dots__'
+  const Icon = targetKey !== '__dots__' ? TOOL_AVATAR_ICON[targetKey] : null
+  return (
+    <Box
+      key={targetKey}
+      sx={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        color: 'inherit',
+        animation: 'flota-avatar-fade 280ms ease',
+        '@keyframes flota-avatar-fade': {
+          '0%': { opacity: 0, transform: 'scale(0.85)' },
+          '100%': { opacity: 1, transform: 'scale(1)' }
+        }
+      }}
+    >
+      {Icon ? <Icon sx={{ fontSize: iconSize }} /> : <ThinkingDots dotSize={Math.max(3, Math.round(iconSize * 0.28))} />}
+    </Box>
+  )
 }
 
 // 工具调用「进行中」与「已完成」时分别使用的中文动作描述
@@ -178,6 +263,8 @@ const TOOL_LABELS = {
   summarize_current_note_section: { running: '生成段落摘要中', done: '段落摘要' },
   create_note: { running: '创建笔记中', done: '创建笔记' },
   edit_note: { running: '编辑笔记中', done: '编辑笔记' },
+  create_whiteboard: { running: '创建画布中', done: '创建画布' },
+  update_whiteboard: { running: '修改画布中', done: '修改画布' },
   write_long_document: { running: '生成长文档中', done: '生成长文档' },
   search_todos: { running: '搜索待办中', done: '搜索待办' },
   get_today_todos: { running: '获取今日待办中', done: '获取今日待办' },
@@ -192,6 +279,9 @@ const TOOL_LABELS = {
 const formatToolLabel = (tc) => {
   const def = TOOL_LABELS[tc.name]
   const fallback = tc.name
+  if (tc.action?.status === 'done') return `${def?.done || fallback} ✓`
+  if (tc.action?.status === 'failed') return `${def?.done || fallback} · 失败`
+  if (tc.action?.status === 'running') return `${def?.running || fallback}…`
   if (tc.action) return `${def?.done || fallback} · 待确认`
   if (tc.done) return `${def?.done || fallback} ✓`
   return `${def?.running || fallback}…`
@@ -351,6 +441,96 @@ const BatchTodoActionCard = ({ action, theme, executing, onExecute }) => {
   )
 }
 
+const SimpleActionCard = ({ action, theme, executing, onExecute }) => {
+  const status = action.status || (executing ? 'running' : 'pending')
+  const isDone = status === 'done'
+  const isFailed = status === 'failed'
+  const paletteKey = isDone ? 'success' : isFailed ? 'error' : 'warning'
+  const title = isDone ? '已完成' : isFailed ? '执行失败' : executing ? '执行中' : '待你确认'
+  const detail = action.resultMessage || action.summary || action.label
+
+  return (
+    <Paper
+      elevation={0}
+      sx={{
+        mt: 0.75,
+        px: 1.25,
+        py: 1,
+        maxWidth: 420,
+        borderRadius: '14px',
+        border: '1px solid',
+        borderColor: alpha(theme.palette[paletteKey].main, theme.palette.mode === 'dark' ? 0.28 : 0.26),
+        bgcolor: theme.palette.mode === 'dark'
+          ? alpha(theme.palette[paletteKey].dark, 0.12)
+          : alpha(theme.palette[paletteKey].light, 0.14),
+        boxShadow: `0 10px 28px ${alpha(theme.palette[paletteKey].main, 0.08)}`,
+        backdropFilter: 'blur(10px)',
+      }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography
+            variant="caption"
+            sx={{
+              display: 'block',
+              color: `${paletteKey}.main`,
+              fontWeight: 800,
+              letterSpacing: 0.1,
+              mb: 0.25,
+            }}
+          >
+            {title}
+          </Typography>
+          <Typography
+            variant="body2"
+            sx={{
+              color: 'text.primary',
+              fontWeight: 650,
+              lineHeight: 1.45,
+              wordBreak: 'break-word',
+            }}
+          >
+            {detail}
+          </Typography>
+        </Box>
+        {!isDone && !isFailed && (
+          <Button
+            size="small"
+            variant="contained"
+            color="warning"
+            disabled={executing}
+            onClick={() => onExecute?.(action)}
+            sx={{
+              flexShrink: 0,
+              minWidth: 84,
+              height: 30,
+              px: 1.4,
+              borderRadius: '999px',
+              textTransform: 'none',
+              fontWeight: 800,
+              boxShadow: `0 8px 18px ${alpha(theme.palette.warning.main, 0.18)}`,
+            }}
+          >
+            {executing ? '执行中…' : '确认'}
+          </Button>
+        )}
+      </Box>
+      {action.memoryReview?.summary && !isDone && !isFailed && (
+        <Box sx={{ mt: 0.75, pt: 0.75, borderTop: `1px solid ${alpha(theme.palette.warning.main, 0.16)}` }}>
+          <Typography variant="caption" color={action.memoryReview.level === 'warning' ? 'warning.main' : 'text.secondary'} sx={{ display: 'block' }}>
+            {action.memoryReview.summary}
+          </Typography>
+          {action.memoryReview.candidates?.slice(0, 2).map(candidate => (
+            <Typography key={candidate.id || candidate.content} variant="caption" color="text.secondary" sx={{ display: 'block', pl: 1, mt: 0.25 }}>
+              相似记忆：{candidate.content}
+            </Typography>
+          ))}
+        </Box>
+      )}
+    </Paper>
+  )
+}
+
 // ─── 聊天消息组件 ───
 
 const ChatMessage = React.memo(({ msg, theme, userAvatar, onExecuteAction, executingActionId, onSaveAsNote, onAskFollowUp, onOpenSource }) => {
@@ -381,7 +561,7 @@ const ChatMessage = React.memo(({ msg, theme, userAvatar, onExecuteAction, execu
           }}
           {...(isUser && userAvatar ? { src: userAvatar } : {})}
         >
-          {isUser ? null : <SparkleIcon sx={{ fontSize: 18 }} />}
+          {isUser ? null : <FlotaAIIcon sx={{ fontSize: 20 }} />}
         </Avatar>
 
         <Box sx={{ maxWidth: '80%', minWidth: 0 }}>
@@ -399,98 +579,33 @@ const ChatMessage = React.memo(({ msg, theme, userAvatar, onExecuteAction, execu
               <Tooltip title={tc.summary || tc.error || 'AI 正在调用应用能力'} arrow>
                 <Chip
                   size="small"
-                  icon={TOOL_ICONS[tc.name] || <SparkleIcon fontSize="small" />}
+                  icon={TOOL_ICONS[tc.name] || <FlotaAIIcon sx={{ fontSize: 16 }} />}
                   label={formatToolLabel(tc)}
                   variant="outlined"
-                  color={tc.action ? 'warning' : tc.done ? 'success' : 'default'}
+                  color={tc.error ? 'error' : tc.done ? 'success' : 'default'}
                   sx={{ mr: 0.5, height: 24, fontSize: '0.75rem' }}
                 />
               </Tooltip>
-              {tc.action && tc.action.name === 'create_todos' && (
+            </Box>
+          ))}
+
+          {/* 待确认动作卡（统一读取 msg.actions 与历史 toolCalls[].action） */}
+          {getMessagePendingActions(msg).map((action) => (
+            <Box key={action.actionId} sx={{ mb: 0.75 }}>
+              {action.name === 'create_todos' ? (
                 <BatchTodoActionCard
-                  action={tc.action}
+                  action={action}
                   theme={theme}
-                  executing={executingActionId === tc.action.actionId}
+                  executing={executingActionId === action.actionId}
                   onExecute={onExecuteAction}
                 />
-              )}
-              {tc.action && tc.action.name !== 'create_todos' && (
-                <Paper
-                  elevation={0}
-                  sx={{
-                    mt: 0.75,
-                    px: 1.25,
-                    py: 1,
-                    maxWidth: 420,
-                    borderRadius: '14px',
-                    border: '1px solid',
-                    borderColor: alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.28 : 0.26),
-                    bgcolor: theme.palette.mode === 'dark'
-                      ? alpha(theme.palette.warning.dark, 0.12)
-                      : alpha(theme.palette.warning.light, 0.14),
-                    boxShadow: `0 10px 28px ${alpha(theme.palette.warning.main, 0.08)}`,
-                    backdropFilter: 'blur(10px)',
-                  }}
-                >
-                  <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
-                    <Box sx={{ minWidth: 0, flex: 1 }}>
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          display: 'block',
-                          color: 'warning.main',
-                          fontWeight: 800,
-                          letterSpacing: 0.1,
-                          mb: 0.25,
-                        }}
-                      >
-                        待你确认
-                      </Typography>
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          color: 'text.primary',
-                          fontWeight: 650,
-                          lineHeight: 1.45,
-                          wordBreak: 'break-word',
-                        }}
-                      >
-                        {tc.action.summary || tc.action.label}
-                      </Typography>
-                    </Box>
-                    <Button
-                      size="small"
-                      variant="contained"
-                      color="warning"
-                      disabled={executingActionId === tc.action.actionId}
-                      onClick={() => onExecuteAction?.(tc.action)}
-                      sx={{
-                        flexShrink: 0,
-                        minWidth: 84,
-                        height: 30,
-                        px: 1.4,
-                        borderRadius: '999px',
-                        textTransform: 'none',
-                        fontWeight: 800,
-                        boxShadow: `0 8px 18px ${alpha(theme.palette.warning.main, 0.18)}`,
-                      }}
-                    >
-                      {executingActionId === tc.action.actionId ? '执行中…' : '确认'}
-                    </Button>
-                  </Box>
-                  {tc.action.memoryReview?.summary && (
-                    <Box sx={{ mt: 0.75, pt: 0.75, borderTop: `1px solid ${alpha(theme.palette.warning.main, 0.16)}` }}>
-                      <Typography variant="caption" color={tc.action.memoryReview.level === 'warning' ? 'warning.main' : 'text.secondary'} sx={{ display: 'block' }}>
-                        {tc.action.memoryReview.summary}
-                      </Typography>
-                      {tc.action.memoryReview.candidates?.slice(0, 2).map(candidate => (
-                        <Typography key={candidate.id || candidate.content} variant="caption" color="text.secondary" sx={{ display: 'block', pl: 1, mt: 0.25 }}>
-                          相似记忆：{candidate.content}
-                        </Typography>
-                      ))}
-                    </Box>
-                  )}
-                </Paper>
+              ) : (
+                <SimpleActionCard
+                  action={action}
+                  theme={theme}
+                  executing={executingActionId === action.actionId}
+                  onExecute={onExecuteAction}
+                />
               )}
             </Box>
           ))}
@@ -556,17 +671,61 @@ const ChatMessage = React.memo(({ msg, theme, userAvatar, onExecuteAction, execu
 
 export default function AIChatView({ onTodoUpdated }) {
   const theme = useTheme()
-  const { userAvatar, notes, selectedNoteId, setSelectedNoteId, aiConversations, aiActiveConvId, aiNewChat, aiUpdateConv, aiCommandRequest, aiClearCommandRequest, loadNotes, updateNote, createNote } = useStore()
+  const {
+    userAvatar,
+    notes,
+    selectedNoteId,
+    setSelectedNoteId,
+    aiConversations,
+    aiActiveConvId,
+    aiNoteConversationMap,
+    aiNewChat,
+    aiEnsureNoteChat,
+    aiSwitchConv,
+    aiSetActiveConv,
+    aiUpdateConv,
+    aiCommandRequest,
+    aiClearCommandRequest,
+    currentView,
+    loadNotes,
+    updateNote,
+    createNote,
+    deleteNote
+  } = useStore(useShallow((state) => ({
+    userAvatar: state.userAvatar,
+    notes: state.notes,
+    selectedNoteId: state.selectedNoteId,
+    setSelectedNoteId: state.setSelectedNoteId,
+    aiConversations: state.aiConversations,
+    aiActiveConvId: state.aiActiveConvId,
+    aiNoteConversationMap: state.aiNoteConversationMap,
+    aiNewChat: state.aiNewChat,
+    aiEnsureNoteChat: state.aiEnsureNoteChat,
+    aiSwitchConv: state.aiSwitchConv,
+    aiSetActiveConv: state.aiSetActiveConv,
+    aiUpdateConv: state.aiUpdateConv,
+    aiCommandRequest: state.aiCommandRequest,
+    aiClearCommandRequest: state.aiClearCommandRequest,
+    currentView: state.currentView,
+    loadNotes: state.loadNotes,
+    updateNote: state.updateNote,
+    createNote: state.createNote,
+    deleteNote: state.deleteNote,
+  })))
 
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [pendingImages, setPendingImages] = useState([]) // [{ id, dataUrl }]
   const [visionEnabled, setVisionEnabled] = useState(false)
   const [loading, setLoading] = useState(false)
+  // 正在流式生成的会话 id。loading 是组件级单例，必须配合它判断「思考中」属于哪个会话，
+  // 否则在 A 生成时切到 B，B 会错误地显示思考中并被锁住输入。
+  const [streamingConvId, setStreamingConvId] = useState(null)
   const [streamContent, setStreamContent] = useState('')
   const [thinkingPhrase, setThinkingPhrase] = useState('Thinking… 思考中')
   const [toolCalls, setToolCalls] = useState([])
   const [steps, setSteps] = useState([])
+  const [activeTool, setActiveTool] = useState(null)
   const [contextEnabled, setContextEnabled] = useState({ currentNote: true, relatedNotes: true, todos: true, memories: true })
   const [executingActionId, setExecutingActionId] = useState(null)
   const [messageContextMenu, setMessageContextMenu] = useState(null)
@@ -574,20 +733,136 @@ export default function AIChatView({ onTodoUpdated }) {
 
   const scrollRef = useRef(null)
   const inputRef = useRef(null)
-  const chunkListenerRef = useRef(null)
-  const activeRequestIdRef = useRef(null)
-  const cancelRequestedRef = useRef(false)
+  const messagesRef = useRef([])
+  const conversationIdRef = useRef(aiActiveConvId)
+  const streamDraftsRef = useRef(new Map())
+  const pendingScrollToLatestConvRef = useRef(null)
+  const activeToolClearTimerRef = useRef(null)
+  const activeToolStartedAtRef = useRef(0)
+  const { runStream, cancel } = useAIStream()
+  const currentNote = useMemo(
+    () => notes.find(note => String(note.id) === String(selectedNoteId)),
+    [notes, selectedNoteId]
+  )
+  const noteConversationId = selectedNoteId == null ? null : aiNoteConversationMap?.[String(selectedNoteId)] || null
+  // 选中了笔记 → 只显示该笔记自己的对话（没有则为空，开新对话）。
+  // 未选中任何笔记（通用聊天）→ 跟随全局活动对话。
+  // 关键：选中笔记时绝不回退到 aiActiveConvId，否则切到「尚无对话的笔记」会串显示上一条/通用对话。
+  const currentConversationId = selectedNoteId != null ? noteConversationId : (aiActiveConvId || null)
+  const currentConversation = useMemo(
+    () => aiConversations.find((conversation) => conversation.id === currentConversationId) || null,
+    [aiConversations, currentConversationId]
+  )
+  const previousConversationIdRef = useRef(currentConversationId)
+  const pendingConversationIdRef = useRef(null)
+
+  const readStreamDraft = useCallback((conversationId) => {
+    if (!conversationId) return null
+    return streamDraftsRef.current.get(conversationId) || null
+  }, [])
+
+  const writeStreamDraft = useCallback((conversationId, patch) => {
+    if (!conversationId) return null
+    const prev = streamDraftsRef.current.get(conversationId) || {
+      streamContent: '',
+      toolCalls: [],
+      steps: [],
+    }
+    const next = { ...prev, ...patch }
+    streamDraftsRef.current.set(conversationId, next)
+    return next
+  }, [])
+
+  const clearStreamDraft = useCallback((conversationId) => {
+    if (!conversationId) return
+    streamDraftsRef.current.delete(conversationId)
+  }, [])
+
+  const ACTIVE_TOOL_MIN_DURATION = 1500
+  const showActiveTool = useCallback((name) => {
+    if (activeToolClearTimerRef.current) {
+      window.clearTimeout(activeToolClearTimerRef.current)
+      activeToolClearTimerRef.current = null
+    }
+    activeToolStartedAtRef.current = Date.now()
+    setActiveTool(name || null)
+  }, [])
+
+  const clearActiveTool = useCallback(() => {
+    const elapsed = Date.now() - (activeToolStartedAtRef.current || 0)
+    const remaining = Math.max(0, ACTIVE_TOOL_MIN_DURATION - elapsed)
+    if (activeToolClearTimerRef.current) {
+      window.clearTimeout(activeToolClearTimerRef.current)
+      activeToolClearTimerRef.current = null
+    }
+    if (remaining === 0) {
+      setActiveTool(null)
+      return
+    }
+    activeToolClearTimerRef.current = window.setTimeout(() => {
+      setActiveTool(null)
+      activeToolClearTimerRef.current = null
+    }, remaining)
+  }, [])
+
+  useEffect(() => () => {
+    if (activeToolClearTimerRef.current) window.clearTimeout(activeToolClearTimerRef.current)
+  }, [])
+
+  // 当前视图是否正在流式生成：必须当前可见会话恰好就是那个正在生成的会话。
+  // 这样在别的会话后台生成时，本视图不会被误锁。
+  const isStreaming = loading && streamingConvId != null && streamingConvId === currentConversationId
+  const hasBackgroundStreaming = loading && streamingConvId != null && streamingConvId !== currentConversationId
+  const backgroundStreamingConversation = useMemo(
+    () => aiConversations.find((conversation) => conversation.id === streamingConvId) || null,
+    [aiConversations, streamingConvId]
+  )
+  const backgroundStreamingNoteTitle = useMemo(() => {
+    const noteId = backgroundStreamingConversation?.noteId
+    if (noteId == null) return ''
+    return notes.find((note) => String(note.id) === String(noteId))?.title || ''
+  }, [backgroundStreamingConversation, notes])
 
   // 切换对话时加载消息
   useEffect(() => {
-    const conv = aiConversations.find(c => c.id === aiActiveConvId)
-    setMessages(conv?.messages || [])
-    setStreamContent('')
-    setToolCalls([])
-    setSteps([])
-    setInput('')
-    setPendingImages([])
-  }, [aiActiveConvId, aiConversations])
+    if (previousConversationIdRef.current !== currentConversationId) {
+      const isSendInitiatedSwitch = (
+        pendingConversationIdRef.current &&
+        pendingConversationIdRef.current === currentConversationId
+      )
+      previousConversationIdRef.current = currentConversationId
+      conversationIdRef.current = currentConversationId
+      if (isSendInitiatedSwitch) {
+        pendingConversationIdRef.current = null
+        return
+      }
+      setMessages(currentConversation?.messages || [])
+      messagesRef.current = currentConversation?.messages || []
+      pendingScrollToLatestConvRef.current = currentConversationId
+      const draft = loading && streamingConvId === currentConversationId
+        ? readStreamDraft(currentConversationId)
+        : null
+      setStreamContent(draft?.streamContent || '')
+      setToolCalls(draft?.toolCalls || [])
+      setSteps(draft?.steps || [])
+      setInput('')
+      setPendingImages([])
+    }
+  }, [currentConversation, currentConversationId, loading, streamingConvId, readStreamDraft])
+
+  useEffect(() => {
+    if (!currentConversationId || previousConversationIdRef.current !== currentConversationId || isStreaming) return
+    setMessages(currentConversation?.messages || [])
+    messagesRef.current = currentConversation?.messages || []
+  }, [currentConversation, currentConversationId, isStreaming])
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+
+  useEffect(() => {
+    conversationIdRef.current = currentConversationId
+  }, [currentConversationId])
 
   // 读取 vision 开关
   useEffect(() => {
@@ -601,13 +876,19 @@ export default function AIChatView({ onTodoUpdated }) {
   // loading 期间偶尔轮换 thinking 短语，间隔较长避免视觉抖动
   useEffect(() => {
     if (!loading) return undefined
-    const id = window.setInterval(() => setThinkingPhrase(pickThinkingPhrase()), 6000)
+    const id = window.setInterval(() => setThinkingPhrase(pickThinkingPhrase()), 3500)
     return () => window.clearInterval(id)
   }, [loading])
 
   // 自动滚动到底部：仅当用户已经停留在接近底部（≤80px）时才自动跟随，
   // 否则尊重用户向上滚动的位置，不强行拽回。
   const SCROLL_FOLLOW_THRESHOLD = 80
+  const forceScrollToBottom = useCallback(() => {
+    const node = scrollRef.current
+    if (!node) return
+    node.scrollTop = node.scrollHeight
+  }, [])
+
   const scrollToBottom = useCallback(() => {
     const node = scrollRef.current
     if (!node) return
@@ -619,15 +900,20 @@ export default function AIChatView({ onTodoUpdated }) {
 
   useEffect(() => { scrollToBottom() }, [messages, streamContent, scrollToBottom])
 
-  // 清理 chunk 监听器
   useEffect(() => {
+    if (pendingScrollToLatestConvRef.current !== currentConversationId) return
+    let innerRafId = null
+    const rafId = window.requestAnimationFrame(() => {
+      innerRafId = window.requestAnimationFrame(() => {
+        forceScrollToBottom()
+        pendingScrollToLatestConvRef.current = null
+      })
+    })
     return () => {
-      if (chunkListenerRef.current) {
-        chunkListenerRef.current()
-        chunkListenerRef.current = null
-      }
+      window.cancelAnimationFrame(rafId)
+      if (innerRafId != null) window.cancelAnimationFrame(innerRafId)
     }
-  }, [])
+  }, [currentConversationId, messages, forceScrollToBottom])
 
   const getConversationTitle = (msgs) => {
     const first = msgs.find(m => m.role === 'user')
@@ -638,6 +924,11 @@ export default function AIChatView({ onTodoUpdated }) {
     const text = String(raw).replace(/\n/g, ' ').trim()
     return text.length > 24 ? text.slice(0, 24) + '…' : text
   }
+
+  const handleJumpToStreamingConversation = useCallback(() => {
+    if (!streamingConvId) return
+    aiSwitchConv(streamingConvId)
+  }, [streamingConvId, aiSwitchConv])
 
   const parseToolResult = (result) => {
     try {
@@ -653,11 +944,20 @@ export default function AIChatView({ onTodoUpdated }) {
     const images = pendingImages
     if ((!text && images.length === 0) || loading) return
 
-    // 无活跃对话则自动新建
-    let currentId = aiActiveConvId
-    if (!currentId) {
-      currentId = aiNewChat()
+    let currentId = currentConversationId
+    if (selectedNoteId == null) {
+      if (!currentId) {
+        currentId = aiNewChat()
+      } else {
+        aiSetActiveConv(currentId)
+      }
+    } else {
+      currentId = aiEnsureNoteChat(selectedNoteId, {
+        title: currentNote ? `关于「${truncateText(currentNote.title || '未命名', 18)}」` : '新对话'
+      })
     }
+    pendingConversationIdRef.current = currentId
+    conversationIdRef.current = currentId
 
     // 多模态 content：文本 + 图片 parts；纯文本则保持字符串以便兼容历史
     const userContent = images.length > 0
@@ -667,96 +967,70 @@ export default function AIChatView({ onTodoUpdated }) {
         ]
       : text
 
-    const userMsg = { role: 'user', content: userContent }
-    const newMessages = [...messages, userMsg]
+    const userMsg = createUserMessage({
+      content: userContent,
+      metadata: buildMessageMetadata({
+        conversationId: currentId,
+        noteId: selectedNoteId == null ? null : String(selectedNoteId),
+        source: selectedNoteId == null ? 'general' : 'note',
+      }),
+    })
+    const newMessages = [...(messagesRef.current || []), userMsg]
+    messagesRef.current = newMessages
     setMessages(newMessages)
     setInput('')
     setPendingImages([])
     setLoading(true)
+    setStreamingConvId(currentId)
     setThinkingPhrase(pickThinkingPhrase())
     setStreamContent('')
     setToolCalls([])
+    setSteps([])
+    writeStreamDraft(currentId, {
+      streamContent: '',
+      toolCalls: [],
+      steps: [],
+    })
 
     // 持久化用户消息
-    aiUpdateConv(currentId, { messages: newMessages, title: getConversationTitle(newMessages) })
+    aiUpdateConv(currentId, {
+      messages: newMessages,
+      title: getConversationTitle(newMessages),
+      noteId: selectedNoteId == null ? null : String(selectedNoteId),
+      source: selectedNoteId == null ? 'general' : 'note'
+    })
 
-    const requestId = `${currentId}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
-    activeRequestIdRef.current = requestId
-    cancelRequestedRef.current = false
-
-    // 构建发送给 API 的消息（只含 role + content；多模态 content array 原样透传）
-    const apiMessages = newMessages.map(m => ({ role: m.role, content: m.content }))
-    const currentNote = notes.find(note => String(note.id) === String(selectedNoteId))
-    // 仅图片无文字时直接发送，跳过写作意图分类（否则会被判为需要追问）
-    const intentResult = text
-      ? await routeIntent({ prompt: text, messages: newMessages, currentNote })
-      : { allowPersistence: false, disabledTools: [], needClarification: false, clarifyQuestion: '' }
-    const { allowPersistence, disabledTools, needClarification, clarifyQuestion } = intentResult
-    if (needClarification) {
-      const finalMessages = [...newMessages, { role: 'assistant', content: clarifyQuestion }]
-      setMessages(finalMessages)
-      setStreamContent('')
-      setToolCalls([])
-      aiUpdateConv(currentId, { messages: finalMessages, title: getConversationTitle(finalMessages) })
-      setLoading(false)
-      inputRef.current?.focus()
-      return
-    }
-    const contextPackage = await buildContext({ notes, selectedNoteId, query: text, contextEnabled })
+    // 该请求归属的对话。流式回包/最终落地前都据此判断用户是否已切到别的对话，
+    // 切走后只更新对应会话的持久化数据，绝不把旧请求的内容写进当前视图（否则会“串台”）。
+    const isActiveView = () => conversationIdRef.current === currentId
 
     try {
-      const whiteboardResult = allowPersistence
-        ? await handleWhiteboardAIRequest({
-          note: currentNote,
-          prompt: text,
-          messages: newMessages,
-          updateNote,
-          loadNotes,
+      // 构建发送给 API 的消息（只含 role + content；多模态 content array 原样透传）
+      const apiMessages = newMessages.map(m => ({ role: m.role, content: m.content }))
+      // 仅图片无文字时直接发送，跳过写作意图分类（否则会被判为需要追问）
+      const intentResult = text
+        ? await routeIntent({ prompt: text, messages: newMessages, currentNote })
+        : { allowPersistence: false, disabledTools: [], needClarification: false, clarifyQuestion: '' }
+      const { disabledTools, needClarification, clarifyQuestion } = intentResult
+      if (needClarification) {
+        clearStreamDraft(currentId)
+        const finalMessages = [...newMessages, { role: 'assistant', content: clarifyQuestion }]
+        if (isActiveView()) {
+          messagesRef.current = finalMessages
+          setMessages(finalMessages)
+          setStreamContent('')
+          setToolCalls([])
+        }
+        aiUpdateConv(currentId, {
+          messages: finalMessages,
+          title: getConversationTitle(finalMessages),
+          noteId: selectedNoteId == null ? null : String(selectedNoteId),
+          source: selectedNoteId == null ? 'general' : 'note'
         })
-        : null
-
-      if (whiteboardResult) {
-        const finalMessages = [...newMessages, {
-          role: 'assistant',
-          content: whiteboardResult.content,
-          contextSources: getContextSources(contextPackage)
-        }]
-        setMessages(finalMessages)
-        setStreamContent('')
-        setToolCalls([])
-        aiUpdateConv(currentId, { messages: finalMessages, title: getConversationTitle(finalMessages) })
         return
       }
+      const contextPackage = await buildContext({ notes, selectedNoteId, query: text, contextEnabled })
 
-      // 当前不在画布笔记时，识别"新建一张画布并生成内容"的意图
-      const createWhiteboardResult = allowPersistence
-        ? await handleCreateWhiteboardRequest({
-          note: currentNote,
-          prompt: text,
-          messages: newMessages,
-          createNote,
-          updateNote,
-          loadNotes,
-        })
-        : null
-
-      if (createWhiteboardResult) {
-        if (createWhiteboardResult.noteId) setSelectedNoteId?.(createWhiteboardResult.noteId)
-        const finalMessages = [...newMessages, {
-          role: 'assistant',
-          content: createWhiteboardResult.content,
-          contextSources: getContextSources(contextPackage)
-        }]
-        setMessages(finalMessages)
-        setStreamContent('')
-        setToolCalls([])
-        aiUpdateConv(currentId, { messages: finalMessages, title: getConversationTitle(finalMessages) })
-        return
-      }
-
-      // 注册 chunk 监听
-      if (chunkListenerRef.current) chunkListenerRef.current()
-      let currentContent = ''
       let currentToolCalls = []
       let currentSteps = []
 
@@ -767,149 +1041,181 @@ export default function AIChatView({ onTodoUpdated }) {
         } else {
           currentSteps = currentSteps.map(s => s.id === id ? { ...s, ...patch, meta: { ...s.meta, ...patch.meta } } : s)
         }
-        setSteps([...currentSteps])
+        writeStreamDraft(currentId, { steps: [...currentSteps] })
+        if (isActiveView()) setSteps([...currentSteps])
       }
 
-      chunkListenerRef.current = window.electronAPI.ai.onChatChunk((chunk) => {
-        if (!chunk || chunk.requestId !== activeRequestIdRef.current) {
-          return
-        }
-
-        switch (chunk.type) {
-          case 'content':
-            currentContent += chunk.content
-            setStreamContent(currentContent)
-            break
-          case 'tool_start':
-            currentToolCalls = [...currentToolCalls, { name: chunk.name, args: chunk.args, done: false }]
-            setToolCalls([...currentToolCalls])
-            break
-          case 'tool_end': {
-            const parsed = parseToolResult(chunk.result)
-            currentToolCalls = currentToolCalls.map(tc =>
-              tc.name === chunk.name && !tc.done
-                ? {
-                  ...tc,
-                  done: true,
-                  result: parsed,
-                  action: parsed?.requiresConfirmation ? parsed : undefined,
-                  summary: parsed?.summary || parsed?.message || parsed?.error,
-                  error: parsed?.error,
-                }
-                : tc
-            )
-            setToolCalls([...currentToolCalls])
-            break
-          }
-          case 'step_start':
-            upsertStep(chunk.stepId, {
-              parentId: chunk.parentId,
-              stepType: chunk.stepType,
-              title: chunk.title || '',
-              status: 'running',
-              content: '',
-              meta: chunk.meta || {},
-            })
-            break
-          case 'step_token': {
-            const node = currentSteps.find(s => s.id === chunk.stepId)
-            upsertStep(chunk.stepId, { content: (node?.content || '') + (chunk.token || '') })
-            break
-          }
-          case 'step_update':
-            upsertStep(chunk.stepId, {
-              ...(chunk.title ? { title: chunk.title } : {}),
-              ...(chunk.status ? { status: chunk.status } : {}),
-              ...(chunk.meta ? { meta: chunk.meta } : {}),
-            })
-            break
-          case 'step_end':
-            upsertStep(chunk.stepId, {
-              status: chunk.status || 'done',
-              ...(chunk.title ? { title: chunk.title } : {}),
-              ...(chunk.content ? { content: chunk.content } : {}),
-              ...(chunk.meta ? { meta: chunk.meta } : {}),
-            })
-            break
-          case 'error':
-            setStreamContent(prev => prev + `\n\n⚠️ ${chunk.content}`)
-            break
-          case 'done':
-            break
-        }
-      })
-
-      const result = await window.electronAPI.ai.chatStream(apiMessages, {
-        requestId,
+      const { result, content: currentContent, cancelledByUser, requestId } = await runStream({
+        conversationId: currentId,
+        messages: apiMessages,
         contextPackage,
-        scene: 'chat_panel',
-        memoryQuery: text,
-        requireConfirmation: true,
-        disabledTools: visionEnabled ? disabledTools : [...(disabledTools || []), 'read_note_image'],
+        requestPrefix: 'aichat',
+        options: {
+          scene: 'chat_panel',
+          memoryQuery: text,
+          requireConfirmation: true,
+          actionContext: {
+            selectedNoteId: selectedNoteId == null ? null : String(selectedNoteId),
+            source: selectedNoteId == null ? 'general' : 'note',
+          },
+          disabledTools: visionEnabled ? disabledTools : [...(disabledTools || []), 'read_note_image'],
+        },
+        onContent: (c) => {
+          writeStreamDraft(currentId, { streamContent: c })
+          if (isActiveView()) setStreamContent(c)
+        },
+        onChunkError: (chunk) => {
+          const draft = writeStreamDraft(currentId, {
+            streamContent: `${readStreamDraft(currentId)?.streamContent || ''}\n\n⚠️ ${chunk.content}`
+          })
+          if (isActiveView()) setStreamContent(draft.streamContent)
+        },
+        onChunk: (chunk) => {
+          switch (chunk.type) {
+            case 'tool_start':
+              showActiveTool(chunk.name || null)
+              currentToolCalls = [...currentToolCalls, { name: chunk.name, args: chunk.args, done: false }]
+              writeStreamDraft(currentId, { toolCalls: [...currentToolCalls] })
+              if (isActiveView()) setToolCalls([...currentToolCalls])
+              break
+            case 'tool_end': {
+              clearActiveTool()
+              const parsed = parseToolResult(chunk.result)
+              currentToolCalls = currentToolCalls.map(tc =>
+                tc.name === chunk.name && !tc.done
+                  ? {
+                    ...tc,
+                    done: true,
+                    result: parsed,
+                    action: parsed?.requiresConfirmation ? parsed : undefined,
+                    summary: parsed?.summary || parsed?.message || parsed?.error,
+                    error: parsed?.error,
+                  }
+                  : tc
+              )
+              writeStreamDraft(currentId, { toolCalls: [...currentToolCalls] })
+              if (isActiveView()) setToolCalls([...currentToolCalls])
+              break
+            }
+            case 'step_start':
+              upsertStep(chunk.stepId, {
+                parentId: chunk.parentId,
+                stepType: chunk.stepType,
+                title: chunk.title || '',
+                status: 'running',
+                content: '',
+                meta: chunk.meta || {},
+              })
+              break
+            case 'step_token': {
+              const node = currentSteps.find(s => s.id === chunk.stepId)
+              upsertStep(chunk.stepId, { content: (node?.content || '') + (chunk.token || '') })
+              break
+            }
+            case 'step_update':
+              upsertStep(chunk.stepId, {
+                ...(chunk.title ? { title: chunk.title } : {}),
+                ...(chunk.status ? { status: chunk.status } : {}),
+                ...(chunk.meta ? { meta: chunk.meta } : {}),
+              })
+              break
+            case 'step_end':
+              upsertStep(chunk.stepId, {
+                status: chunk.status || 'done',
+                ...(chunk.title ? { title: chunk.title } : {}),
+                ...(chunk.content ? { content: chunk.content } : {}),
+                ...(chunk.meta ? { meta: chunk.meta } : {}),
+              })
+              break
+            default:
+              break
+          }
+        },
       })
 
       // 将流式结果添加为完整助手消息
-      const stoppedByUser = Boolean(result.cancelled && cancelRequestedRef.current)
-      const assistantContentBase = result.cancelled
+      const stoppedByUser = Boolean(result?.cancelled && cancelledByUser)
+      const assistantContentBase = result?.cancelled
         ? (currentContent || (stoppedByUser ? '已停止生成。' : '❌ 生成已中断，请重试'))
-        : result.success
+        : result?.success
         ? (result.fullContent || currentContent || '')
-        : (currentContent || `❌ ${result.error}`)
-      const truncatedHint = result.outputLimitApplied
+        : (currentContent || `❌ ${result?.error || '请求失败'}`)
+      const truncatedHint = result?.outputLimitApplied
         ? '⚠️ 回复达到当前最大 token 限制，可能未完整输出。可以在高级设置里调高最大输出长度，或发送“继续”。'
         : '⚠️ 回复达到模型或服务商的输出上限，可能未完整输出。可以发送“继续”让 AI 接着写。'
-      const assistantContent = result.truncated
+      const assistantContent = result?.truncated
         ? `${assistantContentBase}\n\n${truncatedHint}`
         : assistantContentBase
 
-      const finalMessages = [...newMessages, {
-        role: 'assistant',
+      const pendingActions = extractPendingActions(currentToolCalls)
+      clearStreamDraft(currentId)
+      const finalMessages = [...newMessages, createAssistantMessage({
         content: assistantContent,
-        toolCalls: currentToolCalls.length > 0 ? currentToolCalls : undefined,
+        toolCalls: currentToolCalls,
+        actions: pendingActions,
         steps: currentSteps.length > 0 ? slimStepsForPersist(currentSteps) : undefined,
         contextSources: getContextSources(contextPackage),
-        stopped: stoppedByUser
-      }]
-      setMessages(finalMessages)
-      setStreamContent('')
-      setToolCalls([])
-      setSteps([])
+        stopped: stoppedByUser,
+        metadata: buildMessageMetadata({
+          conversationId: currentId,
+          noteId: selectedNoteId == null ? null : String(selectedNoteId),
+          source: selectedNoteId == null ? 'general' : 'note',
+          requestId,
+        }),
+      })]
+      messagesRef.current = finalMessages
+      if (isActiveView()) {
+        setMessages(finalMessages)
+        setStreamContent('')
+        setToolCalls([])
+        setSteps([])
+      }
 
       // 持久化完整对话
-      aiUpdateConv(currentId, { messages: finalMessages, title: getConversationTitle(finalMessages) })
+      aiUpdateConv(currentId, {
+        messages: finalMessages,
+        title: getConversationTitle(finalMessages),
+        noteId: selectedNoteId == null ? null : String(selectedNoteId),
+        source: selectedNoteId == null ? 'general' : 'note'
+      })
     } catch (error) {
+      clearStreamDraft(currentId)
       const errMessages = [...newMessages, {
         role: 'assistant',
         content: `❌ 发生错误: ${error.message}`
       }]
-      setMessages(errMessages)
-      setStreamContent('')
-      setToolCalls([])
-      setSteps([])
-      aiUpdateConv(currentId, { messages: errMessages })
-    } finally {
-      if (chunkListenerRef.current) {
-        chunkListenerRef.current()
-        chunkListenerRef.current = null
+      messagesRef.current = errMessages
+      if (isActiveView()) {
+        setMessages(errMessages)
+        setStreamContent('')
+        setToolCalls([])
+        setSteps([])
       }
-      activeRequestIdRef.current = null
-      cancelRequestedRef.current = false
+      aiUpdateConv(currentId, {
+        messages: errMessages,
+        title: getConversationTitle(errMessages),
+        noteId: selectedNoteId == null ? null : String(selectedNoteId),
+        source: selectedNoteId == null ? 'general' : 'note'
+      })
+    } finally {
+      pendingConversationIdRef.current = null
+      setStreamingConvId(null)
+      if (activeToolClearTimerRef.current) {
+        window.clearTimeout(activeToolClearTimerRef.current)
+        activeToolClearTimerRef.current = null
+      }
+      setActiveTool(null)
       setLoading(false)
-      inputRef.current?.focus()
+      if (currentView === 'ai' && isActiveView()) {
+        inputRef.current?.focus()
+      }
     }
-  }, [input, pendingImages, loading, messages, aiActiveConvId, aiNewChat, aiUpdateConv, contextEnabled, loadNotes, notes, selectedNoteId, updateNote, createNote, setSelectedNoteId, visionEnabled])
+  }, [input, pendingImages, loading, currentConversationId, aiEnsureNoteChat, aiNewChat, aiSetActiveConv, aiUpdateConv, contextEnabled, notes, selectedNoteId, currentNote, visionEnabled, runStream, showActiveTool, clearActiveTool, currentView])
 
   const handleCancel = useCallback(async () => {
-    const requestId = activeRequestIdRef.current
-    if (!loading || !requestId) return
-
-    cancelRequestedRef.current = true
-    try {
-      await window.electronAPI?.ai?.cancelStream?.(requestId)
-    } catch (_) {
-      // 取消失败时不阻断界面，等待请求自然结束
-    }
-  }, [loading])
+    if (!loading) return
+    await cancel()
+  }, [loading, cancel])
 
   useEffect(() => {
     if (!aiCommandRequest?.prompt) return
@@ -939,55 +1245,52 @@ export default function AIChatView({ onTodoUpdated }) {
   }
 
   const updateCurrentConversationMessages = useCallback((updater) => {
-    const nextMessages = updater(messages)
+    const nextMessages = updater(messagesRef.current || [])
+    messagesRef.current = nextMessages
     setMessages(nextMessages)
-    if (aiActiveConvId) {
-      aiUpdateConv(aiActiveConvId, { messages: nextMessages, title: getConversationTitle(nextMessages) })
+    if (conversationIdRef.current) {
+      aiUpdateConv(conversationIdRef.current, { messages: nextMessages, title: getConversationTitle(nextMessages) })
     }
     return nextMessages
-  }, [aiActiveConvId, aiUpdateConv, messages])
+  }, [aiUpdateConv])
 
   const handleExecuteAction = useCallback(async (action, overrides = null) => {
     if (!action?.actionId || executingActionId) return
     setExecutingActionId(action.actionId)
+    updateCurrentConversationMessages(prev => prev.map(msg =>
+      patchMessagePendingAction(msg, action.actionId, { status: 'running' })
+    ))
     try {
-      const result = await window.electronAPI?.ai?.executePendingAction?.(action.actionId, overrides)
-      const content = result?.success
-        ? `已执行：${action.summary || action.label || 'AI 操作'}`
-        : `执行失败：${result?.error || '未知错误'}`
-      updateCurrentConversationMessages(prev => [...prev.map(msg => ({
-        ...msg,
-        toolCalls: msg.toolCalls?.map(tc =>
-          tc.action?.actionId === action.actionId
-            ? { ...tc, action: undefined, done: Boolean(result?.success), summary: content, error: result?.success ? undefined : result?.error }
-            : tc
-        )
-      })), {
-        role: 'assistant',
-        content,
-        toolCalls: [{
-          name: action.name,
-          done: Boolean(result?.success),
-          summary: content,
-          error: result?.success ? undefined : result?.error,
-        }]
-      }])
-      if (result?.success) {
-        if (action.name === 'create_todo' || action.name === 'create_todos') {
-          onTodoUpdated?.()
-        } else if (['create_note', 'edit_note'].includes(action.name)) {
-          loadNotes?.()
+      const { success, message, error, reloadNotes, reloadTodos } = await runPendingAction({
+        action,
+        overrides,
+        deps: { currentNote, notes, createNote, deleteNote, updateNote, loadNotes, setSelectedNoteId },
+      })
+      updateCurrentConversationMessages(prev => [
+        ...prev.map(msg => patchMessagePendingAction(msg, action.actionId, {
+          status: success ? 'done' : 'failed',
+          resultMessage: message,
+          done: success,
+          summary: message,
+          error: success ? undefined : error,
+        })),
+        {
+          role: 'assistant',
+          content: message,
+          toolCalls: [{
+            name: action.name,
+            done: success,
+            summary: message,
+            error: success ? undefined : error,
+          }],
         }
-      }
-    } catch (error) {
-      updateCurrentConversationMessages(prev => [...prev, {
-        role: 'assistant',
-        content: `执行失败：${error.message}`
-      }])
+      ])
+      if (reloadTodos) onTodoUpdated?.()
+      if (reloadNotes) loadNotes?.()
     } finally {
       setExecutingActionId(null)
     }
-  }, [executingActionId, loadNotes, onTodoUpdated, updateCurrentConversationMessages])
+  }, [createNote, currentNote, deleteNote, executingActionId, loadNotes, notes, onTodoUpdated, setSelectedNoteId, updateCurrentConversationMessages, updateNote])
 
   const handleSaveAsNote = useCallback(async (content) => {
     if (!content?.trim()) return
@@ -1122,18 +1425,12 @@ export default function AIChatView({ onTodoUpdated }) {
         scrollbarGutter: 'stable',
       }}>
         {/* 空状态 */}
-        {messages.length === 0 && !loading && (
+        {messages.length === 0 && !isStreaming && (
           <Box sx={{
             display: 'flex', flexDirection: 'column', alignItems: 'center',
             justifyContent: 'center', height: '100%', gap: 3, py: 4,
           }}>
-            <Box sx={{
-              width: 72, height: 72, borderRadius: '50%',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              bgcolor: alpha(theme.palette.primary.main, 0.1),
-            }}>
-              <SparkleIcon sx={{ fontSize: 36, color: theme.palette.primary.main }} />
-            </Box>
+            <FlotaAIOrb />
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
                 你好！我是 FlotaAI
@@ -1149,6 +1446,7 @@ export default function AIChatView({ onTodoUpdated }) {
                   label={qa.label}
                   variant="outlined"
                   clickable
+                  disabled={loading}
                   onClick={() => handleSend(qa.prompt)}
                   sx={{
                     borderRadius: '16px',
@@ -1194,13 +1492,14 @@ export default function AIChatView({ onTodoUpdated }) {
                 <CopyIcon sx={{ fontSize: 14 }} />
               </IconButton>
             )}
-            {msg.role === 'assistant' && msg.stopped && i === messages.length - 1 && !loading && (
+            {msg.role === 'assistant' && msg.stopped && i === messages.length - 1 && !isStreaming && (
               <Box sx={{ mt: -0.5, mb: 1.5, ml: 6 }}>
                 <Chip
                   size="small"
                   label="已手动停止，点击继续生成"
                   clickable
                   onClick={handleContinueGeneration}
+                  disabled={loading}
                   color="warning"
                   variant="outlined"
                 />
@@ -1210,14 +1509,14 @@ export default function AIChatView({ onTodoUpdated }) {
         ))}
 
         {/* 流式输出中 */}
-        {loading && (streamContent || toolCalls.length > 0 || steps.length > 0) && (
+        {isStreaming && (streamContent || toolCalls.length > 0 || steps.length > 0) && (
           <Box sx={{ display: 'flex', gap: 1.5, mb: 2, alignItems: 'flex-start' }}>
             <Avatar sx={{
               width: 32, height: 32,
               bgcolor: alpha(theme.palette.primary.main, 0.1),
               color: theme.palette.primary.main,
             }}>
-              <SparkleIcon sx={{ fontSize: 18 }} />
+              <LoadingAvatarContent activeTool={activeTool} iconSize={18} />
             </Avatar>
             <Box sx={{ maxWidth: '80%' }}>
               {steps.length > 0 && (
@@ -1231,10 +1530,10 @@ export default function AIChatView({ onTodoUpdated }) {
                 <Box key={`${tc.name}-${i}`} sx={{ mb: 0.75 }}>
                   <Chip
                     size="small"
-                    icon={TOOL_ICONS[tc.name] || <SparkleIcon fontSize="small" />}
+                    icon={TOOL_ICONS[tc.name] || <FlotaAIIcon sx={{ fontSize: 16 }} />}
                     label={formatToolLabel(tc)}
                     variant="outlined"
-                    color={tc.action ? 'warning' : tc.done ? 'success' : 'default'}
+                    color={tc.action?.status === 'done' ? 'success' : tc.action?.status === 'failed' ? 'error' : tc.action ? 'warning' : tc.done ? 'success' : 'default'}
                     sx={{ mr: 0.5, height: 24, fontSize: '0.75rem' }}
                   />
                   {tc.action && tc.action.name === 'create_todos' && (
@@ -1246,60 +1545,22 @@ export default function AIChatView({ onTodoUpdated }) {
                     />
                   )}
                   {tc.action && tc.action.name !== 'create_todos' && (
-                    <Paper
-                      elevation={0}
-                      sx={{
-                        mt: 0.75,
-                        px: 1.25,
-                        py: 1,
-                        maxWidth: 420,
-                        borderRadius: '14px',
-                        border: '1px solid',
-                        borderColor: alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.28 : 0.26),
-                        bgcolor: theme.palette.mode === 'dark'
-                          ? alpha(theme.palette.warning.dark, 0.12)
-                          : alpha(theme.palette.warning.light, 0.14),
-                        boxShadow: `0 10px 28px ${alpha(theme.palette.warning.main, 0.08)}`,
-                        backdropFilter: 'blur(10px)',
-                      }}
-                    >
-                      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
-                        <Box sx={{ minWidth: 0, flex: 1 }}>
-                          <Typography variant="caption" sx={{ display: 'block', color: 'warning.main', fontWeight: 800, letterSpacing: 0.1, mb: 0.25 }}>
-                            待你确认
-                          </Typography>
-                          <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 650, lineHeight: 1.45, wordBreak: 'break-word' }}>
-                            {tc.action.summary || tc.action.label}
-                          </Typography>
-                        </Box>
-                        <Button
-                          size="small"
-                          variant="contained"
-                          color="warning"
-                          disabled={executingActionId === tc.action.actionId}
-                          onClick={() => handleExecuteAction(tc.action)}
-                          sx={{
-                            flexShrink: 0, minWidth: 84, height: 30, px: 1.4,
-                            borderRadius: '999px', textTransform: 'none', fontWeight: 800,
-                            boxShadow: `0 8px 18px ${alpha(theme.palette.warning.main, 0.18)}`,
-                          }}
-                        >
-                          {executingActionId === tc.action.actionId ? '执行中…' : '确认'}
-                        </Button>
-                      </Box>
-                    </Paper>
+                    <SimpleActionCard
+                      action={tc.action}
+                      theme={theme}
+                      executing={executingActionId === tc.action.actionId}
+                      onExecute={handleExecuteAction}
+                    />
                   )}
                 </Box>
               ))}
               {streamContent && (
                 <Paper elevation={0} sx={{
                   px: 2, py: 1.5,
-                  borderRadius: '16px 16px 16px 4px',
-                  bgcolor: theme.palette.mode === 'dark'
-                    ? alpha(theme.palette.background.paper, 0.8)
-                    : alpha(theme.palette.grey[100], 0.8),
-                  backdropFilter: 'blur(8px)',
-                  lineHeight: 1.6, fontSize: '0.9rem',
+                  borderRadius: '8px 8px 8px 2px',
+                  bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.08 : 0.16),
+                  boxShadow: `inset 0 0 0 1px ${alpha(theme.palette.common.white, theme.palette.mode === 'dark' ? 0.03 : 0.26)}`,
+                  lineHeight: 1.65, fontSize: 13,
                   userSelect: 'text',
                 }}>
                   <Box sx={{ userSelect: 'text', cursor: 'text', '& > p:first-of-type': { mt: 0 }, '& > p:last-of-type': { mb: 0 } }}>
@@ -1322,27 +1583,64 @@ export default function AIChatView({ onTodoUpdated }) {
         )}
 
         {/* Loading 指示器（无流式内容时） */}
-        {loading && !streamContent && toolCalls.length === 0 && steps.length === 0 && (
+        {isStreaming && !streamContent && toolCalls.length === 0 && steps.length === 0 && (
           <Box sx={{ display: 'flex', gap: 1.5, mb: 2, alignItems: 'flex-start' }}>
             <Avatar sx={{
               width: 32, height: 32,
               bgcolor: alpha(theme.palette.primary.main, 0.1),
               color: theme.palette.primary.main,
             }}>
-              <SparkleIcon sx={{ fontSize: 18 }} />
+              <LoadingAvatarContent activeTool={activeTool} iconSize={18} />
             </Avatar>
             <Paper elevation={0} sx={{
               px: 2, py: 1.5,
-              borderRadius: '16px 16px 16px 4px',
-              bgcolor: theme.palette.mode === 'dark'
-                ? alpha(theme.palette.background.paper, 0.8)
-                : alpha(theme.palette.grey[100], 0.8),
-              display: 'flex', alignItems: 'center', gap: 1,
+              borderRadius: '8px 8px 8px 2px',
+              bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.08 : 0.16),
+              boxShadow: `inset 0 0 0 1px ${alpha(theme.palette.common.white, theme.palette.mode === 'dark' ? 0.03 : 0.26)}`,
+              display: 'flex', alignItems: 'center',
             }}>
-              <CircularProgress size={16} />
-              <ThinkingPhrase text={thinkingPhrase} />
+              <TypewriterText text={thinkingPhrase} />
             </Paper>
           </Box>
+        )}
+
+        {hasBackgroundStreaming && backgroundStreamingConversation && (
+          <Paper
+            elevation={0}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 1.5,
+              mb: 2,
+              px: 1.5,
+              py: 1.1,
+              borderRadius: '14px',
+              border: `1px solid ${alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.28 : 0.22)}`,
+              bgcolor: theme.palette.mode === 'dark'
+                ? alpha(theme.palette.warning.main, 0.1)
+                : alpha(theme.palette.warning.light, 0.16),
+            }}
+          >
+            <Box sx={{ minWidth: 0 }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 700, color: 'text.primary' }}>
+                另一个对话仍在生成
+              </Typography>
+              <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 0.25 }} noWrap>
+                {backgroundStreamingNoteTitle
+                  ? `${backgroundStreamingNoteTitle} · ${backgroundStreamingConversation.title || '新对话'}`
+                  : (backgroundStreamingConversation.title || '新对话')}
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 0.75, flexShrink: 0 }}>
+              <Button size="small" variant="outlined" color="inherit" onClick={handleJumpToStreamingConversation}>
+                切回查看
+              </Button>
+              <Button size="small" color="error" variant="outlined" onClick={handleCancel}>
+                停止
+              </Button>
+            </Box>
+          </Paper>
         )}
       </Box>
 
@@ -1415,36 +1713,38 @@ export default function AIChatView({ onTodoUpdated }) {
             sx={{
               '& .MuiInput-root': { fontSize: '0.9rem' },
             }}
-            disabled={loading}
+            disabled={isStreaming}
             autoFocus
           />
           <IconButton
-            onClick={loading ? handleCancel : () => handleSend()}
-            disabled={loading ? false : (!input.trim() && pendingImages.length === 0)}
+            onClick={isStreaming ? handleCancel : () => handleSend()}
+            disabled={isStreaming ? false : (loading || (!input.trim() && pendingImages.length === 0))}
             sx={{
               width: 36,
               height: 36,
-              bgcolor: loading
+              bgcolor: isStreaming
                 ? alpha(theme.palette.error.main, 0.12)
                 : ((input.trim() || pendingImages.length > 0) ? theme.palette.primary.main : 'transparent'),
-              color: loading
+              color: isStreaming
                 ? theme.palette.error.main
                 : ((input.trim() || pendingImages.length > 0) ? theme.palette.primary.contrastText : theme.palette.action.disabled),
               '&:hover': {
-                bgcolor: loading
+                bgcolor: isStreaming
                   ? alpha(theme.palette.error.main, 0.2)
                   : ((input.trim() || pendingImages.length > 0) ? theme.palette.primary.dark : 'transparent'),
               },
               transition: 'all 0.2s',
             }}
-            aria-label={loading ? '停止生成' : '发送消息'}
+            aria-label={isStreaming ? '停止生成' : '发送消息'}
           >
-            {loading ? <StopIcon sx={{ fontSize: 18 }} /> : <SendIcon sx={{ fontSize: 18 }} />}
+            {isStreaming ? <StopIcon sx={{ fontSize: 18 }} /> : <SendIcon sx={{ fontSize: 18 }} />}
           </IconButton>
           </Box>
         </Box>
         <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block', textAlign: 'center' }}>
-          FlotaAI 可能会出错，请核实重要信息
+          {hasBackgroundStreaming
+            ? '另一个对话正在生成中，当前不能并行发送新请求。'
+            : 'FlotaAI 可能会出错，请核实重要信息'}
         </Typography>
       </Box>
 

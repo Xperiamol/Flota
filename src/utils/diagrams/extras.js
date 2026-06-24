@@ -46,6 +46,10 @@ const parseTimeline = (code) => {
   return result
 }
 
+/**
+ * @deprecated 已被 composer 通用合成引擎取代（src/utils/diagrams/composer）。
+ * 仅作为旧路径兜底保留，勿在新代码引用。
+ */
 export const renderTimeline = (code, { offsetX = 100, offsetY = 120 } = {}) => {
   const { title, events } = parseTimeline(code)
   const elements = []
@@ -189,6 +193,10 @@ const parseQuadrant = (code) => {
   return result
 }
 
+/**
+ * @deprecated 已被 composer 通用合成引擎取代（src/utils/diagrams/composer）。
+ * 仅作为旧路径兜底保留，勿在新代码引用。
+ */
 export const renderQuadrant = (code, { offsetX = 100, offsetY = 100 } = {}) => {
   const data = parseQuadrant(code)
   const elements = []
@@ -330,6 +338,10 @@ const polarToCartesian = (cx, cy, r, angle) => ({
   y: cy + r * Math.sin(angle),
 })
 
+/**
+ * @deprecated 已被 composer 通用合成引擎取代（src/utils/diagrams/composer）。
+ * 仅作为旧路径兜底保留，勿在新代码引用。
+ */
 export const renderPie = (code, { offsetX = 100, offsetY = 100 } = {}) => {
   const { title, slices } = parsePie(code)
   const elements = []

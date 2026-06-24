@@ -25,6 +25,17 @@ const { streamRequest } = require('./stream/streamRequest');
 const { handleToolCalls } = require('./stream/toolLoop');
 const PendingActionStore = require('./PendingActionStore');
 
+const isContentBlockedError = (error) => /blocked|content.*blocked|machine outputted|安全|拦截|审核|风控/i.test(String(error?.message || error || ''));
+const isGatewayError = (error) => /请求失败 \((?:429|502|503|504)\)|\b(?:429|502|503|504)\b|bad gateway|gateway timeout|service unavailable|too many requests|rate limit/i.test(String(error?.message || error || ''));
+const isNetworkError = (error) => /fetch failed|network|网络|ECONN|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|socket|timeout|超时/i.test(String(error?.message || error || ''));
+
+const normalizeChatErrorMessage = (error) => {
+  if (isContentBlockedError(error)) return '模型内容审核拦截，请调整表述后重试';
+  if (isGatewayError(error)) return 'AI 服务暂时不可用，请稍后重试';
+  if (isNetworkError(error)) return '网络请求失败，请检查网络或 AI 配置后重试';
+  return error?.message || String(error || '请求失败');
+};
+
 class AIChatService {
   constructor(aiService, noteDAO, todoDAO, mem0Service, webSearchService = null) {
     this.aiService = aiService;
@@ -110,7 +121,7 @@ class AIChatService {
       });
     }
     if (options.requireConfirmation !== false && WRITE_TOOL_NAMES.has(name)) {
-      return JSON.stringify(await this._pendingActions.create(name, args));
+      return JSON.stringify(await this._pendingActions.create(name, args, options.actionContext || null));
     }
     return dispatchTool(name, args, {
       onChunk: typeof options.onChunk === 'function' ? options.onChunk : null,
@@ -142,6 +153,12 @@ class AIChatService {
     }
   }
 
+  consumePendingAction(actionId) {
+    const action = this._pendingActions.take(actionId);
+    if (!action) return { success: false, error: '待确认操作不存在或已过期' };
+    return { success: true, action };
+  }
+
   /** 流式聊天，支持工具调用 */
   async chatStream(messages, onChunk, options = {}) {
     let accumulatedContent = '';
@@ -167,7 +184,7 @@ class AIChatService {
       const userOutputLimitApplied = hasExplicitMaxTokens || limitMaxTokensEnabled;
       const maxTk = hasExplicitMaxTokens
         ? options.maxTokens
-        : (limitMaxTokensEnabled ? config.maxTokens : DEFAULT_CHAT_MAX_TOKENS);
+        : (limitMaxTokensEnabled ? config.maxTokens : undefined);
 
       const enrichedPackage = await enrichContextPackageWithMemories(
         options.contextPackage,
@@ -214,9 +231,15 @@ class AIChatService {
       if (error?.name === 'AbortError' || /aborted|取消|cancel/i.test(error?.message || '')) {
         return { success: false, cancelled: true, error: '已取消生成', fullContent: accumulatedContent };
       }
-      this.logger.error('AIChatService', 'Stream chat failed', error);
-      onChunk({ type: 'error', content: error.message });
-      return { success: false, error: error.message, fullContent: accumulatedContent };
+      const normalizedError = normalizeChatErrorMessage(error);
+      this.logger.error('AIChatService', 'Stream chat failed', {
+        requestId: options.requestId || null,
+        conversationId: options.conversationId || null,
+        error: error?.stack || error?.message || String(error),
+        normalizedError,
+      });
+      onChunk({ type: 'error', content: normalizedError });
+      return { success: false, error: normalizedError, fullContent: accumulatedContent };
     }
   }
 

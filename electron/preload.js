@@ -46,6 +46,7 @@ const INVOKE_ALLOWLIST = new Set([
 // 注意：这里刻意不包含 system:/db:/window:/plugin-store: 等高风险通道。
 const INVOKE_ALLOWED_PREFIXES = [
   'note:',
+  'conversation:',
   'tag:',
   'tags:',
   'todo:',
@@ -99,6 +100,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onNoteCreated: listen('note:created'),
     onNoteUpdated: listen('note:updated'),
     onNoteDeleted: listen('note:deleted'),
+  },
+
+  // AI 会话持久化 API（完整会话落 SQLite）
+  conversations: {
+    getAll: inv('conversation:get-all'),
+    save: inv('conversation:save'),
+    delete: inv('conversation:delete'),
+    deleteMany: inv('conversation:delete-many'),
   },
 
   // 标签相关API
@@ -296,6 +305,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     chatStream: (messages, options) => ipcRenderer.invoke('ai:chat-stream', { messages, options }),
     cancelStream: (requestId) => ipcRenderer.invoke('ai:cancel-stream', requestId),
     executePendingAction: inv('ai:execute-pending-action'),
+    consumePendingAction: inv('ai:consume-pending-action'),
     onChatChunk: listen('ai:chat-chunk'),
   },
 

@@ -27,4 +27,15 @@ const logger = {
   error: console.error.bind(console),
 };
 
+/**
+ * AI 请求结构化日志：统一携带 requestId/conversationId/actionId/noteId 等关联字段，
+ * 便于和主进程日志对齐，快速定位“哪个请求写错了哪个画布”。
+ * info 级别走 debug 通道（默认静默，可用 localStorage.debug=true 打开），warn/error 始终输出。
+ */
+export const aiLog = {
+  info: (event, fields = {}) => logger.debug(`[ai] ${event}`, fields),
+  warn: (event, fields = {}) => logger.warn(`[ai] ${event}`, fields),
+  error: (event, fields = {}) => logger.error(`[ai] ${event}`, fields),
+};
+
 export default logger;

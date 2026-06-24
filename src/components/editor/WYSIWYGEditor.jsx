@@ -3114,6 +3114,12 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       <WikiLinkSuggestionPopup
         state={wikiSuggestState}
         allTitles={allTitlesList}
+        avoidRect={contextMenu ? {
+          left: contextMenu.left,
+          top: contextMenu.top,
+          right: contextMenu.left + CONTEXT_MENU_WIDTH,
+          bottom: contextMenu.top + Math.min(360, contextMenu.maxHeight || 360),
+        } : null}
         onSelect={(title) => {
           const cur = wikiSuggestStateRef.current
           if (!cur?.open || !editor || editor.isDestroyed) return

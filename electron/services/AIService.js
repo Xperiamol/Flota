@@ -18,7 +18,7 @@ class AIService extends EventEmitter {
     // 速率限制：滑动窗口
     this._requestTimestamps = [];
     this._maxRequestsPerMinute = 20;
-    this._requestTimeoutMs = 60000; // 60s
+    this._requestTimeoutMs = 120000; // 120s
   }
 
   /**
@@ -34,15 +34,41 @@ class AIService extends EventEmitter {
   }
 
   /**
+   * 长连接 dispatcher：禁用 undici 自带的 headers/body 内部超时，
+   * 让请求时长完全由我们的 AbortController 控制。
+   * 否则大体量（如画布规划）非流式响应会在 undici 默认 ~300s 处被
+   * 提前中断，并抛出信息被吞掉的通用 `fetch failed`。
+   */
+  _getLongRequestDispatcher() {
+    if (this._longDispatcher !== undefined) return this._longDispatcher;
+    try {
+      const { Agent } = require('undici');
+      this._longDispatcher = new Agent({ headersTimeout: 0, bodyTimeout: 0, connectTimeout: 30000 });
+    } catch (_) {
+      this._longDispatcher = null;
+    }
+    return this._longDispatcher;
+  }
+
+  /**
    * 带超时的 fetch 请求
    */
-  async _fetchWithTimeout(url, options) {
+  async _fetchWithTimeout(url, options, timeoutMs) {
+    const effective = timeoutMs && timeoutMs > 0 ? timeoutMs : this._requestTimeoutMs;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this._requestTimeoutMs);
+    const timer = setTimeout(() => controller.abort(), effective);
+    const dispatcher = this._getLongRequestDispatcher();
     try {
-      return await fetch(url, { ...options, signal: controller.signal });
+      return await fetch(url, {
+        ...options,
+        signal: controller.signal,
+        ...(dispatcher ? { dispatcher } : {}),
+      });
     } catch (e) {
-      if (e.name === 'AbortError') throw new Error('AI请求超时（60秒），请检查网络或API服务状态');
+      if (e.name === 'AbortError') throw new Error(`AI请求超时（${Math.round(effective / 1000)}秒），请检查网络或API服务状态`);
+      // undici 把真实原因藏在 e.cause 里，原样 throw 会只剩 "fetch failed"
+      const cause = e?.cause?.message || e?.cause?.code || '';
+      if (cause) throw new Error(`${e.message}: ${cause}`);
       throw e;
     } finally {
       clearTimeout(timer);
@@ -250,11 +276,14 @@ class AIService extends EventEmitter {
    * 通用 API 测试（内部方法）
    */
   async _testAPI(url, apiKey, body, label, errorExtractor = json => json.error?.message) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        signal: controller.signal
       });
       if (response.ok) return { success: true, message: `${label}连接测试成功` };
       let errorMessage = `连接失败 (${response.status})`;
@@ -264,7 +293,10 @@ class AIService extends EventEmitter {
       } catch (_) {}
       return { success: false, error: errorMessage };
     } catch (error) {
+      if (error.name === 'AbortError') return { success: false, error: '连接超时（15 秒）' };
       return { success: false, error: error.message };
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -350,27 +382,41 @@ class AIService extends EventEmitter {
   /**
    * 通用 API 聊天（内部方法）
    */
-  async _chatAPI(url, apiKey, body, responseExtractor) {
-    const response = await this._fetchWithTimeout(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify(body)
-    });
+  async _chatAPI(url, apiKey, body, responseExtractor, timeoutMs) {
+    // 网关瞬时故障（502/503/504）与限流（429）通常重试即可恢复：退避重试，不要一次失败就报错。
+    const RETRYABLE = new Set([429, 502, 503, 504]);
+    const MAX_ATTEMPTS = 3;
+    let lastErr;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const response = await this._fetchWithTimeout(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify(body)
+      }, timeoutMs);
 
-    if (!response.ok) {
-      let errorMessage = `请求失败 (${response.status})`;
-      try {
-        const text = await response.text();
-        if (text) { const e = JSON.parse(text); errorMessage = e.error?.message || e.message || errorMessage; }
-      } catch (_) {}
-      throw new Error(errorMessage);
+      if (!response.ok) {
+        let errorMessage = `请求失败 (${response.status})`;
+        try {
+          const text = await response.text();
+          if (text) { const e = JSON.parse(text); errorMessage = e.error?.message || e.message || errorMessage; }
+        } catch (_) {}
+        if (RETRYABLE.has(response.status) && attempt < MAX_ATTEMPTS) {
+          lastErr = new Error(errorMessage);
+          const backoff = 800 * attempt;
+          this.logger.warn('AI', `网关瞬时错误 ${response.status}，${backoff}ms 后重试（${attempt}/${MAX_ATTEMPTS - 1}）`);
+          await new Promise((r) => setTimeout(r, backoff));
+          continue;
+        }
+        throw new Error(errorMessage);
+      }
+
+      const text = await response.text();
+      if (!text) throw new Error('API 返回空响应');
+      let data;
+      try { data = JSON.parse(text); } catch (e) { throw new Error('解析 API 响应失败: ' + e.message); }
+      return { success: true, data: responseExtractor(data) };
     }
-
-    const text = await response.text();
-    if (!text) throw new Error('API 返回空响应');
-    let data;
-    try { data = JSON.parse(text); } catch (e) { throw new Error('解析 API 响应失败: ' + e.message); }
-    return { success: true, data: responseExtractor(data) };
+    throw lastErr || new Error('请求失败');
   }
 
   /**
@@ -386,10 +432,32 @@ class AIService extends EventEmitter {
 
       this._checkRateLimit();
 
-      const temp = Math.min(Math.max(options.temperature || config.temperature, 0), 2);
-      const maxTk = options.maxTokens || config.maxTokens;
-      const stdBody = { model: config.model, messages, temperature: temp, max_tokens: maxTk };
-      const qwenBody = { model: config.model, input: { messages }, parameters: { temperature: temp, max_tokens: maxTk } };
+      const customTimeoutMs = typeof options.timeoutMs === 'number' && options.timeoutMs > 0
+        ? Math.min(options.timeoutMs, 600000)
+        : undefined;
+
+      const temp = Math.min(Math.max(options.temperature ?? config.temperature, 0), 2);
+      const limitMaxTokensEnabled = Boolean(config.limitMaxTokens);
+      const hasExplicitMaxTokens = options.maxTokens != null;
+      // bypassTokenLimit：结构化生成（如画布规划）忽略用户的小额 token 上限，避免输出被截断；
+      // 不强行设置一个偏大的 max_tokens（会被部分模型拒绝/返回空），而是交给模型自身默认值。
+      const maxTk = hasExplicitMaxTokens
+        ? options.maxTokens
+        : (options.bypassTokenLimit ? undefined : (limitMaxTokensEnabled ? config.maxTokens : undefined));
+      const stdBody = {
+        model: config.model,
+        messages,
+        temperature: temp,
+        ...(maxTk != null ? { max_tokens: maxTk } : {})
+      };
+      const qwenBody = {
+        model: config.model,
+        input: { messages },
+        parameters: {
+          temperature: temp,
+          ...(maxTk != null ? { max_tokens: maxTk } : {})
+        }
+      };
 
       const openAIExtract = (data) => {
         if (!data.choices?.[0]?.message) throw new Error('API 响应格式不正确');
@@ -402,16 +470,16 @@ class AIService extends EventEmitter {
 
       switch (config.provider) {
         case 'openai':
-          return await this._chatAPI('https://api.openai.com/v1/chat/completions', config.apiKey, stdBody, openAIExtract);
+          return await this._chatAPI('https://api.openai.com/v1/chat/completions', config.apiKey, stdBody, openAIExtract, customTimeoutMs);
         case 'deepseek':
-          return await this._chatAPI('https://api.deepseek.com/v1/chat/completions', config.apiKey, stdBody, openAIExtract);
+          return await this._chatAPI('https://api.deepseek.com/v1/chat/completions', config.apiKey, stdBody, openAIExtract, customTimeoutMs);
         case 'qwen':
           return await this._chatAPI(
             'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
-            config.apiKey, qwenBody, qwenExtract
+            config.apiKey, qwenBody, qwenExtract, customTimeoutMs
           );
         case 'custom':
-          return await this._chatAPI(this.normalizeApiUrl(config.apiUrl), config.apiKey, stdBody, openAIExtract);
+          return await this._chatAPI(this.normalizeApiUrl(config.apiUrl), config.apiKey, stdBody, openAIExtract, customTimeoutMs);
         default:
           return { success: false, error: '不支持的AI提供商' };
       }

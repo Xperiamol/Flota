@@ -12,8 +12,7 @@ import {
   Person,
   Store,
   WavingHand,
-  Code,
-  AutoAwesome
+  Code
 } from '@mui/icons-material';
 import { useTheme } from '@mui/material/styles';
 import { useStore } from '../../store/useStore';
@@ -21,6 +20,7 @@ import { usePluginViewsBySurface } from '../../store/usePluginViews';
 import logger from '../../utils/logger';
 import { EASING, DURATION_MS } from '../../utils/animationConfig';
 import RecentNotesRail from './RecentNotesRail';
+import FlotaAIIcon from '../common/FlotaAIIcon';
 
 const DynamicIcon = ({ name, ...props }) => {
   const Icon = (name && MuiIcons[name]) || Hub;
@@ -180,7 +180,7 @@ const Sidebar = () => {
     },
     {
       id: 'ai',
-      icon: <AutoAwesome />,
+      icon: <FlotaAIIcon sx={{ fontSize: 22 }} />,
       label: 'AI',
       tooltip: t('sidebar.aiTooltip') || 'FlotaAI'
     },

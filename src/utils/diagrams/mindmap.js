@@ -11,12 +11,10 @@ import {
   beautifyElements,
   containsCJK,
   makeArrow,
-  makeBase,
   makeRect,
   makeText,
   measureTextBlock,
   palette,
-  snapToGrid,
   wrapLabel,
 } from './shared'
 
@@ -141,18 +139,15 @@ export const renderMindmap = (mermaidCode, { offsetX = 400, offsetY = 320 } = {}
   const centerX = offsetX - centerW / 2
   const centerY = offsetY - centerH / 2
   const centerColor = DIAGRAM_THEME.semantics.primary
-  elements.push({
-    ...makeBase('rectangle'),
-    x: snapToGrid(centerX),
-    y: snapToGrid(centerY),
-    width: snapToGrid(centerW),
-    height: snapToGrid(centerH),
-    backgroundColor: centerColor.bg,
-    strokeColor: centerColor.stroke,
+  elements.push(makeRect({
+    x: centerX,
+    y: centerY,
+    width: centerW,
+    height: centerH,
+    bg: centerColor.bg,
+    stroke: centerColor.stroke,
     strokeWidth: 2,
-    roughness: 0,
-    roundness: { type: 3 },
-  })
+  }))
   const centerLabel = wrapLabel(center.label, containsCJK(center.label) ? 8 : 16)
   const centerMetrics = measureTextBlock(centerLabel, 16)
   elements.push(makeText({

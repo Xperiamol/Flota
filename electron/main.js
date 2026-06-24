@@ -94,6 +94,7 @@ const NoteService = require('./services/NoteService')
 const SettingsService = require('./services/SettingsService')
 const TodoService = require('./services/TodoService')
 const TagService = require('./services/TagService')
+const ConversationService = require('./services/ConversationService')
 const WindowManager = require('./services/WindowManager')
 const DataImportService = require('./services/DataImportService')
 const BackupService = require('./services/BackupService')
@@ -300,6 +301,35 @@ function createWindow() {
 
     // 阻止所有其他新窗口
     return { action: 'deny' }
+  })
+
+  // 拦截当前 webContents 的内部导航（例如 a[href] 直点、location.href、SSO 重定向），
+  // 任何离开 app 自己的 origin 的 http(s) 跳转都改用系统浏览器打开。
+  // 仅 setWindowOpenHandler 不够：内部导航不会触发新窗口。
+  const isInternalUrl = (url) => {
+    if (!url) return true
+    if (url.startsWith('app:')) return true
+    if (url.startsWith('file://')) return true
+    if (isDev && url.startsWith('http://localhost:5174')) return true
+    return false
+  }
+
+  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+    if (isInternalUrl(navigationUrl)) return
+    if (navigationUrl.startsWith('http://') || navigationUrl.startsWith('https://')) {
+      event.preventDefault()
+      console.log('[Main] 拦截内部导航至外部链接:', navigationUrl)
+      shell.openExternal(navigationUrl)
+    }
+  })
+
+  mainWindow.webContents.on('will-redirect', (event, navigationUrl) => {
+    if (isInternalUrl(navigationUrl)) return
+    if (navigationUrl.startsWith('http://') || navigationUrl.startsWith('https://')) {
+      event.preventDefault()
+      console.log('[Main] 拦截重定向至外部链接:', navigationUrl)
+      shell.openExternal(navigationUrl)
+    }
   })
 
   // 加载应用
@@ -604,6 +634,7 @@ async function initializeServices() {
     services.settingsService = new SettingsService()
     services.todoService = new TodoService()
     services.tagService = new TagService()
+    services.conversationService = new ConversationService()
     services.dataImportService = new DataImportService(services.noteService, services.settingsService, services.imageStorageService)
     services.backupService = new BackupService()
     services.imageService = new ImageService()
@@ -1257,6 +1288,7 @@ const { registerAttachmentsHandlers } = require('./ipc/attachmentsHandlers')
 const { registerMediaHandlers } = require('./ipc/mediaHandlers')
 const { registerWhiteboardHandlers } = require('./ipc/whiteboardHandlers')
 const { registerNoteHandlers } = require('./ipc/noteHandlers')
+const { registerConversationHandlers } = require('./ipc/conversationHandlers')
 const { registerSettingHandlers } = require('./ipc/settingHandlers')
 const { registerDataIOHandlers } = require('./ipc/dataIOHandlers')
 const { registerTagHandlers } = require('./ipc/tagHandlers')
@@ -1280,6 +1312,7 @@ registerSystemMiscHandlers(services, getLogger)
 
 // 笔记 / 设置 IPC
 registerNoteHandlers(services)
+registerConversationHandlers(services)
 registerSettingHandlers(services)
 
 // 开机自启 / 代理 已迁至 systemMiscHandlers

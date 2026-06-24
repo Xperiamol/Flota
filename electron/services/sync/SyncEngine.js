@@ -1785,15 +1785,17 @@ class SyncEngine extends EventEmitter {
     let count = 0;
     for (const note of Object.values(notes)) {
       if ((note.note_type || 'markdown') === 'whiteboard') {
-        const localPath = path.join(getUserDataPath(), 'images', 'whiteboard-preview', `${note.id}.png`);
+        const previewKey = String(note.sync_id || note.id || '').trim();
+        if (!previewKey) continue;
+        const localPath = path.join(getUserDataPath(), 'images', 'whiteboard-preview', `${previewKey}.png`);
         if (fs.existsSync(localPath)) {
-          const remotePath = this.config.rootPath + `images/whiteboard-preview/${note.id}.png`;
+          const remotePath = this.config.rootPath + `images/whiteboard-preview/${previewKey}.png`;
           try {
             const imageData = fs.readFileSync(localPath);
             await this.client.uploadBinary(remotePath, imageData);
             count++;
           } catch (error) {
-            this.log(`[Init WhiteboardPreview] 上传失败: ${note.id}, ${error.message}`);
+            this.log(`[Init WhiteboardPreview] 上传失败: ${previewKey}, ${error.message}`);
           }
         }
       }

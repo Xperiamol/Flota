@@ -45,6 +45,7 @@ import ImagePreviewModal, { canvasToPngBlob } from '../common/ImagePreviewModal'
 import { getImageResolver } from '../../utils/ImageProtocolResolver'
 import { getLocalPathFromFileUrl } from '../../utils/fileUrl'
 import { toListResult } from '../../utils/todoDisplayUtils'
+import { getWhiteboardPreviewUrl } from '../../utils/whiteboardPreview'
 import AudioRecordButton from '../editor/AudioRecordButton'
 import MarkdownPreview from '../editor/MarkdownPreview'
 import TodoEditDialog from '../todos/TodoEditDialog'
@@ -496,13 +497,6 @@ const getDroppedFilePath = (file) => {
 
 const getFileUrl = (filePath) => filePath.startsWith('file://') ? filePath : `file://${filePath}`
 
-const getWhiteboardPreviewUrl = (note, fallbackTime) => {
-  const syncId = note?.sync_id || note?.id
-  if (!syncId) return ''
-  const stamp = encodeURIComponent(String(note?.updated_at || note?.updatedAt || fallbackTime || Date.now()))
-  return `app://images/whiteboard-preview/${syncId}.png?t=${stamp}`
-}
-
 const normalizeTodoInput = (content) => {
   const text = content.trim()
   const match = text.match(/^(?:todo|待办|事项)\s*[:：]\s*(.+)$/i) || text.match(/^-\s*\[\s*]\s+(.+)$/)
@@ -905,10 +899,23 @@ const TimelineView = ({ onTodoUpdated }) => {
     setAttachments((prev) => prev.filter((item) => item.id !== id))
   }
 
-  const handleWhiteboardPreviewError = useCallback((itemId) => {
-    if (!itemId) return
-    setFailedWhiteboardPreviews((prev) => prev[itemId] ? prev : { ...prev, [itemId]: true })
+  const handleWhiteboardPreviewError = useCallback((previewUrl) => {
+    if (!previewUrl) return
+    setFailedWhiteboardPreviews((prev) => prev[previewUrl] ? prev : { ...prev, [previewUrl]: true })
   }, [])
+
+  useEffect(() => {
+    setFailedWhiteboardPreviews((prev) => {
+      const activeUrls = new Set(
+        timelineItems
+          .map((item) => item.whiteboardPreviewUrl)
+          .filter(Boolean)
+      )
+      const nextEntries = Object.entries(prev).filter(([url]) => activeUrls.has(url))
+      if (nextEntries.length === Object.keys(prev).length) return prev
+      return Object.fromEntries(nextEntries)
+    })
+  }, [timelineItems])
 
   const importLocalFileAsAttachment = useCallback(async (filePath, fallbackName) => {
     if (!filePath) return null
@@ -1174,7 +1181,7 @@ const TimelineView = ({ onTodoUpdated }) => {
     if (item.type === 'ai') return renderAiBubble(item)
 
     const isTodo = item.type === 'todo'
-    const showWhiteboardPreview = item.noteKind === 'whiteboard' && item.whiteboardPreviewUrl && !failedWhiteboardPreviews[item.id]
+    const showWhiteboardPreview = item.noteKind === 'whiteboard' && item.whiteboardPreviewUrl && !failedWhiteboardPreviews[item.whiteboardPreviewUrl]
     const timelineAudios = item.audios?.slice(0, TIMELINE_AUDIO_LIMIT) || []
     const timelineFiles = item.files?.slice(0, TIMELINE_FILE_LIMIT) || []
     const timelineImages = item.images?.slice(0, TIMELINE_IMAGE_LIMIT) || []
@@ -1279,7 +1286,7 @@ const TimelineView = ({ onTodoUpdated }) => {
                   component="img"
                   src={item.whiteboardPreviewUrl}
                   alt="画布缩略预览"
-                  onError={() => handleWhiteboardPreviewError(item.id)}
+                      onError={() => handleWhiteboardPreviewError(item.whiteboardPreviewUrl)}
                   sx={{
                     width: '100%',
                     height: 164,
@@ -1802,7 +1809,7 @@ const TimelineView = ({ onTodoUpdated }) => {
                     ))}
                   </Stack>
                 )}
-                {detailPopover.item.noteKind === 'whiteboard' && detailPopover.item.whiteboardPreviewUrl && !failedWhiteboardPreviews[detailPopover.item.id] && (
+                {detailPopover.item.noteKind === 'whiteboard' && detailPopover.item.whiteboardPreviewUrl && !failedWhiteboardPreviews[detailPopover.item.whiteboardPreviewUrl] && (
                   <Box
                     sx={{
                       borderRadius: '14px',
@@ -1819,7 +1826,7 @@ const TimelineView = ({ onTodoUpdated }) => {
                       component="img"
                       src={detailPopover.item.whiteboardPreviewUrl}
                       alt="画布缩略预览"
-                      onError={() => handleWhiteboardPreviewError(detailPopover.item.id)}
+                      onError={() => handleWhiteboardPreviewError(detailPopover.item.whiteboardPreviewUrl)}
                       sx={{
                         width: '100%',
                         maxHeight: 320,

@@ -16,6 +16,10 @@
  * 节点种类（kind）：
  *   block     — 已注册图表区块（architecture/flowchart/sequence/class/state/er/mindmap/gantt/fishbone/timeline/quadrant/pie）
  *   freeform  — 自由节点边图（AI 出 nodes+edges，本地布局引擎排坐标）
+ *   section   — 画布分区，可包含 card/decision/summary items，渲染为大框 + 内容卡片
+ *   card      — 信息卡片，适合人物/事件/证据/模块
+ *   decision  — 决策/分叉节点，渲染为菱形
+ *   summary   — 高亮总结/结论卡
  *   group     — 分组框，children 为内部节点 id 列表，渲染为带标题的圆角虚线框
  *   sticky    — 便签便条
  *   callout   — 文字标注/说明气泡
@@ -98,6 +102,15 @@ const validateNode = (node) => {
       break
     case 'group':
       if (!Array.isArray(node.children)) throw new Error('group 缺少 children')
+      break
+    case 'section':
+      if (typeof node.title !== 'string') throw new Error('section 缺少 title')
+      if (node.items && !Array.isArray(node.items)) throw new Error('section.items 必须是数组')
+      break
+    case 'card':
+    case 'decision':
+    case 'summary':
+      if (typeof node.title !== 'string') throw new Error(`${node.kind} 缺少 title`)
       break
     case 'sticky':
     case 'callout':

@@ -15,6 +15,12 @@ import {
     batchSetNoteTags
 } from '../api/noteAPI'
 import { fetchInstalledPlugins } from '../api/pluginAPI'
+import {
+    fetchConversations,
+    saveConversation as saveConversationAPI,
+    deleteConversation as deleteConversationAPI,
+    deleteConversations as deleteConversationsAPI
+} from '../api/conversationAPI'
 import { normalizeTags } from '../utils/tagUtils'
 import { searchNotesAPI } from '../api/searchAPI'
 import logger from '../utils/logger'
@@ -46,6 +52,57 @@ const normalizeTimelineTypes = (types) => {
     if (raw.has('whiteboard')) next.push('whiteboard')
     if (raw.has('todo')) next.push('todo')
     return next.length ? next : DEFAULT_TIMELINE_TYPES
+}
+
+// AI 会话的完整内容（含图片、长消息、工具结果等大对象）已外置到主进程 SQLite，
+// 不再随 localStorage 持久化——否则越用越大，迟早撑爆配额导致整个 store 写入失败。
+// localStorage 只保留一份轻量索引（id/title/noteId/source/时间戳），供首屏侧边栏即时渲染；
+// 启动时再用 loadAiConversations 从 SQLite 水合完整消息。
+const MAX_PERSISTED_CONVERSATIONS = 60
+
+const buildConversationIndexForPersist = (conversations) => {
+    if (!Array.isArray(conversations) || conversations.length === 0) return []
+    return conversations.slice(0, MAX_PERSISTED_CONVERSATIONS).map((conversation) => ({
+        id: conversation.id,
+        title: conversation.title || '',
+        noteId: conversation.noteId ?? null,
+        source: conversation.source || (conversation.noteId ? 'note' : 'general'),
+        createdAt: conversation.createdAt ?? null,
+        updatedAt: conversation.updatedAt ?? null,
+        // 完整 messages 不进 localStorage，启动后由 SQLite 水合；保留空数组兜底读取
+        messages: []
+    }))
+}
+
+// 把单条会话完整写入主进程 SQLite（fire-and-forget）。失败仅记日志，
+// 不阻塞 UI——内存态仍是 source of truth，下次写入会再次尝试落盘。
+const persistConversationToDisk = (conversation) => {
+    if (!conversation?.id) return
+    Promise.resolve()
+        .then(() => saveConversationAPI({
+            id: conversation.id,
+            title: conversation.title || '',
+            noteId: conversation.noteId ?? null,
+            source: conversation.source || (conversation.noteId ? 'note' : 'general'),
+            messages: Array.isArray(conversation.messages) ? conversation.messages : [],
+            createdAt: conversation.createdAt ?? null,
+            updatedAt: conversation.updatedAt ?? null
+        }))
+        .catch((error) => logger.warn?.('[Store] 持久化 AI 会话失败:', error?.message || error))
+}
+
+const deleteConversationFromDisk = (id) => {
+    if (!id) return
+    Promise.resolve()
+        .then(() => deleteConversationAPI(id))
+        .catch((error) => logger.warn?.('[Store] 删除 AI 会话失败:', error?.message || error))
+}
+
+const deleteConversationsFromDisk = (ids) => {
+    if (!Array.isArray(ids) || ids.length === 0) return
+    Promise.resolve()
+        .then(() => deleteConversationsAPI(ids))
+        .catch((error) => logger.warn?.('[Store] 批量删除 AI 会话失败:', error?.message || error))
 }
 
 const useStore = create(
@@ -166,6 +223,20 @@ const useStore = create(
                 setAiPanelMode: (mode) => set({ aiPanelMode: mode }),
 
                 // AI 聊天对话管理
+                // 启动水合：SQLite 是会话的唯一真相源，直接用它覆盖内存。
+                // localStorage 索引只是首屏占位，水合后即被丢弃（不在库里的空壳一并清除）。
+                loadAiConversations: async () => {
+                    try {
+                        const list = await fetchConversations()
+                        const diskList = Array.isArray(list) ? list : []
+                        const merged = diskList
+                            .slice()
+                            .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+                        set({ aiConversations: merged })
+                    } catch (error) {
+                        logger.warn?.('[Store] 加载 AI 会话失败:', error?.message || error)
+                    }
+                },
                 aiNewChat: (options = {}) => {
                     const noteId = options.noteId == null ? null : String(options.noteId)
                     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
@@ -185,6 +256,7 @@ const useStore = create(
                             ? { ...state.aiNoteConversationMap, [noteId]: id }
                             : state.aiNoteConversationMap
                     }))
+                    persistConversationToDisk(newConv)
                     return id
                 },
                 aiEnsureNoteChat: (noteId, options = {}) => {
@@ -213,25 +285,71 @@ const useStore = create(
                     }
                     return get().aiNewChat({ ...options, noteId: noteKey, activate: options.activate !== false })
                 },
-                aiDeleteConv: (id) => set(state => {
-                    const updated = state.aiConversations.filter(c => c.id !== id)
-                    const aiNoteConversationMap = Object.fromEntries(
-                        Object.entries(state.aiNoteConversationMap || {}).filter(([, convId]) => convId !== id)
-                    )
+                aiDeleteConv: (id) => {
+                    set(state => {
+                        const updated = state.aiConversations.filter(c => c.id !== id)
+                        const aiNoteConversationMap = Object.fromEntries(
+                            Object.entries(state.aiNoteConversationMap || {}).filter(([, convId]) => convId !== id)
+                        )
+                        return {
+                            aiConversations: updated,
+                            aiNoteConversationMap,
+                            aiActiveConvId: state.aiActiveConvId === id
+                                ? (updated[0]?.id || null)
+                                : state.aiActiveConvId
+                        }
+                    })
+                    deleteConversationFromDisk(id)
+                },
+                aiDeleteConvs: (ids) => {
+                    const idSet = new Set(Array.isArray(ids) ? ids.filter(Boolean) : [])
+                    if (idSet.size === 0) return
+                    set(state => {
+                        const updated = state.aiConversations.filter(c => !idSet.has(c.id))
+                        const aiNoteConversationMap = Object.fromEntries(
+                            Object.entries(state.aiNoteConversationMap || {}).filter(([, convId]) => !idSet.has(convId))
+                        )
+                        return {
+                            aiConversations: updated,
+                            aiNoteConversationMap,
+                            aiActiveConvId: idSet.has(state.aiActiveConvId)
+                                ? (updated[0]?.id || null)
+                                : state.aiActiveConvId
+                        }
+                    })
+                    deleteConversationsFromDisk([...idSet])
+                },
+                aiSwitchConv: (id) => set(state => {
+                    const target = state.aiConversations.find(c => c.id === id)
+                    // 显示用的对话由 (selectedNoteId 有值 ? noteConversationId : aiActiveConvId) 决定。
+                    // 显式切到某对话时，同步打开它所属的笔记，并保证 selectedNoteId 用真实笔记 id 的类型
+                    // （通常为数字）。若写成字符串，会与数字型 note.id 不匹配，导致编辑器找不到笔记而渲染空白页。
+                    const noteKey = target?.noteId != null ? String(target.noteId) : null
+                    const matchedNote = noteKey != null
+                        ? state.notes.find(n => String(n.id) === noteKey)
+                        : null
                     return {
-                        aiConversations: updated,
-                        aiNoteConversationMap,
-                        aiActiveConvId: state.aiActiveConvId === id
-                            ? (updated[0]?.id || null)
-                            : state.aiActiveConvId
+                        aiActiveConvId: id,
+                        selectedNoteId: matchedNote ? matchedNote.id : null,
+                        aiNoteConversationMap: noteKey != null
+                            ? { ...state.aiNoteConversationMap, [noteKey]: id }
+                            : state.aiNoteConversationMap
                     }
                 }),
-                aiSwitchConv: (id) => set({ aiActiveConvId: id }),
-                aiUpdateConv: (id, data) => set(state => ({
-                    aiConversations: state.aiConversations.map(c =>
-                        c.id === id ? { ...c, ...data, updatedAt: Date.now() } : c
-                    )
-                })),
+                // 仅把某对话标记为活动态，不联动 selectedNoteId。
+                // 用于「发送消息时」同步高亮当前对话，但绝不把编辑器正在显示的笔记切走 / 切成空白。
+                aiSetActiveConv: (id) => set({ aiActiveConvId: id }),
+                aiUpdateConv: (id, data) => {
+                    let updatedConv = null
+                    set(state => ({
+                        aiConversations: state.aiConversations.map(c => {
+                            if (c.id !== id) return c
+                            updatedConv = { ...c, ...data, updatedAt: Date.now() }
+                            return updatedConv
+                        })
+                    }))
+                    if (updatedConv) persistConversationToDisk(updatedConv)
+                },
                 aiTriggerMessageMultiSelect: (convId, initialIndexes = []) => set((state) => ({
                     aiActiveConvId: convId || state.aiActiveConvId,
                     aiMessageMultiSelectRequest: {
@@ -427,12 +545,13 @@ const useStore = create(
 
                 createNote: async (noteData = {}) => {
                     try {
+                        const { selectAfterCreate = true, ...notePayload } = noteData || {}
                         const payloadToCreate = {
                             title: '',
                             content: '',
                             tags: [],
                             note_type: 'markdown',
-                            ...noteData
+                            ...notePayload
                         }
                         const result = await createNoteAPI(payloadToCreate)
                         const payload = result?.data || result
@@ -443,7 +562,7 @@ const useStore = create(
                             }
                             set((state) => ({
                                 notes: [newNote, ...state.notes],
-                                selectedNoteId: newNote.id
+                                selectedNoteId: selectAfterCreate ? newNote.id : state.selectedNoteId
                             }))
                             try { useLinkGraph.getState().indexNote(newNote) } catch {}
                             return { success: true, data: newNote }
@@ -1005,7 +1124,7 @@ const useStore = create(
                 editorMode: state.editorMode,
                 aiPanelMode: state.aiPanelMode,
                 aiCommandCenterEnabled: state.aiCommandCenterEnabled,
-                aiConversations: state.aiConversations || [],
+                aiConversations: buildConversationIndexForPersist(state.aiConversations || []),
                 aiActiveConvId: state.aiActiveConvId,
                 aiNoteConversationMap: state.aiNoteConversationMap || {},
                 toolbarOrder: state.toolbarOrder,

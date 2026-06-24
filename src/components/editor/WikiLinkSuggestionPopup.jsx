@@ -28,15 +28,20 @@ const fuzzyScore = (q, title) => {
   return score
 }
 
-const WikiLinkSuggestionPopup = ({ state, allTitles, onSelect, onClose }) => {
+const WikiLinkSuggestionPopup = ({ state, allTitles, onSelect, onClose, avoidRect = null }) => {
   const [activeIdx, setActiveIdx] = useState(0)
+  const [layoutTick, setLayoutTick] = useState(0)
   const listRef = useRef(null)
 
   const items = useMemo(() => {
     const q = (state?.query || '').trim()
     const ql = q.toLowerCase()
     const scored = []
+    const seen = new Set()
     for (const t of allTitles) {
+      // 同名笔记按标题去重：wiki 链接按标题解析，重复项无意义且会导致 React key 冲突
+      if (seen.has(t)) continue
+      seen.add(t)
       const s = fuzzyScore(q, t)
       if (s > 0) scored.push({ title: t, score: s })
     }
@@ -77,6 +82,24 @@ const WikiLinkSuggestionPopup = ({ state, allTitles, onSelect, onClose }) => {
     return () => window.removeEventListener('keydown', onKey, { capture: true })
   }, [state?.open, items, activeIdx, onSelect, onClose])
 
+  useEffect(() => {
+    if (!state?.open) return
+    let rafId = 0
+    const requestRelayout = () => {
+      cancelAnimationFrame(rafId)
+      rafId = requestAnimationFrame(() => {
+        setLayoutTick((v) => v + 1)
+      })
+    }
+    document.addEventListener('contextmenu', requestRelayout, true)
+    window.addEventListener('resize', requestRelayout)
+    return () => {
+      cancelAnimationFrame(rafId)
+      document.removeEventListener('contextmenu', requestRelayout, true)
+      window.removeEventListener('resize', requestRelayout)
+    }
+  }, [state?.open])
+
   if (!state?.open || !state.clientRect) return null
 
   // 估算 popup 高度（每项 ~36px + padding）做边界翻折
@@ -85,6 +108,7 @@ const WikiLinkSuggestionPopup = ({ state, allTitles, onSelect, onClose }) => {
   const estHeight = Math.min(360, items.length * ITEM_H + PADDING)
   const POPUP_W = 320
   const margin = 8
+  void layoutTick
 
   // 检查是否与右键菜单矩形重叠，重叠则向右/向上避让
   let top = state.clientRect.bottom + 4
@@ -98,25 +122,27 @@ const WikiLinkSuggestionPopup = ({ state, allTitles, onSelect, onClose }) => {
   if (left + POPUP_W > window.innerWidth - margin) {
     left = Math.max(margin, window.innerWidth - POPUP_W - margin)
   }
-  // 与编辑器右键菜单避让
-  try {
-    const ctx = document.querySelector('[data-editor-context-menu]')
-    if (ctx) {
-      const r = ctx.getBoundingClientRect()
-      const overlap = !(left + POPUP_W < r.left || left > r.right || top + estHeight < r.top || top > r.bottom)
-      if (overlap) {
-        // 优先放到右键菜单右侧
-        if (r.right + margin + POPUP_W <= window.innerWidth - margin) {
-          left = r.right + margin
-        } else if (r.left - margin - POPUP_W >= margin) {
-          left = r.left - margin - POPUP_W
-        } else {
-          // 都放不下就放到右键菜单上方
-          top = Math.max(margin, r.top - margin - estHeight)
-        }
+  // 与编辑器右键菜单避让：优先使用父组件同步传入的矩形，避免第一次右键时晚一帧。
+  const ctxRect = avoidRect || (() => {
+    try {
+      const ctx = document.querySelector('[data-editor-context-menu]')
+      return ctx ? ctx.getBoundingClientRect() : null
+    } catch {
+      return null
+    }
+  })()
+  if (ctxRect) {
+    const overlap = !(left + POPUP_W < ctxRect.left || left > ctxRect.right || top + estHeight < ctxRect.top || top > ctxRect.bottom)
+    if (overlap) {
+      if (ctxRect.right + margin + POPUP_W <= window.innerWidth - margin) {
+        left = ctxRect.right + margin
+      } else if (ctxRect.left - margin - POPUP_W >= margin) {
+        left = ctxRect.left - margin - POPUP_W
+      } else {
+        top = Math.max(margin, ctxRect.top - margin - estHeight)
       }
     }
-  } catch {}
+  }
 
   return (
     <Portal>

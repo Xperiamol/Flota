@@ -2,11 +2,13 @@
  * AI Chat 通用常量。
  */
 
-const WRITE_TOOL_NAMES = new Set(['create_note', 'edit_note', 'create_todo', 'create_todos', 'add_memory', 'update_memory', 'write_long_document']);
+const WRITE_TOOL_NAMES = new Set(['create_note', 'edit_note', 'create_whiteboard', 'update_whiteboard', 'create_todo', 'create_todos', 'add_memory', 'update_memory', 'write_long_document']);
 
 const ACTION_LABELS = {
   create_note: '创建笔记',
   edit_note: '编辑笔记',
+  create_whiteboard: '创建画布',
+  update_whiteboard: '修改画布',
   create_todo: '创建待办',
   create_todos: '批量创建待办',
   add_memory: '保存记忆',

@@ -2194,7 +2194,7 @@ class PluginManager extends EventEmitter {
 				commandId.includes('generate') || 
 				commandId.includes('chat')
 			)) {
-				timeoutDuration = 60000 // AI 命令 60 秒
+                                timeoutDuration = 120000 // AI 命令 120 秒
 			}
 
 			const timeout = setTimeout(() => {

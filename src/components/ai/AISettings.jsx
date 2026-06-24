@@ -477,7 +477,7 @@ const AISettings = ({ showSnackbar }) => {
             <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2, mb: 2 })}>
               <ListItemText
                 primary="限制最大输出长度"
-                secondary="默认关闭；关闭时使用应用内置的大输出预算，避免服务商默认输出过短。"
+                secondary="默认关闭；关闭时不传最大输出长度限制，仅在开启后使用下面的自定义值。"
                 slotProps={{ primary: { sx: { fontWeight: 650 } } }}
               />
               <Switch
@@ -501,7 +501,7 @@ const AISettings = ({ showSnackbar }) => {
                 disabled={!isEnabledSetting(config.limitMaxTokens)}
               />
               <Typography variant="caption" color="text.secondary">
-                {isEnabledSetting(config.limitMaxTokens) ? t('ai.maxTokensDesc') : '当前关闭：普通聊天使用内置大输出预算，不使用这里的自定义限制。'}
+                {isEnabledSetting(config.limitMaxTokens) ? t('ai.maxTokensDesc') : '当前关闭：不会向模型传 max_tokens，仅在开启后使用这里的自定义限制。'}
               </Typography>
             </Box>
             <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2, mt: 2 })}>

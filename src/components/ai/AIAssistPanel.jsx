@@ -5,8 +5,8 @@ import CloseIcon from '@mui/icons-material/Close'
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
 import AddIcon from '@mui/icons-material/Add'
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import FloatingGlassSurface from '../common/FloatingGlassSurface'
+import FlotaAIIcon from '../common/FlotaAIIcon'
 import { useStore } from '../../store/useStore'
 import useAIStream from '../../hooks/useAIStream'
 import useDraggableFloatingPanel from '../../hooks/useDraggableFloatingPanel'
@@ -528,7 +528,7 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
             </Tooltip>
             <Tooltip title="继续追问/优化" arrow>
               <IconButton size="small" onClick={continueWithResult} disabled={loading} sx={{ p: '4px', borderRadius: 1 }}>
-                <AutoAwesomeIcon sx={{ fontSize: 18 }} />
+                <FlotaAIIcon sx={{ fontSize: 20 }} />
               </IconButton>
             </Tooltip>
             <Tooltip title="关闭" arrow>

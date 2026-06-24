@@ -13,7 +13,6 @@ import {
 } from '@mui/material'
 import { useTheme } from '@mui/material/styles'
 import {
-  AutoAwesome as AIIcon,
   Close as CloseIcon,
   DragIndicator as DragIcon,
   Add as AddIcon,
@@ -31,13 +30,17 @@ import {
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import FloatingGlassSurface from '../common/FloatingGlassSurface'
+import FlotaAIIcon from '../common/FlotaAIIcon'
 import { useStore } from '../../store/useStore'
+import { useShallow } from 'zustand/react/shallow'
 import useAIStream from '../../hooks/useAIStream'
 import useDraggableFloatingPanel from '../../hooks/useDraggableFloatingPanel'
 import { truncateText } from '../../utils/aiContextUtils'
-import { handleWhiteboardAIRequest } from '../../utils/whiteboardAI'
 import { routeIntent } from '../../utils/aiCore/intentRouter'
 import { buildContext, CONTEXT_PROFILES } from '../../utils/aiCore/contextBuilder'
+import { getMessagePendingActions, patchMessagePendingAction } from '../../utils/aiCore/pendingActions'
+import { buildMessageMetadata, createUserMessage, createAssistantMessage } from '../../utils/aiCore/messageModel'
+import { runPendingAction } from '../../utils/aiCore/pendingActionExecutor'
 import logger from '../../utils/logger'
 
 const QUICK_PROMPTS = [
@@ -98,6 +101,8 @@ const PANEL_MARGIN = 12
 const ACTION_LABELS = {
   create_note: '创建笔记',
   edit_note: '编辑笔记',
+  create_whiteboard: '创建画布',
+  update_whiteboard: '修改画布',
   create_todo: '创建待办',
   create_todos: '批量创建待办',
   add_memory: '保存记忆',
@@ -124,28 +129,54 @@ const AICommandCenter = ({
   const inputRef = useRef(null)
   const scrollRef = useRef(null)
   const panelRef = useRef(null)
+  const messagesRef = useRef([])
+  const conversationIdRef = useRef(null)
 
   const {
     notes: storeNotes,
     selectedNoteId: storeSelectedNoteId,
+    setSelectedNoteId,
     userAvatar,
     aiConversations,
     aiActiveConvId,
     aiNoteConversationMap,
     aiNewChat,
     aiEnsureNoteChat,
-    aiSwitchConv,
+    aiSetActiveConv,
     aiUpdateConv,
+    createNote: storeCreateNote,
+    deleteNote: storeDeleteNote,
     updateNote: storeUpdateNote,
     loadNotes: storeLoadNotes
-  } = useStore()
+  } = useStore(useShallow((state) => ({
+    notes: state.notes,
+    selectedNoteId: state.selectedNoteId,
+    setSelectedNoteId: state.setSelectedNoteId,
+    userAvatar: state.userAvatar,
+    aiConversations: state.aiConversations,
+    aiActiveConvId: state.aiActiveConvId,
+    aiNoteConversationMap: state.aiNoteConversationMap,
+    aiNewChat: state.aiNewChat,
+    aiEnsureNoteChat: state.aiEnsureNoteChat,
+    aiSetActiveConv: state.aiSetActiveConv,
+    aiUpdateConv: state.aiUpdateConv,
+    createNote: state.createNote,
+    deleteNote: state.deleteNote,
+    updateNote: state.updateNote,
+    loadNotes: state.loadNotes,
+  })))
   const notes = notesOverride ?? storeNotes
   const selectedNoteId = selectedNoteIdOverride !== undefined ? selectedNoteIdOverride : storeSelectedNoteId
+  const createNote = storeCreateNote
+  const deleteNote = storeDeleteNote
   const updateNote = updateNoteOverride ?? storeUpdateNote
   const loadNotes = loadNotesOverride ?? storeLoadNotes
   const resolvedUserAvatar = userAvatarOverride !== undefined ? userAvatarOverride : userAvatar
   const noteConversationId = selectedNoteId == null ? null : aiNoteConversationMap?.[String(selectedNoteId)] || null
-  const currentConversationId = noteConversationId || (selectedNoteId == null ? aiActiveConvId : null)
+  // 选中了笔记 → 只显示该笔记自己的对话（没有则为空，开新对话）。
+  // 未选中任何笔记（通用聊天）→ 跟随全局活动对话。
+  // 关键：选中笔记时绝不回退到 aiActiveConvId，否则切到「尚无对话的笔记」会串显示上一条/通用对话。
+  const currentConversationId = selectedNoteId != null ? noteConversationId : (aiActiveConvId || null)
   const currentConversation = useMemo(
     () => aiConversations.find((conversation) => conversation.id === currentConversationId) || null,
     [aiConversations, currentConversationId]
@@ -229,11 +260,13 @@ const AICommandCenter = ({
         pendingConversationIdRef.current === currentConversationId
       )
       previousConversationIdRef.current = currentConversationId
+      conversationIdRef.current = currentConversationId
       if (isSendInitiatedSwitch) {
         return
       }
       cancel()
       setMessages(currentConversation?.messages || [])
+      messagesRef.current = currentConversation?.messages || []
       setStreamContent('')
       setInput('')
       setLoading(false)
@@ -243,7 +276,12 @@ const AICommandCenter = ({
   useEffect(() => {
     if (!currentConversationId || previousConversationIdRef.current !== currentConversationId || loading) return
     setMessages(currentConversation?.messages || [])
+    messagesRef.current = currentConversation?.messages || []
   }, [currentConversation, currentConversationId, loading])
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
 
   // loading 期间定时轮换 thinking 短语，间隔较长避免视觉抖动
   useEffect(() => {
@@ -257,7 +295,11 @@ const AICommandCenter = ({
     if (!firstUserMessage?.content) {
       return currentNote ? `关于「${truncateText(currentNote.title || '未命名', 18)}」` : '新对话'
     }
-    const text = firstUserMessage.content.replace(/\n/g, ' ').trim()
+    // content 可能是多模态数组（文本 + 图片），直接 .replace 会抛 TypeError，这里兼容取文本。
+    const raw = Array.isArray(firstUserMessage.content)
+      ? (firstUserMessage.content.find((p) => p?.type === 'text')?.text || '[图片]')
+      : firstUserMessage.content
+    const text = String(raw).replace(/\n/g, ' ').trim()
     return text.length > 24 ? `${text.slice(0, 24)}…` : text
   }, [currentNote])
 
@@ -292,43 +334,44 @@ const AICommandCenter = ({
   const handleExecuteAction = useCallback(async (action, overrides = null) => {
     if (!action?.actionId || executingActionId) return
     setExecutingActionId(action.actionId)
-    try {
-      const result = await window.electronAPI?.ai?.executePendingAction?.(action.actionId, overrides)
-      const finalAction = result?.action || action
-      const okText = result?.success
-        ? `✅ 已${ACTION_LABELS[finalAction.name] || '执行操作'}`
-        : `❌ 操作失败：${result?.error || '未知错误'}`
-      setMessages((prev) => {
-        const next = prev.map((m) => {
-          if (!m.actions || !m.actions.some((a) => a.actionId === action.actionId)) return m
-          const remaining = m.actions.filter((a) => a.actionId !== action.actionId)
-          return {
-            ...m,
-            actions: remaining.length > 0 ? remaining : undefined,
-            content: `${m.content || ''}\n\n${okText}`.trim()
-          }
+    const persist = (msgs) => {
+      messagesRef.current = msgs
+      setMessages(msgs)
+      if (conversationIdRef.current) {
+        aiUpdateConv(conversationIdRef.current, {
+          messages: msgs,
+          title: getConversationTitle(msgs),
+          noteId: selectedNoteId == null ? null : String(selectedNoteId),
+          source: selectedNoteId == null ? 'general' : 'note'
         })
-        if (currentConversationId) {
-          aiUpdateConv(currentConversationId, {
-            messages: next,
-            title: getConversationTitle(next),
-            noteId: selectedNoteId == null ? null : String(selectedNoteId),
-            source: selectedNoteId == null ? 'general' : 'note'
-          })
-        }
-        return next
-      })
-      if (result?.success) {
-        if (['create_note', 'edit_note'].includes(finalAction.name)) {
-          await loadNotes?.()
-        }
       }
-    } catch (e) {
-      logger.warn('[AICommandCenter] executePendingAction failed', e?.message)
+    }
+    persist((messagesRef.current || []).map((m) =>
+      patchMessagePendingAction(m, action.actionId, { status: 'running' })
+    ))
+    try {
+      const { success, message, error, reloadNotes } = await runPendingAction({
+        action,
+        overrides,
+        deps: { currentNote, notes, createNote, deleteNote, updateNote, loadNotes, setSelectedNoteId },
+      })
+      const okText = success ? `✅ ${message}` : `❌ ${message}`
+      persist((messagesRef.current || []).map((m) => {
+        const patched = patchMessagePendingAction(m, action.actionId, {
+          status: success ? 'done' : 'failed',
+          resultMessage: okText,
+        })
+        if (patched === m) return m
+        return success
+          ? { ...patched, content: `${m.content || ''}\n\n${okText}`.trim() }
+          : patched
+      }))
+      if (reloadNotes) await loadNotes?.()
+      if (!success) logger.warn('[AICommandCenter] executePendingAction failed', error)
     } finally {
       setExecutingActionId(null)
     }
-  }, [aiUpdateConv, currentConversationId, executingActionId, getConversationTitle, loadNotes, selectedNoteId])
+  }, [aiUpdateConv, createNote, currentNote, deleteNote, executingActionId, getConversationTitle, loadNotes, notes, selectedNoteId, setSelectedNoteId, updateNote])
 
   const handleNewChat = useCallback(() => {
     if (loading) return
@@ -354,12 +397,25 @@ const AICommandCenter = ({
           title: currentNote ? `关于「${truncateText(currentNote.title || '未命名', 18)}」` : '新对话'
         })
     } else {
-      aiSwitchConv(conversationId)
+      // 仅高亮当前对话，绝不联动 selectedNoteId（否则会把编辑器正在显示的笔记切走/切成空白页）
+      aiSetActiveConv(conversationId)
     }
     pendingConversationIdRef.current = conversationId
+    conversationIdRef.current = conversationId
 
-    const userMsg = { role: 'user', content: text }
-    const nextMessages = [...messages, userMsg]
+    // 该请求归属的对话；用户切走后旧请求只更新持久化数据，不写当前视图，避免“串台”。
+    const isActiveView = () => conversationIdRef.current === conversationId
+
+    const userMsg = createUserMessage({
+      content: text,
+      metadata: buildMessageMetadata({
+        conversationId,
+        noteId: selectedNoteId == null ? null : String(selectedNoteId),
+        source: selectedNoteId == null ? 'general' : 'note',
+      }),
+    })
+    const nextMessages = [...(messagesRef.current || []), userMsg]
+    messagesRef.current = nextMessages
     setMessages(nextMessages)
     setInput('')
     setStreamContent('')
@@ -372,58 +428,35 @@ const AICommandCenter = ({
       source: selectedNoteId == null ? 'general' : 'note'
     })
 
-    const apiMessages = nextMessages.map(m => ({ role: m.role, content: m.content }))
-    const { allowPersistence, disabledTools, needClarification, clarifyQuestion } = await routeIntent({
-      prompt: text,
-      messages: nextMessages,
-      currentNote,
-    })
-    if (needClarification) {
-      const finalMessages = [...nextMessages, { role: 'assistant', content: clarifyQuestion }]
-      setMessages(finalMessages)
-      aiUpdateConv(conversationId, {
-        messages: finalMessages,
-        title: getConversationTitle(finalMessages),
-        noteId: selectedNoteId == null ? null : String(selectedNoteId),
-        source: selectedNoteId == null ? 'general' : 'note'
-      })
-      setStreamContent('')
-      setLoading(false)
-      window.setTimeout(() => inputRef.current?.focus(), 30)
-      return
-    }
-    const contextPackage = await buildContext({ notes, selectedNoteId, query: text, contextEnabled: CONTEXT_PROFILES.floating_panel })
     let shouldReloadNotes = false
     const pendingActions = []
 
     try {
-      const whiteboardResult = allowPersistence
-        ? await handleWhiteboardAIRequest({
-          note: currentNote,
-          prompt: text,
-          messages: nextMessages,
-          updateNote,
-          loadNotes,
-        })
-        : null
-
-      if (whiteboardResult) {
-        const finalMessages = [...nextMessages, {
-          role: 'assistant',
-          content: whiteboardResult.content,
-        }]
-        setMessages(finalMessages)
+      const apiMessages = nextMessages.map(m => ({ role: m.role, content: m.content }))
+      const { disabledTools, needClarification, clarifyQuestion } = await routeIntent({
+        prompt: text,
+        messages: nextMessages,
+        currentNote,
+      })
+      if (needClarification) {
+        const finalMessages = [...nextMessages, { role: 'assistant', content: clarifyQuestion }]
+        messagesRef.current = finalMessages
+        if (isActiveView()) {
+          setMessages(finalMessages)
+          setStreamContent('')
+        }
         aiUpdateConv(conversationId, {
           messages: finalMessages,
           title: getConversationTitle(finalMessages),
           noteId: selectedNoteId == null ? null : String(selectedNoteId),
           source: selectedNoteId == null ? 'general' : 'note'
         })
-        setStreamContent('')
         return
       }
+      const contextPackage = await buildContext({ notes, selectedNoteId, query: text, contextEnabled: CONTEXT_PROFILES.floating_panel })
 
-      const { result, content, cancelledByUser } = await runStream({
+      const { result, content, cancelledByUser, requestId } = await runStream({
+        conversationId,
         messages: apiMessages,
         contextPackage,
         requestPrefix: 'aicc',
@@ -431,9 +464,13 @@ const AICommandCenter = ({
           scene: 'floating_panel',
           memoryQuery: text,
           requireConfirmation: true,
+          actionContext: {
+            selectedNoteId: selectedNoteId == null ? null : String(selectedNoteId),
+            source: selectedNoteId == null ? 'general' : 'note',
+          },
           disabledTools: visionEnabled ? disabledTools : [...(disabledTools || []), 'read_note_image'],
         },
-        onContent: setStreamContent,
+        onContent: (c) => { if (isActiveView()) setStreamContent(c) },
         onChunk: (chunk) => {
           if (chunk?.type === 'tool_start') {
             showActiveTool(chunk.name || null)
@@ -450,6 +487,7 @@ const AICommandCenter = ({
               actionId: parsed.actionId,
               name: chunk.name,
               args: parsed.args || {},
+              context: parsed.context || null,
               summary: parsed.summary,
               label: parsed.label
             })
@@ -458,7 +496,7 @@ const AICommandCenter = ({
             shouldReloadNotes = true
           }
         },
-        onChunkError: (chunk) => setStreamContent(prev => prev + `\n\n⚠️ ${chunk.content}`)
+        onChunkError: (chunk) => { if (isActiveView()) setStreamContent(prev => prev + `\n\n⚠️ ${chunk.content}`) }
       })
 
       const stoppedByUser = Boolean(result?.cancelled && cancelledByUser)
@@ -474,13 +512,22 @@ const AICommandCenter = ({
         ? `${assistantContentBase}\n\n${truncatedHint}`
         : assistantContentBase
 
-      const finalMessages = [...nextMessages, {
-        role: 'assistant',
+      const finalMessages = [...nextMessages, createAssistantMessage({
         content: assistantContent,
         stopped: stoppedByUser,
-        actions: pendingActions.length > 0 ? pendingActions : undefined
-      }]
-      setMessages(finalMessages)
+        actions: pendingActions,
+        metadata: buildMessageMetadata({
+          conversationId,
+          noteId: selectedNoteId == null ? null : String(selectedNoteId),
+          source: selectedNoteId == null ? 'general' : 'note',
+          requestId,
+        }),
+      })]
+      messagesRef.current = finalMessages
+      if (isActiveView()) {
+        setMessages(finalMessages)
+        setStreamContent('')
+      }
       aiUpdateConv(conversationId, {
         messages: finalMessages,
         title: getConversationTitle(finalMessages),
@@ -490,28 +537,30 @@ const AICommandCenter = ({
       if (shouldReloadNotes) {
         await loadNotes?.()
       }
-      setStreamContent('')
     } catch (error) {
       logger.warn('[AICommandCenter] chatStream failed', error)
       const errorMessages = [...nextMessages, {
         role: 'assistant',
         content: `❌ 发生错误: ${error?.message || '未知错误'}`
       }]
-      setMessages(errorMessages)
+      messagesRef.current = errorMessages
+      if (isActiveView()) {
+        setMessages(errorMessages)
+        setStreamContent('')
+      }
       aiUpdateConv(conversationId, {
         messages: errorMessages,
         title: getConversationTitle(errorMessages),
         noteId: selectedNoteId == null ? null : String(selectedNoteId),
         source: selectedNoteId == null ? 'general' : 'note'
       })
-      setStreamContent('')
     } finally {
       pendingConversationIdRef.current = null
       setActiveTool(null)
       setLoading(false)
-      window.setTimeout(() => inputRef.current?.focus(), 30)
+      if (isActiveView()) window.setTimeout(() => inputRef.current?.focus(), 30)
     }
-  }, [aiEnsureNoteChat, aiNewChat, aiSwitchConv, aiUpdateConv, notes, currentConversationId, currentNote, getConversationTitle, input, loadNotes, loading, messages, parseToolResult, runStream, selectedNoteId, updateNote])
+  }, [aiEnsureNoteChat, aiNewChat, aiSetActiveConv, aiUpdateConv, clearActiveTool, currentConversationId, currentNote, getConversationTitle, input, loadNotes, loading, notes, parseToolResult, runStream, selectedNoteId, showActiveTool, visionEnabled])
 
   const handleKeyDown = (event) => {
     if (event.key === 'Escape') {
@@ -555,7 +604,7 @@ const AICommandCenter = ({
         })}
       >
         <DragIcon sx={{ fontSize: 15, color: 'text.disabled', opacity: 0.55 }} />
-        <AIIcon sx={{ fontSize: 16, color: 'primary.main' }} />
+        <FlotaAIIcon sx={{ fontSize: 18 }} />
         <Typography sx={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>问 AI</Typography>
         {currentNote && (
           <Chip
@@ -870,42 +919,55 @@ const BatchTodoActionCard = ({ action, theme, executing, onExecute }) => {
   )
 }
 
-const SimpleActionCard = ({ action, theme, executing, onExecute }) => (
-  <Paper
-    elevation={0}
-    sx={{
-      mt: 0.75,
-      px: 1.1,
-      py: 0.75,
-      borderRadius: '12px',
-      border: '1px solid',
-      borderColor: alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.28 : 0.26),
-      bgcolor: theme.palette.mode === 'dark'
-        ? alpha(theme.palette.warning.dark, 0.12)
-        : alpha(theme.palette.warning.light, 0.16),
-      display: 'flex', alignItems: 'flex-start', gap: 0.75
-    }}
-  >
-    <Box sx={{ flex: 1, minWidth: 0 }}>
-      <Typography variant="caption" sx={{ display: 'block', color: 'warning.main', fontWeight: 800, mb: 0.25 }}>
-        待你确认
-      </Typography>
-      <Typography variant="body2" sx={{ fontWeight: 650, lineHeight: 1.4, fontSize: 12.5, wordBreak: 'break-word' }}>
-        {action.summary || action.label || ACTION_LABELS[action.name] || action.name}
-      </Typography>
-    </Box>
-    <Button
-      size="small"
-      variant="contained"
-      color="warning"
-      onClick={() => onExecute?.(action)}
-      disabled={executing}
-      sx={{ flexShrink: 0, minWidth: 72, height: 26, borderRadius: '999px', textTransform: 'none', fontWeight: 700 }}
+const SimpleActionCard = ({ action, theme, executing, onExecute }) => {
+  const status = action.status || (executing ? 'running' : 'pending')
+  const isDone = status === 'done'
+  const isFailed = status === 'failed'
+  const paletteKey = isDone ? 'success' : isFailed ? 'error' : 'warning'
+  const title = isDone ? '已完成' : isFailed ? '执行失败' : executing ? '执行中' : '待你确认'
+  const detail = action.resultMessage || action.summary || action.label || ACTION_LABELS[action.name] || action.name
+
+  return (
+    <Paper
+      elevation={0}
+      sx={{
+        mt: 0.75,
+        px: 1.1,
+        py: 0.75,
+        borderRadius: '12px',
+        border: '1px solid',
+        borderColor: alpha(theme.palette[paletteKey].main, theme.palette.mode === 'dark' ? 0.28 : 0.26),
+        bgcolor: theme.palette.mode === 'dark'
+          ? alpha(theme.palette[paletteKey].dark, 0.12)
+          : alpha(theme.palette[paletteKey].light, 0.16),
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 0.75
+      }}
     >
-      {executing ? '执行中…' : '确认'}
-    </Button>
-  </Paper>
-)
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography variant="caption" sx={{ display: 'block', color: `${paletteKey}.main`, fontWeight: 800, mb: 0.25 }}>
+          {title}
+        </Typography>
+        <Typography variant="body2" sx={{ fontWeight: 650, lineHeight: 1.4, fontSize: 12.5, wordBreak: 'break-word' }}>
+          {detail}
+        </Typography>
+      </Box>
+      {!isDone && !isFailed && (
+        <Button
+          size="small"
+          variant="contained"
+          color="warning"
+          onClick={() => onExecute?.(action)}
+          disabled={executing}
+          sx={{ flexShrink: 0, minWidth: 72, height: 26, borderRadius: '999px', textTransform: 'none', fontWeight: 700 }}
+        >
+          {executing ? '执行中…' : '确认'}
+        </Button>
+      )}
+    </Paper>
+  )
+}
 
 const ChatBubble = ({ msg, userAvatar, executingActionId, onExecuteAction }) => {
   const theme = useTheme()
@@ -927,7 +989,7 @@ const ChatBubble = ({ msg, userAvatar, executingActionId, onExecuteAction }) => 
           color: isUser ? theme.palette.text.primary : theme.palette.primary.main
         })}
       >
-        {isUser ? (userAvatar ? null : '我') : <AIIcon sx={{ fontSize: 14 }} />}
+        {isUser ? (userAvatar ? null : '我') : <FlotaAIIcon sx={{ fontSize: 16 }} />}
       </Avatar>
       <Paper elevation={0} sx={(theme) => ({
         maxWidth: 'calc(100% - 36px)',
@@ -968,7 +1030,8 @@ const ChatBubble = ({ msg, userAvatar, executingActionId, onExecuteAction }) => 
           ) : (
             <Box sx={{ '& > *:first-of-type': { mt: 0 }, '& > *:last-child': { mb: 0 } }}>
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{text}</ReactMarkdown>
-              {Array.isArray(msg.actions) && msg.actions.map((action) => (
+              {/* 待确认动作卡（统一读取 msg.actions 与历史 toolCalls[].action） */}
+              {getMessagePendingActions(msg).map((action) => (
                 action.name === 'create_todos' ? (
                   <BatchTodoActionCard
                     key={action.actionId}
@@ -1087,22 +1150,30 @@ const TypewriterText = ({ text }) => {
   )
 }
 
-const TypingDots = () => (
-  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.4, py: 0.25, color: 'inherit' }}>
+const ThinkingDots = ({ dotSize = 4, gap = 3 }) => (
+  <Box
+    sx={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: `${gap}px`,
+      '@keyframes aicc-thinking-dot': {
+        '0%, 80%, 100%': { opacity: 0.35, transform: 'translateY(0) scale(0.92)' },
+        '40%': { opacity: 1, transform: 'translateY(-1.5px) scale(1)' }
+      }
+    }}
+  >
     {[0, 1, 2].map((i) => (
       <Box
         key={i}
+        component="span"
         sx={{
-          width: 4,
-          height: 4,
+          width: dotSize,
+          height: dotSize,
           borderRadius: '50%',
           bgcolor: 'currentColor',
-          animation: 'aicc-typing 1.2s infinite ease-in-out',
-          animationDelay: `${i * 0.15}s`,
-          '@keyframes aicc-typing': {
-            '0%, 80%, 100%': { opacity: 0.25, transform: 'translateY(0)' },
-            '40%': { opacity: 1, transform: 'translateY(-2px)' }
-          }
+          animation: 'aicc-thinking-dot 1.2s ease-in-out infinite',
+          animationDelay: `${i * 0.16}s`
         }}
       />
     ))}
@@ -1126,7 +1197,7 @@ const LoadingAvatarContent = ({ activeTool }) => {
         }
       }}
     >
-      {Icon ? <Icon sx={{ fontSize: 14 }} /> : <TypingDots />}
+      {Icon ? <Icon sx={{ fontSize: 14 }} /> : <ThinkingDots />}
     </Box>
   )
 }

@@ -62,7 +62,7 @@ function callHost(scope, action, payload) {
     // AI 相关调用需要更长的超时时间
     let timeoutDuration = rpcTimeout // 默认使用配置的超时时间
     if (scope === 'ai' || action === 'chat') {
-      timeoutDuration = 60000 // AI 调用 60 秒超时
+      timeoutDuration = 120000 // AI 调用 120 秒超时
     }
 
     const timer = setTimeout(() => {

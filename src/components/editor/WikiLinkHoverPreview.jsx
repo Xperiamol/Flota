@@ -4,6 +4,7 @@ import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
 import { useStore } from '../../store/useStore'
 import { stripMarkdownToPreviewText } from '../../utils/markdownTextUtils'
 import { floatingGlassSx } from '../../utils/floatingGlassSx'
+import { getWhiteboardPreviewUrl } from '../../utils/whiteboardPreview'
 
 const HOVER_OPEN_DELAY = 280
 const HOVER_CLOSE_DELAY = 180
@@ -52,6 +53,7 @@ const WikiLinkHoverPreview = () => {
   const notes = useStore((s) => s.notes)
   const setSelectedNoteId = useStore((s) => s.setSelectedNoteId)
   const [state, setState] = useState({ open: false })
+  const [whiteboardPreviewFailed, setWhiteboardPreviewFailed] = useState(false)
   const openTimerRef = useRef(0)
   const closeTimerRef = useRef(0)
   const lastTriggerRef = useRef(null)
@@ -109,6 +111,7 @@ const WikiLinkHoverPreview = () => {
             noteId: note.id,
             notFound: false,
             isWhiteboard: note.note_type === 'whiteboard',
+            whiteboardPreviewUrl: note.note_type === 'whiteboard' ? getWhiteboardPreviewUrl(note) : '',
           })
         }
         lastTriggerRef.current = el
@@ -129,19 +132,32 @@ const WikiLinkHoverPreview = () => {
       }, HOVER_CLOSE_DELAY)
     }
 
+    const closeImmediately = () => {
+      cancelOpen()
+      cancelClose()
+      lastTriggerRef.current = null
+      setState({ open: false })
+    }
+
     document.addEventListener('mouseover', onOver, true)
     document.addEventListener('mouseout', onOut, true)
+    document.addEventListener('contextmenu', closeImmediately, true)
     return () => {
       document.removeEventListener('mouseover', onOver, true)
       document.removeEventListener('mouseout', onOut, true)
+      document.removeEventListener('contextmenu', closeImmediately, true)
       cancelOpen()
       cancelClose()
     }
   }, [])
 
+  useEffect(() => {
+    setWhiteboardPreviewFailed(false)
+  }, [state.noteId, state.whiteboardPreviewUrl])
+
   if (!state.open) return null
 
-  const { anchor, title, section, preview, notFound, noteId, isWhiteboard } = state
+  const { anchor, title, section, preview, notFound, noteId, isWhiteboard, whiteboardPreviewUrl } = state
   // 以双链中心为锚点：popup 中心对齐 anchor.centerX；下方放不下则翻到上方
   const margin = 8
   const idealLeft = (anchor?.centerX ?? 0) - PREVIEW_WIDTH / 2
@@ -197,9 +213,34 @@ const WikiLinkHoverPreview = () => {
               笔记不存在 · 点击此双链将创建
             </Typography>
           ) : isWhiteboard ? (
-            <Typography sx={{ fontSize: 12, color: 'text.disabled', fontStyle: 'italic' }}>
-              白板内容不支持文本预览
-            </Typography>
+            whiteboardPreviewUrl && !whiteboardPreviewFailed ? (
+              <Box
+                sx={{
+                  borderRadius: '12px',
+                  overflow: 'hidden',
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  bgcolor: 'background.paper',
+                }}
+              >
+                <Box
+                  component="img"
+                  src={whiteboardPreviewUrl}
+                  alt="白板缩略预览"
+                  onError={() => setWhiteboardPreviewFailed(true)}
+                  sx={{
+                    width: '100%',
+                    maxHeight: PREVIEW_MAX_HEIGHT - 58,
+                    objectFit: 'cover',
+                    display: 'block',
+                  }}
+                />
+              </Box>
+            ) : (
+              <Typography sx={{ fontSize: 12, color: 'text.disabled', fontStyle: 'italic' }}>
+                白板内容暂时无法预览
+              </Typography>
+            )
           ) : !preview ? (
             <Typography sx={{ fontSize: 12, color: 'text.disabled', fontStyle: 'italic' }}>
               （空内容）

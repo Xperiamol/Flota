@@ -54,6 +54,10 @@ const parseFishbone = (code) => {
   return result
 }
 
+/**
+ * @deprecated 已被 composer 通用合成引擎取代（src/utils/diagrams/composer）。
+ * 仅作为旧路径兜底保留，勿在新代码引用。
+ */
 export const renderFishbone = (code, { offsetX = 100, offsetY = 100 } = {}) => {
   const { problem, bones } = parseFishbone(code)
   const elements = []

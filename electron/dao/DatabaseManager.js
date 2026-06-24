@@ -359,6 +359,19 @@ class DatabaseManager {
         value TEXT,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (plugin_id, key)
+      )`,
+
+      // AI 会话表 - 完整会话（含图片/长消息/工具结果）外置到 SQLite，
+      // localStorage 仅保留索引与摘要，避免大对象撑爆配额导致写入失败。
+      // id/note_id 沿用渲染层生成的字符串 id，messages 以 JSON 文本存储。
+      `CREATE TABLE IF NOT EXISTS ai_conversations (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL DEFAULT '',
+        note_id TEXT,
+        source TEXT DEFAULT 'general',
+        messages TEXT NOT NULL DEFAULT '[]',
+        created_at INTEGER,
+        updated_at INTEGER
       )`
     ];
 
@@ -381,7 +394,9 @@ class DatabaseManager {
       'CREATE INDEX IF NOT EXISTS idx_changes_entity ON changes(entity_type, entity_id)',
       'CREATE INDEX IF NOT EXISTS idx_changes_synced ON changes(synced)',
       'CREATE INDEX IF NOT EXISTS idx_changes_created_at ON changes(created_at DESC)',
-      'CREATE INDEX IF NOT EXISTS idx_plugin_storage_plugin ON plugin_storage(plugin_id)'
+      'CREATE INDEX IF NOT EXISTS idx_plugin_storage_plugin ON plugin_storage(plugin_id)',
+      'CREATE INDEX IF NOT EXISTS idx_ai_conversations_updated_at ON ai_conversations(updated_at DESC)',
+      'CREATE INDEX IF NOT EXISTS idx_ai_conversations_note_id ON ai_conversations(note_id)'
     ];
 
     // 执行建表语句

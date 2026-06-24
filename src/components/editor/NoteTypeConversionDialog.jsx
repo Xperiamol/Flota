@@ -9,7 +9,8 @@ import {
   Alert,
   Box
 } from '@mui/material'
-import { Info as InfoIcon, AutoAwesome as AIIcon } from '@mui/icons-material'
+import { Info as InfoIcon } from '@mui/icons-material'
+import FlotaAIIcon from '../common/FlotaAIIcon'
 
 /** 五彩转圈 + 逐点文字加载指示器 */
 function AiLoadingIndicator({ text }) {
@@ -124,7 +125,7 @@ const NoteTypeConversionDialog = ({
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={handleCancel} color="inherit">取消</Button>
           {isMarkdownToWhiteboard && (
-            <Button onClick={handleAIConvert} variant="outlined" startIcon={<AIIcon />}>
+            <Button onClick={handleAIConvert} variant="outlined" startIcon={<FlotaAIIcon sx={{ fontSize: 20 }} />}>
               AI 转换
             </Button>
           )}

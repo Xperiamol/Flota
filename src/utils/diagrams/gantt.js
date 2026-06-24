@@ -129,6 +129,10 @@ const resolveSchedule = (parsed) => {
   return { tasks: order, earliest: earliest || new Date(), latest: latest || new Date() }
 }
 
+/**
+ * @deprecated 已被 composer 通用合成引擎取代（src/utils/diagrams/composer）。
+ * 仅作为旧路径兜底保留，勿在新代码引用。
+ */
 export const renderGantt = (mermaidCode, { offsetX = 100, offsetY = 100 } = {}) => {
   const parsed = parseGantt(mermaidCode)
   const { tasks, earliest, latest } = resolveSchedule(parsed)

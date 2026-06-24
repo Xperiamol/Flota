@@ -23,6 +23,7 @@ import {
   Close as CloseIcon
 } from '@mui/icons-material'
 import { useStore } from './store/useStore'
+import { useShallow } from 'zustand/react/shallow'
 import { usePluginViewByNavId } from './store/usePluginViews'
 import { createAppTheme } from './styles/theme'
 import { generatePatternCSS } from './utils/patternStyles'
@@ -70,7 +71,37 @@ import { PluginNotificationListener } from './utils/PluginNotificationListener'
 import shortcutManager from './utils/ShortcutManager'
 
 function App() {
-  const { theme, primaryColor, notes, loadNotes, currentView, initializeSettings, setCurrentView, createNote, batchDeleteNotes, batchDeleteTodos, batchCompleteTodos, batchRestoreNotes, batchPermanentDeleteNotes, getAllTags, batchSetTags, selectedNoteId, setSelectedNoteId, updateNoteInList, aiDeleteConv, aiCommandCenterEnabled, aiCommandCenterOpen, setAiCommandCenterOpen, noteNavigatorOpen, setNoteNavigatorOpen, maskOpacity, christmasMode, backgroundPattern, patternOpacity, wallpaperPath } = useStore()
+  const { theme, primaryColor, notes, loadNotes, currentView, initializeSettings, setCurrentView, createNote, batchDeleteNotes, batchDeleteTodos, batchCompleteTodos, batchRestoreNotes, batchPermanentDeleteNotes, getAllTags, batchSetTags, selectedNoteId, setSelectedNoteId, updateNoteInList, aiDeleteConvs, aiCommandCenterEnabled, aiCommandCenterOpen, setAiCommandCenterOpen, noteNavigatorOpen, setNoteNavigatorOpen, maskOpacity, christmasMode, backgroundPattern, patternOpacity, wallpaperPath } = useStore(useShallow((state) => ({
+    theme: state.theme,
+    primaryColor: state.primaryColor,
+    notes: state.notes,
+    loadNotes: state.loadNotes,
+    currentView: state.currentView,
+    initializeSettings: state.initializeSettings,
+    setCurrentView: state.setCurrentView,
+    createNote: state.createNote,
+    batchDeleteNotes: state.batchDeleteNotes,
+    batchDeleteTodos: state.batchDeleteTodos,
+    batchCompleteTodos: state.batchCompleteTodos,
+    batchRestoreNotes: state.batchRestoreNotes,
+    batchPermanentDeleteNotes: state.batchPermanentDeleteNotes,
+    getAllTags: state.getAllTags,
+    batchSetTags: state.batchSetTags,
+    selectedNoteId: state.selectedNoteId,
+    setSelectedNoteId: state.setSelectedNoteId,
+    updateNoteInList: state.updateNoteInList,
+    aiDeleteConvs: state.aiDeleteConvs,
+    aiCommandCenterEnabled: state.aiCommandCenterEnabled,
+    aiCommandCenterOpen: state.aiCommandCenterOpen,
+    setAiCommandCenterOpen: state.setAiCommandCenterOpen,
+    noteNavigatorOpen: state.noteNavigatorOpen,
+    setNoteNavigatorOpen: state.setNoteNavigatorOpen,
+    maskOpacity: state.maskOpacity,
+    christmasMode: state.christmasMode,
+    backgroundPattern: state.backgroundPattern,
+    patternOpacity: state.patternOpacity,
+    wallpaperPath: state.wallpaperPath,
+  })))
   const currentPluginView = usePluginViewByNavId(currentView)
 
   // 当用户处于某个插件视图、但插件被禁用/卸载导致视图消失时，自动切回笔记
@@ -199,6 +230,11 @@ function App() {
   const appTheme = useMemo(
     () => createAppTheme(resolvedTheme, primaryColor),
     [resolvedTheme, primaryColor]
+  )
+
+  const noteNavigatorContent = useMemo(
+    () => notes.find(n => n.id === selectedNoteId)?.content || '',
+    [notes, selectedNoteId]
   )
 
   // 让 CSS 可以基于真实主题模式做分支（例如 hljs 暗色高亮覆盖）
@@ -609,6 +645,9 @@ function App() {
 
     initApp()
 
+    // 启动后从 SQLite 水合完整 AI 会话（localStorage 仅是首屏索引占位）
+    useStore.getState().loadAiConversations?.()
+
     // 🟡优化：初始只加载首屏笔记(20条)，后续按需分页加载
     loadNotes({ limit: 20, page: 1 })
 
@@ -964,7 +1003,7 @@ function App() {
                           console.error('批量删除待办事项失败:', result.error);
                         }
                       } else if (multiSelectState.itemType === 'AI对话') {
-                        multiSelectState.selectedIds.forEach((id) => aiDeleteConv(id));
+                        aiDeleteConvs(multiSelectState.selectedIds);
                         logger.log(`成功删除 ${multiSelectState.selectedIds.length} 个AI对话`);
                       }
                     } catch (error) {
@@ -1297,11 +1336,13 @@ function App() {
           onClose={() => setCommandPaletteOpen(false)}
         />
 
-        <AICommandCenter
-          open={aiCommandCenterEnabled && aiCommandCenterOpen}
-          onClose={() => setAiCommandCenterOpen(false)}
-          portalContainer={aiCommandCenterPortalContainer}
-        />
+        {aiCommandCenterEnabled && (
+          <AICommandCenter
+            open={aiCommandCenterOpen}
+            onClose={() => setAiCommandCenterOpen(false)}
+            portalContainer={aiCommandCenterPortalContainer}
+          />
+        )}
 
         <NoteNavigator
           open={noteNavigatorOpen}
@@ -1309,7 +1350,7 @@ function App() {
           portalContainer={aiCommandCenterPortalContainer}
           notes={notes}
           selectedNoteId={selectedNoteId}
-          noteContent={notes.find(n => n.id === selectedNoteId)?.content || ''}
+          noteContent={noteNavigatorContent}
           onSelectNote={(noteId) => setSelectedNoteId(noteId)}
           positionPersistKey="flota.noteNavigator.position"
         />

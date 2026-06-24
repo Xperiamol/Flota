@@ -126,6 +126,53 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'create_whiteboard',
+      description: '创建一张新的画布（whiteboard）并根据用户描述生成图形内容。适用于“在新画板/白板里画一个思维导图、流程图、架构图、时序图”等请求。',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: '画布标题（可选）' },
+          prompt: { type: 'string', description: '要在画布中生成的内容描述，使用自然语言详细说明' },
+          diagram_type: {
+            type: 'string',
+            enum: ['auto', 'mindmap', 'flowchart', 'architecture', 'sequence', 'hierarchy', 'fishbone', 'timeline', 'gantt', 'quadrant', 'pie'],
+            description: '图表类型偏好，默认 auto'
+          },
+          source_note_id: { type: 'number', description: '作为内容来源的笔记 ID（可选）' },
+          use_current_note_context: { type: 'boolean', description: '是否参考当前笔记内容，默认 true' }
+        },
+        required: ['prompt']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_whiteboard',
+      description: '修改现有画布内容。适用于“在当前画布补充内容”“重画当前图”“修改已有白板”等请求。',
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: { type: 'string', description: '如何修改画布的自然语言描述' },
+          target_note_id: { type: 'number', description: '目标画布笔记 ID；不传时默认当前画布' },
+          action: {
+            type: 'string',
+            enum: ['append', 'replace', 'edit'],
+            description: '修改方式：append 追加，replace 重画，edit 基于现有内容修改'
+          },
+          diagram_type: {
+            type: 'string',
+            enum: ['auto', 'mindmap', 'flowchart', 'architecture', 'sequence', 'hierarchy', 'fishbone', 'timeline', 'gantt', 'quadrant', 'pie'],
+            description: '图表类型偏好，默认 auto'
+          }
+        },
+        required: ['prompt']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'search_todos',
       description: '搜索待办事项。可按关键词、状态等搜索。',
       parameters: {

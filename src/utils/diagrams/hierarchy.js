@@ -21,7 +21,7 @@ const normalizeDsl = (dsl = '') => String(dsl || '')
   .split('\n')
   .map((line) => line.replace(/\t/g, '  '))
 
-const parseHierarchyDsl = (dsl) => {
+export const parseHierarchyDsl = (dsl) => {
   const lines = normalizeDsl(dsl)
     .map((raw) => {
       const trimmed = raw.trim()
@@ -72,6 +72,39 @@ const parseHierarchyDsl = (dsl) => {
     stack.push(node)
   }
   return root
+}
+
+const sanitizeNodeId = (label = '', fallback = 'node') => {
+  const base = String(label || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '_')
+    .replace(/^_+|_+$/g, '')
+  return base || fallback
+}
+
+const mermaidLabel = (label = '') => String(label || '')
+  .replace(/"/g, '\\"')
+  .replace(/\n/g, '<br/>')
+
+export const hierarchyDslToMermaidFlowchart = (dsl = '') => {
+  const root = parseHierarchyDsl(dsl)
+  const lines = ['flowchart TD']
+  const queue = [{ node: root, parentId: null }]
+  let index = 0
+
+  while (queue.length > 0) {
+    const { node, parentId } = queue.shift()
+    const nodeId = `${sanitizeNodeId(node.label, 'node')}_${index++}`
+    lines.push(`  ${nodeId}["${mermaidLabel(node.label || '层级图')}"]`)
+    if (parentId) {
+      lines.push(`  ${parentId} --> ${nodeId}`)
+    }
+    for (const child of node.children || []) {
+      queue.push({ node: child, parentId: nodeId })
+    }
+  }
+
+  return lines.join('\n')
 }
 
 const measureNode = (label, depth) => {
@@ -141,6 +174,10 @@ const makeOrthArrow = (from, to) => {
   })
 }
 
+/**
+ * @deprecated 已被 composer 通用合成引擎取代（src/utils/diagrams/composer）。
+ * 仅作为 flowchart/mindmap 之外旧路径的兜底保留，勿在新代码引用。
+ */
 export const renderHierarchy = (dsl, { offsetX = 0, offsetY = 0 } = {}) => {
   const root = parseHierarchyDsl(dsl)
   const flat = collectNodes(root)

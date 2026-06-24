@@ -31,11 +31,11 @@ import {
   Refresh as RefreshIcon,
   Search as SearchIcon,
   Psychology as PsychologyIcon,
-  AutoAwesome as AutoAwesomeIcon,
   CleaningServices as CleanIcon,
   Timeline as TimelineIcon
 } from '@mui/icons-material';
 import { emptyStateSx, settingsFieldGroupSx, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../../styles/commonStyles';
+import FlotaAIIcon from '../common/FlotaAIIcon';
 
 // ─── 分层配色 ───
 const LAYER_COLORS = {
@@ -382,7 +382,7 @@ const Mem0Settings = () => {
             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
               <Button
                 variant="outlined" size="small"
-                startIcon={<AutoAwesomeIcon />}
+                startIcon={<FlotaAIIcon sx={{ fontSize: 18 }} />}
                 onClick={() => setMigrateDialogOpen(true)}
                 disabled={loading}
               >

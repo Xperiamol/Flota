@@ -2,6 +2,34 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [3.4.0] - 2026-06-24
+
+### Added / 新增
+- **AI 会话持久化切换到 SQLite**：新增 [ConversationDAO / ConversationService / conversationHandlers] IPC 链路，AI 会话正文改由主进程数据库持久化，renderer 端 localStorage 只保留轻量索引。
+- **AI 主视觉与统一图标体系**：新增 `FlotaAIIcon` 与 `FlotaAIOrb`，AI 入口、面板、浮窗、空状态统一到新的视觉语言。
+- **AI 待确认动作卡片**：新增 `pendingActions` 模型与执行器，AI 可在消息内生成批量待办/单动作确认卡片并原地执行。
+- **画布 Composer 丰富布局能力**：新增 `src/utils/diagrams/composer/`，扩展 group / graph / screen / badge / callout 等原语，支持更饱满的 AI 画布合成。
+
+### Changed / 变更
+- **AI 流式交互重构**：`AIChatView` 切换到统一 `useAIStream` 生命周期，补齐 requestId 过滤、每会话流式草稿缓存、切会话滚动恢复、后台生成状态提示。
+- **AI 会话管理精简**：删除未使用的 conversation `getById` 链路，批量删除接通 `deleteMany`，预览摘要字段从持久化索引中移除。
+- **AI 面板视觉与浮窗对齐**：思考中状态、工具执行反馈、头像 fallback 与气泡样式统一，AI 静态图标改为单色鲸鱼图形。
+- **白板生成 prompt / few-shot 重写**：重构 `aiExcalidrawGenerator` 的 few-shot 与 composer 约束，增强留白、虚线分组、分区层次和多原语混用能力。
+- **白板与编辑器玻璃化样式整理**：统一 Excalidraw 面板毛玻璃 token，修正 picker / mobile menu 透明度和层次感。
+
+### Fixed / 修复
+- 修复 AI 页面中流式回复期间切换会话/笔记后出现的串台、错误锁定、历史消息错位、滚动定位不准等问题。
+- 修复 AI 仍在生成时切换视图导致的输入焦点恢复异常，并显式提示“后台仍在生成”的状态。
+- 修复双链引用 hover 预览与 `[[` 补全在右键场景下的残留冲突；右键时预览会立即关闭。
+- 修复白板引用预览只能显示“不可预览”的问题，改为复用白板缩略图预览能力。
+- 修复白板预览图命名与同步链路不一致的问题，本地白板也会生成可消费的 preview 文件；时间轴失败缓存不再永久卡死。
+- 修复 `WhiteboardEditor` 毛玻璃样式调整后残留的 `panelBg is not defined` 运行时报错。
+- 修复 AI 配置与流式工具链中的多处稳定性问题，包括内容拦截错误透传、工具循环状态记录和 logger 补充。
+
+### Removed / 清理
+- 删除 `src/utils/aiIntentUtils.js`，意图路由逻辑统一收拢到 `src/utils/aiCore/intentRouter.js`。
+- 移除 AI 会话持久化中的冗余 preview 字段和旧迁移路径，避免空壳会话继续污染前端状态。
+
 ## [3.3.0] - 2026-06-15
 
 ### Added / 新增
