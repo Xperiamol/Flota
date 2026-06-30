@@ -15,34 +15,8 @@ const registerWhiteboardHandlers = () => {
     try {
       const imageStorage = getImageStorageInstance()
       const fileMap = await imageStorage.saveWhiteboardImages(files)
-
-      try {
-        const { getInstance: getV3SyncService } = require('../services/sync/V3SyncService')
-        const v3Service = getV3SyncService()
-        if (v3Service && v3Service.isEnabled && v3Service.uploadImage) {
-          const uploadPromises = Object.entries(fileMap).map(async ([fileId, fileInfo]) => {
-            try {
-              const localPath = path.join(
-                app.getPath('userData'),
-                'images',
-                'whiteboard',
-                fileInfo.fileName
-              )
-              const relativePath = `images/whiteboard/${fileInfo.fileName}`
-              await v3Service.uploadImage(localPath, relativePath)
-              console.log(`[图片自动上传] 成功: ${fileInfo.fileName}`)
-            } catch (error) {
-              console.error(`[图片自动上传] 失败: ${fileInfo.fileName}`, error)
-            }
-          })
-          Promise.all(uploadPromises).catch(err =>
-            console.error('[图片自动上传] 批量上传出错:', err)
-          )
-        }
-      } catch (error) {
-        console.error('[图片自动上传] 初始化失败:', error)
-      }
-
+      // 仅本地落盘。上传交给 SyncEngine 增量同步（uploadNoteImages 带远端 exists 去重），
+      // 避免每次保存都直传坚果云造成重复流量。
       return { success: true, data: fileMap }
     } catch (error) {
       console.error('保存画布图片失败:', error)
@@ -71,18 +45,8 @@ const registerWhiteboardHandlers = () => {
       const filePath = path.join(previewDir, `${syncId}.png`)
       const buffer = Buffer.from(pngBase64, 'base64')
       await fs.promises.writeFile(filePath, buffer)
-
-      try {
-        const { getInstance: getV3SyncService } = require('../services/sync/V3SyncService')
-        const v3Service = getV3SyncService()
-        if (v3Service && v3Service.isEnabled && v3Service.uploadImage) {
-          const relativePath = `images/whiteboard-preview/${syncId}.png`
-          v3Service.uploadImage(filePath, relativePath).catch(err =>
-            console.error('[画布预览上传] 失败:', err)
-          )
-        }
-      } catch (_) { /* 不阻塞 */ }
-
+      // 仅本地落盘。上传交给 SyncEngine.syncWhiteboardPreview（带 previewHashes 内容去重），
+      // 避免每次保存都直传坚果云、即使内容未变也重传造成重复流量。
       return { success: true }
     } catch (error) {
       console.error('保存画布预览图失败:', error)

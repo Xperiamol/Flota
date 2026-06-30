@@ -160,12 +160,13 @@ export function createMarkdownRenderer(options = {}) {
   const {
     onWikiLinkClick,
     onTagClick,
+    html = false,
     pluginOptions = {}
   } = options
 
   // 初始化 markdown-it
   const md = new MarkdownIt({
-    html: false,          // 禁止用户原始 HTML，避免预览区脚本注入
+    html,                 // 默认禁止原始 HTML；导出场景开启后由调用方做白名单清洗
     linkify: true,        // 自动转换 URL 为链接
     typographer: true,    // 启用智能引号和其他排版替换
     breaks: true,         // 转换换行符为 <br>

@@ -6,24 +6,27 @@ const UNTITLED_TITLES = new Set(['', '未命名', '无标题', '新建笔记', '
 const isEmptyTitle = (title) => UNTITLED_TITLES.has(String(title || '').trim())
 
 /**
- * 切换笔记时自动调用 AI 生成标题（仅空标题）和标签建议（合并到现有 tags），
+ * 切换笔记时自动调用 AI 生成标题与标签「建议」（均不静默写入，交给 UI 层供用户采纳），
  * 跳过画布笔记、内容过短、AI 关闭、设置未开启的情况。
  *
- * 标题：成功后直接 updateNote(title)
- * 标签建议：写入内存（由 onSuggestTags 回调交给 UI 层展示供用户采纳）
+ * 标题：成功后通过 onSuggestTitle 回调交给 UI 层展示建议条（不再直接 updateNote 覆盖）
+ * 标签：通过 onSuggestTags 回调交给 UI 层展示建议条
+ * 加载/错误：通过 onStateChange 回调上报，UI 可显示 loading 与错误提示
  */
-const useAIAutoAnnotate = ({ selectedNoteId, notes, updateNote, onSuggestTags }) => {
+const useAIAutoAnnotate = ({ selectedNoteId, notes, onSuggestTitle, onSuggestTags, onStateChange }) => {
   const prevNoteIdRef = useRef(null)
   const inFlightRef = useRef(new Set())
   const lastAnnotateRef = useRef(new Map()) // noteId -> { contentHash, ts }
 
   // 用 ref 持有最新的依赖，避免 useEffect 因依赖变更被重复 cleanup 取消 timer
   const notesRef = useRef(notes)
-  const updateNoteRef = useRef(updateNote)
+  const onSuggestTitleRef = useRef(onSuggestTitle)
   const onSuggestTagsRef = useRef(onSuggestTags)
+  const onStateChangeRef = useRef(onStateChange)
   useEffect(() => { notesRef.current = notes }, [notes])
-  useEffect(() => { updateNoteRef.current = updateNote }, [updateNote])
+  useEffect(() => { onSuggestTitleRef.current = onSuggestTitle }, [onSuggestTitle])
   useEffect(() => { onSuggestTagsRef.current = onSuggestTags }, [onSuggestTags])
+  useEffect(() => { onStateChangeRef.current = onStateChange }, [onStateChange])
 
   const annotateNote = async (noteId) => {
     if (!noteId) return
@@ -53,6 +56,7 @@ const useAIAutoAnnotate = ({ selectedNoteId, notes, updateNote, onSuggestTags })
       if (last && last.contentHash === contentHash && Date.now() - last.ts < 60_000) return
 
       inFlightRef.current.add(key)
+      onStateChangeRef.current?.(noteId, { loading: true, error: null })
       const existingTags = parseTags(note.tags)
       // 全局标签库：所有笔记出现过的标签去重，供模型优先复用
       const librarySet = new Set()
@@ -68,19 +72,24 @@ const useAIAutoAnnotate = ({ selectedNoteId, notes, updateNote, onSuggestTags })
         existingTags,
         libraryTags: Array.from(librarySet)
       })
-      if (!result?.success) return
+      if (!result?.success) {
+        onStateChangeRef.current?.(noteId, { loading: false, error: result?.error || 'AI 整理失败' })
+        return
+      }
 
       const data = result.data || {}
       lastAnnotateRef.current.set(key, { contentHash, ts: Date.now() })
 
       if (wantTitle && data.title && isEmptyTitle(note.title)) {
-        await updateNoteRef.current?.(noteId, { title: data.title })
+        onSuggestTitleRef.current?.(noteId, String(data.title).trim())
       }
       if (wantTags && Array.isArray(data.tags) && data.tags.length > 0) {
         onSuggestTagsRef.current?.(noteId, data.tags)
       }
+      onStateChangeRef.current?.(noteId, { loading: false, error: null })
     } catch (error) {
       logger.warn('[useAIAutoAnnotate] failed', error?.message)
+      onStateChangeRef.current?.(noteId, { loading: false, error: error?.message || 'AI 整理失败' })
     } finally {
       inFlightRef.current.delete(key)
     }

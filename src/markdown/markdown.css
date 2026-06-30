@@ -117,6 +117,16 @@
   100% { background-color: transparent; }
 }
 
+/* 笔记内搜索高亮（CSS Custom Highlight API，仅 WYSIWYG/contenteditable 模式） */
+::highlight(flota-note-search) {
+  background-color: rgba(250, 204, 21, 0.4);
+  color: inherit;
+}
+::highlight(flota-note-search-active) {
+  background-color: rgba(249, 115, 22, 0.75);
+  color: #fff;
+}
+
 .markdown-wiki-link-embed-placeholder {
   display: flex;
   align-items: center;

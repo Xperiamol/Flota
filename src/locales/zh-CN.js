@@ -369,6 +369,13 @@ const zhCN = {
   },
   ai: {
     title: 'AI 设置',
+    loadConfigFailed: '加载 AI 配置失败',
+    saveFailed: '保存失败',
+    configSaved: '配置已保存',
+    enterApiKey: '请先输入 API 密钥',
+    enterCustomApiUrl: '请先输入自定义 API 地址',
+    connectionTestSuccess: '连接测试成功',
+    connectionTestFailed: '连接测试失败',
     enableAI: '启用 AI',
     enableAIDesc: '启用 AI 基础设施，供 AI 相关功能和插件使用',
     provider: 'AI 提供商',

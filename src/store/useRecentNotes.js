@@ -36,6 +36,32 @@ export const useRecentNotes = create((set, get) => ({
       recents: state.recents.filter((r) => r.id !== noteId)
     })),
 
+  // 关闭目标之上（列表更靠前/更早打开）的项；固定项保留
+  closeAbove: (noteId) =>
+    set((state) => {
+      const idx = state.recents.findIndex((r) => r.id === noteId)
+      if (idx <= 0) return state
+      return {
+        recents: state.recents.filter((r, i) => i >= idx || r.pinned)
+      }
+    }),
+
+  // 关闭目标之下（列表更靠后/更晚打开）的项；固定项保留
+  closeBelow: (noteId) =>
+    set((state) => {
+      const idx = state.recents.findIndex((r) => r.id === noteId)
+      if (idx < 0 || idx === state.recents.length - 1) return state
+      return {
+        recents: state.recents.filter((r, i) => i <= idx || r.pinned)
+      }
+    }),
+
+  // 关闭除目标外的其他项；固定项保留
+  closeOthers: (noteId) =>
+    set((state) => ({
+      recents: state.recents.filter((r) => r.id === noteId || r.pinned)
+    })),
+
   setScrollPercent: (noteId, percent) => {
     if (!noteId) return
     set((state) => {

@@ -10,12 +10,17 @@ const {
   CURRENT_NOTE_MAX_CHARS
 } = require('./constants');
 
-const getSystemPrompt = async ({ mem0Service }) => {
+const getSystemPrompt = async ({ mem0Service, imageReadingEnabled = true }) => {
   const now = new Date();
   const dateStr = now.toLocaleDateString('zh-CN', {
     year: 'numeric', month: 'long', day: 'numeric', weekday: 'long'
   });
   const timeStr = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+
+  const imageReadingLine = imageReadingEnabled
+    ? '\n- 笔记里的本地图片不会自动给你"看"。当 get_current_note / 当前笔记上下文里 images 非空、且这些图片对回答问题有帮助（识图、描述配图、看图答题、需要图里的信息辅助理解笔记主题等）时，直接调用 read_note_image(path) 取图，**不要询问用户是否允许**——工具调用本身就是被授权的；下一轮即可看到该图。多张图按需分次调，不要一次取多张。仅当问题与图无关（纯文本问答）时才不取图。'
+    : '\n- 图片理解（多模态）当前未启用，read_note_image 工具不可用。即使笔记里含本地图片，也**不要尝试调用 read_note_image**；直接基于文本内容回答，必要时说明无法查看图片。';
+
 
   let profileSection = '';
   try {
@@ -50,8 +55,7 @@ const getSystemPrompt = async ({ mem0Service }) => {
 ## 长笔记上下文策略
 - 系统会自动注入「当前笔记」上下文。短笔记直接给全文；长笔记只给元信息、目录大纲、首尾预览，中段被省略。
 - 当看到「⚠️ 内容已省略中段」或 total_lines 很大时：先调用 search_in_current_note(query) 用关键词定位，或用 read_current_note(start_line, line_count) 按目录大纲指向的行号读取需要的段落。
-- 不要在长笔记上凭首尾预览臆测中段内容；不确定时主动读取。
-- 笔记里的本地图片不会自动给你"看"。当 get_current_note / 当前笔记上下文里 images 非空、且这些图片对回答问题有帮助（识图、描述配图、看图答题、需要图里的信息辅助理解笔记主题等）时，直接调用 read_note_image(path) 取图，**不要询问用户是否允许**——工具调用本身就是被授权的；下一轮即可看到该图。多张图按需分次调，不要一次取多张。仅当问题与图无关（纯文本问答）时才不取图。
+- 不要在长笔记上凭首尾预览臆测中段内容；不确定时主动读取。${imageReadingLine}
 
 ## 记忆档案管理
 - 【注入即少量】「关于用户」与「相关长期记忆」只注入了少量高相关条目；不够时主动调用 search_memory，不要凭注入片段臆测。

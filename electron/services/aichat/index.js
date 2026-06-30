@@ -36,6 +36,9 @@ const normalizeChatErrorMessage = (error) => {
   return error?.message || String(error || '请求失败');
 };
 
+const isToolDisabled = (options, name) =>
+  Array.isArray(options?.disabledTools) && options.disabledTools.includes(name);
+
 class AIChatService {
   constructor(aiService, noteDAO, todoDAO, mem0Service, webSearchService = null) {
     this.aiService = aiService;
@@ -113,10 +116,10 @@ class AIChatService {
 
   /** 执行单个工具：写入类先转待确认计划，其它直接路由到 handler */
   async _executeTool(name, args, options = {}) {
-    if (Array.isArray(options.disabledTools) && options.disabledTools.includes(name)) {
+    if (isToolDisabled(options, name)) {
       return JSON.stringify({
         success: false,
-        error: `工具 ${name} 已被当前请求禁用`,
+        error: `工具 ${name} 在本次请求中不可用，请不要再次调用它，直接基于已有文本信息回答。`,
         disabled: true
       });
     }
@@ -129,13 +132,34 @@ class AIChatService {
     }, this._toolServices());
   }
 
-  async executePendingAction(actionId, overrides = null) {
-    const action = this._pendingActions.take(actionId);
+  // 内存条目丢失（应用重启 / 超过 TTL）时，用确认卡持久化的快照重建动作，
+  // 避免历史确认卡“点了报已过期”。仅接受白名单内的写入类工具，args/context 必须是对象。
+  _rebuildPendingAction(actionId, fallback) {
+    if (!fallback || typeof fallback !== 'object') return null;
+    const { name } = fallback;
+    if (!WRITE_TOOL_NAMES.has(name)) return null;
+    return {
+      id: actionId,
+      name,
+      args: fallback.args && typeof fallback.args === 'object' ? fallback.args : {},
+      context: fallback.context && typeof fallback.context === 'object' ? fallback.context : null
+    };
+  }
+
+  // 取出待确认动作：优先内存条目，失效时用快照重建。
+  _takePendingAction(actionId, fallback) {
+    return this._pendingActions.take(actionId) || this._rebuildPendingAction(actionId, fallback);
+  }
+
+  async executePendingAction(actionId, overrides = null, fallback = null) {
+    const action = this._takePendingAction(actionId, fallback);
     if (!action) return { success: false, error: '待确认操作不存在或已过期' };
 
     const finalArgs = (action.name === 'create_todos' && overrides && Array.isArray(overrides.todos))
       ? { ...action.args, todos: overrides.todos }
-      : action.args;
+      : (action.name === 'edit_notes' && overrides && Array.isArray(overrides.edits))
+        ? { ...action.args, edits: overrides.edits }
+        : action.args;
     const finalAction = finalArgs === action.args ? action : { ...action, args: finalArgs };
 
     try {
@@ -153,8 +177,8 @@ class AIChatService {
     }
   }
 
-  consumePendingAction(actionId) {
-    const action = this._pendingActions.take(actionId);
+  consumePendingAction(actionId, fallback = null) {
+    const action = this._takePendingAction(actionId, fallback);
     if (!action) return { success: false, error: '待确认操作不存在或已过期' };
     return { success: true, action };
   }
@@ -191,7 +215,15 @@ class AIChatService {
         this.mem0Service,
         { query: options.memoryQuery || '', scene: options.scene || 'chat_panel' }
       );
-      const systemPrompt = `${await getSystemPrompt({ mem0Service: this.mem0Service })}${buildContextSection(enrichedPackage)}`;
+
+      // 图片理解（多模态）由后端 config.visionEnabled 统一裁决：关闭时把 read_note_image
+      // 并入 disabledTools，让请求工具过滤、工具执行拦截、系统提示词三处口径一致。
+      const imageReadingEnabled = isEnabledSetting(config.visionEnabled) && !isToolDisabled(options, 'read_note_image');
+      if (!imageReadingEnabled && !isToolDisabled(options, 'read_note_image')) {
+        options = { ...options, disabledTools: [...(options.disabledTools || []), 'read_note_image'] };
+      }
+
+      const systemPrompt = `${await getSystemPrompt({ mem0Service: this.mem0Service, imageReadingEnabled })}${buildContextSection(enrichedPackage)}`;
       const budgetedHistory = trimMessagesToBudget(systemPrompt, messages, MAX_CONTEXT_TOKENS);
       const fullMessages = [
         { role: 'system', content: systemPrompt },
@@ -216,9 +248,26 @@ class AIChatService {
           executeTool: (name, args, opts) => this._executeTool(name, args, opts),
           logger: this.logger
         });
-        return { ...toolResult, fullContent: accumulatedContent || toolResult.fullContent };
+        const finalContent = accumulatedContent || toolResult.fullContent;
+        this.logger.info('AIChatService', 'Stream chat result', {
+          requestId: options.requestId || null,
+          conversationId: options.conversationId || null,
+          path: 'toolLoop',
+          finishReason: toolResult.finishReason || null,
+          maxTk: maxTk ?? null,
+          contentLen: String(finalContent || '').length,
+        });
+        return { ...toolResult, fullContent: finalContent };
       }
 
+      this.logger.info('AIChatService', 'Stream chat result', {
+        requestId: options.requestId || null,
+        conversationId: options.conversationId || null,
+        path: 'direct',
+        finishReason: result.finishReason || null,
+        maxTk: maxTk ?? null,
+        contentLen: String(accumulatedContent || result.content || '').length,
+      });
       return {
         success: true,
         fullContent: accumulatedContent || result.content,
@@ -243,9 +292,9 @@ class AIChatService {
     }
   }
 
-  /** 非流式聊天（简单模式，用于快速操作） */
+  /** 非流式聊天（简单模式，用于快速操作）。该路径不走工具循环，关掉取图指令避免无效负载。 */
   async chat(messages, options = {}) {
-    const systemPrompt = await getSystemPrompt({ mem0Service: this.mem0Service });
+    const systemPrompt = await getSystemPrompt({ mem0Service: this.mem0Service, imageReadingEnabled: false });
     const fullMessages = [
       { role: 'system', content: systemPrompt },
       ...messages

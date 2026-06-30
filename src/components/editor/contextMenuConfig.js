@@ -1,10 +1,12 @@
 // 上下文菜单项配置常量（从 WYSIWYGEditor 抽出，避免 Settings 反向 import 整个编辑器）
 export const DEFAULT_CONTEXT_MENU_ITEMS = [
+  'bookmark',
   'undo', 'redo', 'cut', 'copy', 'paste', 'pastePlain', 'selectAll',
   'bold', 'italic', 'link', 'blockSelect', 'table',
 ]
 
 export const ALL_CONTEXT_MENU_ITEMS = [
+  'bookmark',
   'undo', 'redo', 'cut', 'copy', 'paste', 'pastePlain', 'selectAll',
   'bold', 'italic', 'code', 'link',
   'heading1', 'heading2', 'bulletList', 'orderedList', 'taskList', 'blockquote',
@@ -12,6 +14,7 @@ export const ALL_CONTEXT_MENU_ITEMS = [
 ]
 
 export const CONTEXT_MENU_ITEM_LABELS = {
+  bookmark: '添加书签',
   undo: '撤销',
   redo: '重做',
   cut: '剪切',

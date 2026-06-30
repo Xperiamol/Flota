@@ -195,6 +195,7 @@ const TOOL_ICONS = {
   summarize_current_note_section: <ReadIcon fontSize="small" />,
   create_note: <NoteIcon fontSize="small" />,
   edit_note: <EditIcon fontSize="small" />,
+  edit_notes: <EditIcon fontSize="small" />,
   create_whiteboard: <EditIcon fontSize="small" />,
   update_whiteboard: <EditIcon fontSize="small" />,
   write_long_document: <NoteIcon fontSize="small" />,
@@ -218,6 +219,7 @@ const TOOL_AVATAR_ICON = {
   summarize_current_note_section: ReadIcon,
   create_note: NoteIcon,
   edit_note: EditIcon,
+  edit_notes: EditIcon,
   create_whiteboard: EditIcon,
   update_whiteboard: EditIcon,
   write_long_document: NoteIcon,
@@ -263,6 +265,7 @@ const TOOL_LABELS = {
   summarize_current_note_section: { running: '生成段落摘要中', done: '段落摘要' },
   create_note: { running: '创建笔记中', done: '创建笔记' },
   edit_note: { running: '编辑笔记中', done: '编辑笔记' },
+  edit_notes: { running: '批量编辑笔记中', done: '批量编辑笔记' },
   create_whiteboard: { running: '创建画布中', done: '创建画布' },
   update_whiteboard: { running: '修改画布中', done: '修改画布' },
   write_long_document: { running: '生成长文档中', done: '生成长文档' },
@@ -289,12 +292,10 @@ const formatToolLabel = (tc) => {
 
 
 const QUICK_ACTIONS = [
-  { label: '📋 今日待办', prompt: '帮我看看今天有哪些待办事项' },
-  { label: '📝 总结笔记', prompt: '帮我总结一下当前笔记的要点' },
-  { label: '🔍 搜索记忆', prompt: '搜索我的记忆库' },
-  { label: '✨ 新建笔记', prompt: '帮我创建一个新笔记' },
-  { label: '🧭 规划任务', prompt: '根据当前上下文，帮我拆解下一步行动计划' },
-  { label: '🔗 关联笔记', prompt: '找出和当前笔记最相关的内容，并说明关联原因' },
+  { label: '🏷️ 整理标题', prompt: '帮我把最近的笔记标题润色一下，让它们更清晰统一。先搜索我的笔记，再用批量编辑一次性给出修改建议让我确认。' },
+  { label: '🔖 整理标签', prompt: '帮我给最近的笔记补充并统一标签。先搜索我的笔记，再用批量编辑一次性给出标签建议让我确认。' },
+  { label: '📰 生成日报', prompt: '根据我今天的笔记和待办，帮我生成一份今日工作日报，包含已完成事项、进展和明日计划。' },
+  { label: '📖 写部小说', prompt: '我想写一部小说，帮我构思并撰写。请先和我确认题材、主角和大致情节走向。' },
 ]
 
 const CONTEXT_OPTIONS = [
@@ -531,9 +532,117 @@ const SimpleActionCard = ({ action, theme, executing, onExecute }) => {
   )
 }
 
+// ─── 批量编辑笔记预览卡（edit_notes 待确认时使用） ───
+
+const BatchEditNotesActionCard = ({ action, theme, executing, onExecute }) => {
+  const initialEdits = Array.isArray(action.args?.edits) ? action.args.edits : []
+  const [localEdits, setLocalEdits] = useState(() =>
+    initialEdits.map((e, i) => ({ ...e, _key: `${i}-${e.id}`, _selected: true }))
+  )
+  const status = action.status || (executing ? 'running' : 'pending')
+  const isDone = status === 'done'
+  const isFailed = status === 'failed'
+  const selectedCount = localEdits.filter((e) => e._selected).length
+
+  const toggle = (key) => {
+    setLocalEdits((prev) => prev.map((e) => e._key === key ? { ...e, _selected: !e._selected } : e))
+  }
+  const submit = () => {
+    const final = localEdits
+      .filter((e) => e._selected)
+      .map(({ _key, _selected, ...rest }) => rest)
+    if (final.length === 0) return
+    onExecute?.(action, { edits: final })
+  }
+
+  if (isDone || isFailed) {
+    return <SimpleActionCard action={action} theme={theme} executing={executing} onExecute={onExecute} />
+  }
+
+  return (
+    <Paper
+      elevation={0}
+      sx={{
+        mt: 0.75,
+        px: 1.25,
+        py: 1,
+        maxWidth: 480,
+        borderRadius: '14px',
+        border: '1px solid',
+        borderColor: alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.28 : 0.26),
+        bgcolor: theme.palette.mode === 'dark'
+          ? alpha(theme.palette.warning.dark, 0.12)
+          : alpha(theme.palette.warning.light, 0.14),
+        boxShadow: `0 10px 28px ${alpha(theme.palette.warning.main, 0.08)}`,
+        backdropFilter: 'blur(10px)',
+      }}
+    >
+      <Typography variant="caption" sx={{ display: 'block', color: 'warning.main', fontWeight: 800, letterSpacing: 0.1, mb: 0.5 }}>
+        AI 想批量整理 {localEdits.length} 条笔记
+      </Typography>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, maxHeight: 280, overflowY: 'auto', pr: 0.5 }}>
+        {localEdits.map((e) => (
+          <Box
+            key={e._key}
+            sx={{
+              display: 'flex', alignItems: 'flex-start', gap: 0.75,
+              px: 0.75, py: 0.6,
+              borderRadius: '10px',
+              bgcolor: e._selected
+                ? alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.1 : 0.08)
+                : alpha(theme.palette.action.disabledBackground, 0.4),
+              opacity: e._selected ? 1 : 0.55,
+              transition: 'background-color 120ms, opacity 120ms',
+            }}
+          >
+            <Box
+              component="input"
+              type="checkbox"
+              checked={e._selected}
+              onChange={() => toggle(e._key)}
+              sx={{ mt: 0.4, cursor: 'pointer', accentColor: theme.palette.warning.main }}
+            />
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+                #{e.id}
+              </Typography>
+              {e.title !== undefined && (
+                <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.4, wordBreak: 'break-word' }}>
+                  标题 → {e.title || '（清空）'}
+                </Typography>
+              )}
+              <Box sx={{ display: 'flex', gap: 0.4, mt: 0.4, flexWrap: 'wrap', alignItems: 'center' }}>
+                {e.tags !== undefined && String(e.tags).split(/[,，]/).map((t) => t.trim()).filter(Boolean).map((t, i) => (
+                  <Chip key={`${t}-${i}`} size="small" label={t} sx={{ height: 18, fontSize: '0.68rem' }} />
+                ))}
+              </Box>
+            </Box>
+          </Box>
+        ))}
+      </Box>
+      <Box sx={{ display: 'flex', gap: 1, mt: 1, justifyContent: 'flex-end' }}>
+        <Button
+          size="small"
+          variant="contained"
+          color="warning"
+          disabled={executing || selectedCount === 0}
+          onClick={submit}
+          sx={{
+            minWidth: 96, height: 30, px: 1.4,
+            borderRadius: '999px', textTransform: 'none', fontWeight: 800,
+            boxShadow: `0 8px 18px ${alpha(theme.palette.warning.main, 0.18)}`,
+          }}
+        >
+          {executing ? '应用中…' : `应用 ${selectedCount} 条`}
+        </Button>
+      </Box>
+    </Paper>
+  )
+}
+
 // ─── 聊天消息组件 ───
 
-const ChatMessage = React.memo(({ msg, theme, userAvatar, onExecuteAction, executingActionId, onSaveAsNote, onAskFollowUp, onOpenSource }) => {
+const ChatMessage = React.memo(({ msg, theme, userAvatar, onExecuteAction, executingActionIds, onSaveAsNote, onAskFollowUp, onOpenSource }) => {
   const isUser = msg.role === 'user'
   // 兼容多模态 content：array 时拆出 text + image_url
   const isArrayContent = Array.isArray(msg.content)
@@ -596,14 +705,21 @@ const ChatMessage = React.memo(({ msg, theme, userAvatar, onExecuteAction, execu
                 <BatchTodoActionCard
                   action={action}
                   theme={theme}
-                  executing={executingActionId === action.actionId}
+                  executing={executingActionIds.has(action.actionId)}
+                  onExecute={onExecuteAction}
+                />
+              ) : action.name === 'edit_notes' ? (
+                <BatchEditNotesActionCard
+                  action={action}
+                  theme={theme}
+                  executing={executingActionIds.has(action.actionId)}
                   onExecute={onExecuteAction}
                 />
               ) : (
                 <SimpleActionCard
                   action={action}
                   theme={theme}
-                  executing={executingActionId === action.actionId}
+                  executing={executingActionIds.has(action.actionId)}
                   onExecute={onExecuteAction}
                 />
               )}
@@ -727,7 +843,7 @@ export default function AIChatView({ onTodoUpdated }) {
   const [steps, setSteps] = useState([])
   const [activeTool, setActiveTool] = useState(null)
   const [contextEnabled, setContextEnabled] = useState({ currentNote: true, relatedNotes: true, todos: true, memories: true })
-  const [executingActionId, setExecutingActionId] = useState(null)
+  const [executingActionIds, setExecutingActionIds] = useState(() => new Set())
   const [messageContextMenu, setMessageContextMenu] = useState(null)
   const [inputContextMenu, setInputContextMenu] = useState(null)
 
@@ -1058,7 +1174,7 @@ export default function AIChatView({ onTodoUpdated }) {
             selectedNoteId: selectedNoteId == null ? null : String(selectedNoteId),
             source: selectedNoteId == null ? 'general' : 'note',
           },
-          disabledTools: visionEnabled ? disabledTools : [...(disabledTools || []), 'read_note_image'],
+          disabledTools,
         },
         onContent: (c) => {
           writeStreamDraft(currentId, { streamContent: c })
@@ -1210,7 +1326,7 @@ export default function AIChatView({ onTodoUpdated }) {
         inputRef.current?.focus()
       }
     }
-  }, [input, pendingImages, loading, currentConversationId, aiEnsureNoteChat, aiNewChat, aiSetActiveConv, aiUpdateConv, contextEnabled, notes, selectedNoteId, currentNote, visionEnabled, runStream, showActiveTool, clearActiveTool, currentView])
+  }, [input, pendingImages, loading, currentConversationId, aiEnsureNoteChat, aiNewChat, aiSetActiveConv, aiUpdateConv, contextEnabled, notes, selectedNoteId, currentNote, runStream, showActiveTool, clearActiveTool, currentView])
 
   const handleCancel = useCallback(async () => {
     if (!loading) return
@@ -1255,8 +1371,8 @@ export default function AIChatView({ onTodoUpdated }) {
   }, [aiUpdateConv])
 
   const handleExecuteAction = useCallback(async (action, overrides = null) => {
-    if (!action?.actionId || executingActionId) return
-    setExecutingActionId(action.actionId)
+    if (!action?.actionId || executingActionIds.has(action.actionId)) return
+    setExecutingActionIds(prev => new Set(prev).add(action.actionId))
     updateCurrentConversationMessages(prev => prev.map(msg =>
       patchMessagePendingAction(msg, action.actionId, { status: 'running' })
     ))
@@ -1288,9 +1404,13 @@ export default function AIChatView({ onTodoUpdated }) {
       if (reloadTodos) onTodoUpdated?.()
       if (reloadNotes) loadNotes?.()
     } finally {
-      setExecutingActionId(null)
+      setExecutingActionIds(prev => {
+        const next = new Set(prev)
+        next.delete(action.actionId)
+        return next
+      })
     }
-  }, [createNote, currentNote, deleteNote, executingActionId, loadNotes, notes, onTodoUpdated, setSelectedNoteId, updateCurrentConversationMessages, updateNote])
+  }, [createNote, currentNote, deleteNote, executingActionIds, loadNotes, notes, onTodoUpdated, setSelectedNoteId, updateCurrentConversationMessages, updateNote])
 
   const handleSaveAsNote = useCallback(async (content) => {
     if (!content?.trim()) return
@@ -1470,7 +1590,7 @@ export default function AIChatView({ onTodoUpdated }) {
               theme={theme}
               userAvatar={userAvatar}
               onExecuteAction={handleExecuteAction}
-              executingActionId={executingActionId}
+              executingActionIds={executingActionIds}
               onSaveAsNote={handleSaveAsNote}
               onAskFollowUp={handleAskFollowUp}
               onOpenSource={handleOpenSource}
@@ -1540,15 +1660,23 @@ export default function AIChatView({ onTodoUpdated }) {
                     <BatchTodoActionCard
                       action={tc.action}
                       theme={theme}
-                      executing={executingActionId === tc.action.actionId}
+                      executing={executingActionIds.has(tc.action.actionId)}
                       onExecute={handleExecuteAction}
                     />
                   )}
-                  {tc.action && tc.action.name !== 'create_todos' && (
+                  {tc.action && tc.action.name === 'edit_notes' && (
+                    <BatchEditNotesActionCard
+                      action={tc.action}
+                      theme={theme}
+                      executing={executingActionIds.has(tc.action.actionId)}
+                      onExecute={handleExecuteAction}
+                    />
+                  )}
+                  {tc.action && tc.action.name !== 'create_todos' && tc.action.name !== 'edit_notes' && (
                     <SimpleActionCard
                       action={tc.action}
                       theme={theme}
-                      executing={executingActionId === tc.action.actionId}
+                      executing={executingActionIds.has(tc.action.actionId)}
                       onExecute={handleExecuteAction}
                     />
                   )}

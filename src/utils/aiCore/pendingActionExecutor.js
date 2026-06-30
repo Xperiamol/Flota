@@ -16,13 +16,20 @@ import {
 } from '../whiteboardAI'
 
 const WHITEBOARD_ACTIONS = new Set(['create_whiteboard', 'update_whiteboard'])
-const NOTE_REFRESH_ACTIONS = new Set(['create_note', 'edit_note', 'create_whiteboard', 'update_whiteboard'])
+const NOTE_REFRESH_ACTIONS = new Set(['create_note', 'edit_note', 'edit_notes', 'create_whiteboard', 'update_whiteboard'])
 const TODO_REFRESH_ACTIONS = new Set(['create_todo', 'create_todos'])
 
 // 白板动作走后端 gate：先 claim（consume = 单次 + TTL 校验），拿不到就直接失败，
 // 避免重复执行或动作过期后执行。以 store 里的 args/context 快照为准。
+// fallback：内存条目丢失（重启 / 超 TTL）时，后端会用确认卡持久化的 {name,args,context} 重建。
+const buildFallback = (action) => ({
+  name: action.name,
+  args: action.args || {},
+  context: action.context || null,
+})
+
 const executeWhiteboardAction = async (action, overrides, deps) => {
-  const claim = await window.electronAPI?.ai?.consumePendingAction?.(action.actionId)
+  const claim = await window.electronAPI?.ai?.consumePendingAction?.(action.actionId, buildFallback(action))
   if (!claim?.success) {
     throw new Error(claim?.error || '待确认操作不存在或已过期')
   }
@@ -69,7 +76,7 @@ export const runPendingAction = async ({ action, overrides = null, deps = {} }) 
   try {
     const result = WHITEBOARD_ACTIONS.has(action.name)
       ? await executeWhiteboardAction(action, overrides, deps)
-      : await window.electronAPI?.ai?.executePendingAction?.(action.actionId, overrides)
+      : await window.electronAPI?.ai?.executePendingAction?.(action.actionId, overrides, buildFallback(action))
 
     const finalAction = result?.action || action
     const success = Boolean(result?.success)

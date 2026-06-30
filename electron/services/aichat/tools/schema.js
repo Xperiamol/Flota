@@ -126,6 +126,32 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'edit_notes',
+      description: '批量编辑多条已有笔记的标题或标签，用于"批量整理标题/标签"这类一次涉及多条笔记的请求（如"帮我把这些笔记的标题润色一下"、"给这一批笔记补上合适的标签"）。一次提交多条修改，前端只弹一张聚合确认卡，用户可逐条勾选后统一应用。禁止用于修改 content（正文请用 edit_note 逐条处理），也禁止修改 whiteboard 笔记。调用前应先用 search_notes 或当前选中笔记拿到准确的笔记 id。',
+      parameters: {
+        type: 'object',
+        properties: {
+          edits: {
+            type: 'array',
+            description: '要批量修改的笔记列表，每项至少包含 id 以及一个要修改的字段',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'number', description: '笔记ID' },
+                title: { type: 'string', description: '新标题（可选）' },
+                tags: { type: 'string', description: '新标签，用逗号分隔（可选）' }
+              },
+              required: ['id']
+            }
+          }
+        },
+        required: ['edits']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'create_whiteboard',
       description: '创建一张新的画布（whiteboard）并根据用户描述生成图形内容。适用于“在新画板/白板里画一个思维导图、流程图、架构图、时序图”等请求。',
       parameters: {

@@ -33,12 +33,12 @@ const registerAIHandlers = (services, activeAIStreams) => {
     },
     {
       channel: 'ai:execute-pending-action',
-      handler: async (_event, actionId, overrides) => {
+      handler: async (_event, actionId, overrides, fallback) => {
         try {
           if (!services.aiChatService) {
             return { success: false, error: 'AI助手服务尚未初始化，请稍后重试' };
           }
-          const result = await services.aiChatService.executePendingAction(actionId, overrides);
+          const result = await services.aiChatService.executePendingAction(actionId, overrides, fallback);
           logger.info('AIChatService', 'execute-pending-action', {
             actionId,
             name: result?.action?.name,
@@ -55,12 +55,12 @@ const registerAIHandlers = (services, activeAIStreams) => {
     },
     {
       channel: 'ai:consume-pending-action',
-      handler: async (_event, actionId) => {
+      handler: async (_event, actionId, fallback) => {
         try {
           if (!services.aiChatService) {
             return { success: false, error: 'AI助手服务尚未初始化，请稍后重试' };
           }
-          const result = services.aiChatService.consumePendingAction(actionId);
+          const result = services.aiChatService.consumePendingAction(actionId, fallback);
           logger.info('AIChatService', 'consume-pending-action', {
             actionId,
             name: result?.action?.name,

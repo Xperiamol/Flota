@@ -1348,10 +1348,8 @@ function App() {
           open={noteNavigatorOpen}
           onClose={() => setNoteNavigatorOpen(false)}
           portalContainer={aiCommandCenterPortalContainer}
-          notes={notes}
-          selectedNoteId={selectedNoteId}
+          noteId={selectedNoteId}
           noteContent={noteNavigatorContent}
-          onSelectNote={(noteId) => setSelectedNoteId(noteId)}
           positionPersistKey="flota.noteNavigator.position"
         />
 

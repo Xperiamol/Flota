@@ -1,8 +1,11 @@
 import { useMemo, useState } from 'react'
-import { Box, Tooltip, Menu, MenuItem, ListItemIcon, ListItemText, Typography, ButtonBase } from '@mui/material'
+import { Box, Tooltip, Menu, MenuItem, ListItemIcon, ListItemText, Typography, ButtonBase, Divider } from '@mui/material'
 import PushPinIcon from '@mui/icons-material/PushPin'
 import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
 import CloseIcon from '@mui/icons-material/Close'
+import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop'
+import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom'
+import ClearAllIcon from '@mui/icons-material/ClearAll'
 import { useTheme } from '@mui/material/styles'
 import { useStore } from '../../store/useStore'
 import { useRecentNotes } from '../../store/useRecentNotes'
@@ -57,6 +60,9 @@ const RecentNotesRail = () => {
   const recents = useRecentNotes((s) => s.recents)
   const togglePin = useRecentNotes((s) => s.togglePin)
   const remove = useRecentNotes((s) => s.remove)
+  const closeAbove = useRecentNotes((s) => s.closeAbove)
+  const closeBelow = useRecentNotes((s) => s.closeBelow)
+  const closeOthers = useRecentNotes((s) => s.closeOthers)
 
   const notes = useStore((s) => s.notes)
   const selectedNoteId = useStore((s) => s.selectedNoteId)
@@ -92,6 +98,11 @@ const RecentNotesRail = () => {
   const closeMenu = () => setMenu({ anchor: null, id: null })
 
   const menuItem = items.find((i) => i.id === menu.id)
+  const menuIndex = menu.id != null ? items.findIndex((i) => i.id === menu.id) : -1
+  // 仅统计非固定项是否存在于目标上/下/其他（固定项不会被批量关闭）
+  const hasClosableAbove = menuIndex > 0 && items.slice(0, menuIndex).some((i) => !i.pinned)
+  const hasClosableBelow = menuIndex >= 0 && items.slice(menuIndex + 1).some((i) => !i.pinned)
+  const hasClosableOthers = menuIndex >= 0 && items.some((i) => i.id !== menu.id && !i.pinned)
   const dimmed = currentView !== 'notes'
 
   const hoverBg = theme.palette.action.hover
@@ -282,6 +293,49 @@ const RecentNotesRail = () => {
               <CloseIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText primary="关闭" />
+          </MenuItem>
+        )}
+        {menuItem && <Divider />}
+        {menuItem && (
+          <MenuItem
+            disabled={!hasClosableAbove}
+            onClick={() => {
+              closeAbove(menuItem.id)
+              closeMenu()
+            }}
+          >
+            <ListItemIcon>
+              <VerticalAlignTopIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="关闭以上" />
+          </MenuItem>
+        )}
+        {menuItem && (
+          <MenuItem
+            disabled={!hasClosableBelow}
+            onClick={() => {
+              closeBelow(menuItem.id)
+              closeMenu()
+            }}
+          >
+            <ListItemIcon>
+              <VerticalAlignBottomIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="关闭以下" />
+          </MenuItem>
+        )}
+        {menuItem && (
+          <MenuItem
+            disabled={!hasClosableOthers}
+            onClick={() => {
+              closeOthers(menuItem.id)
+              closeMenu()
+            }}
+          >
+            <ListItemIcon>
+              <ClearAllIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="关闭其他" />
           </MenuItem>
         )}
       </Menu>

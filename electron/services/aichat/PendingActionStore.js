@@ -104,6 +104,10 @@ class PendingActionStore {
     switch (name) {
       case 'create_note': return `创建笔记「${args.title || '未命名'}」`;
       case 'edit_note': return `编辑笔记 #${args.id}${args.title ? `，标题改为「${args.title}」` : ''}`;
+      case 'edit_notes': {
+        const list = Array.isArray(args.edits) ? args.edits : [];
+        return `批量编辑 ${list.length} 条笔记`;
+      }
       case 'create_whiteboard': return `创建画布「${args.title || '未命名画布'}」`;
       case 'update_whiteboard': return `修改画布 #${args.target_note_id || '当前'}${args.action ? `（${args.action}）` : ''}`;
       case 'create_todo': return `创建待办「${args.content || '未命名待办'}」`;

@@ -155,6 +155,54 @@ const edit_note = async (args, _runtime, { noteDAO }) => {
   return JSON.stringify({ success: true, id: args.id, title: args.title || existing.title });
 };
 
+// 批量编辑：仅改 title/tags（不碰 content/分类），逐条独立处理并汇总结果，
+// 单条失败不影响其余条目，便于前端聚合卡展示"X 成功 / Y 失败"。
+const edit_notes = async (args, _runtime, { noteDAO }) => {
+  const edits = Array.isArray(args.edits) ? args.edits : [];
+  if (edits.length === 0) return JSON.stringify({ error: '请提供要批量编辑的笔记列表' });
+
+  const results = [];
+  let succeeded = 0;
+  for (const edit of edits) {
+    const id = edit?.id;
+    if (!id) {
+      results.push({ id: id ?? null, success: false, error: '缺少笔记ID' });
+      continue;
+    }
+    const existing = noteDAO.findById(id);
+    if (!existing) {
+      results.push({ id, success: false, error: `未找到ID为 ${id} 的笔记` });
+      continue;
+    }
+    if ((existing.note_type || 'markdown') === 'whiteboard') {
+      results.push({ id, success: false, error: '画布笔记不支持批量编辑' });
+      continue;
+    }
+    const updateData = {};
+    if (edit.title !== undefined) updateData.title = edit.title;
+    if (edit.tags !== undefined) updateData.tags = edit.tags;
+    if (Object.keys(updateData).length === 0) {
+      results.push({ id, success: false, error: '没有需要修改的字段' });
+      continue;
+    }
+    try {
+      noteDAO.update(id, updateData);
+      succeeded += 1;
+      results.push({ id, success: true, title: updateData.title ?? existing.title });
+    } catch (error) {
+      results.push({ id, success: false, error: error.message });
+    }
+  }
+
+  return JSON.stringify({
+    success: succeeded > 0,
+    total: edits.length,
+    succeeded,
+    failed: edits.length - succeeded,
+    results
+  });
+};
+
 module.exports = {
   search_notes,
   get_current_note,
@@ -163,5 +211,6 @@ module.exports = {
   search_in_current_note,
   summarize_current_note_section,
   create_note,
-  edit_note
+  edit_note,
+  edit_notes
 };

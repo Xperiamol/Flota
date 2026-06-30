@@ -440,6 +440,25 @@ const AISettings = ({ showSnackbar }) => {
       </Box>
 
       <Box sx={settingsSectionSx}>
+        <Typography variant="subtitle1" sx={sectionTitleSx}>图片理解</Typography>
+        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
+          开启后 AI 可读取笔记内图片，聊天框也支持粘贴/拖拽图片
+        </Typography>
+        <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2 })}>
+          <ListItemText
+            primary="启用图片理解（多模态）"
+            secondary="开启后聊天框可粘贴或拖拽图片发送给模型；请确保所选模型支持视觉输入。"
+            slotProps={{ primary: { sx: { fontWeight: 650 } } }}
+          />
+          <Switch
+            checked={isEnabledSetting(config.visionEnabled)}
+            onChange={(e) => handleConfigChange('visionEnabled', e.target.checked)}
+            color="primary"
+          />
+        </Box>
+      </Box>
+
+      <Box sx={settingsSectionSx}>
         <Accordion
           disableGutters
           elevation={0}
@@ -503,18 +522,6 @@ const AISettings = ({ showSnackbar }) => {
               <Typography variant="caption" color="text.secondary">
                 {isEnabledSetting(config.limitMaxTokens) ? t('ai.maxTokensDesc') : '当前关闭：不会向模型传 max_tokens，仅在开启后使用这里的自定义限制。'}
               </Typography>
-            </Box>
-            <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2, mt: 2 })}>
-              <ListItemText
-                primary="启用图片理解（多模态）"
-                secondary="开启后聊天框可粘贴或拖拽图片发送给模型；请确保所选模型支持视觉输入。"
-                slotProps={{ primary: { sx: { fontWeight: 650 } } }}
-              />
-              <Switch
-                checked={isEnabledSetting(config.visionEnabled)}
-                onChange={(e) => handleConfigChange('visionEnabled', e.target.checked)}
-                color="primary"
-              />
             </Box>
           </AccordionDetails>
         </Accordion>

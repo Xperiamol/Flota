@@ -357,6 +357,13 @@ const enUS = {
   },
   ai: {
     title: 'AI Settings',
+    loadConfigFailed: 'Failed to load AI config',
+    saveFailed: 'Save failed',
+    configSaved: 'Configuration saved',
+    enterApiKey: 'Please enter API key first',
+    enterCustomApiUrl: 'Please enter custom API address first',
+    connectionTestSuccess: 'Connection test successful',
+    connectionTestFailed: 'Connection test failed',
     enableAI: 'Enable AI',
     enableAIDesc: 'Enable AI features for enhanced functionality',
     provider: 'AI Provider',

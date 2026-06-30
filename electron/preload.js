@@ -96,6 +96,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getStats: inv('note:get-stats'),
     getActivityHeatmap: inv('note:get-activity-heatmap'),
     export: inv('note:export'),
+    exportDocument: inv('note:export-document'),
     import: inv('note:import'),
     onNoteCreated: listen('note:created'),
     onNoteUpdated: listen('note:updated'),

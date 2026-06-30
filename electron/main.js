@@ -1288,6 +1288,7 @@ const { registerAttachmentsHandlers } = require('./ipc/attachmentsHandlers')
 const { registerMediaHandlers } = require('./ipc/mediaHandlers')
 const { registerWhiteboardHandlers } = require('./ipc/whiteboardHandlers')
 const { registerNoteHandlers } = require('./ipc/noteHandlers')
+const { registerExportHandlers } = require('./ipc/exportHandlers')
 const { registerConversationHandlers } = require('./ipc/conversationHandlers')
 const { registerSettingHandlers } = require('./ipc/settingHandlers')
 const { registerDataIOHandlers } = require('./ipc/dataIOHandlers')
@@ -1312,6 +1313,7 @@ registerSystemMiscHandlers(services, getLogger)
 
 // 笔记 / 设置 IPC
 registerNoteHandlers(services)
+registerExportHandlers()
 registerConversationHandlers(services)
 registerSettingHandlers(services)
 

@@ -44,11 +44,19 @@ import { runPendingAction } from '../../utils/aiCore/pendingActionExecutor'
 import logger from '../../utils/logger'
 
 const QUICK_PROMPTS = [
-  { id: 'summarize', label: '总结当前笔记', prompt: '请总结当前笔记，输出：核心要点、关键结论、待办事项、潜在风险。' },
+  { id: 'summarize', label: '总结当前笔记', prompt: '请总结当前笔记，输出：核心要点、关键结论。' },
   { id: 'next-step', label: '下一步建议', prompt: '基于当前笔记，给我 3 条具体可执行的下一步行动建议。' },
   { id: 'extract-todos', label: '提取待办', prompt: '请从当前笔记提取待办事项，并按优先级排序。' },
   { id: 'related', label: '关联内容', prompt: '找出和当前笔记最相关的笔记、待办和记忆，并简要说明关联原因。' }
 ]
+
+const parseToolResult = (result) => {
+  try {
+    return typeof result === 'string' ? JSON.parse(result) : result
+  } catch (_) {
+    return null
+  }
+}
 
 const mdComponents = {
   p: ({ children }) => (
@@ -101,6 +109,7 @@ const PANEL_MARGIN = 12
 const ACTION_LABELS = {
   create_note: '创建笔记',
   edit_note: '编辑笔记',
+  edit_notes: '批量编辑笔记',
   create_whiteboard: '创建画布',
   update_whiteboard: '修改画布',
   create_todo: '创建待办',
@@ -144,8 +153,8 @@ const AICommandCenter = ({
     aiEnsureNoteChat,
     aiSetActiveConv,
     aiUpdateConv,
-    createNote: storeCreateNote,
-    deleteNote: storeDeleteNote,
+    createNote,
+    deleteNote,
     updateNote: storeUpdateNote,
     loadNotes: storeLoadNotes
   } = useStore(useShallow((state) => ({
@@ -167,8 +176,6 @@ const AICommandCenter = ({
   })))
   const notes = notesOverride ?? storeNotes
   const selectedNoteId = selectedNoteIdOverride !== undefined ? selectedNoteIdOverride : storeSelectedNoteId
-  const createNote = storeCreateNote
-  const deleteNote = storeDeleteNote
   const updateNote = updateNoteOverride ?? storeUpdateNote
   const loadNotes = loadNotesOverride ?? storeLoadNotes
   const resolvedUserAvatar = userAvatarOverride !== undefined ? userAvatarOverride : userAvatar
@@ -220,8 +227,7 @@ const AICommandCenter = ({
   const [loading, setLoading] = useState(false)
   const [position, setPosition] = useState(null)
   const [thinkingPhrase, setThinkingPhrase] = useState('Thinking… 思考中')
-  const [visionEnabled, setVisionEnabled] = useState(false)
-  const [executingActionId, setExecutingActionId] = useState(null)
+  const [executingActionIds, setExecutingActionIds] = useState(() => new Set())
 
   const { runStream, cancel } = useAIStream()
   const { dragging, handleDragStart, restorePosition } = useDraggableFloatingPanel({
@@ -241,18 +247,6 @@ const AICommandCenter = ({
 
   const previousConversationIdRef = useRef(currentConversationId)
   const pendingConversationIdRef = useRef(null)
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        const r = await window.electronAPI.ai.getConfig()
-        if (!cancelled && r?.success) setVisionEnabled(Boolean(r.data?.visionEnabled))
-      } catch (e) {
-        logger.warn('[AICommandCenter] load vision setting failed', e?.message)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [])
   useEffect(() => {
     if (previousConversationIdRef.current !== currentConversationId) {
       const isSendInitiatedSwitch = (
@@ -303,6 +297,17 @@ const AICommandCenter = ({
     return text.length > 24 ? `${text.slice(0, 24)}…` : text
   }, [currentNote])
 
+  const noteScope = useMemo(() => (
+    selectedNoteId == null
+      ? { noteId: null, source: 'general' }
+      : { noteId: String(selectedNoteId), source: 'note' }
+  ), [selectedNoteId])
+
+  const persistConversation = useCallback((conversationId, msgs) => {
+    if (!conversationId) return
+    aiUpdateConv(conversationId, { messages: msgs, title: getConversationTitle(msgs), ...noteScope })
+  }, [aiUpdateConv, getConversationTitle, noteScope])
+
   useEffect(() => {
     if (!open) return
     setPosition(prev => prev || restorePosition(getDefaultPosition()))
@@ -319,32 +324,17 @@ const AICommandCenter = ({
     if (distance <= 80) node.scrollTop = node.scrollHeight
   }, [messages, streamContent, open])
 
-  const parseToolResult = useCallback((result) => {
-    try {
-      return typeof result === 'string' ? JSON.parse(result) : result
-    } catch (_) {
-      return null
-    }
-  }, [])
-
   const handleCancel = useCallback(() => {
     if (loading) cancel()
   }, [cancel, loading])
 
   const handleExecuteAction = useCallback(async (action, overrides = null) => {
-    if (!action?.actionId || executingActionId) return
-    setExecutingActionId(action.actionId)
+    if (!action?.actionId || executingActionIds.has(action.actionId)) return
+    setExecutingActionIds(prev => new Set(prev).add(action.actionId))
     const persist = (msgs) => {
       messagesRef.current = msgs
       setMessages(msgs)
-      if (conversationIdRef.current) {
-        aiUpdateConv(conversationIdRef.current, {
-          messages: msgs,
-          title: getConversationTitle(msgs),
-          noteId: selectedNoteId == null ? null : String(selectedNoteId),
-          source: selectedNoteId == null ? 'general' : 'note'
-        })
-      }
+      persistConversation(conversationIdRef.current, msgs)
     }
     persist((messagesRef.current || []).map((m) =>
       patchMessagePendingAction(m, action.actionId, { status: 'running' })
@@ -369,9 +359,13 @@ const AICommandCenter = ({
       if (reloadNotes) await loadNotes?.()
       if (!success) logger.warn('[AICommandCenter] executePendingAction failed', error)
     } finally {
-      setExecutingActionId(null)
+      setExecutingActionIds(prev => {
+        const next = new Set(prev)
+        next.delete(action.actionId)
+        return next
+      })
     }
-  }, [aiUpdateConv, createNote, currentNote, deleteNote, executingActionId, getConversationTitle, loadNotes, notes, selectedNoteId, setSelectedNoteId, updateNote])
+  }, [createNote, currentNote, deleteNote, executingActionIds, loadNotes, notes, persistConversation, setSelectedNoteId, updateNote])
 
   const handleNewChat = useCallback(() => {
     if (loading) return
@@ -410,8 +404,7 @@ const AICommandCenter = ({
       content: text,
       metadata: buildMessageMetadata({
         conversationId,
-        noteId: selectedNoteId == null ? null : String(selectedNoteId),
-        source: selectedNoteId == null ? 'general' : 'note',
+        ...noteScope,
       }),
     })
     const nextMessages = [...(messagesRef.current || []), userMsg]
@@ -421,12 +414,7 @@ const AICommandCenter = ({
     setStreamContent('')
     setThinkingPhrase(pickThinkingPhrase())
     setLoading(true)
-    aiUpdateConv(conversationId, {
-      messages: nextMessages,
-      title: getConversationTitle(nextMessages),
-      noteId: selectedNoteId == null ? null : String(selectedNoteId),
-      source: selectedNoteId == null ? 'general' : 'note'
-    })
+    persistConversation(conversationId, nextMessages)
 
     let shouldReloadNotes = false
     const pendingActions = []
@@ -445,12 +433,7 @@ const AICommandCenter = ({
           setMessages(finalMessages)
           setStreamContent('')
         }
-        aiUpdateConv(conversationId, {
-          messages: finalMessages,
-          title: getConversationTitle(finalMessages),
-          noteId: selectedNoteId == null ? null : String(selectedNoteId),
-          source: selectedNoteId == null ? 'general' : 'note'
-        })
+        persistConversation(conversationId, finalMessages)
         return
       }
       const contextPackage = await buildContext({ notes, selectedNoteId, query: text, contextEnabled: CONTEXT_PROFILES.floating_panel })
@@ -465,10 +448,10 @@ const AICommandCenter = ({
           memoryQuery: text,
           requireConfirmation: true,
           actionContext: {
-            selectedNoteId: selectedNoteId == null ? null : String(selectedNoteId),
-            source: selectedNoteId == null ? 'general' : 'note',
+            selectedNoteId: noteScope.noteId,
+            source: noteScope.source,
           },
-          disabledTools: visionEnabled ? disabledTools : [...(disabledTools || []), 'read_note_image'],
+          disabledTools,
         },
         onContent: (c) => { if (isActiveView()) setStreamContent(c) },
         onChunk: (chunk) => {
@@ -518,8 +501,7 @@ const AICommandCenter = ({
         actions: pendingActions,
         metadata: buildMessageMetadata({
           conversationId,
-          noteId: selectedNoteId == null ? null : String(selectedNoteId),
-          source: selectedNoteId == null ? 'general' : 'note',
+          ...noteScope,
           requestId,
         }),
       })]
@@ -528,12 +510,7 @@ const AICommandCenter = ({
         setMessages(finalMessages)
         setStreamContent('')
       }
-      aiUpdateConv(conversationId, {
-        messages: finalMessages,
-        title: getConversationTitle(finalMessages),
-        noteId: selectedNoteId == null ? null : String(selectedNoteId),
-        source: selectedNoteId == null ? 'general' : 'note'
-      })
+      persistConversation(conversationId, finalMessages)
       if (shouldReloadNotes) {
         await loadNotes?.()
       }
@@ -548,19 +525,14 @@ const AICommandCenter = ({
         setMessages(errorMessages)
         setStreamContent('')
       }
-      aiUpdateConv(conversationId, {
-        messages: errorMessages,
-        title: getConversationTitle(errorMessages),
-        noteId: selectedNoteId == null ? null : String(selectedNoteId),
-        source: selectedNoteId == null ? 'general' : 'note'
-      })
+      persistConversation(conversationId, errorMessages)
     } finally {
       pendingConversationIdRef.current = null
       setActiveTool(null)
       setLoading(false)
       if (isActiveView()) window.setTimeout(() => inputRef.current?.focus(), 30)
     }
-  }, [aiEnsureNoteChat, aiNewChat, aiSetActiveConv, aiUpdateConv, clearActiveTool, currentConversationId, currentNote, getConversationTitle, input, loadNotes, loading, notes, parseToolResult, runStream, selectedNoteId, showActiveTool, visionEnabled])
+  }, [aiEnsureNoteChat, aiNewChat, aiSetActiveConv, clearActiveTool, currentConversationId, currentNote, input, loadNotes, loading, noteScope, notes, persistConversation, runStream, selectedNoteId, showActiveTool])
 
   const handleKeyDown = (event) => {
     if (event.key === 'Escape') {
@@ -715,7 +687,7 @@ const AICommandCenter = ({
             key={index}
             msg={msg}
             userAvatar={resolvedUserAvatar}
-            executingActionId={executingActionId}
+            executingActionIds={executingActionIds}
             onExecuteAction={handleExecuteAction}
           />
         ))}
@@ -819,43 +791,61 @@ const AICommandCenter = ({
   )
 }
 
-const BatchTodoActionCard = ({ action, theme, executing, onExecute }) => {
-  const initialTodos = Array.isArray(action.args?.todos) ? action.args.todos : []
-  const [localTodos, setLocalTodos] = useState(() =>
-    initialTodos.map((t, i) => ({ ...t, _key: `${i}-${t.content || ''}`, _selected: true }))
+const formatTodoDue = (s) => {
+  if (!s) return ''
+  const d = new Date(s)
+  if (isNaN(d.getTime())) return s
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+const batchCardPaperSx = (theme) => ({
+  mt: 0.75,
+  px: 1.1,
+  py: 0.85,
+  borderRadius: '12px',
+  border: '1px solid',
+  borderColor: alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.28 : 0.26),
+  bgcolor: theme.palette.mode === 'dark'
+    ? alpha(theme.palette.warning.dark, 0.12)
+    : alpha(theme.palette.warning.light, 0.16),
+})
+
+const batchRowSx = (theme, selected) => ({
+  display: 'flex', alignItems: 'flex-start', gap: 0.6,
+  px: 0.6, py: 0.45, borderRadius: '8px',
+  bgcolor: selected
+    ? alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.1 : 0.08)
+    : alpha(theme.palette.action.disabledBackground, 0.4),
+  opacity: selected ? 1 : 0.55,
+})
+
+// 批量确认卡通用外壳：勾选列表 + 提交按钮；行内容/字段名/文案由调用方注入。
+const BatchActionCard = ({
+  action, theme, executing, onExecute,
+  itemsKey, makeKey, title, intro = '',
+  removable = false, fallbackOnComplete = false,
+  submitLabel, submittingLabel, renderItem
+}) => {
+  const initial = Array.isArray(action.args?.[itemsKey]) ? action.args[itemsKey] : []
+  const [items, setItems] = useState(() =>
+    initial.map((it, i) => ({ ...it, _key: makeKey(it, i), _selected: true }))
   )
-  const intro = action.args?.intro || ''
-  const selectedCount = localTodos.filter((t) => t._selected).length
-  const toggle = (key) => setLocalTodos((p) => p.map((t) => t._key === key ? { ...t, _selected: !t._selected } : t))
-  const remove = (key) => setLocalTodos((p) => p.filter((t) => t._key !== key))
-  const submit = () => {
-    const final = localTodos.filter((t) => t._selected).map(({ _key, _selected, ...rest }) => rest)
-    if (final.length === 0) return
-    onExecute?.(action, { todos: final })
+  const status = action.status || (executing ? 'running' : 'pending')
+  if (fallbackOnComplete && (status === 'done' || status === 'failed')) {
+    return <SimpleActionCard action={action} theme={theme} executing={executing} onExecute={onExecute} />
   }
-  const formatDue = (s) => {
-    if (!s) return ''
-    const d = new Date(s)
-    if (isNaN(d.getTime())) return s
-    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const selectedCount = items.filter((it) => it._selected).length
+  const toggle = (key) => setItems((p) => p.map((it) => it._key === key ? { ...it, _selected: !it._selected } : it))
+  const remove = (key) => setItems((p) => p.filter((it) => it._key !== key))
+  const submit = () => {
+    const final = items.filter((it) => it._selected).map(({ _key, _selected, ...rest }) => rest)
+    if (final.length === 0) return
+    onExecute?.(action, { [itemsKey]: final })
   }
   return (
-    <Paper
-      elevation={0}
-      sx={{
-        mt: 0.75,
-        px: 1.1,
-        py: 0.85,
-        borderRadius: '12px',
-        border: '1px solid',
-        borderColor: alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.28 : 0.26),
-        bgcolor: theme.palette.mode === 'dark'
-          ? alpha(theme.palette.warning.dark, 0.12)
-          : alpha(theme.palette.warning.light, 0.16),
-      }}
-    >
+    <Paper elevation={0} sx={batchCardPaperSx(theme)}>
       <Typography variant="caption" sx={{ display: 'block', color: 'warning.main', fontWeight: 800, mb: 0.5 }}>
-        AI 为你规划了 {localTodos.length} 条待办
+        {title(items.length)}
       </Typography>
       {intro && (
         <Typography variant="body2" sx={{ color: 'text.secondary', mb: 0.5, lineHeight: 1.45, fontSize: 12 }}>
@@ -863,43 +853,23 @@ const BatchTodoActionCard = ({ action, theme, executing, onExecute }) => {
         </Typography>
       )}
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.4, maxHeight: 220, overflowY: 'auto', pr: 0.5 }}>
-        {localTodos.map((t) => (
-          <Box
-            key={t._key}
-            sx={{
-              display: 'flex', alignItems: 'flex-start', gap: 0.6,
-              px: 0.6, py: 0.45, borderRadius: '8px',
-              bgcolor: t._selected
-                ? alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.1 : 0.08)
-                : alpha(theme.palette.action.disabledBackground, 0.4),
-              opacity: t._selected ? 1 : 0.55,
-            }}
-          >
+        {items.map((it) => (
+          <Box key={it._key} sx={batchRowSx(theme, it._selected)}>
             <Box
               component="input"
               type="checkbox"
-              checked={t._selected}
-              onChange={() => toggle(t._key)}
+              checked={it._selected}
+              onChange={() => toggle(it._key)}
               sx={{ mt: 0.35, cursor: 'pointer', accentColor: theme.palette.warning.main }}
             />
             <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.35, fontSize: 12.5, wordBreak: 'break-word' }}>
-                {t.content}
-              </Typography>
-              {t.description && (
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.2, lineHeight: 1.35, fontSize: 11 }}>
-                  {t.description}
-                </Typography>
-              )}
-              <Box sx={{ display: 'flex', gap: 0.3, mt: 0.3, flexWrap: 'wrap' }}>
-                {t.due_date && <Chip size="small" label={formatDue(t.due_date)} sx={{ height: 16, fontSize: '0.65rem' }} />}
-                {t.is_important && <Chip size="small" label="重要" color="error" sx={{ height: 16, fontSize: '0.65rem' }} />}
-                {t.is_urgent && <Chip size="small" label="紧急" color="warning" sx={{ height: 16, fontSize: '0.65rem' }} />}
-              </Box>
+              {renderItem(it)}
             </Box>
-            <IconButton size="small" onClick={() => remove(t._key)} sx={{ p: 0.25 }}>
-              <CloseIcon sx={{ fontSize: 14 }} />
-            </IconButton>
+            {removable && (
+              <IconButton size="small" onClick={() => remove(it._key)} sx={{ p: 0.25 }}>
+                <CloseIcon sx={{ fontSize: 14 }} />
+              </IconButton>
+            )}
           </Box>
         ))}
       </Box>
@@ -912,12 +882,77 @@ const BatchTodoActionCard = ({ action, theme, executing, onExecute }) => {
           disabled={executing || selectedCount === 0}
           sx={{ minWidth: 88, height: 28, borderRadius: '999px', textTransform: 'none', fontWeight: 700 }}
         >
-          {executing ? '添加中…' : `添加 ${selectedCount} 条`}
+          {executing ? submittingLabel : submitLabel(selectedCount)}
         </Button>
       </Box>
     </Paper>
   )
 }
+
+const BatchTodoActionCard = ({ action, theme, executing, onExecute }) => (
+  <BatchActionCard
+    action={action}
+    theme={theme}
+    executing={executing}
+    onExecute={onExecute}
+    itemsKey="todos"
+    makeKey={(t, i) => `${i}-${t.content || ''}`}
+    title={(n) => `AI 为你规划了 ${n} 条待办`}
+    intro={action.args?.intro || ''}
+    removable
+    submitLabel={(n) => `添加 ${n} 条`}
+    submittingLabel="添加中…"
+    renderItem={(t) => (
+      <>
+        <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.35, fontSize: 12.5, wordBreak: 'break-word' }}>
+          {t.content}
+        </Typography>
+        {t.description && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.2, lineHeight: 1.35, fontSize: 11 }}>
+            {t.description}
+          </Typography>
+        )}
+        <Box sx={{ display: 'flex', gap: 0.3, mt: 0.3, flexWrap: 'wrap' }}>
+          {t.due_date && <Chip size="small" label={formatTodoDue(t.due_date)} sx={{ height: 16, fontSize: '0.65rem' }} />}
+          {t.is_important && <Chip size="small" label="重要" color="error" sx={{ height: 16, fontSize: '0.65rem' }} />}
+          {t.is_urgent && <Chip size="small" label="紧急" color="warning" sx={{ height: 16, fontSize: '0.65rem' }} />}
+        </Box>
+      </>
+    )}
+  />
+)
+
+const BatchEditNotesActionCard = ({ action, theme, executing, onExecute }) => (
+  <BatchActionCard
+    action={action}
+    theme={theme}
+    executing={executing}
+    onExecute={onExecute}
+    itemsKey="edits"
+    makeKey={(e, i) => `${i}-${e.id}`}
+    title={(n) => `AI 想批量整理 ${n} 条笔记`}
+    fallbackOnComplete
+    submitLabel={(n) => `应用 ${n} 条`}
+    submittingLabel="应用中…"
+    renderItem={(e) => (
+      <>
+        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, fontSize: 11 }}>
+          #{e.id}
+        </Typography>
+        {e.title !== undefined && (
+          <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.35, fontSize: 12.5, wordBreak: 'break-word' }}>
+            标题 → {e.title || '（清空）'}
+          </Typography>
+        )}
+        <Box sx={{ display: 'flex', gap: 0.3, mt: 0.3, flexWrap: 'wrap', alignItems: 'center' }}>
+          {e.tags !== undefined && String(e.tags).split(/[,，]/).map((t) => t.trim()).filter(Boolean).map((t, i) => (
+            <Chip key={`${t}-${i}`} size="small" label={t} sx={{ height: 16, fontSize: '0.65rem' }} />
+          ))}
+        </Box>
+      </>
+    )}
+  />
+)
 
 const SimpleActionCard = ({ action, theme, executing, onExecute }) => {
   const status = action.status || (executing ? 'running' : 'pending')
@@ -969,7 +1004,7 @@ const SimpleActionCard = ({ action, theme, executing, onExecute }) => {
   )
 }
 
-const ChatBubble = ({ msg, userAvatar, executingActionId, onExecuteAction }) => {
+const ChatBubble = ({ msg, userAvatar, executingActionIds, onExecuteAction }) => {
   const theme = useTheme()
   const isUser = msg.role === 'user'
   return (
@@ -1037,7 +1072,15 @@ const ChatBubble = ({ msg, userAvatar, executingActionId, onExecuteAction }) => 
                     key={action.actionId}
                     action={action}
                     theme={theme}
-                    executing={executingActionId === action.actionId}
+                    executing={executingActionIds.has(action.actionId)}
+                    onExecute={onExecuteAction}
+                  />
+                ) : action.name === 'edit_notes' ? (
+                  <BatchEditNotesActionCard
+                    key={action.actionId}
+                    action={action}
+                    theme={theme}
+                    executing={executingActionIds.has(action.actionId)}
                     onExecute={onExecuteAction}
                   />
                 ) : (
@@ -1045,7 +1088,7 @@ const ChatBubble = ({ msg, userAvatar, executingActionId, onExecuteAction }) => 
                     key={action.actionId}
                     action={action}
                     theme={theme}
-                    executing={executingActionId === action.actionId}
+                    executing={executingActionIds.has(action.actionId)}
                     onExecute={onExecuteAction}
                   />
                 )
@@ -1108,6 +1151,7 @@ const TOOL_AVATAR_ICON = {
   summarize_current_note_section: ReadIcon,
   create_note: NoteIcon,
   edit_note: EditIcon,
+  edit_notes: EditIcon,
   write_long_document: NoteIcon,
   search_todos: CheckIcon,
   get_today_todos: CalendarIcon,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useTranslation } from '../../utils/i18n';
 import { Box, ButtonBase, Tooltip, Typography, Zoom } from '@mui/material';
 import * as MuiIcons from '@mui/icons-material';
@@ -17,6 +17,7 @@ import {
 import { useTheme } from '@mui/material/styles';
 import { useStore } from '../../store/useStore';
 import { usePluginViewsBySurface } from '../../store/usePluginViews';
+import { useSidebarOrder } from '../../store/useSidebarOrder';
 import logger from '../../utils/logger';
 import { EASING, DURATION_MS } from '../../utils/animationConfig';
 import RecentNotesRail from './RecentNotesRail';
@@ -38,6 +39,15 @@ const NavItem = React.memo(function NavItem({
   tooltip,
   onClick,
   children,
+  draggable = false,
+  isDragging = false,
+  isDragOver = false,
+  dragOverAfter = false,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
 }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
@@ -48,7 +58,36 @@ const NavItem = React.memo(function NavItem({
 
   return (
     <Tooltip title={tooltip} placement="right" enterDelay={400} enterNextDelay={200}>
-      <Box sx={{ position: 'relative', width: '36px', height: '36px' }}>
+      <Box
+        draggable={draggable}
+        onDragStart={onDragStart}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+        onDragEnd={onDragEnd}
+        sx={{
+          position: 'relative',
+          width: '36px',
+          height: '36px',
+          opacity: isDragging ? 0.4 : 1,
+          transition: `opacity ${NAV_DURATION_FAST}ms ${NAV_EASING}`,
+          // 拖到此项上/下方时，出现一条插入指示线
+          '&::after': isDragOver
+            ? {
+                content: '""',
+                position: 'absolute',
+                left: '2px',
+                right: '2px',
+                top: dragOverAfter ? 'auto' : '-2px',
+                bottom: dragOverAfter ? '-2px' : 'auto',
+                height: '2px',
+                borderRadius: '2px',
+                backgroundColor: theme.palette.primary.main,
+                pointerEvents: 'none',
+              }
+            : undefined,
+        }}
+      >
         {/* 左侧流体指示条：选中时从中心向上下伸展 */}
         <Box
           aria-hidden
@@ -134,10 +173,16 @@ const Sidebar = () => {
   const theme = useTheme();
   const { currentView, setCurrentView, userAvatar, userName, christmasMode } = useStore();
   const pluginViews = usePluginViewsBySurface('main:view');
+  const savedOrder = useSidebarOrder((s) => s.order);
+  const reorderSidebar = useSidebarOrder((s) => s.reorder);
   const [showWelcome, setShowWelcome] = useState(false);
   const [avatarHover, setAvatarHover] = useState(false);
   const [avatarClickCount, setAvatarClickCount] = useState(0);
   const [showDevMode, setShowDevMode] = useState(false);
+  // 拖动排序状态：当前被拖动的 id，以及拖到哪个 id 的前/后方
+  const [draggingId, setDraggingId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
+  const [dragOverAfter, setDragOverAfter] = useState(false);
 
   // 主侧边栏始终显示，不受open prop控制
 
@@ -192,8 +237,69 @@ const Sidebar = () => {
     }
   ];
 
+  // 按用户保存的顺序对导航按钮重排：
+  // - 已保存顺序里的 id 按其下标排序
+  // - 未保存的新项（首次出现/新装插件视图）保持原有相对顺序，排到末尾
+  const orderedMenuItems = useMemo(() => {
+    if (!savedOrder || savedOrder.length === 0) return menuItems;
+    const rank = new Map(savedOrder.map((id, i) => [id, i]));
+    return [...menuItems].sort((a, b) => {
+      const ra = rank.has(a.id) ? rank.get(a.id) : Infinity;
+      const rb = rank.has(b.id) ? rank.get(b.id) : Infinity;
+      if (ra !== rb) return ra - rb;
+      return 0;
+    });
+  }, [menuItems, savedOrder]);
+
   const handleMenuClick = (itemId) => {
     setCurrentView(itemId);
+  };
+
+  // 拖动排序处理
+  const handleNavDragStart = (itemId) => (e) => {
+    setDraggingId(itemId);
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      try {
+        e.dataTransfer.setData('text/plain', itemId);
+      } catch (_) {
+        // 某些环境 setData 受限，忽略
+      }
+    }
+  };
+
+  const handleNavDragOver = (itemId) => (e) => {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    if (itemId === draggingId) {
+      setDragOverId(null);
+      return;
+    }
+    // 鼠标在目标上半部分 → 放到前面；下半部分 → 放到后面
+    const rect = e.currentTarget.getBoundingClientRect();
+    const after = e.clientY - rect.top > rect.height / 2;
+    setDragOverAfter(after);
+    setDragOverId(itemId);
+  };
+
+  const handleNavDragLeave = (itemId) => () => {
+    setDragOverId((prev) => (prev === itemId ? null : prev));
+  };
+
+  const handleNavDrop = (itemId) => (e) => {
+    e.preventDefault();
+    const sourceId = draggingId || (e.dataTransfer && e.dataTransfer.getData('text/plain'));
+    if (sourceId && sourceId !== itemId) {
+      const visibleIds = orderedMenuItems.map((it) => it.id);
+      reorderSidebar(visibleIds, sourceId, itemId, dragOverAfter);
+    }
+    setDraggingId(null);
+    setDragOverId(null);
+  };
+
+  const handleNavDragEnd = () => {
+    setDraggingId(null);
+    setDragOverId(null);
   };
 
   // 处理头像点击
@@ -435,12 +541,21 @@ const Sidebar = () => {
           overflow: 'visible',
         }}
       >
-        {menuItems.map((item) => (
+        {orderedMenuItems.map((item) => (
           <NavItem
             key={item.id}
             tooltip={item.tooltip}
             active={currentView === item.id}
             onClick={() => handleMenuClick(item.id)}
+            draggable
+            isDragging={draggingId === item.id}
+            isDragOver={dragOverId === item.id}
+            dragOverAfter={dragOverAfter}
+            onDragStart={handleNavDragStart(item.id)}
+            onDragOver={handleNavDragOver(item.id)}
+            onDragLeave={handleNavDragLeave(item.id)}
+            onDrop={handleNavDrop(item.id)}
+            onDragEnd={handleNavDragEnd}
           >
             {christmasMode && CHRISTMAS_ICONS[item.id] ? (
               <Box

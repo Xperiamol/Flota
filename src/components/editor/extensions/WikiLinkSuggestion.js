@@ -17,6 +17,8 @@ const findQueryAtPos = (state) => {
   const { selection } = state
   const { $from } = selection
   if (!selection.empty) return null
+  // 顶层位置（如图片/表格等 atom 节点旁）没有文本块，$from.before(0) 会抛错
+  if ($from.depth === 0) return null
   // 行内代码 / 代码块内不触发
   try {
     const codeMark = state.schema.marks.code

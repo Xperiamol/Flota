@@ -70,6 +70,7 @@ import { pickClipboardMarkdown } from '../../utils/clipboardConversion'
 import { replaceDataImagesInMarkdown } from '../../utils/dataUrlImage'
 import { insertIntoTextarea, placeCursorAfterInsert } from '../../utils/textareaInsert'
 import { useRecentNotes } from '../../store/useRecentNotes'
+import { exportNoteAs } from '../../utils/noteExport'
 
 const WYSIWYGEditor = lazy(() => import('./WYSIWYGEditor'))
 const WhiteboardEditor = lazy(() => import('./WhiteboardEditor'))
@@ -180,6 +181,10 @@ const NoteEditor = () => {
   const [tagAnchorEl, setTagAnchorEl] = useState(null)
   // 由 useAIAutoAnnotate 推送的「AI 建议标签」按 noteId 缓存，点击采纳后从列表里移除
   const [aiTagSuggestions, setAiTagSuggestions] = useState({})
+  // AI 建议标题（不再静默覆盖，改为建议条供用户采纳）：noteId -> title
+  const [aiTitleSuggestion, setAiTitleSuggestion] = useState({})
+  // AI 自动整理状态：noteId -> { loading, error }
+  const [aiAnnotateState, setAiAnnotateState] = useState({})
   const editorContainerRef = useRef(null)
   const contentRef = useRef(null)
   const titleRef = useRef(null)
@@ -193,6 +198,10 @@ const NoteEditor = () => {
   // WYSIWYG editor 实例存到 state，避免 ref 在首次渲染时为 null 导致工具栏拿不到
   const [wysiwygEditor, setWysiwygEditor] = useState(null)
   const [blockSelectActive, setBlockSelectActive] = useState(false)
+  // 导出菜单锚点 + 导出中状态
+  const [exportMenuAnchor, setExportMenuAnchor] = useState(null)
+  const [exporting, setExporting] = useState(false)
+  const [exportNotice, setExportNotice] = useState({ open: false, severity: 'success', message: '' })
 
   const currentNote = notes.find(note => note.id === selectedNoteId)
   const compactToolbar = useMediaQuery('(max-width: 1180px)')
@@ -208,17 +217,22 @@ const NoteEditor = () => {
   const prevStateRef = useRef({ title: '', content: '', tags: '', noteType: 'markdown' })
   const hasUnsavedChangesRef = useRef(false)
 
-  // 切换笔记时按设置自动 AI 生成空标题/标签建议
+  // 切换笔记时按设置自动 AI 生成空标题/标签「建议」（不再静默覆盖标题）
   useAIAutoAnnotate({
     selectedNoteId,
     notes,
-    updateNote,
+    onSuggestTitle: (noteId, suggestedTitle) => {
+      setAiTitleSuggestion((prev) => ({ ...prev, [String(noteId)]: suggestedTitle }))
+    },
     onSuggestTags: (noteId, suggestions) => {
       setAiTagSuggestions((prev) => {
         const next = { ...prev }
         next[String(noteId)] = suggestions
         return next
       })
+    },
+    onStateChange: (noteId, state) => {
+      setAiAnnotateState((prev) => ({ ...prev, [String(noteId)]: state }))
     }
   })
 
@@ -744,6 +758,33 @@ const NoteEditor = () => {
   const handleTogglePin = async () => {
     if (selectedNoteId) {
       await togglePinNote(selectedNoteId)
+    }
+  }
+
+  const handleExportNote = async (format) => {
+    setExportMenuAnchor(null)
+    if (!selectedNoteId || exporting) return
+    try {
+      // 导出前先把未保存内容落库，确保导出的是最新内容
+      try { await saveNow?.() } catch {}
+      setExporting(true)
+      const theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
+      const result = await exportNoteAs(format, {
+        title: (title || '').trim() || '未命名笔记',
+        content,
+        tags,
+        theme,
+      })
+      if (result?.canceled) return
+      if (result?.success) {
+        setExportNotice({ open: true, severity: 'success', message: `已导出到 ${result.filePath}` })
+      } else {
+        setExportNotice({ open: true, severity: 'error', message: result?.error || '导出失败' })
+      }
+    } catch (error) {
+      setExportNotice({ open: true, severity: 'error', message: error?.message || '导出失败' })
+    } finally {
+      setExporting(false)
     }
   }
 
@@ -1687,6 +1728,23 @@ const NoteEditor = () => {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isFullscreen, isMinibarMode])
 
+  // 快捷键：Cmd/Ctrl + F 打开笔记导航（搜索/大纲/书签 all-in-one，仅在有选中笔记且非画布时）
+  useEffect(() => {
+    const handleSearchKey = (e) => {
+      const isSearchCombo = (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F')
+      if (!isSearchCombo) return
+      if (!selectedNoteId || noteType === 'whiteboard') return
+      e.preventDefault()
+      if (isStandaloneMode) {
+        setStandaloneNoteNavigatorOpen(true)
+      } else {
+        setNoteNavigatorOpen(true)
+      }
+    }
+    window.addEventListener('keydown', handleSearchKey)
+    return () => window.removeEventListener('keydown', handleSearchKey)
+  }, [selectedNoteId, noteType, isStandaloneMode, setNoteNavigatorOpen])
+
   useEffect(() => {
     if (!isMinibarMode) {
       setMinibarToolbarExpanded(false)
@@ -1804,6 +1862,13 @@ const NoteEditor = () => {
         if (!aiCommandCenterEnabled) setAiCommandCenterEnabled(true)
         setAiCommandCenterOpen(!aiCommandCenterOpen)
       },
+    },
+    noteType !== 'whiteboard' && {
+      key: 'export',
+      label: '导出 / 分享笔记',
+      icon: <GetAppIcon sx={{ fontSize: 18 }} />,
+      active: Boolean(exportMenuAnchor),
+      onClick: (e) => setExportMenuAnchor(e?.currentTarget || toolbarPaperRef.current),
     },
     noteType !== 'whiteboard' && {
       key: 'navigator',
@@ -1927,6 +1992,28 @@ const NoteEditor = () => {
         }
       }}
     >
+      {noteType !== 'whiteboard' && (
+        <Menu
+          anchorEl={exportMenuAnchor}
+          open={Boolean(exportMenuAnchor)}
+          onClose={() => setExportMenuAnchor(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        >
+          <MenuItem disabled={exporting} onClick={() => handleExportNote('png')}>
+            <ListItemText primary="导出图片 (PNG)" />
+          </MenuItem>
+          <MenuItem disabled={exporting} onClick={() => handleExportNote('pdf')}>
+            <ListItemText primary="导出 PDF" />
+          </MenuItem>
+          <MenuItem disabled={exporting} onClick={() => handleExportNote('md')}>
+            <ListItemText primary="导出 Markdown (.md)" />
+          </MenuItem>
+          <MenuItem disabled={exporting} onClick={() => handleExportNote('html')}>
+            <ListItemText primary="导出 HTML" />
+          </MenuItem>
+        </Menu>
+      )}
       {/* 工具栏隐藏时的浮动入口：全屏/minibar/手动折叠都先展开工具栏 */}
       {toolbarsHidden && (
         <Tooltip title={t('notes.expandToolbar')}>
@@ -2386,6 +2473,123 @@ const NoteEditor = () => {
           </Tooltip>
         </Box>
       </Paper>
+
+      {/* AI 自动整理：加载 / 错误反馈条 */}
+      {!toolbarsHidden && (() => {
+        const st = aiAnnotateState[String(selectedNoteId)]
+        if (!st) return null
+        if (st.loading) {
+          return (
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                px: 1.5,
+                py: 0.75,
+                borderBottom: 1,
+                borderColor: 'divider'
+              }}
+            >
+              <FlotaAIIcon sx={{ fontSize: 16, opacity: 0.8 }} />
+              <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                AI 正在整理标题与标签…
+              </Typography>
+            </Box>
+          )
+        }
+        if (st.error) {
+          return (
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                px: 1.5,
+                py: 0.75,
+                borderBottom: 1,
+                borderColor: 'divider'
+              }}
+            >
+              <ErrorIcon sx={{ fontSize: 16, color: 'error.main' }} />
+              <Typography sx={{ fontSize: 12, color: 'error.main', flex: 1, minWidth: 0 }} noWrap>
+                AI 整理失败：{st.error}
+              </Typography>
+              <IconButton
+                size="small"
+                onClick={() => setAiAnnotateState((prev) => {
+                  const next = { ...prev }
+                  delete next[String(selectedNoteId)]
+                  return next
+                })}
+                sx={{ p: 0.25 }}
+              >
+                <CloseIcon sx={{ fontSize: 14 }} />
+              </IconButton>
+            </Box>
+          )
+        }
+        return null
+      })()}
+
+      {/* AI 建议标题条 - 标题下方，点击采纳填入标题 */}
+      {!toolbarsHidden && (() => {
+        const suggested = aiTitleSuggestion[String(selectedNoteId)]
+        if (!suggested) return null
+        // 标题已被填写（用户已输入或采纳）则不再提示
+        if (String(title || '').trim()) return null
+        const dismiss = () => setAiTitleSuggestion((prev) => {
+          const next = { ...prev }
+          delete next[String(selectedNoteId)]
+          return next
+        })
+        const accept = () => {
+          handleTitleChange({ target: { value: suggested } })
+          dismiss()
+        }
+        return (
+          <Box
+            sx={(theme) => ({
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.75,
+              px: 1.5,
+              py: 0.75,
+              borderBottom: 1,
+              borderColor: 'divider',
+              backgroundColor: theme.palette.mode === 'dark'
+                ? 'rgba(15, 23, 42, 0.58)'
+                : 'rgba(255, 255, 255, 0.74)',
+              backdropFilter: 'blur(30px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(30px) saturate(180%)'
+            })}
+          >
+            <Typography sx={{ fontSize: 11, fontWeight: 700, color: 'text.disabled', letterSpacing: '0.04em', mr: 0.5, flexShrink: 0 }}>
+              AI 建议标题
+            </Typography>
+            <Typography sx={{ fontSize: '0.8rem', color: 'text.secondary', flex: 1, minWidth: 0 }} noWrap>
+              {suggested}
+            </Typography>
+            <Chip
+              label="采纳"
+              size="small"
+              onClick={accept}
+              sx={(theme) => ({
+                height: 24,
+                fontSize: '0.75rem',
+                color: theme.palette.primary.main,
+                borderColor: alpha(theme.palette.primary.main, 0.5),
+                bgcolor: alpha(theme.palette.primary.main, 0.06),
+                '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.12) }
+              })}
+              variant="outlined"
+            />
+            <IconButton size="small" onClick={dismiss} sx={{ p: 0.25 }}>
+              <CloseIcon sx={{ fontSize: 14 }} />
+            </IconButton>
+          </Box>
+        )
+      })()}
 
       {/* AI 建议标签条 - 标题下方常驻显示，点击采纳 */}
       {!toolbarsHidden && (() => {
@@ -2883,6 +3087,22 @@ const NoteEditor = () => {
         </Alert>
       </Snackbar>
 
+      {/* 导出结果提示 */}
+      <Snackbar
+        open={exportNotice.open}
+        autoHideDuration={exportNotice.severity === 'error' ? 5000 : 3000}
+        onClose={() => setExportNotice((prev) => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          severity={exportNotice.severity}
+          onClose={() => setExportNotice((prev) => ({ ...prev, open: false }))}
+          sx={{ maxWidth: 420, wordBreak: 'break-all' }}
+        >
+          {exportNotice.message}
+        </Alert>
+      </Snackbar>
+
       {/* 笔记类型转换确认对话框 */}
       <NoteTypeConversionDialog
         open={conversionDialogOpen}
@@ -2916,12 +3136,9 @@ const NoteEditor = () => {
           open={standaloneNoteNavigatorOpen}
           onClose={() => setStandaloneNoteNavigatorOpen(false)}
           portalContainer={editorContainerRef.current}
-          notes={notes}
-          selectedNoteId={selectedNoteId}
+          noteId={selectedNoteId}
           noteContent={content}
-          onSelectNote={(noteId) => {
-            store.setSelectedNoteId(noteId)
-          }}
+          noteContainerRef={editorContainerRef}
           positionPersistKey="flota.noteNavigator.standalone.position"
         />
       )}

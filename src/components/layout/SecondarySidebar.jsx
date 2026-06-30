@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Box,
   useTheme,
@@ -88,8 +88,64 @@ const compactSectionLabelSx = {
   lineHeight: 1.2
 };
 
+const SIDEBAR_WIDTH_KEY = 'flota.secondarySidebar.width';
+const SIDEBAR_MIN_WIDTH = 220;
+const SIDEBAR_MAX_WIDTH = 560;
+
+const clampSidebarWidth = (value, fallback) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(n)));
+};
+
 const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, onShowCompletedChange, viewMode, showCompleted, onMultiSelectChange, onMultiSelectRefChange, todoRefreshTrigger, todoSortBy, onTodoSortByChange, showDeleted, selectedDate, calendarRefreshTrigger, onTodoUpdated }) => {
   const theme = useTheme();
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
+      return saved != null ? clampSidebarWidth(saved, width) : width;
+    } catch (_) {
+      return width;
+    }
+  });
+  const [resizing, setResizing] = useState(false);
+  const resizeStateRef = useRef(null);
+
+  const handleResizeStart = useCallback((event) => {
+    event.preventDefault();
+    resizeStateRef.current = { startX: event.clientX, startWidth: sidebarWidth };
+    setResizing(true);
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    if (!resizing) return undefined;
+    const handleMove = (event) => {
+      const state = resizeStateRef.current;
+      if (!state) return;
+      const next = clampSidebarWidth(state.startWidth + (event.clientX - state.startX), sidebarWidth);
+      setSidebarWidth(next);
+    };
+    const handleUp = () => {
+      setResizing(false);
+      resizeStateRef.current = null;
+      setSidebarWidth((current) => {
+        try { window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(current)); } catch (_) { /* ignore */ }
+        return current;
+      });
+    };
+    const prevUserSelect = document.body.style.userSelect;
+    const prevCursor = document.body.style.cursor;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+      document.body.style.userSelect = prevUserSelect;
+      document.body.style.cursor = prevCursor;
+    };
+  }, [resizing, sidebarWidth]);
   const currentView = useStore((state) => state.currentView);
   const maskOpacity = useStore((state) => state.maskOpacity);
   const pluginStoreFilters = useStore((state) => state.pluginStoreFilters);
@@ -782,25 +838,28 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
   return (
     <Box
       sx={{
-        width: shouldShow ? width : 0,
-        minWidth: shouldShow ? width : 0,
-        maxWidth: shouldShow ? width : 0,
+        width: shouldShow ? sidebarWidth : 0,
+        minWidth: shouldShow ? sidebarWidth : 0,
+        maxWidth: shouldShow ? sidebarWidth : 0,
         height: '100%',
-        overflow: 'hidden',
+        overflow: 'visible',
         flexShrink: 0,
         zIndex: 50,
+        position: 'relative',
         opacity: shouldShow ? 1 : 0,
-        transition: theme.transitions.create(['width', 'minWidth', 'maxWidth', 'opacity'], {
-          easing: theme.transitions.easing.easeInOut,
-          duration: theme.transitions.duration.standard,
-        }),
+        transition: resizing
+          ? 'none'
+          : theme.transitions.create(['width', 'minWidth', 'maxWidth', 'opacity'], {
+              easing: theme.transitions.easing.easeInOut,
+              duration: theme.transitions.duration.standard,
+            }),
       }}
     >
       <Box
         sx={(themeObj) => {
           const opacity = getMaskOpacityValue(themeObj.palette.mode === 'dark')
           return {
-            width: width,
+            width: sidebarWidth,
             height: '100%',
             backgroundColor: themeObj.palette.mode === 'dark'
               ? `rgba(15, 23, 42, ${opacity})`
@@ -817,6 +876,41 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
       >
         {sidebarContent}
       </Box>
+      {shouldShow && (
+        <Box
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="调整侧边栏宽度"
+          onMouseDown={handleResizeStart}
+          onDoubleClick={() => {
+            setSidebarWidth(width);
+            try { window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width)); } catch (_) { /* ignore */ }
+          }}
+          sx={(themeObj) => ({
+            position: 'absolute',
+            top: 0,
+            right: -3,
+            width: 6,
+            height: '100%',
+            cursor: 'col-resize',
+            zIndex: 60,
+            '&::after': {
+              content: '""',
+              position: 'absolute',
+              top: 0,
+              left: 2,
+              width: 2,
+              height: '100%',
+              backgroundColor: resizing ? themeObj.palette.primary.main : 'transparent',
+              transition: 'background-color 120ms',
+            },
+            '&:hover::after': {
+              backgroundColor: themeObj.palette.primary.main,
+              opacity: 0.6,
+            },
+          })}
+        />
+      )}
     </Box>
   );
 };

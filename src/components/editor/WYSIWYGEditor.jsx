@@ -18,6 +18,7 @@ import { TableHeader } from '@tiptap/extension-table'
 import { TableCell } from '@tiptap/extension-table'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
 import { Markdown } from 'tiptap-markdown'
+import { defaultMarkdownSerializer } from 'prosemirror-markdown'
 import { common, createLowlight } from 'lowlight'
 import { WikiLinkMark } from './extensions/WikiLinkMark'
 import { WikiLinkSuggestion } from './extensions/WikiLinkSuggestion'
@@ -41,6 +42,7 @@ import { getLocalPathFromFileUrl } from '../../utils/fileUrl'
 import { RICH_TEXT_EMPTY_LINE_SENTINEL, finalizeMarkdownForStorage, prepareMarkdownForDisplay } from '../../markdown/index.js'
 import { useStore } from '../../store/useStore'
 import { useLinkGraph } from '../../store/useLinkGraph'
+import { useBookmarks } from '../../store/useBookmarks'
 import { floatingGlassSx } from '../../utils/floatingGlassSx'
 import useFloatingTableScrollbar from '../../hooks/useFloatingTableScrollbar'
 import { useError } from '../common/ErrorProvider'
@@ -640,10 +642,25 @@ const ImageNodeView = ({ node, selected, editor, getPos }) => {
   )
 }
 
-// 扩展 Image，注入 ReactNodeView（仅改变渲染，不改变序列化）
+// 扩展 Image，注入 ReactNodeView
+// 序列化修正：本编辑器把 image 配为块级节点（inline:false），但 tiptap-markdown
+// 默认沿用 prosemirror 的「行内」image 序列化，不会在图片后补块分隔符。
+// 于是「图片 + 标题」会被写成 `![](src)# 标题`（同一行），重新加载时 markdown-it
+// 不再把 `# 标题` 当作 ATX 标题，标题格式因此丢失。块级图片后补 closeBlock 修复。
 const CustomImage = Image.extend({
   addNodeView() {
     return ReactNodeViewRenderer(ImageNodeView)
+  },
+  addStorage() {
+    return {
+      markdown: {
+        serialize(state, node, parent, index) {
+          defaultMarkdownSerializer.nodes.image(state, node, parent, index)
+          if (!node.type.isInline) state.closeBlock(node)
+        },
+        parse: {},
+      },
+    }
   },
 })
 
@@ -2059,8 +2076,9 @@ const BlockMultiSelectOverlay = ({
   )
 }
 
-const EditorContextMenu = ({ editor, menu, containerRef, undoBaseline, blockSelectActive, onToggleBlockSelect, onClose }) => {
+const EditorContextMenu = ({ editor, menu, noteId, containerRef, undoBaseline, blockSelectActive, onToggleBlockSelect, onClose }) => {
   const configuredItems = useStore((state) => state.contextMenuItems)
+  const addBookmark = useBookmarks((s) => s.addBookmark)
   const enabledItems = useMemo(() => {
     if (!configuredItems) return DEFAULT_CONTEXT_MENU_ITEMS
     const missingDefaults = DEFAULT_CONTEXT_MENU_ITEMS.filter(id => !configuredItems.includes(id))
@@ -2162,6 +2180,18 @@ const EditorContextMenu = ({ editor, menu, containerRef, undoBaseline, blockSele
     const url = window.prompt('输入链接地址', linkHref || 'https://')
     if (url) editor.chain().focus().extendMarkRange('link').setLink({ href: url.trim() }).run()
   })
+  // 书签锚点：优先取选中文字，否则取光标所在块的文本；跳转时按此片段在正文里重新定位
+  const addBookmarkHere = () => run(async () => {
+    if (noteId == null) return
+    const { $from } = editor.state.selection
+    // 顶层位置（图片/表格等 atom 节点旁）$from.parent 是 doc，textContent 会是整篇正文，不能当锚点
+    const blockText = $from.depth > 0 ? $from.parent.textContent : ''
+    const anchorText = (selectedText || blockText || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 80)
+    if (anchorText) addBookmark(noteId, { label: anchorText, anchorText })
+  })
   const showEdit = ['undo', 'redo', 'cut', 'copy', 'paste', 'pastePlain', 'selectAll'].some(isEnabled)
   const showFormat = (hasSelection || isLink) && ['bold', 'italic', 'code', 'link'].some(isEnabled)
   const showBlockTransforms = hasBlockTransformContext && [
@@ -2193,8 +2223,12 @@ const EditorContextMenu = ({ editor, menu, containerRef, undoBaseline, blockSele
         onMouseDown={(e) => e.stopPropagation()}
         onContextMenu={(e) => e.preventDefault()}
       >
+      {isEnabled('bookmark') && noteId != null && (
+        <ContextMenuButton onClick={addBookmarkHere}>添加书签</ContextMenuButton>
+      )}
       {showEdit && (
         <>
+          {isEnabled('bookmark') && noteId != null && <ContextMenuDivider />}
           <ContextMenuSection>编辑</ContextMenuSection>
           {isEnabled('undo') && <ContextMenuButton shortcut="⌘Z" onClick={() => run(async () => safeUndo(editor, undoBaseline))}>撤销</ContextMenuButton>}
           {isEnabled('redo') && <ContextMenuButton shortcut="⇧⌘Z" onClick={() => run(async () => editor.chain().focus().redo().run())}>重做</ContextMenuButton>}
@@ -3099,6 +3133,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       <EditorContextMenu
         editor={editor}
         menu={contextMenu}
+        noteId={noteId}
         containerRef={overlayContainerRef}
         undoBaseline={undoBaselineRef.current}
         blockSelectActive={blockSelectMode}
