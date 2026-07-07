@@ -1,128 +1,336 @@
-# Flota 2.0
+<div align="center">
+  <p>
+    <a href="./README.md">中文</a>
+    ·
+    <a href="./README_EN.md">English</a>
+  </p>
 
-[中文](./README.md) | English
+  <img src="./logo.png" width="96" alt="Flota Logo" />
 
-A modern desktop note-taking application designed for efficient note recording and management.
-The old 1.x version has been phased out. Welcome to the new version that is more open and visually appealing!
-<img width="1492" height="995" alt="image" src="https://github.com/user-attachments/assets/7b81f992-9684-42da-8eb2-624d6d702bea" />
-<img width="1495" height="996" alt="image" src="https://github.com/user-attachments/assets/ed2c6353-447a-4621-93d7-0a0aa7a79774" />
+  <h1>Flota</h1>
+  <p><strong>A clean, efficient, and extensible desktop capture app</strong></p>
+  <p>
+    A local-first workspace for notes, todos, whiteboards, calendar sync, plugins, and AI workflows.
+  </p>
 
+  <p>
+    <img src="https://img.shields.io/badge/version-3.5.0-5B8DEF?style=flat-square" alt="Version 3.5.0" />
+    <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-2E3440?style=flat-square" alt="Platforms" />
+    <img src="https://img.shields.io/badge/stack-React%20%2B%20Electron-61DAFB?style=flat-square" alt="React + Electron" />
+    <img src="https://img.shields.io/badge/storage-SQLite-003B57?style=flat-square" alt="SQLite" />
+  </p>
 
+  <p>
+    <a href="https://github.com/Xperiamol/Flota/releases"><strong>Download</strong></a>
+    ·
+    <a href="#quick-start"><strong>Quick Start</strong></a>
+    ·
+    <a href="#plugin-development"><strong>Plugin Development</strong></a>
+    ·
+    <a href="./docs/RELEASE_FLOW.md"><strong>Release Flow</strong></a>
+  </p>
+</div>
 
-## 🌟 Key Features
+<br />
 
-### 📝 Smart Note Editing
-- **Rich Text Editor**: Supports Markdown syntax with real-time preview
-- **Whiteboard Editor**: Excalidraw as the whiteboard engine, supporting drawing, annotations, and more
-- **Quick Formatting**: One-click application of bold, italic, underline, and other formats
-- **Rich MD Formats**: Wiki links, tags, colored text, Callout, etc.
-- **Auto-save**: Real-time saving, never lose content
+<div align="center">
+  <img width="1492" alt="Flota light preview" src="https://github.com/user-attachments/assets/7b81f992-9684-42da-8eb2-624d6d702bea" />
+  <br />
+  <br />
+  <img width="1495" alt="Flota dark preview" src="https://github.com/user-attachments/assets/ed2c6353-447a-4621-93d7-0a0aa7a79774" />
+</div>
 
-### 🎯 Efficient Operations
-- **Global Shortcuts**: Quickly create notes anytime, anywhere
-- **System Tray**: Minimize to tray, run in background without occupying taskbar
-- **Quick Search**: Full-text search to quickly locate needed content
+<br />
 
-### 🎨 Personalized Customization
-- **Theme Switching**: Support for light/dark themes/accent colors
-- **Shortcut Configuration**: Personalized shortcut settings
-- **Interface Layout**: Flexible window layout options
-- **Pre-installed Background Plugins**: Provides multiple texture background plugins to beautify your note interface
+<a id="overview"></a>
 
-### 📊 Data Management
-- **Local SQLITE Storage**: Data is securely stored locally
-- **Vector Storage**: Uses @xenova/transformers for text vectorization on local devices
-- **Local Mem0Service Integration**: Implements semantic search and memory management system based on cosine similarity
-- **Category Management**: Supports tag and category organization
-- **Import/Export**: Supports data migration in multiple formats
-- **Backup/Recovery**: Automatic backup, one-click recovery
+<h2>✨ Overview</h2>
 
-### 📅 Calendar Sync
-- **CalDAV Protocol**: Supports standard CalDAV services like iCloud, Nextcloud
-- **Google Calendar**: OAuth 2.0 secure authorization, no password required
-- **Two-way Sync**: Todo items and calendar events sync automatically
-- **Multi-device Synchronization**: Achieve multi-device data sync through calendar services
+<p>
+  Flota is a modern desktop note-taking and productivity app designed for capturing ideas,
+  organizing knowledge, planning todos, and connecting AI-assisted workflows.
+  Compared with the legacy 1.x line, the current version provides a more open plugin system,
+  richer sync capabilities, and a more polished user experience.
+</p>
 
-### 🎤 Speech-to-Text (v2.2.2 Zeta+)
-- **Multiple Service Support**: OpenAI Whisper, Alibaba Cloud speech recognition, etc.
-- **High Accuracy**: Supports automatic multi-language recognition
-- **Plugin Invocation**: Provides API support for voice note scenarios
-- **Flexible Configuration**: Supports custom service endpoints
+<table>
+  <tr>
+    <td><strong>📝 Local-first</strong></td>
+    <td>Core data such as notes, todos, and settings is stored locally in SQLite for privacy and control.</td>
+  </tr>
+  <tr>
+    <td><strong>🧠 AI-enhanced</strong></td>
+    <td>Supports AI chat, contextual understanding, todo planning, rewriting, meeting action extraction, and whiteboard generation.</td>
+  </tr>
+  <tr>
+    <td><strong>🔌 Extensible plugins</strong></td>
+    <td>Extend notes, todos, tags, UI, and commands through a sandboxed runtime and permission-based APIs.</td>
+  </tr>
+  <tr>
+    <td><strong>☁️ Multi-service sync</strong></td>
+    <td>Supports WebDAV, CalDAV, and Google Calendar for different synchronization scenarios.</td>
+  </tr>
+</table>
 
-## 🚀 Quick Start
+<a id="features"></a>
 
-### System Requirements
-- Windows 10 or higher
-- At least 100MB of available disk space
+<h2>🌟 Key Features</h2>
 
-### Installation Methods
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>📝 Smart Note Editing</h3>
+      <ul>
+        <li><strong>Rich text editor</strong>: Markdown-friendly editing with real-time preview.</li>
+        <li><strong>WYSIWYG experience</strong>: Continuous editing powered by TipTap.</li>
+        <li><strong>Whiteboard editor</strong>: Excalidraw-powered canvas for drawing, sketching, and structured thinking.</li>
+        <li><strong>Extended Markdown</strong>: Wiki links, tags, colored text, callouts, and more.</li>
+        <li><strong>Auto-save</strong>: Real-time persistence to reduce the risk of losing content.</li>
+      </ul>
+    </td>
+    <td width="50%" valign="top">
+      <h3>🎯 Efficient Operations</h3>
+      <ul>
+        <li><strong>Global shortcuts</strong>: Quickly create notes or todos from anywhere.</li>
+        <li><strong>System tray</strong>: Keep Flota running in the background without occupying the taskbar.</li>
+        <li><strong>Full-text search</strong>: Locate notes, todos, and contextual content quickly.</li>
+        <li><strong>Multi-select management</strong>: Batch delete, restore, complete, and tag items.</li>
+        <li><strong>Standalone windows</strong>: Useful for quick capture, focused editing, and floating workflows.</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>🎨 Personalization</h3>
+      <ul>
+        <li><strong>Themes</strong>: Light, dark, system theme, and accent color support.</li>
+        <li><strong>Shortcut configuration</strong>: Customize global and in-app shortcuts.</li>
+        <li><strong>Flexible layout</strong>: Adjustable sidebars, toolbars, and view composition.</li>
+        <li><strong>Background plugins</strong>: Built-in texture and pattern plugins for a richer workspace.</li>
+        <li><strong>Seasonal mode</strong>: Lightweight decorative effects for special occasions.</li>
+      </ul>
+    </td>
+    <td width="50%" valign="top">
+      <h3>📊 Data Management</h3>
+      <ul>
+        <li><strong>Local SQLite storage</strong>: Core data is stored securely on your device.</li>
+        <li><strong>Vector retrieval</strong>: Uses @xenova/transformers for local text vectorization.</li>
+        <li><strong>Semantic memory</strong>: Similarity-based search and memory recall through cosine similarity.</li>
+        <li><strong>Tag organization</strong>: Organize knowledge assets with tags and categories.</li>
+        <li><strong>Import / export</strong>: Supports data migration, backup, and recovery workflows.</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>📅 Todos and Calendar Sync</h3>
+      <ul>
+        <li><strong>CalDAV</strong>: Works with standard services such as iCloud and Nextcloud.</li>
+        <li><strong>Google Calendar</strong>: OAuth 2.0 authorization without storing your account password.</li>
+        <li><strong>Two-way sync</strong>: Todos and calendar events can be synchronized automatically.</li>
+        <li><strong>Recurring todos</strong>: Suitable for habits, periodic tasks, and long-term routines.</li>
+        <li><strong>Notifications</strong>: System notifications for due todos.</li>
+      </ul>
+    </td>
+    <td width="50%" valign="top">
+      <h3>🎤 Voice and AI Workflows</h3>
+      <ul>
+        <li><strong>Speech-to-text</strong>: Supports OpenAI Whisper, Alibaba Cloud speech recognition, and compatible services.</li>
+        <li><strong>AI command center</strong>: Summarize notes, plan todos, generate daily reports, and discover related content.</li>
+        <li><strong>Whiteboard generation</strong>: Generate diagrams, flowcharts, and mind maps from natural language.</li>
+        <li><strong>Context awareness</strong>: Combines the current note, upcoming todos, related memories, and conversation history.</li>
+        <li><strong>Plugin invocation</strong>: Provides APIs for voice notes, automation, and custom workflows.</li>
+      </ul>
+    </td>
+  </tr>
+</table>
 
-#### Method 1: Download Installer (Recommended)
-1. Go to the [Releases](https://github.com/Xperiamol/Flota/releases) page
-2. Download the latest version of `Flota 2.x.x. Setup 2.x.x.exe`
-3. Run the installer and follow the prompts to complete installation
-4. After installation, the app will start automatically
+<a id="quick-start"></a>
 
-#### Method 2: Portable Version (Temporarily Deprecated)
-1. Download the `win-unpacked` folder
-2. Extract to any directory
-3. Run `Flota 2.0.exe` to use
+<h2>🚀 Quick Start</h2>
 
-### First Use
-1. **Start App**: Double-click the desktop icon or start from the start menu
-2. **Create Note**: Use shortcut `Ctrl+N` or click "New Note"
-3. **Quick Input**: Use shortcut `Ctrl+Shift+N` to open the quick input window
-4. **System Tray**: The app will minimize to system tray, right-click to see more options
+<h3>System Requirements</h3>
 
-## 🛠️ Developer Guide
+<table>
+  <tr>
+    <th>Platform</th>
+    <th>Recommended environment</th>
+  </tr>
+  <tr>
+    <td>Windows</td>
+    <td>Windows 10 or later</td>
+  </tr>
+  <tr>
+    <td>macOS</td>
+    <td>A macOS version supported by the current Electron runtime</td>
+  </tr>
+  <tr>
+    <td>Linux</td>
+    <td>Mainstream desktop distributions with AppImage support</td>
+  </tr>
+  <tr>
+    <td>Disk space</td>
+    <td>300MB+ recommended; models, plugins, and attachments may require more space</td>
+  </tr>
+</table>
 
-### Tech Stack
-- **Frontend Framework**: React + Vite
-- **Desktop Framework**: Electron
-- **Database**: SQLite (better-sqlite3)
-- **UI Components**: Material-UI
-- **State Management**: Zustand
+<h3>Installation</h3>
 
-### Local Development
+<ol>
+  <li>Go to the <a href="https://github.com/Xperiamol/Flota/releases">GitHub Releases</a> page.</li>
+  <li>Download the package that matches your operating system.</li>
+  <li>Run the installer and follow the instructions.</li>
+  <li>Launch Flota and create your first note or todo.</li>
+</ol>
 
-```bash
-# Clone the project
+<h3>Recommended First Steps</h3>
+
+<table>
+  <tr>
+    <td><strong>1. Create a note</strong></td>
+    <td>Use <code>Ctrl/Cmd + N</code> or click “New Note”.</td>
+  </tr>
+  <tr>
+    <td><strong>2. Quick capture</strong></td>
+    <td>Use <code>Ctrl/Cmd + Shift + N</code> to open the quick input window.</td>
+  </tr>
+  <tr>
+    <td><strong>3. Manage todos</strong></td>
+    <td>Use <code>Ctrl/Cmd + T</code> to create todos and manage them in quadrant or calendar views.</td>
+  </tr>
+  <tr>
+    <td><strong>4. Configure sync</strong></td>
+    <td>Enable WebDAV, CalDAV, or Google Calendar in settings as needed.</td>
+  </tr>
+  <tr>
+    <td><strong>5. Use plugins</strong></td>
+    <td>Install or develop plugins to extend your capture workflow.</td>
+  </tr>
+</table>
+
+<a id="development"></a>
+
+<h2>🛠️ Developer Guide</h2>
+
+<h3>Tech Stack</h3>
+
+<table>
+  <tr>
+    <th>Area</th>
+    <th>Technology</th>
+  </tr>
+  <tr>
+    <td>Frontend</td>
+    <td>React 18 + Vite</td>
+  </tr>
+  <tr>
+    <td>Desktop runtime</td>
+    <td>Electron</td>
+  </tr>
+  <tr>
+    <td>UI</td>
+    <td>Material UI + Emotion</td>
+  </tr>
+  <tr>
+    <td>Editor</td>
+    <td>TipTap + Markdown-it + Excalidraw</td>
+  </tr>
+  <tr>
+    <td>State management</td>
+    <td>Zustand</td>
+  </tr>
+  <tr>
+    <td>Local storage</td>
+    <td>SQLite / better-sqlite3</td>
+  </tr>
+  <tr>
+    <td>AI / vectorization</td>
+    <td>@xenova/transformers + OpenAI-compatible APIs</td>
+  </tr>
+  <tr>
+    <td>Sync</td>
+    <td>WebDAV, CalDAV, Google Calendar</td>
+  </tr>
+</table>
+
+<h3>Local Development</h3>
+
+<pre><code class="language-bash"># Clone the project
 git clone https://github.com/Xperiamol/Flota.git
 cd Flota
 
 # Install dependencies
 npm install
 
-# Start development server
+# Start the Vite development server
 npm run dev
 
 # Start Electron in development mode
 npm run electron-dev
-```
+</code></pre>
 
-### Build and Package
+<h3>Build and Package</h3>
 
-```bash
-# Build frontend
+<pre><code class="language-bash"># Build frontend assets
 npm run build
 
-# Package Electron application
+# Package the Electron app
 npm run electron-build
-```
 
-### 🔌 Plugin Development
+# Repair local database indexes or corruption issues
+npm run repair-db
+</code></pre>
 
-Flota 2+ supports a powerful plugin system. You can create your own plugins to extend functionality!
+<h3>Common Scripts</h3>
 
-#### Quick Start
+<table>
+  <tr>
+    <th>Command</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td><code>npm run dev</code></td>
+    <td>Start the Vite development server.</td>
+  </tr>
+  <tr>
+    <td><code>npm run electron-dev</code></td>
+    <td>Start the full Electron development environment.</td>
+  </tr>
+  <tr>
+    <td><code>npm run build</code></td>
+    <td>Build frontend static assets.</td>
+  </tr>
+  <tr>
+    <td><code>npm run electron-build</code></td>
+    <td>Pre-download models, build the frontend, and package the desktop app.</td>
+  </tr>
+  <tr>
+    <td><code>npm run repair-db</code></td>
+    <td>Attempt to repair the local database and FTS indexes.</td>
+  </tr>
+  <tr>
+    <td><code>npm run release:notes</code></td>
+    <td>Extract release notes.</td>
+  </tr>
+</table>
 
-```javascript
-// Create plugins/examples/my-plugin/manifest.json and index.js
-runtime.onActivate(async () => {
+<a id="plugin-development"></a>
+
+<h2>🔌 Plugin Development</h2>
+
+<p>
+  Flota 2+ supports a powerful plugin system. Plugins can extend commands, views, notifications,
+  notes, todos, tags, and custom UI.
+</p>
+
+<h3>Quick Example</h3>
+
+<pre><code class="language-javascript">// Create plugins/examples/my-plugin/manifest.json and index.js
+runtime.onActivate(async () =&gt; {
   runtime.registerCommand({
     id: 'hello',
     title: 'Say Hello'
-  }, async () => {
+  }, async () =&gt; {
     await runtime.notifications.show({
       title: 'Hello!',
       body: 'Welcome to Flota plugin system',
@@ -130,62 +338,134 @@ runtime.onActivate(async () => {
     })
   })
 })
-```
+</code></pre>
 
-#### Plugin Documentation
+<h3>Plugin Capabilities</h3>
 
-- 📚 **[Plugin Development Documentation](./plugins/docs/README.md)** - Complete documentation index
-- 🚀 **[Development Guide](./plugins/docs/development-guide.md)** - Complete developer guide
-- 💡 **[Example Plugins](./plugins/examples/)** - Learning references
-  - [random-note](./plugins/examples/random-note/) - Simple command example
+<table>
+  <tr>
+    <td><strong>✅ Secure sandbox</strong></td>
+    <td>Plugins run in isolated Workers to reduce impact on the main application.</td>
+  </tr>
+  <tr>
+    <td><strong>✅ Permission system</strong></td>
+    <td>Fine-grained permissions for notes, todos, tags, attachments, events, and more.</td>
+  </tr>
+  <tr>
+    <td><strong>✅ Runtime API</strong></td>
+    <td>Access notes, todos, tags, analytics, and UI capabilities.</td>
+  </tr>
+  <tr>
+    <td><strong>✅ Custom UI</strong></td>
+    <td>Create dialogs, plugin views, and richer interactive interfaces.</td>
+  </tr>
+  <tr>
+    <td><strong>✅ Hot reload</strong></td>
+    <td>Develop locally without restarting the app repeatedly.</td>
+  </tr>
+</table>
 
-#### Plugin Features
+<h3>Plugin Documentation</h3>
 
-- ✅ **Secure Sandbox**: Plugins run in isolated Workers
-- ✅ **Permission System**: Fine-grained permission control
-- ✅ **Runtime API**: Access notes, todos, tags, and other data
-- ✅ **Custom UI**: Create Dialog windows to display interfaces
-- ✅ **Hot Reload**: No need to restart app during development
-- ✅ **Local Development**: Convenient local debugging tools
+<ul>
+  <li>📚 <a href="./plugins/docs/README.md"><strong>Plugin documentation</strong></a>: Complete documentation index.</li>
+  <li>🚀 <a href="./plugins/docs/development-guide.md"><strong>Development guide</strong></a>: Full plugin development flow and API reference.</li>
+  <li>💡 <a href="./plugins/examples/"><strong>Example plugins</strong></a>: Learn from working examples.</li>
+</ul>
 
-Start creating your first plugin! Check the [Complete Developer Guide](./plugins/docs/development-guide.md) for details.
+<a id="project-structure"></a>
 
-### Project Structure
+<h2>📁 Project Structure</h2>
 
-```
-Flota/
+<pre><code class="language-text">Flota/
 ├── src/                    # Frontend source code
+│   ├── api/                # Renderer process API wrappers
 │   ├── components/         # React components
-│   ├── utils/             # Utility functions
-│   ├── styles/            # Style files
-│   └── main.jsx           # Entry file
-├── electron/              # Electron main process
-│   └── main.js            # Main process entry
-├── public/                # Static assets
-└── dist-electron/         # Build output
-```
+│   ├── hooks/              # Business and UI hooks
+│   ├── locales/            # Localization resources
+│   ├── markdown/           # Markdown rendering and extensions
+│   ├── store/              # Zustand state management
+│   ├── styles/             # Theme and styles
+│   └── utils/              # Shared utilities
+├── electron/               # Electron main process and services
+│   ├── dao/                # SQLite data access layer
+│   ├── ipc/                # IPC handlers
+│   └── services/           # Sync, AI, plugins, images, and more
+├── plugins/                # Built-in plugins, examples, and docs
+├── models/                 # Local embedding model assets
+├── public/                 # Static assets
+├── scripts/                # Build, release, and maintenance scripts
+└── docs/                   # Project documentation
+</code></pre>
 
-## 🤝 Contributing Guidelines
+<a id="roadmap"></a>
 
-We welcome all forms of contributions! Please submit issues directly. The plugin system currently only supports local additions. You can install after local development.
+<h2>🧭 Maintenance Roadmap</h2>
 
-### How to Contribute
-1. Fork this project
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to branch (`git push origin feature/AmazingFeature`)
-5. Create a Pull Request
+<table>
+  <tr>
+    <th>Area</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td>Testing</td>
+    <td>Add automated tests for sync, todos, protocol access, plugin APIs, and core utilities.</td>
+  </tr>
+  <tr>
+    <td>Sync diagnostics</td>
+    <td>Improve diagnostic reports, conflict previews, and error localization for WebDAV / CalDAV / Google Calendar.</td>
+  </tr>
+  <tr>
+    <td>Code modularity</td>
+    <td>Continue splitting the main process entry, frontend entry, and large page components.</td>
+  </tr>
+  <tr>
+    <td>Plugin ecosystem</td>
+    <td>Improve plugin store, permission UI, version compatibility, and example coverage.</td>
+  </tr>
+  <tr>
+    <td>AI stability</td>
+    <td>Optimize context assembly, streaming responses, retries, whiteboard generation, and tool calls.</td>
+  </tr>
+</table>
 
-### Issue Reporting
-- Found a bug? Please create an Issue
-- Have a new idea? Welcome to discuss in Discussions
+<a id="contributing"></a>
 
-## 🙏 Acknowledgments
+<h2>🤝 Contributing</h2>
 
-Thanks to all users who have used this project demo! We are committed to creating a note-taking app with minimal interaction for recording and intentional design focus.
+<p>
+  Issues, ideas, plugins, and pull requests are welcome.
+  If you are developing a plugin, you can test it locally before sharing it with the community.
+</p>
 
----
+<ol>
+  <li>Fork this project.</li>
+  <li>Create a feature branch: <code>git checkout -b feature/AmazingFeature</code>.</li>
+  <li>Commit changes: <code>git commit -m "Add some AmazingFeature"</code>.</li>
+  <li>Push to the branch: <code>git push origin feature/AmazingFeature</code>.</li>
+  <li>Create a Pull Request.</li>
+</ol>
 
-**Flota 2** - Make note-taking more efficient and enjoyable!
+<h3>Issue Reporting</h3>
 
-If this project helps you, please give us a ⭐️!
+<ul>
+  <li>Found a bug? Please create an <a href="https://github.com/Xperiamol/Flota/issues">Issue</a> with reproduction steps.</li>
+  <li>Have a feature idea? Describe your scenario in Issues or Discussions.</li>
+  <li>For sync problems, logs, sync provider type, and approximate operation time are especially helpful.</li>
+</ul>
+
+<a id="thanks"></a>
+
+<h2>🙏 Acknowledgments</h2>
+
+<p>
+  Thanks to everyone who has used, reported issues, or contributed to Flota.
+  We hope it becomes a focused tool for capturing, organizing, and turning ideas into action with less friction.
+</p>
+
+<hr />
+
+<div align="center">
+  <p><strong>Flota 3.5</strong> · Make note-taking more efficient and enjoyable.</p>
+  <p>If this project helps you, please give it a ⭐️.</p>
+</div>
