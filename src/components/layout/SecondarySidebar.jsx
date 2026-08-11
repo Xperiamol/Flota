@@ -842,7 +842,10 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
         minWidth: shouldShow ? sidebarWidth : 0,
         maxWidth: shouldShow ? sidebarWidth : 0,
         height: '100%',
-        overflow: 'visible',
+        // 关闭时必须裁剪并禁用命中；否则内部固定宽度面板虽然透明，
+        // 仍会伸出 0 宽容器并拦截主内容区的点击。
+        overflow: shouldShow ? 'visible' : 'hidden',
+        pointerEvents: shouldShow ? 'auto' : 'none',
         flexShrink: 0,
         zIndex: 50,
         position: 'relative',

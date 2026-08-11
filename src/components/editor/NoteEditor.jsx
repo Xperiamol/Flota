@@ -289,7 +289,14 @@ const NoteEditor = () => {
           const result = ensureUpdateSucceeded(await updateNote(noteId, stateToSave))
           const persistedSavedAt = getSavedAtFromUpdateResult(result)
           setLastSaved(persistedSavedAt || currentNote?.updated_at || currentNote?.created_at || null)
-          if (selectedNoteIdRef.current === noteId) {
+          // 保存请求发出后用户可能继续输入。只有当前内容仍与本次快照一致时，
+          // 才能标记为已保存，避免旧请求覆盖“仍有未保存修改”的状态。
+          const latestState = createSavePayload({ ...prevStateRef.current })
+          const savedLatestState = latestState.title === stateToSave.title
+            && latestState.content === stateToSave.content
+            && latestState.tags === stateToSave.tags
+            && latestState.note_type === stateToSave.note_type
+          if (selectedNoteIdRef.current === noteId && savedLatestState) {
             setHasUnsavedChanges(false)
             hasUnsavedChangesRef.current = false
           }
