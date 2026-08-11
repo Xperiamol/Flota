@@ -2,6 +2,12 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [3.5.2] - 2026-08-11
+
+### Changed / 更新内容
+- ci: refresh apt metadata before Linux build
+
+
 ## [3.5.1] - 2026-08-11
 
 ### Changed / 更新内容

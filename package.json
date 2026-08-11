@@ -1,6 +1,6 @@
 {
   "name": "flota",
-  "version": "3.5.1",
+  "version": "3.5.2",
   "description": "Flota - 简洁高效的记录应用",
   "main": "electron/main.js",
   "homepage": "./",
