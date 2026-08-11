@@ -40,7 +40,9 @@ jobs:
       # Linux 打包 AppImage 需要额外工具
       - name: Install Linux build deps
         if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get install -y libarchive-tools rpm
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libarchive-tools rpm
 
       # macOS：用 logo.png 生成 logo.icns（electron-builder 需要）
       - name: Generate logo.icns (macOS only)
