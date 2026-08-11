@@ -5,7 +5,7 @@
 
 const { EventEmitter } = require('events');
 const { getInstance: getLogger } = require('./LoggerService');
-const { encryptValue, decryptValue } = require('../utils/secureValue');
+const { encryptValue, decryptValue, isEncryptedValue } = require('../utils/secureValue');
 
 const isEnabledSetting = (value) => value === true || value === 'true' || value === 1 || value === '1';
 
@@ -181,10 +181,19 @@ class AIService extends EventEmitter {
       const autoTitleSetting = this.settingDAO.get('ai_auto_title_enabled');
       const autoTagsSetting = this.settingDAO.get('ai_auto_tags_enabled');
 
+      const apiKey = apiKeySetting ? decryptValue(apiKeySetting.value) : '';
+      const webSearchApiKey = webSearchApiKeySetting ? decryptValue(webSearchApiKeySetting.value) : '';
+      if (apiKeySetting && isEncryptedValue(apiKeySetting.value) && !apiKey) {
+        this.settingDAO.set('ai_api_key', '', 'string', 'AI API密钥');
+      }
+      if (webSearchApiKeySetting && isEncryptedValue(webSearchApiKeySetting.value) && !webSearchApiKey) {
+        this.settingDAO.set('web_search_api_key', '', 'string', '联网搜索 API 密钥');
+      }
+
       const config = {
         enabled: enabledSetting ? enabledSetting.value : false,
         provider: providerSetting ? providerSetting.value : 'openai',
-        apiKey: apiKeySetting ? decryptValue(apiKeySetting.value) : '',
+        apiKey,
         apiUrl: apiUrlSetting ? apiUrlSetting.value : '',
         model: modelSetting ? modelSetting.value : 'gpt-3.5-turbo',
         temperature: temperatureSetting ? temperatureSetting.value : 0.7,
@@ -193,7 +202,7 @@ class AIService extends EventEmitter {
         visionEnabled: visionEnabledSetting ? visionEnabledSetting.value : false,
         webSearchEnabled: webSearchEnabledSetting ? webSearchEnabledSetting.value : false,
         webSearchProvider: webSearchProviderSetting ? webSearchProviderSetting.value : 'feedcoop',
-        webSearchApiKey: webSearchApiKeySetting ? decryptValue(webSearchApiKeySetting.value) : '',
+        webSearchApiKey,
         webSearchApiUrl: webSearchApiUrlSetting ? webSearchApiUrlSetting.value : '',
         webSearchCount: webSearchCountSetting ? webSearchCountSetting.value : 5,
         autoTitleEnabled: autoTitleSetting ? autoTitleSetting.value : false,

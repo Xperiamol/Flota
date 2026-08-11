@@ -7,7 +7,7 @@ const { EventEmitter } = require('events');
 const fs = require('fs');
 const crypto = require('crypto');
 const zlib = require('zlib');
-const { encryptValue, decryptValue } = require('../utils/secureValue');
+const { encryptValue, decryptValue, isEncryptedValue } = require('../utils/secureValue');
 
 let uuidv4;
 try { uuidv4 = require('uuid').v4; } catch (_) { uuidv4 = null; }
@@ -63,10 +63,15 @@ class STTService extends EventEmitter {
   async getConfig() {
     try {
       const g = (key, def = '') => { const s = this.settingDAO.get(key); return s ? s.value : def; };
+      const rawVolcToken = g('stt_volc_token');
+      const volcToken = decryptValue(rawVolcToken);
+      if (isEncryptedValue(rawVolcToken) && !volcToken) {
+        this.settingDAO.set('stt_volc_token', '', 'string', '火山引擎 Access Token');
+      }
       const config = {
         enabled: g('stt_enabled') === true || g('stt_enabled') === 'true',
         volcAppId: g('stt_volc_appid'),
-        volcToken: decryptValue(g('stt_volc_token')),
+        volcToken,
         volcResourceId: g('stt_volc_resource_id', 'volcengine_short_sentence')
       };
       return { success: true, data: config };

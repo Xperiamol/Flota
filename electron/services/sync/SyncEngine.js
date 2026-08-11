@@ -795,6 +795,7 @@ class SyncEngine extends EventEmitter {
     // #N6：每次同步开始时显式重置跨次实例变量，避免脏读上次结果
     this._lastRemoteManifest = null;
     this._lastRemoteSettingsIsKvTs = false;
+    this._remoteSettingsContainsDeviceLocal = false;
 
     // 1. 下载远程 manifest
     const remoteManifest = await this.client.downloadJson(this.config.rootPath + 'manifest.json');
@@ -836,7 +837,16 @@ class SyncEngine extends EventEmitter {
       try {
         const remoteSettings = await this.client.downloadJson(this.config.rootPath + 'settings.json').catch(() => null);
         this._lastRemoteSettingsIsKvTs = !!(remoteSettings && remoteSettings.__schema === 'kv-ts');
+        const remoteValues = this._lastRemoteSettingsIsKvTs
+          ? (remoteSettings?.values || {})
+          : (remoteSettings || {});
+        this._remoteSettingsContainsDeviceLocal = Object.entries(remoteValues).some(
+          ([key, value]) => !this.storage.isSyncableSetting(key, value)
+        );
         this.log(`[Scan] 远端 settings 协议: ${this._lastRemoteSettingsIsKvTs ? 'kv-ts (v3.1)' : 'plain (v3.0)'}`);
+        if (this._remoteSettingsContainsDeviceLocal) {
+          this.log('[Scan] 发现旧版同步遗留的设备机密设置，本轮将上传净化后的 settings');
+        }
       } catch (_) { /* 忽略嗅探失败 */ }
     }
 
@@ -983,6 +993,18 @@ class SyncEngine extends EventEmitter {
     // 情况 4: 两端都存在
     const remoteDeleted = remoteEntry.d === 1;
     const localDeleted = localEntry.d === 1;
+
+    // 旧版本曾把 safeStorage 密文、API Key 和 Token 写进 settings.json。
+    // 不参与 LWW，直接由本机上传过滤后的设置，主动清理云端污染数据。
+    if (fileId === 'global_settings' && this._remoteSettingsContainsDeviceLocal) {
+      return {
+        operation: 'upload',
+        fileId,
+        remotePath,
+        localEntry,
+        data: this.getLocalData(fileId, localData),
+      };
+    }
 
     this.log(`[Decide] ${fileId}: 两端都存在, localDeleted=${localDeleted}, remoteDeleted=${remoteDeleted}`);
 

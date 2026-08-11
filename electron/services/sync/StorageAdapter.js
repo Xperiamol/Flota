@@ -8,14 +8,32 @@ const NoteDAO = require('../../dao/NoteDAO');
 const TodoDAO = require('../../dao/TodoDAO');
 const DatabaseManager = require('../../dao/DatabaseManager');
 const RepeatUtils = require('../../utils/repeatUtils');
-const { encryptValue, decryptValue } = require('../../utils/secureValue');
 const hashUtils = require('./utils/hash');
 
-const SYNC_SENSITIVE_SETTING_KEYS = new Set([
+const DEVICE_LOCAL_SETTING_KEYS = new Set([
   'ai_api_key',
+  'web_search_api_key',
   'stt_volc_token',
   'caldav_password',
+  'google_calendar_access_token',
+  'google_calendar_refresh_token',
 ]);
+
+const isDeviceLocalSettingKey = (key) => {
+  const normalized = String(key || '').trim().toLowerCase();
+  if (!normalized) return false;
+  if (DEVICE_LOCAL_SETTING_KEYS.has(normalized)) return true;
+  return normalized.endsWith('_api_key') ||
+    normalized.endsWith('_password') ||
+    normalized.endsWith('_access_token') ||
+    normalized.endsWith('_refresh_token') ||
+    normalized.endsWith('_secret') ||
+    normalized.endsWith('_credential');
+};
+
+const isSyncableSetting = (key, rawValue = '') =>
+  !isDeviceLocalSettingKey(key) &&
+  !(typeof rawValue === 'string' && rawValue.startsWith('enc:v1:'));
 
 /**
  * 存储适配器类
@@ -28,6 +46,10 @@ class StorageAdapter {
     this.db = this.dbManager.getDatabase();
     this.noteDAO = new NoteDAO(this.dbManager);
     this.todoDAO = new TodoDAO(this.dbManager);
+  }
+
+  isSyncableSetting(key, value = '') {
+    return isSyncableSetting(key, value);
   }
 
   /**
@@ -130,6 +152,7 @@ class StorageAdapter {
 
     const settings = {};
     for (const row of rows) {
+      if (!isSyncableSetting(row.key, row.value)) continue;
       settings[row.key] = this.parseSettingValue(row.value, row.type, row.key);
     }
 
@@ -342,6 +365,7 @@ class StorageAdapter {
 
     const transaction = this.db.transaction((entries) => {
       for (const [key, value] of entries) {
+        if (!isSyncableSetting(key, value)) continue;
         const { serialized, type } = this.serializeSettingValue(value, key);
         upsertStmt.run(key, serialized, type);
       }
@@ -360,6 +384,7 @@ class StorageAdapter {
     const values = {};
     const timestamps = {};
     for (const row of rows) {
+      if (!isSyncableSetting(row.key, row.value)) continue;
       values[row.key] = this.parseSettingValue(row.value, row.type, row.key);
       timestamps[row.key] = this.parseTimestamp(row.updated_at);
     }
@@ -391,6 +416,10 @@ class StorageAdapter {
 
     const tx = this.db.transaction(() => {
       for (const [key, value] of Object.entries(cloudValues || {})) {
+        if (!isSyncableSetting(key, value)) {
+          skipped++;
+          continue;
+        }
         const cloudTs = cloudTimestamps?.[key] ?? 0;
         const localTs = localTsMap.get(key) ?? 0;
         if (cloudTs <= localTs) {
@@ -616,9 +645,7 @@ class StorageAdapter {
    * @private
    */
   serializeSettingValue(value, key = '') {
-    const normalizedValue = SYNC_SENSITIVE_SETTING_KEYS.has(key)
-      ? encryptValue(value || '')
-      : value;
+    const normalizedValue = value;
 
     if (normalizedValue === null) {
       return { serialized: 'null', type: 'json' };
@@ -639,9 +666,6 @@ class StorageAdapter {
    */
   parseSettingValue(value, type, key = '') {
     try {
-      if (SYNC_SENSITIVE_SETTING_KEYS.has(key)) {
-        return decryptValue(value);
-      }
       if (type === 'json' || type === 'object' || type === 'array') {
         return JSON.parse(value);
       }

@@ -3,7 +3,7 @@ const ICAL = require('ical.js');
 const TodoDAO = require('../dao/TodoDAO');
 const SettingDAO = require('../dao/SettingDAO');
 const { ipcMain } = require('electron');
-const { encryptValue, decryptValue } = require('../utils/secureValue');
+const { encryptValue, decryptValue, isEncryptedValue } = require('../utils/secureValue');
 
 /**
  * CalDAV 日历同步服务
@@ -202,11 +202,17 @@ class CalDAVSyncService {
       return setting ? setting.value : defaultValue;
     };
 
+    const rawPassword = await getSettingValue('caldav_password', '');
+    const password = decryptValue(rawPassword);
+    if (isEncryptedValue(rawPassword) && !password) {
+      await this.settingDAO.set('caldav_password', '');
+    }
+
     const config = {
       enabled: (await getSettingValue('caldav_enabled', '0')) === '1',
       serverUrl: await getSettingValue('caldav_server_url', ''),
       username: await getSettingValue('caldav_username', ''),
-      password: decryptValue(await getSettingValue('caldav_password', '')),
+      password,
       calendarUrl: await getSettingValue('caldav_calendar_url', ''),
       syncInterval: await getSettingValue('caldav_sync_interval', '30'),
       syncDirection: await getSettingValue('caldav_sync_direction', 'bidirectional'),

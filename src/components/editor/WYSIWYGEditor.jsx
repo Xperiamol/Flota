@@ -119,6 +119,21 @@ const CustomUnderline = Underline.extend({
   },
 })
 
+// 编辑区内 Tab 必须属于笔记内容，不能把焦点交给浏览器的下一个按钮。
+// 与源码模式保持一致，插入两个空格；表格中仍保留 TipTap 自带的单元格导航。
+const EditorTabIndent = Extension.create({
+  name: 'editorTabIndent',
+  priority: 1100,
+  addKeyboardShortcuts() {
+    return {
+      Tab: () => {
+        if (this.editor.isActive('table')) return false
+        return this.editor.commands.insertContent('  ')
+      },
+    }
+  },
+})
+
 const TextColor = Mark.create({
   name: 'textColor',
   addAttributes() {
@@ -2441,6 +2456,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       CustomHighlight.configure({ multicolor: true }),
       TextColor,
       CustomUnderline,
+      EditorTabIndent,
       Link.configure({
         openOnClick: false,
         protocols: ['file', 'app'],

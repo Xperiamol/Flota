@@ -398,7 +398,12 @@ class V3SyncService extends EventEmitter {
 
   decryptPassword(encryptedPassword) {
     if (!encryptedPassword || !this.canEncryptCredentials()) return '';
-    return safeStorage.decryptString(Buffer.from(encryptedPassword, 'base64'));
+    try {
+      return safeStorage.decryptString(Buffer.from(encryptedPassword, 'base64'));
+    } catch (error) {
+      console.warn('[V3SyncService] 同步密码无法由本机钥匙串解密，已要求重新输入:', error.message);
+      return '';
+    }
   }
 
   /**

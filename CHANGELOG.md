@@ -2,6 +2,14 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [3.5.3] - 2026-08-12
+
+### Changed / 更新内容
+- 修复跨设备同步 macOS safeStorage 密文导致的设置解密失败与钥匙串重复提示。
+- API Key、密码和访问令牌改为仅保存在本机，并自动清理云端遗留密文。
+- 修复富文本编辑区 Tab 键跳出编辑器的问题。
+
+
 ## [3.5.2] - 2026-08-11
 
 ### Changed / 更新内容
