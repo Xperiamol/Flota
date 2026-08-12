@@ -14,6 +14,7 @@ import calloutPlugin from './plugins/callout.js'
 import wikiLinkPlugin from './plugins/wikiLink.js'
 import tagPlugin from './plugins/tag.js'
 import customContainerPlugin from './plugins/customContainer.js'
+import { expandFlotaTableBlocks } from '../utils/flotaTableFormat.js'
 
 export const RICH_TEXT_EMPTY_LINE_SENTINEL = '\u200B'
 const RICH_TEXT_SPACE_SENTINEL = '\u00A0'
@@ -140,7 +141,7 @@ export const normalizeMarkdownForRender = (markdown) => {
 
 export const prepareMarkdownForDisplay = (markdown) => {
   if (!markdown || typeof markdown !== 'string') return markdown || ''
-  return encodeRichTextSpaces(preserveExtraBlankLines(normalizeMarkdownForRender(markdown)))
+  return encodeRichTextSpaces(preserveExtraBlankLines(expandFlotaTableBlocks(normalizeMarkdownForRender(markdown))))
 }
 
 export const finalizeMarkdownForStorage = (markdown) => {

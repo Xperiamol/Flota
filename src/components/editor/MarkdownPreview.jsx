@@ -38,6 +38,7 @@ const MarkdownPreview = ({
   // 创建 Markdown 渲染器实例（使用 useMemo 避免重复创建）
   const md = useMemo(() => {
     return createMarkdownRenderer({
+      html: true,
       onWikiLinkClick,
       onTagClick,
       pluginOptions: {

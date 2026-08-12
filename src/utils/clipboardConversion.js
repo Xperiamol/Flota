@@ -1,3 +1,5 @@
+import { encodeFlotaTable } from './flotaTableFormat.js'
+
 /**
  * 剪贴板内容 → Markdown 转换工具
  *
@@ -70,11 +72,113 @@ export const htmlTableToMarkdown = (html) => {
   const table = doc.querySelector('table')
   if (!table) return ''
 
-  const rows = Array.from(table.querySelectorAll('tr')).map(tr =>
-    Array.from(tr.querySelectorAll('th, td')).map(cellTextFromElement)
-  ).filter(row => row.length > 0)
+  const sourceRows = Array.from(table.querySelectorAll('tr'))
+  const semanticRows = sourceRows.map(tr => Array.from(tr.children)
+    .filter(cell => /^(th|td)$/i.test(cell.tagName))
+    .map(cell => ({
+      text: cellTextFromElement(cell),
+      colspan: Math.min(Math.max(Number(cell.getAttribute('colspan')) || 1, 1), 50),
+      rowspan: Math.min(Math.max(Number(cell.getAttribute('rowspan')) || 1, 1), 500),
+      header: cell.tagName.toLowerCase() === 'th',
+    })))
+  const hasMergedCells = semanticRows.some(row => row.some(cell => cell.colspan > 1 || cell.rowspan > 1))
+  if (hasMergedCells) return encodeFlotaTable(semanticRows)
+
+  const grid = []
+  let width = 0
+
+  sourceRows.forEach((tr, rowIndex) => {
+    if (!grid[rowIndex]) grid[rowIndex] = []
+    let columnIndex = 0
+    Array.from(tr.children)
+      .filter(cell => /^(th|td)$/i.test(cell.tagName))
+      .forEach((cell) => {
+        while (grid[rowIndex][columnIndex] !== undefined) columnIndex += 1
+        const colSpan = Math.min(Math.max(Number(cell.getAttribute('colspan')) || 1, 1), 50)
+        const rowSpan = Math.min(Math.max(Number(cell.getAttribute('rowspan')) || 1, 1), 500)
+        for (let rowOffset = 0; rowOffset < rowSpan; rowOffset += 1) {
+          const targetRow = rowIndex + rowOffset
+          if (!grid[targetRow]) grid[targetRow] = []
+          for (let colOffset = 0; colOffset < colSpan; colOffset += 1) {
+            grid[targetRow][columnIndex + colOffset] =
+              rowOffset === 0 && colOffset === 0 ? cellTextFromElement(cell) : ''
+          }
+        }
+        columnIndex += colSpan
+        width = Math.max(width, columnIndex)
+      })
+  })
+
+  const rows = grid.map(row => Array.from({ length: width }, (_, index) => row[index] || ''))
+    .filter(row => row.some(cell => cell !== ''))
 
   return buildMarkdownTable(rows)
+}
+
+/**
+ * Converts every legacy HTML table embedded in otherwise-valid Markdown.
+ * Uses a bounded, linear tag scanner instead of a cross-document regex so malformed notes cannot
+ * trigger pathological backtracking at the save boundary.
+ */
+export const normalizeHtmlTablesInMarkdown = (markdown) => {
+  const source = String(markdown || '')
+  const lower = source.toLowerCase()
+  const findTag = (token, from) => {
+    let index = from
+    while (index < lower.length) {
+      const found = lower.indexOf(token, index)
+      if (found < 0) return -1
+      const boundary = lower[found + token.length]
+      if (boundary === undefined || boundary === '>' || boundary === '/' || /\s/.test(boundary)) return found
+      index = found + token.length
+    }
+    return -1
+  }
+  if (!source || findTag('<table', 0) < 0) return source
+
+  const output = []
+  let cursor = 0
+
+  while (cursor < source.length) {
+    const start = findTag('<table', cursor)
+    if (start < 0) {
+      output.push(source.slice(cursor))
+      break
+    }
+    output.push(source.slice(cursor, start))
+
+    let depth = 1
+    let scan = start + 6
+    let end = -1
+    while (scan < source.length && depth > 0) {
+      const nextOpen = findTag('<table', scan)
+      const nextClose = findTag('</table', scan)
+      if (nextClose < 0) break
+      if (nextOpen >= 0 && nextOpen < nextClose) {
+        depth += 1
+        scan = nextOpen + 6
+      } else {
+        const closeBracket = lower.indexOf('>', nextClose + 7)
+        if (closeBracket < 0) break
+        depth -= 1
+        scan = closeBracket + 1
+        if (depth === 0) end = scan
+      }
+    }
+
+    if (end < 0) {
+      // Preserve malformed source verbatim. Android's compatibility reader can still display a
+      // safe text fallback, while saving must never silently discard user content.
+      output.push(source.slice(start))
+      break
+    }
+
+    const originalTable = source.slice(start, end)
+    output.push(htmlTableToMarkdown(originalTable) || originalTable)
+    cursor = end
+  }
+
+  return output.join('')
 }
 
 /**

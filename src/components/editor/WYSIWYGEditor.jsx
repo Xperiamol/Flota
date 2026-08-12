@@ -37,6 +37,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { urlToWav } from '../../utils/audioCodec'
 import { imageAPI } from '../../api/imageAPI'
 import { replaceDataImagesInHtml } from '../../utils/dataUrlImage'
+import { normalizeHtmlTablesInMarkdown } from '../../utils/clipboardConversion'
 import { getImageResolver } from '../../utils/ImageProtocolResolver'
 import { getLocalPathFromFileUrl } from '../../utils/fileUrl'
 import { RICH_TEXT_EMPTY_LINE_SENTINEL, finalizeMarkdownForStorage, prepareMarkdownForDisplay } from '../../markdown/index.js'
@@ -87,7 +88,7 @@ const postprocessMarkdown = (md) => {
   out = out.replace(/\\\[\\\[([^\]\n]+?)\\\]\\\]/g, '[[$1]]')
   // 还原嵌入：![[xxx]] → \!\[\[xxx\]\] / !\[\[xxx\]\] 都还原
   out = out.replace(/(!?)\\\[\\\[([^\]\n]+?)\\\]\\\]/g, (_m, bang, inner) => `${bang}[[${inner}]]`)
-  return finalizeMarkdownForStorage(out)
+  return finalizeMarkdownForStorage(normalizeHtmlTablesInMarkdown(out))
 }
 
 // ─── Highlight / Underline 扩展序列化 ─────────────────────────────────────────
