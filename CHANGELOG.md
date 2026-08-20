@@ -2,6 +2,12 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [3.6.0] - 2026-08-20
+
+### Changed / 更新内容
+- 自动生成的版本更新（无新提交详情）
+
+
 ## [3.5.4] - 2026-08-12
 
 ### Changed / 更新内容
