@@ -1,6 +1,6 @@
 {
   "name": "flota",
-  "version": "3.7.0",
+  "version": "3.7.1",
   "description": "Flota - 简洁高效的记录应用",
   "main": "electron/main.js",
   "homepage": "./",
@@ -205,7 +205,11 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": false,
+      "shortcutName": "Flota",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "include": "build/installer.nsh"
     },
     "mac": {
       "icon": "build/logo.icns",
