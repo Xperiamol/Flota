@@ -1,32 +1,27 @@
-const { Notification, nativeImage } = require('electron');
 const EventEmitter = require('events');
 const TimeZoneUtils = require('../utils/timeZoneUtils');
 
 /**
  * 通知服务类
- * 负责管理系统通知功能，包括待办事项到期提醒
+ * 负责管理待办事项到期提醒
  */
 class NotificationService extends EventEmitter {
   constructor() {
     super();
-    this.isEnabled = this.checkNotificationSupport();
+    this.isEnabled = true;
     this.checkInterval = 60000; // 每分钟检查一次
     this.intervalId = null;
     this.notifiedTodos = new Set(); // 记录已通知的待办事项ID，避免重复通知
+    this.snoozedTodos = new Map();
+    this.windowManager = null;
+    this.pendingTodos = [];
   }
 
-  /**
-   * 检查系统是否支持通知
-   * @returns {boolean} 是否支持通知
-   */
-  checkNotificationSupport() {
-    if (!Notification.isSupported()) {
-      console.warn('系统不支持通知功能');
-      return false;
-    }
-    
-    console.log('系统支持通知功能');
-    return true;
+  setWindowManager(windowManager) {
+    this.windowManager = windowManager;
+    if (!windowManager || this.pendingTodos.length === 0) return;
+    const pending = this.pendingTodos.splice(0);
+    pending.forEach((todo) => this.showTodoNotification(todo));
   }
 
   /**
@@ -113,6 +108,13 @@ class NotificationService extends EventEmitter {
     }
 
     dueTodos.forEach(todo => {
+      const snoozedUntil = this.snoozedTodos.get(todo.id);
+      if (snoozedUntil && snoozedUntil > Date.now()) return;
+      if (snoozedUntil) {
+        this.snoozedTodos.delete(todo.id);
+        this.notifiedTodos.delete(todo.id);
+      }
+
       // 避免重复通知同一个待办事项
       if (!this.notifiedTodos.has(todo.id)) {
         this.showTodoNotification(todo);
@@ -134,40 +136,23 @@ class NotificationService extends EventEmitter {
       return;
     }
 
-    try {
-      const iconPath = this.getNotificationIcon(todo);
-      const fs = require('fs');
-      const notification = new Notification({
-        title: 'Flota - 待办提醒',
-        body: this.formatNotificationBody(todo),
-        icon: (iconPath && fs.existsSync(iconPath)) ? nativeImage.createFromPath(iconPath) : undefined,
-        urgency: this.getNotificationUrgency(todo),
-        timeoutType: 'never',
-        silent: false,
-        hasReply: false
-      });
-
-      notification.on('click', () => {
-        // 点击通知时触发事件，可以用来打开应用或跳转到对应待办事项
-        this.emit('notification-clicked', todo);
-        console.log('用户点击了通知:', todo.content);
-      });
-
-      notification.on('show', () => {
-        console.log(`通知已显示: ${todo.content}`);
-      });
-
-      notification.on('close', () => {
-        console.log(`通知已关闭: ${todo.content}`);
-      });
-
-      notification.show();
-      
-      console.log(`显示待办事项通知: ${todo.content}`);
-    } catch (error) {
-      console.error('显示通知时出错:', error);
-      console.error('错误详情:', error.message);
+    if (!this.windowManager) {
+      if (!this.pendingTodos.some((item) => String(item.id) === String(todo.id))) {
+        this.pendingTodos.push(todo);
+      }
+      return;
     }
+
+    this.windowManager.showTodoReminder(todo).catch((error) => {
+      console.error('显示待办提醒窗口时出错:', error);
+    });
+  }
+
+  snoozeTodo(todoId, minutes = 10) {
+    const safeMinutes = Math.max(1, Number(minutes) || 10);
+    this.notifiedTodos.delete(todoId);
+    this.snoozedTodos.set(todoId, Date.now() + safeMinutes * 60 * 1000);
+    console.log(`待办 ${todoId} 已延后提醒 ${safeMinutes} 分钟`);
   }
 
   /**
@@ -199,33 +184,6 @@ class NotificationService extends EventEmitter {
     }
 
     return body;
-  }
-
-  /**
-   * 获取通知图标
-   * @param {Object} todo - 待办事项对象
-   * @returns {string} 图标路径
-   */
-  getNotificationIcon(todo) {
-    const path = require('path');
-    const isDev = process.env.NODE_ENV !== 'production';
-    return isDev 
-      ? path.join(__dirname, '../../logo.png')
-      : path.join(process.resourcesPath, 'logo.png');
-  }
-
-  /**
-   * 获取通知紧急程度
-   * @param {Object} todo - 待办事项对象
-   * @returns {string} 紧急程度
-   */
-  getNotificationUrgency(todo) {
-    if (todo.is_urgent) {
-      return 'critical';
-    } else if (todo.is_important) {
-      return 'normal';
-    }
-    return 'low';
   }
 
   /**
@@ -283,6 +241,7 @@ class NotificationService extends EventEmitter {
    */
   resetNotificationHistory() {
     this.notifiedTodos.clear();
+    this.snoozedTodos.clear();
     console.log('通知记录已重置');
   }
 

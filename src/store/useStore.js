@@ -252,6 +252,12 @@ const useStore = create(
                     set(state => ({
                         aiConversations: [newConv, ...state.aiConversations],
                         aiActiveConvId: options.activate === false ? state.aiActiveConvId : id,
+                        // 新建通用对话时同时离开笔记上下文。AI 页面正文在选中笔记时
+                        // 会优先显示该笔记映射的对话；只更新 aiActiveConvId 会导致
+                        // 新对话虽然创建成功，界面却仍停留在旧的笔记对话。
+                        selectedNoteId: !noteId && options.activate !== false
+                            ? null
+                            : state.selectedNoteId,
                         aiNoteConversationMap: noteId
                             ? { ...state.aiNoteConversationMap, [noteId]: id }
                             : state.aiNoteConversationMap

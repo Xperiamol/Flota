@@ -2,8 +2,7 @@
  * better-sqlite3 智能编译管理脚本
  * 
  * 问题：better-sqlite3 需要针对不同运行时编译：
- * - Node.js (MCP Server) 需要 NODE_MODULE_VERSION 115
- * - Electron 需要 NODE_MODULE_VERSION 136
+ * - Node.js 与 Electron 可能使用不同的 NODE_MODULE_VERSION
  * 
  * 解决方案：
  * - 自动检测当前编译版本
@@ -11,7 +10,7 @@
  * - 提供清晰的状态输出
  */
 
-const { execSync } = require('child_process');
+const { execSync, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -29,24 +28,37 @@ function log(message, color = 'reset') {
 }
 
 /**
- * 检查当前 better-sqlite3 编译版本
+ * 检查当前 better-sqlite3 是否能在目标运行时中直接加载。
+ * 不再根据错误文本猜 ABI（Electron 升级后 ABI 会变化），而是让目标运行时
+ * 真正执行一次 require；成功即可跳过编译。
  */
-function getCurrentModuleVersion() {
+function canLoadInTarget(target) {
   const modulePath = path.join(__dirname, '../node_modules/better-sqlite3/build/Release/better_sqlite3.node');
-  
-  if (!fs.existsSync(modulePath)) {
-    return null;
+  if (!fs.existsSync(modulePath)) return false;
+
+  if (target === 'node') {
+    try {
+      const Database = require('better-sqlite3');
+      const db = new Database(':memory:');
+      db.close();
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   try {
-    // 尝试在当前 Node.js 环境中加载
-    require('better-sqlite3');
-    return 'node'; // 成功加载说明是 Node 版本
-  } catch (e) {
-    if (e.code === 'ERR_DLOPEN_FAILED' && e.message.includes('NODE_MODULE_VERSION 136')) {
-      return 'electron'; // 错误信息显示是 Electron 版本
-    }
-    return 'unknown';
+    const electronPath = require('electron');
+    const probe = "const Database=require('better-sqlite3');const db=new Database(':memory:');db.close()";
+    const result = spawnSync(electronPath, ['-e', probe], {
+      cwd: path.join(__dirname, '..'),
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      stdio: 'ignore',
+      windowsHide: true
+    });
+    return result.status === 0;
+  } catch (_) {
+    return false;
   }
 }
 
@@ -85,21 +97,22 @@ function main() {
   log(`\n📦 better-sqlite3 编译管理`, 'blue');
   log('━'.repeat(50), 'blue');
 
-  // 检查当前版本
-  const currentVersion = getCurrentModuleVersion();
-  
-  if (currentVersion === null) {
+  const modulePath = path.join(__dirname, '../node_modules/better-sqlite3/build/Release/better_sqlite3.node');
+
+  if (!fs.existsSync(modulePath)) {
     log('⚠️  better-sqlite3 未编译，需要初始化', 'yellow');
-    rebuild(target);
-  } else if (currentVersion === target) {
-    log(`✅ 当前已是 ${target} 版本，跳过编译`, 'green');
+    if (!rebuild(target)) process.exitCode = 1;
+  } else if (canLoadInTarget(target)) {
+    log(`✅ better-sqlite3 与 ${target} 兼容，跳过编译`, 'green');
   } else {
-    log(`🔄 当前是 ${currentVersion} 版本，需要切换到 ${target}`, 'yellow');
-    rebuild(target);
+    log(`🔄 better-sqlite3 与 ${target} 不兼容，需要切换`, 'yellow');
+    if (!rebuild(target)) process.exitCode = 1;
   }
 
   log('\n━'.repeat(50), 'blue');
   log('✨ 完成\n', 'green');
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { canLoadInTarget, rebuild };

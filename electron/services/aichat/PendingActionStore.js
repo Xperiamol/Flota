@@ -101,6 +101,18 @@ class PendingActionStore {
   }
 
   _summarizeAction(name, args = {}) {
+    const repeatLabel = (todo = {}) => {
+      if (!todo.repeat_type || todo.repeat_type === 'none') return '';
+      const interval = Number(todo.repeat_interval) > 1 ? Number(todo.repeat_interval) : 1;
+      const unit = {
+        daily: '天',
+        weekly: '周',
+        monthly: '月',
+        yearly: '年'
+      }[todo.repeat_type];
+      return unit ? `（${interval > 1 ? `每${interval}${unit}` : `每${unit}`}）` : '';
+    };
+
     switch (name) {
       case 'create_note': return `创建笔记「${args.title || '未命名'}」`;
       case 'edit_note': return `编辑笔记 #${args.id}${args.title ? `，标题改为「${args.title}」` : ''}`;
@@ -110,7 +122,7 @@ class PendingActionStore {
       }
       case 'create_whiteboard': return `创建画布「${args.title || '未命名画布'}」`;
       case 'update_whiteboard': return `修改画布 #${args.target_note_id || '当前'}${args.action ? `（${args.action}）` : ''}`;
-      case 'create_todo': return `创建待办「${args.content || '未命名待办'}」`;
+      case 'create_todo': return `创建待办「${args.content || '未命名待办'}」${repeatLabel(args)}`;
       case 'create_todos': {
         const list = Array.isArray(args.todos) ? args.todos : [];
         const first = list[0]?.content || '';

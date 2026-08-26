@@ -20,6 +20,7 @@ export const updateTodo = (id, todoData) => invoke('todo:update', id, todoData);
 export const deleteTodo = (id) => invoke('todo:delete', id);
 export const toggleTodoComplete = (id) => invoke('todo:toggleComplete', id);
 export const fetchSubtasks = (parentSyncId) => invoke('todo:getSubtasks', parentSyncId);
+export const fetchSubtasksForParents = (parentSyncIds) => invoke('todo:getSubtasksForParents', parentSyncIds);
 export const addTodoFocusTime = (id, durationSeconds) => invoke('todo:addFocusTime', id, durationSeconds);
 
 export const batchUpdateTodos = (updates) => invoke('todo:batchUpdate', updates);

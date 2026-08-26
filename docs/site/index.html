@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flota - 极简智能笔记应用</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="images/logo.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="images/logo.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="images/logo.png">
+    <meta name="theme-color" content="#18181A">
+    <script defer src="https://cloud.umami.is/script.js" data-website-id="5b22aa54-7d80-4155-a1b9-734b15bf709d"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        background: '#FAF9F6',
+                        surface: '#FFFFFF',
+                        border: '#EAEAEA',
+                        primary: '#18181A',
+                        secondary: '#52525B',
+                        accent: '#2563EB',
+                    },
+                    fontFamily: {
+                        sans: ['-apple-system', 'BlinkMacSystemFont', '"PingFang SC"', '"Helvetica Neue"', 'STHeiti', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #FAF9F6;
+            color: #18181A;
+            -webkit-font-smoothing: antialiased;
+        }
+        .hero-gradient {
+            background: radial-gradient(circle at 50% 0%, rgba(244, 244, 245, 1) 0%, rgba(250, 249, 246, 0) 70%);
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+        .fade-in-up {
+            animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        .delay-100 { animation-delay: 100ms; }
+        .delay-200 { animation-delay: 200ms; }
+        .delay-300 { animation-delay: 300ms; }
+
+        @keyframes fadeInUp {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+<body class="selection:bg-accent selection:text-white">
+
+    <nav class="fixed top-0 w-full z-50 glass-card border-b border-border/50 transition-all duration-300">
+        <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <img src="images/logo.png" alt="Flota Logo" class="w-8 h-8 rounded-lg">
+                <span class="font-semibold text-lg tracking-tight">Flota</span>
+            </div>
+            <div class="hidden md:flex items-center gap-8 text-sm font-medium text-secondary">
+                <a href="#features" class="hover:text-primary transition-colors">功能特性</a>
+                <a href="#design" class="hover:text-primary transition-colors">设计美学</a>
+                <a href="#download" class="hover:text-primary transition-colors">下载应用</a>
+            </div>
+            <div class="flex items-center gap-4">
+                <a href="#download" class="bg-primary hover:bg-black text-white text-sm font-medium px-4 py-2 rounded-full transition-all flex items-center gap-2">
+                    <i class="ph-bold ph-download-simple"></i>
+                    免费获取
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <section class="relative pt-40 pb-20 px-6 hero-gradient overflow-hidden">
+        <div class="max-w-4xl mx-auto text-center">
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white border border-border text-xs font-medium text-secondary mb-8 fade-in-up">
+                <span class="flex h-2 w-2 relative">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                </span>
+                Flota 最新版本发布
+            </div>
+            <h1 class="text-5xl md:text-7xl font-bold tracking-tight mb-6 fade-in-up delay-100 leading-[1.1]">
+                回归纯粹的<br/>
+                <span class="text-transparent bg-clip-text bg-gradient-to-r from-gray-900 to-gray-500">全能思考工作区</span>
+            </h1>
+            <p class="text-lg md:text-xl text-secondary mb-10 max-w-2xl mx-auto font-light fade-in-up delay-200 leading-relaxed">
+                时间轴管理、无边框白板、原生 AI 助理。<br/>
+                现已支持 Windows、macOS、Linux、Android 四端下载与使用。
+            </p>
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-4 fade-in-up delay-300">
+                <a href="https://download.flota.cn/downloads/latest/Flota.Setup.exe" data-download-track="1" data-platform="windows" data-artifact="Flota.Setup.exe" data-location="hero" class="w-full sm:w-auto bg-primary text-white px-8 py-3.5 rounded-2xl font-medium hover:scale-105 transition-all shadow-xl shadow-gray-200 flex items-center justify-center gap-2">
+                    <i class="ph ph-windows-logo text-xl"></i>
+                    Windows 版
+                </a>
+                <a href="https://download.flota.cn/downloads/latest/app-release.apk" data-download-track="1" data-platform="android" data-artifact="app-release.apk" data-location="hero" class="w-full sm:w-auto bg-white text-primary border border-border px-8 py-3.5 rounded-2xl font-medium hover:bg-gray-50 hover:scale-105 transition-all flex items-center justify-center gap-2">
+                    <i class="ph ph-android-logo text-xl text-green-600"></i>
+                    Android 版
+                </a>
+            </div>
+            <div class="mt-4 flex flex-wrap items-center justify-center gap-3 text-sm fade-in-up delay-300">
+                <a href="https://download.flota.cn/downloads/latest/Flota-mac-x64.dmg" data-download-track="1" data-platform="macos-x64" data-artifact="Flota-mac-x64.dmg" data-location="hero" class="px-3 py-1.5 rounded-full bg-white border border-border text-secondary hover:text-primary hover:border-gray-300 transition-colors">macOS (Intel)</a>
+                <a href="https://download.flota.cn/downloads/latest/Flota-mac-arm64.dmg" data-download-track="1" data-platform="macos-arm64" data-artifact="Flota-mac-arm64.dmg" data-location="hero" class="px-3 py-1.5 rounded-full bg-white border border-border text-secondary hover:text-primary hover:border-gray-300 transition-colors">macOS (Apple 芯片)</a>
+                <a href="https://download.flota.cn/downloads/latest/Flota.AppImage" data-download-track="1" data-platform="linux" data-artifact="Flota.AppImage" data-location="hero" class="px-3 py-1.5 rounded-full bg-white border border-border text-secondary hover:text-primary hover:border-gray-300 transition-colors">Linux (AppImage)</a>
+                <a href="#download" class="px-3 py-1.5 rounded-full bg-gray-100 border border-border text-primary hover:bg-gray-200 transition-colors">查看完整四端下载</a>
+            </div>
+        </div>
+
+        <div class="mt-20 max-w-5xl mx-auto fade-in-up delay-300 relative group">
+            <div class="w-full rounded-3xl overflow-hidden relative flex items-center justify-center transform group-hover:-translate-y-2 transition-transform duration-700">
+                <img src="images/574_1x_shots_so.png" alt="Flota 应用界面" class="w-full h-auto object-contain">
+                <div class="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-[#FAF9F6] to-transparent pointer-events-none"></div>
+            </div>
+        </div>
+    </section>
+
+    <section id="features" class="py-24 px-6 bg-white">
+        <div class="max-w-6xl mx-auto">
+            <div class="mb-16">
+                <h2 class="text-3xl font-bold mb-4">打破边界的思考工具</h2>
+                <p class="text-secondary text-lg">你不再需要在多个 App 之间反复横跳，Flota 将一切有机融合。</p>
+            </div>
+
+            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div class="p-8 rounded-3xl bg-gray-50 border border-border hover:shadow-lg transition-all duration-300 group">
+                    <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center mb-6 shadow-sm group-hover:scale-110 transition-transform">
+                        <i class="ph ph-git-commit text-2xl text-primary"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-3">时间轴与待办</h3>
+                    <p class="text-secondary leading-relaxed">支持子任务层级嵌套，通过时间轴直观审视一天的进度，从条理分明到井然有序。</p>
+                </div>
+
+                <div class="p-8 rounded-3xl bg-gray-50 border border-border hover:shadow-lg transition-all duration-300 group">
+                    <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center mb-6 shadow-sm group-hover:scale-110 transition-transform">
+                        <i class="ph ph-chalkboard text-2xl text-blue-500"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-3">无边框白板</h3>
+                    <p class="text-secondary leading-relaxed">自由排布你的灵感碎片。不论是思维导图、手绘草图还是连接卡片，一切皆有可能。</p>
+                </div>
+
+                <div class="p-8 rounded-3xl bg-gray-50 border border-border hover:shadow-lg transition-all duration-300 group">
+                    <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center mb-6 shadow-sm group-hover:scale-110 transition-transform">
+                        <i class="ph ph-sparkle text-2xl text-purple-500"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-3">专属 AI 助理</h3>
+                    <p class="text-secondary leading-relaxed">常驻视角的 AI 智能副驾，理解你的私有笔记上下文，随时为你总结、续写或解答疑惑。</p>
+                </div>
+
+                <div class="md:col-span-2 lg:col-span-3 p-8 md:p-12 rounded-3xl bg-gradient-to-br from-gray-900 to-gray-800 text-white relative overflow-hidden">
+                    <div class="relative z-10 max-w-xl">
+                        <div class="inline-block px-3 py-1 rounded-full bg-white/10 text-xs font-medium border border-white/20 mb-6 backdrop-blur-md">
+                            全端同步设计
+                        </div>
+                        <h3 class="text-3xl font-bold mb-4">一次记录，处处共鸣。</h3>
+                        <p class="text-gray-400 text-lg leading-relaxed mb-8">
+                            无论是在桌面端深入思考，还是在移动端快速抓取灵感，Flota 都能保持完美的体验一致性。不打扰，只陪伴。
+                        </p>
+                    </div>
+                    <div class="absolute right-[-10%] top-[-20%] w-[500px] h-[500px] rounded-full border border-white/5 shadow-[0_0_100px_rgba(255,255,255,0.05)]"></div>
+                    <i class="ph ph-devices absolute right-10 bottom-10 text-[180px] text-white/5"></i>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="design" class="py-24 px-6">
+        <div class="max-w-6xl mx-auto flex flex-col md:flex-row items-center gap-16">
+            <div class="flex-1">
+                <h2 class="text-3xl font-bold mb-6">更懂你的视觉模式</h2>
+                <p class="text-secondary text-lg mb-8 leading-relaxed">
+                    提供多套精心调校的色彩主题。默认 <strong>柔和模式(Soft)</strong> 在清晰辨认与缓解视觉疲劳中找到完美平衡。还有生动、纸张及石墨模式随心切换。
+                </p>
+                <div class="flex gap-4">
+                    <div class="w-12 h-12 rounded-full border-2 border-primary bg-[#FAF9F6] shadow-sm cursor-pointer hover:scale-110 transition-transform" title="柔和 (Soft)"></div>
+                    <div class="w-12 h-12 rounded-full border border-border bg-[#FFFFFF] shadow-sm cursor-pointer hover:scale-110 transition-transform" title="生动 (Vivid)"></div>
+                    <div class="w-12 h-12 rounded-full border border-border bg-[#F5E6D3] shadow-sm cursor-pointer hover:scale-110 transition-transform" title="纸张 (Paper)"></div>
+                    <div class="w-12 h-12 rounded-full border border-border bg-[#2C2C2E] shadow-sm cursor-pointer hover:scale-110 transition-transform" title="石墨 (Graphite)"></div>
+                </div>
+            </div>
+            <div class="flex-1 w-full flex justify-center">
+                <div class="h-[500px] w-full max-w-md mx-auto relative group flex items-center justify-center">
+                    <div class="absolute inset-0 bg-[radial-gradient(#d1d5db_1px,transparent_1px)] [background-size:24px_24px] rounded-3xl opacity-50"></div>
+
+                    <div class="absolute right-6 top-8 w-[45%] md:w-[200px] transform rotate-6 group-hover:rotate-12 group-hover:translate-x-4 group-hover:-translate-y-2 transition-all duration-700 shadow-2xl rounded-[2rem] overflow-hidden border-4 border-gray-50 z-0">
+                        <img src="images/mobile2.jpg" alt="石墨模式 - 移动端" class="w-full h-auto object-cover">
+                    </div>
+
+                    <div class="absolute left-6 bottom-8 w-[45%] md:w-[200px] transform -rotate-3 group-hover:-rotate-6 group-hover:-translate-x-4 group-hover:translate-y-2 transition-all duration-700 shadow-2xl rounded-[2rem] overflow-hidden border-4 border-white z-10">
+                        <img src="images/mobile.jpg" alt="柔和模式 - 移动端" class="w-full h-auto object-cover">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="download" class="py-24 px-6 bg-white">
+        <div class="max-w-6xl mx-auto">
+            <div class="mb-12 text-center">
+                <h2 class="text-3xl font-bold mb-4">四端下载</h2>
+                <div class="text-secondary text-lg">
+                    <p>电脑端版本：<span id="desktop-version" class="font-semibold text-primary">最新</span></p>
+                    <p class="mt-1">手机端版本：<span id="android-version" class="font-semibold text-primary">最新</span></p>
+                </div>
+                <p class="text-secondary text-lg mt-1">支持 Windows、macOS、Linux、Android，按设备直接下载即可使用。</p>
+            </div>
+
+            <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div class="p-6 rounded-3xl border border-border bg-gray-50">
+                    <div class="flex items-center gap-3 mb-4">
+                        <i class="ph ph-windows-logo text-2xl"></i>
+                        <h3 class="text-lg font-semibold">Windows</h3>
+                    </div>
+                    <p class="text-secondary text-sm mb-5">适用于 Windows 10/11</p>
+                    <a href="https://download.flota.cn/downloads/latest/Flota.Setup.exe" data-download-track="1" data-platform="windows" data-artifact="Flota.Setup.exe" data-location="cards" class="inline-flex items-center gap-2 text-sm font-medium text-white bg-primary px-4 py-2 rounded-xl hover:bg-black transition-colors">
+                        <i class="ph ph-download-simple"></i>
+                        下载 .exe
+                    </a>
+                </div>
+
+                <div class="p-6 rounded-3xl border border-border bg-gray-50">
+                    <div class="flex items-center gap-3 mb-4">
+                        <i class="ph ph-apple-logo text-2xl"></i>
+                        <h3 class="text-lg font-semibold">macOS</h3>
+                    </div>
+                    <p class="text-secondary text-sm mb-5">Intel / Apple 芯片双版本</p>
+                    <div class="flex flex-wrap gap-2">
+                        <a href="https://download.flota.cn/downloads/latest/Flota-mac-x64.dmg" data-download-track="1" data-platform="macos-x64" data-artifact="Flota-mac-x64.dmg" data-location="cards" class="inline-flex items-center gap-2 text-sm font-medium text-white bg-primary px-4 py-2 rounded-xl hover:bg-black transition-colors">
+                            Intel
+                        </a>
+                        <a href="https://download.flota.cn/downloads/latest/Flota-mac-arm64.dmg" data-download-track="1" data-platform="macos-arm64" data-artifact="Flota-mac-arm64.dmg" data-location="cards" class="inline-flex items-center gap-2 text-sm font-medium text-primary bg-white border border-border px-4 py-2 rounded-xl hover:bg-gray-100 transition-colors">
+                            Apple 芯片
+                        </a>
+                    </div>
+                </div>
+
+                <div class="p-6 rounded-3xl border border-border bg-gray-50">
+                    <div class="flex items-center gap-3 mb-4">
+                        <i class="ph ph-linux-logo text-2xl"></i>
+                        <h3 class="text-lg font-semibold">Linux</h3>
+                    </div>
+                    <p class="text-secondary text-sm mb-5">通用 AppImage 格式</p>
+                    <a href="https://download.flota.cn/downloads/latest/Flota.AppImage" data-download-track="1" data-platform="linux" data-artifact="Flota.AppImage" data-location="cards" class="inline-flex items-center gap-2 text-sm font-medium text-white bg-primary px-4 py-2 rounded-xl hover:bg-black transition-colors">
+                        <i class="ph ph-download-simple"></i>
+                        下载 AppImage
+                    </a>
+                </div>
+
+                <div class="p-6 rounded-3xl border border-border bg-gray-50">
+                    <div class="flex items-center gap-3 mb-4">
+                        <i class="ph ph-android-logo text-2xl text-green-600"></i>
+                        <h3 class="text-lg font-semibold">Android</h3>
+                    </div>
+                    <p class="text-secondary text-sm mb-5">手动安装 APK 版本</p>
+                    <a href="https://download.flota.cn/downloads/latest/app-release.apk" data-download-track="1" data-platform="android" data-artifact="app-release.apk" data-location="cards" class="inline-flex items-center gap-2 text-sm font-medium text-white bg-primary px-4 py-2 rounded-xl hover:bg-black transition-colors">
+                        <i class="ph ph-download-simple"></i>
+                        下载 APK
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="border-t border-border bg-white pt-16 pb-8 px-6 text-center">
+        <h2 class="text-2xl font-bold mb-8">准备好开启流畅记录了吗？</h2>
+        <div class="flex justify-center mb-6">
+            <img src="images/about_lightmode.png" alt="Flota Logo" class="w-40 max-w-[220px] mx-auto rounded-xl" />
+        </div>
+        <div class="flex justify-center mb-16">
+            <a href="#download" class="bg-primary text-white px-10 py-4 rounded-full font-medium hover:scale-105 transition-all shadow-lg flex items-center gap-2">
+                查看四端下载
+            </a>
+        </div>
+        <div class="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between text-sm text-gray-400">
+            <p>&copy; 2026 Flota App. All rights reserved.</p>
+            <div class="flex gap-6 mt-4 md:mt-0">
+                <a href="privacy.html" class="hover:text-primary transition-colors">隐私政策</a>
+                <a href="terms.html" class="hover:text-primary transition-colors">服务条款</a>
+                <a href="contact.html" class="hover:text-primary transition-colors">联系作者</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        (async function loadReleaseVersions() {
+            try {
+                const desktopRes = await fetch('https://download.flota.cn/downloads/release-manifest.json?t=' + Date.now(), { cache: 'no-store' });
+                if (desktopRes.ok) {
+                    const desktopData = await desktopRes.json();
+                    if (desktopData && desktopData.version) {
+                        const desktopEl = document.getElementById('desktop-version');
+                        if (desktopEl) {
+                            desktopEl.textContent = 'v' + desktopData.version;
+                        }
+                    }
+
+                    // Optional: if mobile pipeline also writes androidVersion into release-manifest.json
+                    if (desktopData && desktopData.androidVersion) {
+                        const androidElFromManifest = document.getElementById('android-version');
+                        if (androidElFromManifest) {
+                            androidElFromManifest.textContent = 'v' + desktopData.androidVersion;
+                        }
+                        return;
+                    }
+                }
+            } catch (err) {
+                // Keep fallback text when manifest is temporarily unavailable.
+            }
+
+            try {
+                // Recommended for mobile private pipeline: upload this JSON beside APK
+                // { "version": "3.0.5" }
+                const androidRes = await fetch('https://download.flota.cn/downloads/latest/android-version.json?t=' + Date.now(), { cache: 'no-store' });
+                if (!androidRes.ok) return;
+                const androidData = await androidRes.json();
+                if (!androidData || !androidData.version) return;
+                const androidEl = document.getElementById('android-version');
+                if (androidEl) {
+                    androidEl.textContent = 'v' + androidData.version;
+                }
+            } catch (err) {
+                // Keep fallback text when mobile version metadata is unavailable.
+            }
+        })();
+    </script>
+
+    <script>
+        (function setupDownloadTracking() {
+            var links = document.querySelectorAll('[data-download-track="1"]');
+            if (!links.length) return;
+
+            function emit(payload) {
+                // 1) Umami (if injected)
+                if (window.umami && typeof window.umami.track === 'function') {
+                    window.umami.track('download_click', payload);
+                }
+
+                // 2) GA4 gtag (if injected)
+                if (typeof window.gtag === 'function') {
+                    window.gtag('event', 'download_click', {
+                        event_category: 'download',
+                        platform: payload.platform,
+                        artifact: payload.artifact,
+                        location: payload.location,
+                    });
+                }
+
+                // 3) Optional custom endpoint, set globally before this script:
+                //    window.FLOTA_ANALYTICS_ENDPOINT = 'https://your-domain.com/api/events'
+                if (typeof window.FLOTA_ANALYTICS_ENDPOINT === 'string' && window.FLOTA_ANALYTICS_ENDPOINT) {
+                    var body = JSON.stringify(payload);
+                    if (navigator.sendBeacon) {
+                        var blob = new Blob([body], { type: 'application/json' });
+                        navigator.sendBeacon(window.FLOTA_ANALYTICS_ENDPOINT, blob);
+                    } else {
+                        fetch(window.FLOTA_ANALYTICS_ENDPOINT, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: body,
+                            keepalive: true,
+                            mode: 'no-cors',
+                        }).catch(function () {});
+                    }
+                }
+            }
+
+            links.forEach(function (el) {
+                el.addEventListener('click', function () {
+                    emit({
+                        event: 'download_click',
+                        ts: new Date().toISOString(),
+                        platform: el.getAttribute('data-platform') || 'unknown',
+                        artifact: el.getAttribute('data-artifact') || 'unknown',
+                        location: el.getAttribute('data-location') || 'unknown',
+                        href: el.getAttribute('href') || '',
+                        page: window.location.pathname,
+                    });
+                });
+            });
+        })();
+    </script>
+</body>
+</html>

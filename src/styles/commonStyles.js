@@ -67,7 +67,7 @@ export const combo = {
   relative: { position: 'relative' }
 };
 
-// ========== 卡片样式（soft-glass + linear accent） ==========
+// ========== 卡片样式（quiet surface + restrained accent） ==========
 /**
  * Hero 横幅卡片样式（个人中心顶部 / 插件商店头图等场景）
  * 用法：<Box sx={heroCardSx}>...</Box>
@@ -77,21 +77,21 @@ export const heroCardSx = (muiTheme) => ({
   alignItems: 'center',
   mb: 3,
   p: 3,
-  borderRadius: '20px',
+  borderRadius: '16px',
   position: 'relative',
   overflow: 'hidden',
-  background: muiTheme.palette.mode === 'dark'
-    ? 'linear-gradient(145deg, rgba(30,41,59,0.86), rgba(15,23,42,0.72))'
-    : 'linear-gradient(145deg, rgba(255,255,255,0.92), rgba(248,250,252,0.82))',
+  backgroundColor: muiTheme.palette.mode === 'dark'
+    ? 'rgba(30,41,59,0.84)'
+    : 'rgba(255,255,255,0.9)',
   border: '1px solid',
   borderColor: muiTheme.palette.mode === 'dark'
     ? 'rgba(148,163,184,0.16)'
     : 'rgba(15,23,42,0.08)',
   boxShadow: muiTheme.palette.mode === 'dark'
-    ? '0 18px 50px rgba(0,0,0,0.22)'
-    : '0 18px 50px rgba(15,23,42,0.07)',
-  backdropFilter: 'blur(12px) saturate(140%)',
-  WebkitBackdropFilter: 'blur(12px) saturate(140%)',
+    ? '0 8px 24px rgba(0,0,0,0.18)'
+    : '0 8px 24px rgba(15,23,42,0.055)',
+  backdropFilter: 'blur(8px)',
+  WebkitBackdropFilter: 'blur(8px)',
 });
 
 /**
@@ -102,48 +102,48 @@ export const heroCardSx = (muiTheme) => ({
 export const createSoftGlassCardSx = () => (muiTheme) => ({
   position: 'relative',
   overflow: 'hidden',
-  borderRadius: '18px',
+  borderRadius: '14px',
   border: '1px solid',
   borderColor: muiTheme.palette.mode === 'dark'
     ? 'rgba(148,163,184,0.14)'
     : 'rgba(15,23,42,0.08)',
-  background: muiTheme.palette.mode === 'dark'
-    ? 'linear-gradient(145deg, rgba(30,41,59,0.82), rgba(15,23,42,0.68))'
-    : 'linear-gradient(145deg, rgba(255,255,255,0.94), rgba(248,250,252,0.78))',
+  backgroundColor: muiTheme.palette.mode === 'dark'
+    ? 'rgba(30,41,59,0.78)'
+    : 'rgba(255,255,255,0.86)',
   boxShadow: muiTheme.palette.mode === 'dark'
-    ? '0 10px 34px rgba(0,0,0,0.18)'
-    : '0 10px 34px rgba(15,23,42,0.055)',
-  backdropFilter: 'blur(10px) saturate(135%)',
-  WebkitBackdropFilter: 'blur(10px) saturate(135%)',
+    ? '0 3px 12px rgba(0,0,0,0.16)'
+    : '0 3px 12px rgba(15,23,42,0.045)',
+  backdropFilter: 'blur(8px)',
+  WebkitBackdropFilter: 'blur(8px)',
   transition: 'border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease',
   '&:hover': {
     borderColor: muiTheme.palette.mode === 'dark'
       ? 'rgba(148,163,184,0.34)'
       : 'rgba(15,23,42,0.18)',
-    background: muiTheme.palette.mode === 'dark'
-      ? 'linear-gradient(145deg, rgba(30,41,59,0.88), rgba(15,23,42,0.74))'
-      : 'linear-gradient(145deg, rgba(255,255,255,0.98), rgba(248,250,252,0.88))',
+    backgroundColor: muiTheme.palette.mode === 'dark'
+      ? 'rgba(30,41,59,0.9)'
+      : 'rgba(255,255,255,0.96)',
     boxShadow: muiTheme.palette.mode === 'dark'
-      ? '0 18px 44px rgba(0,0,0,0.28)'
-      : '0 18px 44px rgba(15,23,42,0.11)',
+      ? '0 6px 18px rgba(0,0,0,0.2)'
+      : '0 6px 18px rgba(15,23,42,0.075)',
   },
 });
 
 // ========== 现代界面基础面板 ==========
 export const modernSurfaceSx = (muiTheme) => ({
-  borderRadius: '16px',
+  borderRadius: '14px',
   border: '1px solid',
   borderColor: muiTheme.palette.mode === 'dark'
     ? 'rgba(148,163,184,0.14)'
     : 'rgba(15,23,42,0.08)',
   background: muiTheme.palette.mode === 'dark'
-    ? 'rgba(15,23,42,0.44)'
-    : 'rgba(255,255,255,0.68)',
+    ? 'rgba(30,41,59,0.7)'
+    : 'rgba(255,255,255,0.84)',
   boxShadow: muiTheme.palette.mode === 'dark'
-    ? '0 8px 28px rgba(0,0,0,0.16)'
-    : '0 8px 28px rgba(15,23,42,0.055)',
-  backdropFilter: 'blur(10px) saturate(130%)',
-  WebkitBackdropFilter: 'blur(10px) saturate(130%)',
+    ? '0 2px 10px rgba(0,0,0,0.14)'
+    : '0 2px 10px rgba(15,23,42,0.04)',
+  backdropFilter: 'blur(8px)',
+  WebkitBackdropFilter: 'blur(8px)',
 });
 
 export const sectionHeaderSx = {
@@ -170,7 +170,7 @@ export const segmentedControlSx = (muiTheme) => ({
   alignItems: 'center',
   gap: '3px',
   p: '3px',
-  borderRadius: '12px',
+  borderRadius: '10px',
   border: '1px solid',
   borderColor: muiTheme.palette.mode === 'dark'
     ? 'rgba(148,163,184,0.14)'
@@ -184,7 +184,8 @@ export const segmentedButtonSx = (active) => (muiTheme) => ({
   px: 1.5,
   py: 0.4,
   minWidth: 0,
-  borderRadius: '9px',
+  borderRadius: '7px',
+  border: '1px solid transparent',
   textTransform: 'none',
   lineHeight: 1.5,
   fontSize: '0.78rem',
@@ -193,18 +194,20 @@ export const segmentedButtonSx = (active) => (muiTheme) => ({
   transition: 'background-color 180ms cubic-bezier(0.32,0.72,0,1), color 180ms cubic-bezier(0.32,0.72,0,1), box-shadow 180ms cubic-bezier(0.32,0.72,0,1)',
   ...(active ? {
     bgcolor: muiTheme.palette.mode === 'dark'
-      ? 'rgba(255,255,255,0.14)'
-      : muiTheme.palette.primary.main,
-    color: muiTheme.palette.mode === 'dark'
-      ? '#fff'
-      : muiTheme.palette.primary.contrastText,
+      ? 'rgba(255,255,255,0.105)'
+      : 'rgba(255,255,255,0.82)',
+    color: muiTheme.palette.text.primary,
+    borderColor: muiTheme.palette.mode === 'dark'
+      ? 'rgba(255,255,255,0.1)'
+      : 'rgba(15,23,42,0.09)',
+    backgroundImage: 'none',
     boxShadow: muiTheme.palette.mode === 'dark'
-      ? '0 1px 4px rgba(0,0,0,0.28)'
-      : `0 2px 8px ${muiTheme.palette.primary.main}2e`,
+      ? '0 1px 3px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.05)'
+      : '0 1px 4px rgba(15,23,42,0.07), inset 0 1px 0 rgba(255,255,255,0.8)',
     '&:hover': {
       bgcolor: muiTheme.palette.mode === 'dark'
-        ? 'rgba(255,255,255,0.18)'
-        : muiTheme.palette.primary.dark,
+        ? 'rgba(255,255,255,0.13)'
+        : 'rgba(255,255,255,0.94)',
     },
   } : {
     color: muiTheme.palette.text.secondary,
@@ -235,7 +238,7 @@ export const settingsRowSx = (muiTheme) => ({
   px: 2,
   py: 1.5,
   mb: 1,
-  borderRadius: '14px',
+  borderRadius: '10px',
   border: '1px solid',
   borderColor: muiTheme.palette.mode === 'dark'
     ? 'rgba(148,163,184,0.10)'
@@ -281,8 +284,8 @@ export const compactGlassPanelSx = (muiTheme) => ({
   backgroundColor: muiTheme.palette.mode === 'dark'
     ? 'rgba(15,23,42,0.42)'
     : 'rgba(248,251,255,0.72)',
-  backdropFilter: 'blur(16px) saturate(160%)',
-  WebkitBackdropFilter: 'blur(16px) saturate(160%)',
+  backdropFilter: 'blur(10px)',
+  WebkitBackdropFilter: 'blur(10px)',
 });
 
 // ========== 细长滚动条（侧栏列表通用） ==========

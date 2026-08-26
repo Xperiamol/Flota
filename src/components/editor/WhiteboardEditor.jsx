@@ -31,34 +31,30 @@ import { getWhiteboardPreviewKey } from '../../utils/whiteboardPreview'
 
 const createExcalidrawGlassTokens = ({ isDark, accent }) => {
   const islandBg = isDark
-    ? alpha('#1e293b', 0.55)
-    : alpha('#ffffff', 0.62)
+    ? alpha('#1e293b', 0.9)
+    : alpha('#ffffff', 0.94)
   const islandBorder = isDark
     ? `1px solid ${alpha('#ffffff', 0.08)}`
     : `1px solid ${alpha('#0f172a', 0.08)}`
   const islandShadow = isDark
-    ? `0 8px 24px ${alpha('#000000', 0.18)}, inset 0 1px 0 ${alpha('#ffffff', 0.04)}`
-    : `0 8px 22px ${alpha('#0f172a', 0.05)}, inset 0 1px 0 ${alpha('#ffffff', 0.52)}`
-  const islandBlur = 'blur(18px) saturate(180%)'
+    ? `0 4px 14px ${alpha('#000000', 0.2)}`
+    : `0 4px 14px ${alpha('#0f172a', 0.06)}`
+  const islandBlur = 'blur(8px)'
 
   const buttonBg = isDark
-    ? alpha('#ffffff', 0.04)
-    : alpha('#ffffff', 0.34)
+    ? alpha('#ffffff', 0.035)
+    : alpha('#f8fafc', 0.92)
   const buttonHoverBg = isDark
     ? alpha('#ffffff', 0.08)
-    : alpha('#ffffff', 0.56)
+    : alpha('#e2e8f0', 0.72)
   const buttonPressedBg = isDark
     ? alpha('#ffffff', 0.11)
-    : alpha('#ffffff', 0.7)
+    : alpha('#cbd5e1', 0.68)
   const buttonBorder = isDark
     ? alpha('#ffffff', 0.08)
     : alpha('#0f172a', 0.08)
-  const buttonShadow = isDark
-    ? `0 2px 8px ${alpha('#000000', 0.12)}, inset 0 1px 0 ${alpha('#ffffff', 0.03)}`
-    : `0 2px 8px ${alpha('#0f172a', 0.04)}, inset 0 1px 0 ${alpha('#ffffff', 0.45)}`
-  const buttonPressedShadow = isDark
-    ? `0 1px 4px ${alpha('#000000', 0.12)}, inset 0 1px 0 ${alpha('#ffffff', 0.02)}`
-    : `0 1px 4px ${alpha('#0f172a', 0.035)}, inset 0 1px 0 ${alpha('#ffffff', 0.4)}`
+  const buttonShadow = 'none'
+  const buttonPressedShadow = 'none'
   const toolbarButtonHoverBg = isDark
     ? alpha('#ffffff', 0.08)
     : alpha('#ffffff', 0.72)
@@ -68,9 +64,7 @@ const createExcalidrawGlassTokens = ({ isDark, accent }) => {
   const toolbarButtonBorder = isDark
     ? alpha('#ffffff', 0.06)
     : alpha('#ffffff', 0.72)
-  const toolbarButtonShadow = isDark
-    ? `0 2px 6px ${alpha('#000000', 0.1)}`
-    : `0 2px 8px ${alpha('#0f172a', 0.035)}`
+  const toolbarButtonShadow = 'none'
   const bottomButtonBg = isDark
     ? alpha('#ffffff', 0.035)
     : alpha('#ffffff', 0.28)
@@ -83,18 +77,16 @@ const createExcalidrawGlassTokens = ({ isDark, accent }) => {
   const bottomButtonBorder = isDark
     ? alpha('#ffffff', 0.06)
     : alpha('#ffffff', 0.5)
-  const bottomButtonShadow = isDark
-    ? `0 1px 4px ${alpha('#000000', 0.08)}`
-    : `0 1px 4px ${alpha('#0f172a', 0.025)}`
+  const bottomButtonShadow = 'none'
   const menuBg = isDark
-    ? alpha('#1e293b', 0.64)
-    : alpha('#ffffff', 0.74)
+    ? alpha('#1e293b', 0.94)
+    : alpha('#ffffff', 0.98)
   const menuBorder = isDark
     ? `1px solid ${alpha('#ffffff', 0.08)}`
     : `1px solid ${alpha('#ffffff', 0.62)}`
   const menuShadow = isDark
-    ? `0 10px 28px ${alpha('#000000', 0.18)}, inset 0 1px 0 ${alpha('#ffffff', 0.04)}`
-    : `0 10px 24px ${alpha('#0f172a', 0.06)}, inset 0 1px 0 ${alpha('#ffffff', 0.56)}`
+    ? `0 10px 28px ${alpha('#000000', 0.26)}`
+    : `0 10px 28px ${alpha('#0f172a', 0.1)}`
   const menuItemHoverBg = isDark
     ? alpha('#ffffff', 0.07)
     : alpha('#ffffff', 0.72)
@@ -105,9 +97,7 @@ const createExcalidrawGlassTokens = ({ isDark, accent }) => {
     ? alpha(accent, 0.18)
     : alpha(accent, 0.12)
   const toolIconActiveBorder = alpha(accent, isDark ? 0.38 : 0.24)
-  const toolIconActiveShadow = isDark
-    ? `0 3px 10px ${alpha(accent, 0.14)}, inset 0 1px 0 ${alpha('#ffffff', 0.03)}`
-    : `0 3px 10px ${alpha(accent, 0.1)}, inset 0 1px 0 ${alpha('#ffffff', 0.4)}`
+  const toolIconActiveShadow = 'none'
   const selectedSurface = alpha(accent, isDark ? 0.28 : 0.14)
   const selectedSurfaceHover = alpha(accent, isDark ? 0.36 : 0.2)
 
@@ -299,8 +289,8 @@ const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
       inset: 0,
       zIndex: 0,
       background: buttonBg,
-      backdropFilter: 'blur(14px) saturate(160%)',
-      WebkitBackdropFilter: 'blur(14px) saturate(160%)',
+      backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)',
       border: `1px solid ${buttonBorder}`,
       borderRadius: '16px',
       boxShadow: buttonShadow,
@@ -332,8 +322,8 @@ const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
       background: `${buttonBg} !important`,
       border: `1px solid ${buttonBorder} !important`,
       boxShadow: `${buttonShadow} !important`,
-      backdropFilter: 'blur(14px) saturate(160%)',
-      WebkitBackdropFilter: 'blur(14px) saturate(160%)',
+      backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)',
       transition: 'background-color 160ms ease, box-shadow 160ms ease, color 160ms ease, border-color 160ms ease',
     },
 
@@ -401,16 +391,16 @@ const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
     // 下拉菜单 / Popover 玻璃化
     '& .excalidraw .dropdown-menu .dropdown-menu-container, & .excalidraw .Popover, & .excalidraw .Popover__contextMenu, & .excalidraw .context-menu, & .excalidraw .App-toolbar__extra-tools-dropdown': {
       backgroundColor: `${menuBg} !important`,
-      backdropFilter: 'blur(20px) saturate(180%)',
-      WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+      backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)',
       border: menuBorder,
       boxShadow: `${menuShadow} !important`,
       borderRadius: '14px !important',
     },
     '& .excalidraw .App-menu_top .dropdown-menu, & .excalidraw .App-menu_top .dropdown-menu .dropdown-menu-container': {
       backgroundColor: `${menuBg} !important`,
-      backdropFilter: 'blur(20px) saturate(180%)',
-      WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+      backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)',
       border: menuBorder,
       boxShadow: `${menuShadow} !important`,
       borderRadius: '16px !important',
@@ -454,18 +444,16 @@ const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
 
     // 素材库面板
     '& .excalidraw .layer-ui__library': {
-      borderRadius: '18px',
-      background: isDark
-        ? `linear-gradient(180deg, ${alpha('#1e293b', 0.78)} 0%, ${alpha('#0f172a', 0.72)} 100%)`
-        : `linear-gradient(180deg, ${alpha('#ffffff', 0.84)} 0%, ${alpha('#f8fafc', 0.76)} 100%)`,
+      borderRadius: '14px',
+      backgroundColor: isDark ? alpha('#1e293b', 0.96) : alpha('#ffffff', 0.98),
       border: isDark
         ? `1px solid ${alpha('#ffffff', 0.08)}`
         : `1px solid ${alpha('#ffffff', 0.62)}`,
       boxShadow: isDark
-        ? `0 14px 34px ${alpha('#000000', 0.18)}, inset 0 1px 0 ${alpha('#ffffff', 0.04)}`
-        : `0 14px 34px ${alpha('#0f172a', 0.07)}, inset 0 1px 0 ${alpha('#ffffff', 0.62)}`,
-      backdropFilter: 'blur(22px) saturate(180%)',
-      WebkitBackdropFilter: 'blur(22px) saturate(180%)',
+        ? `0 10px 28px ${alpha('#000000', 0.24)}`
+        : `0 10px 28px ${alpha('#0f172a', 0.09)}`,
+      backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)',
       overflow: 'hidden',
     },
     '& .excalidraw .sidebar-tabs-root > .sidebar__header': {
@@ -507,8 +495,8 @@ const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
       boxShadow: isDark
         ? `0 2px 8px ${alpha('#000000', 0.08)}`
         : `0 2px 8px ${alpha('#0f172a', 0.035)}`,
-      backdropFilter: 'blur(14px) saturate(160%)',
-      WebkitBackdropFilter: 'blur(14px) saturate(160%)',
+      backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)',
       position: 'relative',
       zIndex: 2,
     },
@@ -518,14 +506,10 @@ const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
       color: accent,
     },
     '& .excalidraw .default-sidebar .sidebar-triggers .sidebar-tab-trigger[data-state=active]': {
-      background: isDark
-        ? `linear-gradient(135deg, ${alpha(accent, 0.18)} 0%, ${alpha(accent, 0.12)} 100%)`
-        : `linear-gradient(135deg, ${alpha(accent, 0.12)} 0%, ${alpha(accent, 0.08)} 100%)`,
+      backgroundColor: alpha(accent, isDark ? 0.18 : 0.11),
       borderColor: alpha(accent, isDark ? 0.26 : 0.18),
       color: accent,
-      boxShadow: isDark
-        ? `0 4px 12px ${alpha(accent, 0.12)}`
-        : `0 4px 12px ${alpha(accent, 0.08)}`,
+      boxShadow: 'none',
     },
     '& .excalidraw .default-sidebar .sidebar-triggers .sidebar-tab-trigger svg': {
       color: 'currentColor',
@@ -542,8 +526,8 @@ const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
       boxShadow: isDark
         ? `0 2px 8px ${alpha('#000000', 0.08)}`
         : `0 2px 8px ${alpha('#0f172a', 0.035)}`,
-      backdropFilter: 'blur(14px) saturate(160%)',
-      WebkitBackdropFilter: 'blur(14px) saturate(160%)',
+      backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)',
     },
     '& .excalidraw .sidebar__header__buttons button:hover': {
       background: isDark ? alpha('#ffffff', 0.08) : alpha('#ffffff', 0.88),
@@ -624,17 +608,13 @@ const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
     },
     '& .excalidraw .layer-ui__library .library-menu-browse-button': {
       borderRadius: '12px',
-      background: isDark
-        ? `linear-gradient(135deg, ${alpha(accent, 0.26)} 0%, ${alpha(accent, 0.18)} 100%)`
-        : `linear-gradient(135deg, ${alpha(accent, 0.16)} 0%, ${alpha(accent, 0.1)} 100%)`,
+      backgroundColor: alpha(accent, isDark ? 0.2 : 0.12),
       color: `${accent} !important`,
       border: `1px solid ${alpha(accent, isDark ? 0.3 : 0.22)}`,
-      boxShadow: `0 6px 14px ${alpha(accent, isDark ? 0.14 : 0.1)}`,
+      boxShadow: 'none',
     },
     '& .excalidraw .layer-ui__library .library-menu-browse-button:hover': {
-      background: isDark
-        ? `linear-gradient(135deg, ${alpha(accent, 0.32)} 0%, ${alpha(accent, 0.22)} 100%)`
-        : `linear-gradient(135deg, ${alpha(accent, 0.2)} 0%, ${alpha(accent, 0.14)} 100%)`,
+      backgroundColor: alpha(accent, isDark ? 0.27 : 0.17),
     },
     '& .excalidraw .layer-ui__library .dropdown-menu .dropdown-menu-container': {
       width: '208px',
@@ -698,8 +678,8 @@ const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
     // 选中元素侧边面板（图层属性）
     '& .excalidraw .sidebar, & .excalidraw .App-menu__left': {
       background: `${menuBg} !important`,
-      backdropFilter: 'blur(20px) saturate(180%)',
-      WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+      backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)',
       borderLeft: menuBorder,
       boxShadow: `${menuShadow} !important`,
       overflow: 'visible',
@@ -719,8 +699,8 @@ const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
     },
     '& .excalidraw .sidebar .panelColumn, & .excalidraw .App-menu__left .panelColumn': {
       background: `${menuBg} !important`,
-      backdropFilter: 'blur(20px) saturate(180%)',
-      WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+      backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)',
       border: menuBorder,
       borderRadius: '16px',
       boxShadow: `${menuShadow} !important`,
@@ -774,8 +754,8 @@ const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
     },
     '& .excalidraw .Dialog, & .excalidraw .Modal__content, & .excalidraw .HelpDialog, & .excalidraw .ConfirmDialog': {
       backgroundColor: `${menuBg} !important`,
-      backdropFilter: 'blur(20px) saturate(180%)',
-      WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+      backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)',
       border: menuBorder,
       boxShadow: `${menuShadow} !important`,
       borderRadius: '16px !important',
@@ -786,8 +766,8 @@ const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
     },
     '& .excalidraw .Tooltip, & .excalidraw .Tooltip__label': {
       backgroundColor: `${menuBg} !important`,
-      backdropFilter: 'blur(14px) saturate(160%)',
-      WebkitBackdropFilter: 'blur(14px) saturate(160%)',
+      backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)',
       border: menuBorder,
       boxShadow: `${menuShadow} !important`,
       borderRadius: '10px !important',
@@ -795,16 +775,16 @@ const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
     },
     '& .excalidraw .picker, & .excalidraw .color-picker, & .excalidraw .color-picker__container, & .excalidraw .color-picker-content, & .excalidraw .color-picker-popover': {
       backgroundColor: `${menuBg} !important`,
-      backdropFilter: 'blur(20px) saturate(180%)',
-      WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+      backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)',
       border: menuBorder,
       boxShadow: `${menuShadow} !important`,
       borderRadius: '14px !important',
     },
     '& .excalidraw section.App-mobile-menu, & .excalidraw .App-mobile-menu, & .excalidraw section.App-mobile-menu .panelColumn, & .excalidraw section.App-mobile-menu .picker-content, & .excalidraw section.App-mobile-menu .picker-container': {
       backgroundColor: `${menuBg} !important`,
-      backdropFilter: 'blur(20px) saturate(180%)',
-      WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+      backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)',
       border: menuBorder,
       boxShadow: `${menuShadow} !important`,
       borderRadius: '14px !important',
@@ -857,8 +837,8 @@ const createImageEditButtonSx = ({ isDark, primaryColor }) => {
     boxShadow: isDark
       ? `0 2px 8px ${alpha('#000000', 0.08)}`
       : `0 2px 8px ${alpha('#0f172a', 0.035)}`,
-    backdropFilter: 'blur(12px) saturate(160%)',
-    WebkitBackdropFilter: 'blur(12px) saturate(160%)',
+    backdropFilter: 'blur(8px)',
+    WebkitBackdropFilter: 'blur(8px)',
     '&:hover': {
       background: isDark ? alpha(accent, 0.14) : alpha(accent, 0.1),
       borderColor: alpha(accent, isDark ? 0.24 : 0.18),
@@ -884,8 +864,8 @@ const createMermaidDialogSlotProps = ({ isDark, primaryColor }) => {
     paper: {
       sx: {
         backgroundColor: menuBg,
-        backdropFilter: 'blur(22px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(22px) saturate(180%)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
         border: menuBorder,
         boxShadow: menuShadow,
         borderRadius: '16px',

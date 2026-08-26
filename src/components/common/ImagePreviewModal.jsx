@@ -333,7 +333,7 @@ const ImagePreviewModal = ({ src, alt = '预览', onClose }) => {
               transformOrigin: 'center center',
               transform: `scale(${zoom}) translate(${position.x / zoom}px, ${position.y / zoom}px)`,
               transition: dragging ? 'none' : 'transform 0.2s ease',
-              borderRadius: 8,
+              borderRadius: '8px',
               boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
               cursor: zoom > 1 ? (dragging ? 'grabbing' : 'grab') : 'zoom-in',
               userSelect: 'none',

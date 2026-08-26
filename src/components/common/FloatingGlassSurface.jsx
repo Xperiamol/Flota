@@ -10,22 +10,21 @@ export const FLOATING_LAYER_Z_INDEX = {
 const getGlassSx = (theme, density = 'regular') => {
   const dark = theme.palette.mode === 'dark'
   const compact = density === 'compact'
+  const glass = theme.custom?.glass
 
   return {
     borderRadius: compact ? 1.25 : 1.5,
     overflow: 'hidden',
-    bgcolor: dark
-      ? alpha(theme.palette.background.paper, compact ? 0.4 : 0.44)
-      : alpha(theme.palette.background.paper, compact ? 0.3 : 0.34),
-    backgroundImage: dark
-      ? `linear-gradient(135deg, ${alpha('#ffffff', 0.07)}, ${alpha('#ffffff', 0.02)} 48%, ${alpha(theme.palette.primary.main, 0.06)})`
-      : `linear-gradient(135deg, ${alpha('#ffffff', 0.58)}, ${alpha('#ffffff', 0.2)} 48%, ${alpha(theme.palette.primary.main, 0.04)})`,
-    backdropFilter: 'blur(34px) saturate(190%)',
-    WebkitBackdropFilter: 'blur(34px) saturate(190%)',
-    border: `1px solid ${dark ? alpha('#ffffff', 0.06) : alpha('#ffffff', 0.32)}`,
-    boxShadow: dark
-      ? '0 12px 36px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.06)'
-      : '0 12px 30px rgba(15,23,42,0.045), inset 0 1px 0 rgba(255,255,255,0.46)',
+    bgcolor: glass?.background || (dark
+      ? alpha(theme.palette.background.paper, 0.72)
+      : alpha(theme.palette.background.paper, 0.78)),
+    backgroundImage: glass?.backgroundImage || 'none',
+    backdropFilter: glass?.backdropFilter || 'blur(20px) saturate(165%)',
+    WebkitBackdropFilter: glass?.backdropFilter || 'blur(20px) saturate(165%)',
+    border: glass?.border || `1px solid ${dark ? alpha('#ffffff', 0.11) : alpha('#ffffff', 0.68)}`,
+    boxShadow: glass?.boxShadow || (dark
+      ? '0 16px 44px rgba(2,6,23,0.34)'
+      : '0 16px 44px rgba(15,23,42,0.13)'),
     transformOrigin: 'top left'
   }
 }

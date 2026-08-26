@@ -914,6 +914,15 @@ const BatchTodoActionCard = ({ action, theme, executing, onExecute }) => (
         )}
         <Box sx={{ display: 'flex', gap: 0.3, mt: 0.3, flexWrap: 'wrap' }}>
           {t.due_date && <Chip size="small" label={formatTodoDue(t.due_date)} sx={{ height: 16, fontSize: '0.65rem' }} />}
+          {t.repeat_type && t.repeat_type !== 'none' && (
+            <Chip
+              size="small"
+              label={`${Number(t.repeat_interval) > 1 ? `每${Number(t.repeat_interval)}` : '每'}${t.repeat_type === 'daily' ? '天' : t.repeat_type === 'weekly' ? '周' : t.repeat_type === 'monthly' ? '月' : '年'}`}
+              color="primary"
+              variant="outlined"
+              sx={{ height: 16, fontSize: '0.65rem' }}
+            />
+          )}
           {t.is_important && <Chip size="small" label="重要" color="error" sx={{ height: 16, fontSize: '0.65rem' }} />}
           {t.is_urgent && <Chip size="small" label="紧急" color="warning" sx={{ height: 16, fontSize: '0.65rem' }} />}
         </Box>

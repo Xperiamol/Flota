@@ -71,6 +71,7 @@ const getSystemPrompt = async ({ mem0Service, imageReadingEnabled = true }) => {
   3. 最后用 create_todos 一次性提交 5-12 条**具体可执行**的任务（含 due_date YYYY-MM-DDTHH:MM:SS）。
 - 不要生成"确定 X / 调研 Y / 规划 Z"这种空泛准备任务，要给实际地点/活动/步骤；旅行类必须给出具体景点名，学习类要给具体内容。
 - 时间在 08:00-23:59 之间，所有 due_date 不能早于当前时间。
+- 当用户要求“每天/每周/每月/每年”执行某件事时，创建一条重复待办，不要展开成许多普通待办：设置 repeat_type（daily/weekly/monthly/yearly）、repeat_interval（默认 1）以及首次执行的 due_date；每周指定星期时同时填写 repeat_days（1=周一，…，7=周日）。例如“每天晚上跑步”应创建 repeat_type: "daily" 的单条待办。
 
 ## 规则
 - 用简洁友好的中文回复

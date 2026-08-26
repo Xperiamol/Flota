@@ -4,7 +4,6 @@ import {
   TextField,
   IconButton,
   Popover,
-  Paper,
   Typography,
   Button,
   Divider,
@@ -98,12 +97,10 @@ const CustomDatePicker = ({ value, onChange, onClose, anchorEl }) => {
       slots={{ transition: Fade }}
       slotProps={{ transition: { timeout: 200 } }}
     >
-      <Paper
+      <Box
         sx={{
           p: 2,
           minWidth: 320,
-          borderRadius: 1, // Match theme's borderRadius
-          boxShadow: theme.shadows[8],
         }}
       >
         {/* 月份导航 */}
@@ -174,7 +171,7 @@ const CustomDatePicker = ({ value, onChange, onClose, anchorEl }) => {
                   minWidth: 0,
                   width: '100%',
                   height: 36,
-                  borderRadius: 8, // Smaller radius for date buttons
+                  borderRadius: '8px',
                   fontSize: '0.875rem',
                   backgroundColor: isSelected ? theme.palette.primary.main : 'transparent',
                   color: isSelected ? theme.palette.primary.contrastText : 
@@ -200,7 +197,7 @@ const CustomDatePicker = ({ value, onChange, onClose, anchorEl }) => {
             onClick={handleClear}
             size="small"
             sx={{
-              borderRadius: 8, // Match smaller button radius
+              borderRadius: '8px',
               textTransform: 'none',
               color: theme.palette.text.secondary,
             }}
@@ -212,14 +209,14 @@ const CustomDatePicker = ({ value, onChange, onClose, anchorEl }) => {
             size="small"
             variant="outlined"
             sx={{
-              borderRadius: 8, // Match smaller button radius
+              borderRadius: '8px',
               textTransform: 'none',
             }}
           >
             今天
           </Button>
         </Box>
-      </Paper>
+      </Box>
     </Popover>
   );
 };
@@ -269,12 +266,10 @@ const CustomTimePicker = ({ value, onChange, onClose, anchorEl }) => {
       slots={{ transition: Fade }}
       slotProps={{ transition: { timeout: 200 } }}
     >
-      <Paper
+      <Box
         sx={{
           p: 3,
           minWidth: 280,
-          borderRadius: 1, // Match theme's borderRadius
-          boxShadow: theme.shadows[8],
         }}
       >
         <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, textAlign: 'center' }}>
@@ -361,7 +356,7 @@ const CustomTimePicker = ({ value, onChange, onClose, anchorEl }) => {
                 setMinutes(m);
               }}
               sx={{
-                borderRadius: 8, // Match smaller button radius
+                borderRadius: '8px',
                 textTransform: 'none',
                 minWidth: 60,
               }}
@@ -379,7 +374,7 @@ const CustomTimePicker = ({ value, onChange, onClose, anchorEl }) => {
             onClick={handleClear}
             size="small"
             sx={{
-              borderRadius: 8, // Match smaller button radius
+              borderRadius: '8px',
               textTransform: 'none',
               color: theme.palette.text.secondary,
             }}
@@ -391,14 +386,14 @@ const CustomTimePicker = ({ value, onChange, onClose, anchorEl }) => {
             size="small"
             variant="contained"
             sx={{
-              borderRadius: 8, // Match smaller button radius
+              borderRadius: '8px',
               textTransform: 'none',
             }}
           >
             确定
           </Button>
         </Box>
-      </Paper>
+      </Box>
     </Popover>
   );
 };
@@ -473,15 +468,18 @@ const DateTimePicker = ({
               width: '100%',
               justifyContent: 'flex-start',
               textTransform: 'none',
-              borderRadius: 12, // Match theme's borderRadius
+              borderRadius: '12px',
               py: 1.5,
               px: 2,
               pr: dateValue ? 6 : 2,
               color: dateValue ? theme.palette.text.primary : theme.palette.text.secondary,
               borderColor: theme.palette.divider,
+              backgroundColor: theme.custom?.surface?.control,
               '&:hover': {
                 borderColor: !disableDate ? theme.palette.primary.main : theme.palette.divider,
-                backgroundColor: !disableDate ? theme.palette.action.hover : 'transparent',
+                backgroundColor: !disableDate
+                  ? (theme.custom?.surface?.controlHover || theme.palette.action.hover)
+                  : theme.custom?.surface?.control,
               },
               '&.Mui-disabled': {
                 color: theme.palette.text.disabled,
@@ -534,15 +532,18 @@ const DateTimePicker = ({
               width: '100%',
               justifyContent: 'flex-start',
               textTransform: 'none',
-              borderRadius: 12, // Match theme's borderRadius
+              borderRadius: '12px',
               py: 1.5,
               px: 2,
               pr: timeValue ? 6 : 2,
               color: timeValue ? theme.palette.text.primary : theme.palette.text.secondary,
               borderColor: theme.palette.divider,
+              backgroundColor: theme.custom?.surface?.control,
               '&:hover': {
                 borderColor: dateValue ? theme.palette.primary.main : theme.palette.divider,
-                backgroundColor: dateValue ? theme.palette.action.hover : 'transparent',
+                backgroundColor: dateValue
+                  ? (theme.custom?.surface?.controlHover || theme.palette.action.hover)
+                  : theme.custom?.surface?.control,
               },
               '&.Mui-disabled': {
                 color: theme.palette.text.disabled,

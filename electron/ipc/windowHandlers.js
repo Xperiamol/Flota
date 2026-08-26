@@ -54,6 +54,11 @@ const registerWindowHandlers = (windowManager) => {
       }
     },
     'window:create-todo-window': async (event, todoListId) => windowManager.createTodoWindow(todoListId),
+    'window:focus-session-start': async (event, sessionData) => windowManager.startFocusSession(sessionData, getEventWindow(event)),
+    'window:focus-session-update': async (event, sessionData) => windowManager.updateFocusSession(sessionData),
+    'window:focus-session-end': async () => windowManager.endFocusSession(),
+    'window:focus-session-action': async (event, action) => windowManager.handleFocusWindowAction(action),
+    'window:todo-reminder-action': async (event, action) => windowManager.handleTodoReminderAction(action),
     'window:get-all': async () => windowManager.getAllWindows(),
     'window:get-by-id': async (event, id) => windowManager.getWindowById(id),
     'window:close-window': async (event, id) => windowManager.closeWindow(id),

@@ -67,7 +67,7 @@ const isAllowedInvokeChannel = (channel) => (
 const isAllowedEventChannel = (channel) => (
   typeof channel === 'string' &&
   (/^obsidian-[a-z-]+$/.test(channel) ||
-    ['create-new-note', 'create-new-todo', 'open-settings', 'quick-input', 'todo:focus', 'system-theme-changed'].includes(channel))
+    ['create-new-note', 'create-new-todo', 'open-settings', 'quick-input', 'todo:focus', 'todo:changed', 'system-theme-changed'].includes(channel))
 )
 
 // 暴露受保护的方法给渲染进程
@@ -208,6 +208,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   isNoteOpenInWindow: inv('window:is-note-open'),
   createTodoWindow: inv('window:create-todo-window'),
 
+  // 专注伴随浮窗
+  focusWindow: {
+    start: inv('window:focus-session-start'),
+    update: inv('window:focus-session-update'),
+    end: inv('window:focus-session-end'),
+    action: inv('window:focus-session-action'),
+    onUpdate: listen('focus-session:update'),
+    onAction: listen('focus-session:action'),
+  },
+
   // 窗口管理API
   window: {
     minimize: inv('window:minimize'),
@@ -239,6 +249,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeWindowClosingListener: (callback) => {
       ipcRenderer.removeListener('window-closing', callback)
     },
+  },
+
+  todoReminder: {
+    action: inv('window:todo-reminder-action'),
+    onUpdate: listen('todo-reminder:update'),
   },
 
   // 系统相关API
@@ -431,11 +446,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 兼容旧代码的受限 ipcRenderer
   ipcRenderer: {
     on: (channel, callback) => {
-      const validChannels = ['create-new-note', 'create-new-todo', 'open-settings', 'quick-input', 'todo:focus', 'system-theme-changed']
+      const validChannels = ['create-new-note', 'create-new-todo', 'open-settings', 'quick-input', 'todo:focus', 'todo:changed', 'system-theme-changed']
       if (validChannels.includes(channel)) ipcRenderer.on(channel, callback)
     },
     removeAllListeners: (channel) => {
-      const validChannels = ['create-new-note', 'create-new-todo', 'open-settings', 'quick-input', 'todo:focus', 'system-theme-changed']
+      const validChannels = ['create-new-note', 'create-new-todo', 'open-settings', 'quick-input', 'todo:focus', 'todo:changed', 'system-theme-changed']
       if (validChannels.includes(channel)) ipcRenderer.removeAllListeners(channel)
     },
   },

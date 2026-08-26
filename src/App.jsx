@@ -696,6 +696,11 @@ function App() {
             console.error('聚焦待办失败:', error)
           }
         })
+
+        window.electronAPI.ipcRenderer.on('todo:changed', () => {
+          setTodoRefreshTrigger(prev => prev + 1)
+          setCalendarRefreshTrigger(prev => prev + 1)
+        })
       }
     }
 
@@ -722,6 +727,7 @@ function App() {
         window.electronAPI.ipcRenderer.removeAllListeners('open-settings')
         window.electronAPI.ipcRenderer.removeAllListeners('quick-input')
         window.electronAPI.ipcRenderer.removeAllListeners('todo:focus')
+        window.electronAPI.ipcRenderer.removeAllListeners('todo:changed')
       }
     }
   }, [createNote])
@@ -1127,9 +1133,9 @@ function App() {
                     onClose={() => setSecondarySidebarOpen(false)}
                     onTodoSelect={setSelectedTodo}
                     onViewModeChange={setTodoViewMode}
-                    onShowCompletedChange={setTodoShowCompleted}
+                    onShowCompletedChange={currentView === 'calendar' ? setCalendarShowCompleted : setTodoShowCompleted}
                     viewMode={todoViewMode}
-                    showCompleted={todoShowCompleted}
+                    showCompleted={currentView === 'calendar' ? calendarShowCompleted : todoShowCompleted}
                     onMultiSelectChange={setMultiSelectState}
                     onMultiSelectRefChange={setCurrentMultiSelectRef}
                     todoRefreshTrigger={todoRefreshTrigger}
@@ -1156,7 +1162,9 @@ function App() {
                     WebkitBackdropFilter: opacity > 0 ? 'blur(8px)' : 'none',
                   }
                 }}>
-                  {currentView === 'notes' && <NoteEditor />}
+                  {currentView === 'notes' && (
+                    <NoteEditor onCollapseSidebar={() => setSecondarySidebarOpen(false)} />
+                  )}
                   <Suspense fallback={<LoadingFallback />}>
                     {currentView === 'todo' && (
                       <TodoView

@@ -747,15 +747,34 @@ async function initializeServices() {
       }
     })
 
-    // 启动通知服务
-    services.notificationService.start()
-
     // 初始化窗口管理器
     windowManager = new WindowManager(services.settingsService)
+    services.notificationService.setWindowManager(windowManager)
 
     // windowManager 就绪后再注册依赖它的 IPC 处理器，避免闭包捕获 undefined
     const { registerWindowHandlers } = require('./ipc/windowHandlers')
     registerWindowHandlers(windowManager)
+
+    windowManager.on('todo-reminder-action', ({ type, todo, minutes }) => {
+      try {
+        if (type === 'complete') {
+          const updatedTodo = services.todoService.toggleTodoComplete(todo.id)
+          services.todoService.emit('todo-updated', updatedTodo)
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('todo:changed', updatedTodo)
+          }
+        } else if (type === 'snooze') {
+          services.notificationService.snoozeTodo(todo.id, minutes || 10)
+        } else if (type === 'open') {
+          services.notificationService.emit('notification-clicked', todo)
+        }
+      } catch (error) {
+        console.error('处理待办提醒操作失败:', error)
+      }
+    })
+
+    // 窗口管理器就绪后启动提醒，确保首次检查也使用应用内窗口
+    services.notificationService.start()
 
     // 初始化快捷键服务
     shortcutService = new ShortcutService()

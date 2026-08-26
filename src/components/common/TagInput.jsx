@@ -176,17 +176,18 @@ const TagInput = ({
           py: 0.6,
           borderRadius: '12px',
           cursor: disabled ? 'default' : 'text',
-          border: '1.5px solid',
+          border: '1px solid',
           borderColor: focused
             ? theme.palette.primary.main
             : theme.palette.mode === 'dark'
               ? 'rgba(148, 163, 184, 0.22)'
               : 'rgba(148, 163, 184, 0.32)',
-          bgcolor: theme.palette.mode === 'dark'
-            ? 'rgba(255, 255, 255, 0.03)'
-            : 'rgba(15, 23, 42, 0.015)',
-          transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
-          boxShadow: focused ? `0 0 0 3px ${theme.palette.primary.main}1f` : 'none'
+          bgcolor: theme.custom?.surface?.control,
+          transition: 'background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
+          boxShadow: focused ? `0 0 0 2px ${theme.palette.primary.main}1f` : 'none',
+          '&:hover': {
+            bgcolor: theme.custom?.surface?.controlHover || theme.palette.action.hover
+          }
         })}
       >
         <TagIcon sx={{ fontSize: 18, color: 'action.active', ml: 0.25, flexShrink: 0 }} />

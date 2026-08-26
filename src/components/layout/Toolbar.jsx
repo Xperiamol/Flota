@@ -6,20 +6,18 @@ import {
   Typography,
   Button,
   Tooltip,
-  Badge,
-  FormControlLabel,
-  Checkbox
+  Badge
 } from '@mui/material'
 import {
   Add as AddIcon,
   Delete as DeleteIcon,
   Restore as RestoreIcon,
-  Menu as MenuIcon,
-  Close as CloseIcon,
   ChevronLeft,
   ChevronRight,
   Today,
-  EditNote as EditNoteIcon
+  EditNote as EditNoteIcon,
+  VisibilityRounded as VisibilityIcon,
+  VisibilityOffRounded as VisibilityOffIcon
 } from '@mui/icons-material'
 import { useStore } from '../../store/useStore'
 import DropdownMenu from '../common/DropdownMenu'
@@ -372,11 +370,9 @@ const Toolbar = ({
       sx={(theme) => ({
         borderBottom: 1,
         borderColor: 'divider',
-        backgroundColor: theme.palette.mode === 'dark'
-          ? 'rgba(30, 41, 59, 0.85)'
-          : 'rgba(255, 255, 255, 0.85)',
-        backdropFilter: 'blur(12px) saturate(150%)',
-        WebkitBackdropFilter: 'blur(12px) saturate(150%)',
+        backgroundColor: theme.custom?.surface?.glassHeavy,
+        backdropFilter: theme.custom?.glass?.backdropFilter,
+        WebkitBackdropFilter: theme.custom?.glass?.backdropFilter,
         minHeight: '48px !important',
         px: 1.25
       })}
@@ -384,9 +380,13 @@ const Toolbar = ({
       {/* 左侧按钮组 */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
         {viewConfig.showSidebarToggle && (
-          <Tooltip title={sidebarOpen ? t('common.close') : t('common.open')}>
-            <IconButton size="small" onClick={onToggleSidebar}>
-              {sidebarOpen ? <CloseIcon fontSize="small" /> : <MenuIcon fontSize="small" />}
+          <Tooltip title={sidebarOpen ? '收起侧栏' : '展开侧栏'}>
+            <IconButton
+              size="small"
+              onClick={onToggleSidebar}
+              aria-label={sidebarOpen ? '收起侧栏' : '展开侧栏'}
+            >
+              {sidebarOpen ? <ChevronLeft fontSize="small" /> : <ChevronRight fontSize="small" />}
             </IconButton>
           </Tooltip>
         )}
@@ -447,18 +447,58 @@ const Toolbar = ({
                   const onChange = isCalendarView ? onCalendarShowCompletedChange : onTodoShowCompletedChange;
 
                   return (
-                    <FormControlLabel
+                    <Tooltip
                       key={index}
-                      control={
-                        <Checkbox
-                          checked={checked || false}
-                          onChange={(e) => onChange && onChange(e.target.checked)}
-                          size="small"
-                        />
-                      }
-                      label={button.label}
-                      sx={{ mr: 0, '& .MuiFormControlLabel-label': { fontSize: '0.8125rem' } }}
-                    />
+                      title={checked ? '隐藏已完成事项' : '显示已完成事项'}
+                    >
+                      <Button
+                        variant="text"
+                        disableRipple
+                        aria-pressed={Boolean(checked)}
+                        startIcon={checked
+                          ? <VisibilityIcon sx={{ fontSize: '17px !important' }} />
+                          : <VisibilityOffIcon sx={{ fontSize: '17px !important' }} />}
+                        onClick={() => onChange?.(!checked)}
+                        sx={(theme) => ({
+                          height: 30,
+                          minHeight: 30,
+                          minWidth: 0,
+                          px: 1,
+                          borderRadius: '10px',
+                          border: '1px solid',
+                          borderColor: checked
+                            ? theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(15,23,42,0.09)'
+                            : 'transparent',
+                          bgcolor: checked
+                            ? theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.09)' : 'rgba(15,23,42,0.045)'
+                            : 'transparent',
+                          color: checked ? 'text.primary' : 'text.secondary',
+                          boxShadow: checked
+                            ? theme.palette.mode === 'dark'
+                              ? 'inset 0 1px 0 rgba(255,255,255,0.04)'
+                              : '0 1px 3px rgba(15,23,42,0.045), inset 0 1px 0 rgba(255,255,255,0.65)'
+                            : 'none',
+                          textTransform: 'none',
+                          fontSize: '0.8125rem',
+                          fontWeight: 550,
+                          whiteSpace: 'nowrap',
+                          transition: 'background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease',
+                          '& .MuiButton-startIcon': {
+                            mr: 0.65,
+                            ml: 0,
+                            color: checked ? 'text.primary' : 'text.disabled',
+                          },
+                          '&:hover': {
+                            bgcolor: theme.palette.mode === 'dark'
+                              ? 'rgba(255,255,255,0.07)'
+                              : 'rgba(15,23,42,0.05)',
+                            color: 'text.primary',
+                          },
+                        })}
+                      >
+                        {button.label}
+                      </Button>
+                    </Tooltip>
                   );
                 }
                 return null;
@@ -488,7 +528,7 @@ const Toolbar = ({
                           key={option.value}
                           disableElevation
                           disableRipple
-                          variant={isActive ? 'contained' : 'text'}
+                          variant="text"
                           onClick={() => {
                             logger.log('Calendar view mode clicked:', option.value);
                             if (onCalendarViewModeChange) {
@@ -514,7 +554,7 @@ const Toolbar = ({
                           key={option.value}
                           disableElevation
                           disableRipple
-                          variant={isActive ? 'contained' : 'text'}
+                          variant="text"
                           onClick={() => onTodoViewModeChange && onTodoViewModeChange(option.value)}
                           sx={segmentedButtonSx(isActive)}
                         >
@@ -579,7 +619,7 @@ const Toolbar = ({
                     key={option.value}
                     disableElevation
                     disableRipple
-                    variant={active ? 'contained' : 'text'}
+                    variant="text"
                     onClick={() => setTimelineFilter({ dateRange: option.value })}
                     sx={segmentedButtonSx(active)}
                   >
@@ -592,7 +632,14 @@ const Toolbar = ({
               size="small"
               variant="outlined"
               onClick={handleTimelineScrollLatest}
-              sx={{ borderRadius: '10px', height: 30, px: 1.25, fontSize: '0.8125rem' }}
+              sx={{
+                borderRadius: '10px',
+                height: 33,
+                minHeight: 33,
+                boxSizing: 'border-box',
+                px: 1.25,
+                fontSize: '0.8125rem'
+              }}
             >
               最新
             </Button>

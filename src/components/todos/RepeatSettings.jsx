@@ -4,7 +4,6 @@ import {
   Button,
   Typography,
   Popover,
-  Paper,
   Grid,
   IconButton,
   TextField,
@@ -137,14 +136,15 @@ const RepeatSettings = ({ value = {}, onChange }) => {
           width: '100%',
           justifyContent: 'space-between',
           textTransform: 'none',
-          borderRadius: 2,
+          borderRadius: '12px',
           py: 1.5,
           px: 2,
           color: repeatType !== 'none' ? theme.palette.text.primary : theme.palette.text.secondary,
           borderColor: theme.palette.divider,
+          backgroundColor: theme.custom?.surface?.control,
           '&:hover': {
             borderColor: theme.palette.primary.main,
-            backgroundColor: theme.palette.action.hover,
+            backgroundColor: theme.custom?.surface?.controlHover || theme.palette.action.hover,
           },
         }}
       >
@@ -170,13 +170,13 @@ const RepeatSettings = ({ value = {}, onChange }) => {
               mt: 1,
               minWidth: 320,
               maxWidth: 400,
-              borderRadius: 2,
-              boxShadow: theme.shadows[8],
+              borderRadius: '12px',
+              boxShadow: theme.custom?.glass?.boxShadow,
             }
           }
         }}
       >
-        <Paper sx={{ p: 3 }}>
+        <Box sx={{ p: 3 }}>
           {/* 重复类型选择 */}
           <Box sx={{ mb: 3 }}>
             <Typography variant="subtitle2" sx={{ mb: 2, color: theme.palette.text.primary }}>
@@ -198,7 +198,7 @@ const RepeatSettings = ({ value = {}, onChange }) => {
                     sx={{
                       width: '100%',
                       textTransform: 'none',
-                      borderRadius: 1.5,
+                      borderRadius: '8px',
                       py: 1,
                     }}
                   >
@@ -280,8 +280,8 @@ const RepeatSettings = ({ value = {}, onChange }) => {
           {repeatType !== 'none' && (
             <Box sx={{ 
               p: 2, 
-              borderRadius: 2, 
-              backgroundColor: alpha(theme.palette.primary.main, 0.08),
+              borderRadius: '12px',
+              backgroundColor: theme.custom?.surface?.control,
               border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
             }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -292,7 +292,7 @@ const RepeatSettings = ({ value = {}, onChange }) => {
               </Box>
             </Box>
           )}
-        </Paper>
+        </Box>
       </Popover>
     </Box>
   );

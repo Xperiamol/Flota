@@ -353,6 +353,16 @@ const BatchTodoActionCard = ({ action, theme, executing, onExecute }) => {
     return `${m}/${day} ${hh}:${mm}`
   }
 
+  const formatRepeat = (todo) => {
+    const interval = Number(todo.repeat_interval) > 1 ? Number(todo.repeat_interval) : 1
+    const prefix = interval > 1 ? `每${interval}` : '每'
+    if (todo.repeat_type === 'daily') return `${prefix}天`
+    if (todo.repeat_type === 'weekly') return `${prefix}周`
+    if (todo.repeat_type === 'monthly') return `${prefix}月`
+    if (todo.repeat_type === 'yearly') return `${prefix}年`
+    return ''
+  }
+
   return (
     <Paper
       elevation={0}
@@ -412,6 +422,7 @@ const BatchTodoActionCard = ({ action, theme, executing, onExecute }) => {
               )}
               <Box sx={{ display: 'flex', gap: 0.4, mt: 0.4, flexWrap: 'wrap' }}>
                 {t.due_date && <Chip size="small" label={formatDue(t.due_date)} sx={{ height: 18, fontSize: '0.68rem' }} />}
+                {formatRepeat(t) && <Chip size="small" label={formatRepeat(t)} color="primary" variant="outlined" sx={{ height: 18, fontSize: '0.68rem' }} />}
                 {t.is_important && <Chip size="small" label="重要" color="error" sx={{ height: 18, fontSize: '0.68rem' }} />}
                 {t.is_urgent && <Chip size="small" label="紧急" color="warning" sx={{ height: 18, fontSize: '0.68rem' }} />}
               </Box>

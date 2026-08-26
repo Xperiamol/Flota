@@ -230,6 +230,13 @@ const TOOLS = [
           content: { type: 'string', description: '待办内容' },
           description: { type: 'string', description: '详细描述（可选）' },
           due_date: { type: 'string', description: '截止日期，格式 YYYY-MM-DD 或 YYYY-MM-DD HH:mm' },
+          repeat_type: {
+            type: 'string',
+            enum: ['none', 'daily', 'weekly', 'monthly', 'yearly'],
+            description: '重复规则：不重复/每天/每周/每月/每年。用户说“每天、每周、每月、每年”时必须设置对应值'
+          },
+          repeat_interval: { type: 'integer', minimum: 1, maximum: 365, description: '重复间隔，默认 1；例如每 2 周为 2' },
+          repeat_days: { type: 'string', description: '仅每周重复使用，逗号分隔的星期数字：1=周一，…，7=周日，例如“1,3,5”' },
           is_important: { type: 'boolean', description: '是否重要' },
           is_urgent: { type: 'boolean', description: '是否紧急' },
           tags: { type: 'string', description: '标签，用逗号分隔' }
@@ -256,6 +263,13 @@ const TOOLS = [
                 content: { type: 'string', description: '待办内容（具体描述要做什么，10-40 字）' },
                 description: { type: 'string', description: '地点详情、注意事项或具体步骤（可选）' },
                 due_date: { type: 'string', description: '截止时间，YYYY-MM-DDTHH:MM:SS 格式' },
+                repeat_type: {
+                  type: 'string',
+                  enum: ['none', 'daily', 'weekly', 'monthly', 'yearly'],
+                  description: '重复规则：不重复/每天/每周/每月/每年'
+                },
+                repeat_interval: { type: 'integer', minimum: 1, maximum: 365, description: '重复间隔，默认 1' },
+                repeat_days: { type: 'string', description: '仅每周重复使用：1=周一，…，7=周日，多个用逗号分隔' },
                 is_important: { type: 'boolean', description: '是否重要' },
                 is_urgent: { type: 'boolean', description: '是否紧急' },
                 tags: { type: 'string', description: '标签，用逗号分隔（可选）' }

@@ -74,9 +74,9 @@ const DropdownMenu = ({
         transformOrigin={transformOrigin}
         slotProps={{
           paper: {
-            sx: {
+            sx: (theme) => ({
               minWidth: 160,
-              boxShadow: (theme) => theme.shadows[8],
+              boxShadow: theme.custom?.glass?.boxShadow,
               '& .MuiMenuItem-root': {
                 fontSize: '0.875rem',
                 minHeight: 40,
@@ -92,7 +92,7 @@ const DropdownMenu = ({
                   }
                 }
               }
-            }
+            })
           }
         }}
       >

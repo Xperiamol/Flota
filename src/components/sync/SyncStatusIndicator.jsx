@@ -401,12 +401,12 @@ const SyncStatusIndicator = () => {
         slotProps={{
           paper: {
             sx: (theme) => ({
-              backdropFilter: 'blur(20px) saturate(180%)',
-              WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-              backgroundColor: theme.palette.mode === 'dark'
-                ? 'rgba(30, 41, 59, 0.85)'
-                : 'rgba(255, 255, 255, 0.85)',
-              border: `1px solid ${theme.palette.divider}`,
+              backdropFilter: theme.custom?.glass?.backdropFilter,
+              WebkitBackdropFilter: theme.custom?.glass?.backdropFilter,
+              backgroundColor: theme.custom?.glass?.background,
+              backgroundImage: theme.custom?.glass?.backgroundImage,
+              border: theme.custom?.glass?.border,
+              boxShadow: theme.custom?.glass?.boxShadow,
               borderRadius: '8px',
               maxHeight: '80vh'
             })

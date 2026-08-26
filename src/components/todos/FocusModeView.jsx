@@ -96,6 +96,7 @@ const FocusModeView = ({
 
   const [activeIndex, setActiveIndex] = useState(0);
   const [isFocusing, setIsFocusing] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
@@ -111,11 +112,15 @@ const FocusModeView = ({
   const { primaryColor } = useStore();
 
   const focusStartRef = useRef(null);
+  const accumulatedFocusSecondsRef = useRef(0);
+  const focusSessionActiveRef = useRef(false);
   const timerRef = useRef(null);
   const previousTodoIdRef = useRef(null);
   const pressAnimationRef = useRef(null);
   const rippleTimeoutRef = useRef(null);
   const buttonRef = useRef(null);
+  const focusWindowSessionRef = useRef(false);
+  const focusWindowActionRef = useRef({});
 
   const currentTodo = focusCandidates.length > 0 ? focusCandidates[clampIndex(activeIndex, focusCandidates.length)] : null;
 
@@ -128,7 +133,7 @@ const FocusModeView = ({
   }, [focusCandidates.length]);
 
   useEffect(() => {
-    if (!isFocusing) {
+    if (!isFocusing || isPaused) {
       clearInterval(timerRef.current);
       timerRef.current = null;
       return;
@@ -136,7 +141,8 @@ const FocusModeView = ({
 
     timerRef.current = setInterval(() => {
       if (focusStartRef.current) {
-        const elapsed = Math.round((Date.now() - focusStartRef.current) / 1000);
+        const elapsed = accumulatedFocusSecondsRef.current
+          + Math.round((Date.now() - focusStartRef.current) / 1000);
         setElapsedSeconds(elapsed);
       }
     }, 1000);
@@ -145,23 +151,32 @@ const FocusModeView = ({
       clearInterval(timerRef.current);
       timerRef.current = null;
     };
-  }, [isFocusing]);
+  }, [isFocusing, isPaused]);
 
   const stopSession = useCallback(
     async ({ persist = true, silent = false } = {}) => {
-      if (!focusStartRef.current || !currentTodo) {
+      if (!focusSessionActiveRef.current || !currentTodo) {
         setIsFocusing(false);
+        setIsPaused(false);
         setElapsedSeconds(0);
         setShowFocusBackground(false); // 重置背景色状态
         focusStartRef.current = null;
+        accumulatedFocusSecondsRef.current = 0;
+        focusSessionActiveRef.current = false;
         return;
       }
 
-      const durationSeconds = Math.max(1, Math.round((Date.now() - focusStartRef.current) / 1000));
+      const runningSegmentSeconds = focusStartRef.current
+        ? Math.round((Date.now() - focusStartRef.current) / 1000)
+        : 0;
+      const durationSeconds = Math.max(1, accumulatedFocusSecondsRef.current + runningSegmentSeconds);
       setIsFocusing(false);
+      setIsPaused(false);
       setElapsedSeconds(0);
       setShowFocusBackground(false); // 重置背景色状态
       focusStartRef.current = null;
+      accumulatedFocusSecondsRef.current = 0;
+      focusSessionActiveRef.current = false;
 
       if (!persist || !onLogFocusTime) {
         return;
@@ -202,7 +217,7 @@ const FocusModeView = ({
   }, [currentTodo, isFocusing, stopSession]);
 
   useEffect(() => () => {
-    if (focusStartRef.current) {
+    if (focusSessionActiveRef.current) {
       stopSession({ persist: true, silent: true });
     }
     if (pressAnimationRef.current) {
@@ -226,8 +241,11 @@ const FocusModeView = ({
       });
     }
     
+    accumulatedFocusSecondsRef.current = 0;
+    focusSessionActiveRef.current = true;
     focusStartRef.current = Date.now();
     setElapsedSeconds(0);
+    setIsPaused(false);
     setIsFocusing(true);
     setFeedback(null);
     
@@ -245,7 +263,25 @@ const FocusModeView = ({
     }, 800); // 波纹动画0.8秒后结束
   };
 
-  const handleStopFocus = async () => {
+  const handlePauseFocus = useCallback(() => {
+    if (!focusSessionActiveRef.current || isPaused || !focusStartRef.current) return;
+    const durationSeconds = accumulatedFocusSecondsRef.current
+      + Math.round((Date.now() - focusStartRef.current) / 1000);
+    accumulatedFocusSecondsRef.current = durationSeconds;
+    focusStartRef.current = null;
+    setElapsedSeconds(durationSeconds);
+    setIsPaused(true);
+    setShowFocusBackground(false);
+  }, [isPaused]);
+
+  const handleResumeFocus = useCallback(() => {
+    if (!focusSessionActiveRef.current || !isPaused) return;
+    focusStartRef.current = Date.now();
+    setIsPaused(false);
+    setShowFocusBackground(true);
+  }, [isPaused]);
+
+  const handleStopFocus = useCallback(async () => {
     // 立即隐藏背景色
     setShowFocusBackground(false);
     
@@ -261,7 +297,7 @@ const FocusModeView = ({
         clearTimeout(rippleTimeoutRef.current);
       }
     }, 800); // 汇聚动画持续时间
-  };
+  }, [stopSession]);
 
   const startLongPress = () => {
     if (!currentTodo || isCompleting) return;
@@ -322,6 +358,66 @@ const FocusModeView = ({
   const totalFocusedSeconds = currentTodo
     ? (currentTodo.focus_time_seconds || 0) + (isFocusing ? elapsedSeconds : 0)
     : 0;
+
+  focusWindowActionRef.current.stop = handleStopFocus;
+  focusWindowActionRef.current.pause = handlePauseFocus;
+  focusWindowActionRef.current.resume = handleResumeFocus;
+
+  useEffect(() => {
+    const api = window.electronAPI?.focusWindow;
+    if (!api?.onAction) return undefined;
+
+    const unsubscribe = api.onAction((action) => {
+      const handler = action?.type ? focusWindowActionRef.current[action.type] : null;
+      if (typeof handler === 'function') handler();
+    });
+
+    return () => unsubscribe?.();
+  }, []);
+
+  useEffect(() => {
+    const api = window.electronAPI?.focusWindow;
+    if (!api || !currentTodo || !isFocusing || !focusSessionActiveRef.current) {
+      if (focusWindowSessionRef.current && api?.end) {
+        focusWindowSessionRef.current = false;
+        api.end().catch(() => {});
+      }
+      return;
+    }
+
+    const payload = {
+      todoId: currentTodo.id,
+      title: currentTodo.content || currentTodo.title || '正在专注',
+      startedAt: focusStartRef.current,
+      elapsedSeconds,
+      syncedAt: Date.now(),
+      baseFocusSeconds: Number(currentTodo.focus_time_seconds) || 0,
+      isFocusing: true,
+      isPaused,
+      dueLabel: currentTodo.due_date
+        ? TimeZoneUtils.formatForDisplay(currentTodo.due_date, { shortFormat: true })
+        : '',
+      priorityLabel: currentTodo.priorityKey ? getPriorityText(currentTodo.priorityKey) : '',
+      priorityColor: currentTodo.priorityKey ? getPriorityColor(currentTodo.priorityKey) : primaryColor,
+      tags: currentTodo.tags || []
+    };
+
+    if (!focusWindowSessionRef.current) {
+      focusWindowSessionRef.current = true;
+      api.start(payload).catch(() => {
+        focusWindowSessionRef.current = false;
+      });
+    } else {
+      api.update(payload).catch(() => {});
+    }
+  }, [currentTodo, elapsedSeconds, isFocusing, isPaused, primaryColor]);
+
+  useEffect(() => () => {
+    if (focusWindowSessionRef.current) {
+      focusWindowSessionRef.current = false;
+      window.electronAPI?.focusWindow?.end?.().catch(() => {});
+    }
+  }, []);
 
   return (
     <ClickAwayListener onClickAway={() => setShowTodoList(false)}>
@@ -535,7 +631,7 @@ const FocusModeView = ({
                   fontFamily: '"OPPOSans R", "OPPOSans", system-ui, -apple-system, sans-serif'
                 }}
               >
-                {formatSeconds(elapsedSeconds)} 本次进行中
+                {isPaused ? `${formatSeconds(elapsedSeconds)} 已暂停` : `${formatSeconds(elapsedSeconds)} 本次进行中`}
               </Typography>
             )}
           </Box>
@@ -546,23 +642,18 @@ const FocusModeView = ({
             <Fab
               ref={buttonRef}
               size="large"
-              color={isFocusing ? 'error' : 'primary'}
-              onClick={isFocusing ? handleStopFocus : handleStartFocus}
+              color="primary"
+              onClick={!isFocusing ? handleStartFocus : isPaused ? handleResumeFocus : handlePauseFocus}
               disabled={!currentTodo || isSaving || isCompleting}
               sx={{
                 width: 72,
                 height: 72,
                 fontSize: '1.5rem',
-                boxShadow: (theme) =>
-                  isFocusing
-                    ? `0 8px 32px ${theme.palette.error.main}40`
-                    : `0 8px 32px ${theme.palette.primary.main}30`,
+                boxShadow: (theme) => `0 8px 32px ${theme.palette.primary.main}${isPaused ? '20' : '30'}`,
+                opacity: isPaused ? 0.84 : 1,
                 transition: 'background-color 180ms cubic-bezier(0.32,0.72,0,1), box-shadow 180ms cubic-bezier(0.32,0.72,0,1), filter 120ms cubic-bezier(0.32,0.72,0,1), color 180ms cubic-bezier(0.32,0.72,0,1)',
                 '&:hover': {
-                  boxShadow: (theme) =>
-                    isFocusing
-                      ? `0 10px 36px ${theme.palette.error.main}52`
-                      : `0 10px 36px ${theme.palette.primary.main}42`,
+                  boxShadow: (theme) => `0 10px 36px ${theme.palette.primary.main}42`,
                   filter: 'brightness(1.04)',
                 },
                 '&:active': {
@@ -570,7 +661,9 @@ const FocusModeView = ({
                 }
               }}
             >
-              {isFocusing ? <PauseIcon sx={{ fontSize: '2rem' }} /> : <PlayArrowIcon sx={{ fontSize: '2rem' }} />}
+              {!isFocusing || isPaused
+                ? <PlayArrowIcon sx={{ fontSize: '2rem' }} />
+                : <PauseIcon sx={{ fontSize: '2rem' }} />}
             </Fab>
 
             {/* 完成按钮 */}
@@ -670,15 +763,13 @@ const FocusModeView = ({
                 transform: 'translate(-50%, -50%)',
                 width: { xs: '90%', sm: 400 },
                 maxHeight: '60vh',
-                backgroundColor: (theme) => 
-                  theme.palette.mode === 'dark' 
-                    ? 'rgba(18, 18, 18, 0.95)' 
-                    : 'rgba(255, 255, 255, 0.95)',
-                backdropFilter: 'blur(20px)',
-                borderRadius: '8px',
-                border: '1px solid',
-                borderColor: 'divider',
-                boxShadow: (theme) => theme.shadows[10],
+                backgroundColor: (theme) => theme.custom?.glass?.background,
+                backgroundImage: (theme) => theme.custom?.glass?.backgroundImage,
+                backdropFilter: (theme) => theme.custom?.glass?.backdropFilter,
+                WebkitBackdropFilter: (theme) => theme.custom?.glass?.backdropFilter,
+                borderRadius: '16px',
+                border: (theme) => theme.custom?.glass?.border,
+                boxShadow: (theme) => theme.custom?.glass?.boxShadow,
                 overflow: 'hidden',
                 zIndex: 3
               }}

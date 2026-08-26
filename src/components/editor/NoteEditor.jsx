@@ -116,7 +116,7 @@ const countEditorWords = (content = '') => {
   }
 }
 
-const NoteEditor = () => {
+const NoteEditor = ({ onCollapseSidebar }) => {
   // 检测是否在独立窗口模式下运行
   let standaloneContext = null
   let isStandaloneMode = false
@@ -927,6 +927,25 @@ const NoteEditor = () => {
       showError(error, '切换全屏失败')
     }
   }, [showError])
+
+  const handleFocusMode = useCallback((event) => {
+    if (event?.shiftKey) {
+      void handleToggleFullscreen()
+      return
+    }
+
+    if (isFullscreen) {
+      setFullscreenToolbarExpanded(false)
+    } else if (isMinibarMode) {
+      setMinibarToolbarExpanded(false)
+    } else {
+      setUserToolbarCollapsed(true)
+    }
+
+    if (!isStandaloneMode) {
+      onCollapseSidebar?.()
+    }
+  }, [handleToggleFullscreen, isFullscreen, isMinibarMode, isStandaloneMode, onCollapseSidebar])
 
   // 处理笔记类型切换
   const handleNoteTypeChange = async (newType) => {
@@ -1838,10 +1857,10 @@ const NoteEditor = () => {
     },
     {
       key: 'fullscreen',
-      label: isFullscreen ? t('notes.exitFullscreen') : t('notes.fullscreen'),
+      label: `收起工具栏与侧栏（Shift+点击${isFullscreen ? '退出全屏' : '全屏'}）`,
       icon: isFullscreen ? <FullscreenExitIcon sx={{ fontSize: 18 }} /> : <FullscreenIcon sx={{ fontSize: 18 }} />,
       active: isFullscreen,
-      onClick: handleToggleFullscreen,
+      onClick: handleFocusMode,
     },
     {
       key: 'pin',
@@ -2044,9 +2063,11 @@ const NoteEditor = () => {
               backgroundColor: theme.palette.mode === 'dark'
                 ? 'rgba(15, 23, 42, 0.55)'
                 : 'rgba(255, 255, 255, 0.7)',
-              backdropFilter: 'blur(20px) saturate(160%)',
-              WebkitBackdropFilter: 'blur(20px) saturate(160%)',
-              opacity: 0.45,
+              border: '1px solid',
+              borderColor: 'divider',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              opacity: 0.62,
               transition: 'opacity 160ms ease',
               '&:hover': {
                 opacity: 1,
@@ -2077,10 +2098,10 @@ const NoteEditor = () => {
           gap: 0.5,
           overflow: 'hidden',
           backgroundColor: (theme) => theme.palette.mode === 'dark'
-            ? 'rgba(15, 23, 42, 0.58)'
-            : 'rgba(255, 255, 255, 0.74)',
-          backdropFilter: 'blur(30px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(30px) saturate(180%)',
+            ? 'rgba(15, 23, 42, 0.88)'
+            : 'rgba(255, 255, 255, 0.92)',
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)',
         }}
       >
         <Box sx={{
@@ -2263,7 +2284,7 @@ const NoteEditor = () => {
                 height: 32,
                 px: 1,
                 gap: 0.5,
-                borderRadius: '999px',
+                borderRadius: '10px',
                 textTransform: 'none',
                 color: noteTags.length > 0 ? 'text.primary' : 'text.secondary',
                 border: '1px solid',
@@ -2323,8 +2344,10 @@ const NoteEditor = () => {
         <Box ref={typeSwitchRef} sx={{
           display: 'flex', alignItems: 'center', gap: '3px',
           flexShrink: 0,
+          height: 32,
+          boxSizing: 'border-box',
           bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)',
-          borderRadius: '12px', p: '2px',
+          borderRadius: '10px', p: '2px',
         }}>
           {[{ value: 'markdown', Icon: ArticleIcon, label: 'Markdown' },
             { value: 'whiteboard', Icon: WhiteboardIcon, label: '画布' }].map((item) => {
@@ -2334,28 +2357,32 @@ const NoteEditor = () => {
                 key={item.value}
                 disableElevation
                 disableRipple
-                variant={isActive ? 'contained' : 'text'}
+                variant="text"
                 onClick={() => isActive ? null : handleNoteTypeChange(item.value)}
                 sx={{
-                  px: compactToolbar ? 0.9 : 1.5, py: 0, height: 28, minHeight: 28, minWidth: 0,
+                  px: compactToolbar ? 0 : 1.25, py: 0,
+                  width: compactToolbar ? 28 : 'auto',
+                  height: 28, minHeight: 28, minWidth: compactToolbar ? 28 : 0,
                   fontSize: '0.78rem', fontWeight: 600,
-                  borderRadius: '9px', textTransform: 'none', lineHeight: 1,
+                  borderRadius: '8px', textTransform: 'none', lineHeight: 1,
+                  border: '1px solid transparent',
                   letterSpacing: '0.01em',
-                  transition: 'all 0.25s cubic-bezier(.4,0,.2,1)',
+                  transition: 'background-color 180ms cubic-bezier(.4,0,.2,1), color 180ms cubic-bezier(.4,0,.2,1), box-shadow 180ms cubic-bezier(.4,0,.2,1)',
                   ...(isActive ? {
                     bgcolor: (theme) => theme.palette.mode === 'dark'
-                      ? 'rgba(255,255,255,0.13)'
-                      : 'primary.main',
-                    color: (theme) => theme.palette.mode === 'dark'
-                      ? '#fff'
-                      : 'primary.contrastText',
+                      ? 'rgba(255,255,255,0.105)'
+                      : 'rgba(255,255,255,0.82)',
+                    color: 'text.primary',
+                    borderColor: (theme) => theme.palette.mode === 'dark'
+                      ? 'rgba(255,255,255,0.1)'
+                      : 'rgba(15,23,42,0.09)',
                     boxShadow: (theme) => theme.palette.mode === 'dark'
-                      ? '0 1px 4px rgba(0,0,0,0.3)'
-                      : `0 2px 8px ${theme.palette.primary.main}33`,
+                      ? '0 1px 3px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.05)'
+                      : '0 1px 4px rgba(15,23,42,0.07), inset 0 1px 0 rgba(255,255,255,0.8)',
                     '&:hover': {
                       bgcolor: (theme) => theme.palette.mode === 'dark'
-                        ? 'rgba(255,255,255,0.18)'
-                        : 'primary.dark',
+                        ? 'rgba(255,255,255,0.13)'
+                        : 'rgba(255,255,255,0.94)',
                     },
                   } : {
                     color: 'text.secondary',
@@ -2377,7 +2404,8 @@ const NoteEditor = () => {
         <Box sx={{
           display: 'flex', alignItems: 'center', gap: 0,
           flexShrink: 0,
-          p: 0.25, borderRadius: '10px',
+          height: 32, boxSizing: 'border-box',
+          p: '2px', borderRadius: '10px',
           bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(15, 23, 42, 0.06)'
         }}>
           {toolbarActions.map((action, index) => {
@@ -2403,10 +2431,13 @@ const NoteEditor = () => {
                     onMouseLeave={action.onMouseLeave}
                     size="small"
                     sx={{
+                      width: 28,
+                      height: 28,
+                      p: 0,
                       borderRadius: '8px',
-                      color: action.active ? 'primary.main' : 'text.secondary',
+                      color: action.active ? 'text.primary' : 'text.secondary',
                       bgcolor: action.active
-                        ? (theme) => theme.palette.mode === 'dark' ? 'rgba(96,165,250,0.16)' : 'rgba(25,118,210,0.1)'
+                        ? (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.105)' : 'rgba(255,255,255,0.82)'
                         : 'transparent',
                     }}
                   >
@@ -2433,8 +2464,14 @@ const NoteEditor = () => {
                 onClick={(e) => setActionMenuAnchor(e.currentTarget)}
                 size="small"
                 sx={{
+                  width: 28,
+                  height: 28,
+                  p: 0,
                   borderRadius: '8px',
-                  color: actionMenuAnchor ? 'primary.main' : 'text.secondary',
+                  color: actionMenuAnchor ? 'text.primary' : 'text.secondary',
+                  bgcolor: actionMenuAnchor
+                    ? (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.105)' : 'rgba(255,255,255,0.82)'
+                    : 'transparent',
                 }}
               >
                 <MoreIcon sx={{ fontSize: 18 }} />
@@ -2452,7 +2489,7 @@ const NoteEditor = () => {
             {overflowActions.map((action) => (
               <MenuItem
                 key={action.key}
-                onClick={() => { action.onClick(); setActionMenuAnchor(null) }}
+                onClick={(event) => { action.onClick(event); setActionMenuAnchor(null) }}
                 selected={action.active}
               >
                 <ListItemIcon>{action.icon}</ListItemIcon>
@@ -2565,10 +2602,10 @@ const NoteEditor = () => {
               borderBottom: 1,
               borderColor: 'divider',
               backgroundColor: theme.palette.mode === 'dark'
-                ? 'rgba(15, 23, 42, 0.58)'
-                : 'rgba(255, 255, 255, 0.74)',
-              backdropFilter: 'blur(30px) saturate(180%)',
-              WebkitBackdropFilter: 'blur(30px) saturate(180%)'
+                ? 'rgba(15, 23, 42, 0.88)'
+                : 'rgba(255, 255, 255, 0.92)',
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)'
             })}
           >
             <Typography sx={{ fontSize: 11, fontWeight: 700, color: 'text.disabled', letterSpacing: '0.04em', mr: 0.5, flexShrink: 0 }}>
@@ -2617,10 +2654,10 @@ const NoteEditor = () => {
               borderBottom: 1,
               borderColor: 'divider',
               backgroundColor: theme.palette.mode === 'dark'
-                ? 'rgba(15, 23, 42, 0.58)'
-                : 'rgba(255, 255, 255, 0.74)',
-              backdropFilter: 'blur(30px) saturate(180%)',
-              WebkitBackdropFilter: 'blur(30px) saturate(180%)'
+                ? 'rgba(15, 23, 42, 0.88)'
+                : 'rgba(255, 255, 255, 0.92)',
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)'
             })}
           >
             <Typography sx={{ fontSize: 11, fontWeight: 700, color: 'text.disabled', letterSpacing: '0.04em', mr: 0.5 }}>
@@ -2877,18 +2914,13 @@ const NoteEditor = () => {
               mt: 0.75,
               width: 360,
               maxWidth: 'calc(100vw - 32px)',
-              borderRadius: '16px',
-              border: '1px solid',
-              borderColor: theme.palette.mode === 'dark'
-                ? 'rgba(148, 163, 184, 0.18)'
-                : 'rgba(148, 163, 184, 0.22)',
-              bgcolor: theme.palette.mode === 'dark'
-                ? 'rgba(15, 23, 42, 0.82)'
-                : 'rgba(255, 255, 255, 0.84)',
-              backdropFilter: 'blur(22px) saturate(180%)',
-              WebkitBackdropFilter: 'blur(22px) saturate(180%)',
-              boxShadow: '0 18px 56px rgba(15, 23, 42, 0.22), 0 4px 16px rgba(15, 23, 42, 0.10)',
-              backgroundImage: 'none',
+              borderRadius: '12px',
+              border: theme.custom?.glass?.border,
+              backgroundColor: theme.custom?.glass?.background,
+              backgroundImage: theme.custom?.glass?.backgroundImage,
+              backdropFilter: theme.custom?.glass?.backdropFilter,
+              WebkitBackdropFilter: theme.custom?.glass?.backdropFilter,
+              boxShadow: theme.custom?.glass?.boxShadow,
               overflow: 'visible',
             })
           }
@@ -2936,16 +2968,12 @@ const NoteEditor = () => {
               maxWidth: 'calc(100vw - 32px)',
               borderRadius: '14px',
               overflow: 'hidden',
-              border: '1px solid',
-              borderColor: theme.palette.mode === 'dark'
-                ? 'rgba(148, 163, 184, 0.18)'
-                : 'rgba(148, 163, 184, 0.24)',
-              bgcolor: theme.palette.mode === 'dark'
-                ? 'rgba(15, 23, 42, 0.78)'
-                : 'rgba(255, 255, 255, 0.78)',
-              backdropFilter: 'blur(18px) saturate(160%)',
-              WebkitBackdropFilter: 'blur(18px) saturate(160%)',
-              boxShadow: '0 18px 56px rgba(15, 23, 42, 0.22), 0 4px 16px rgba(15, 23, 42, 0.10)',
+              border: theme.custom?.glass?.border,
+              backgroundColor: theme.custom?.glass?.background,
+              backgroundImage: theme.custom?.glass?.backgroundImage,
+              backdropFilter: theme.custom?.glass?.backdropFilter,
+              WebkitBackdropFilter: theme.custom?.glass?.backdropFilter,
+              boxShadow: theme.custom?.glass?.boxShadow,
               backgroundClip: 'padding-box',
             })
           }

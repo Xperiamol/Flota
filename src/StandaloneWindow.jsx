@@ -11,6 +11,8 @@ import './styles/index.css'
 import TitleBar from './components/layout/TitleBar'
 import NoteEditor from './components/editor/NoteEditor'
 import TodoList from './components/todos/TodoList'
+import FocusMiniWindow from './components/todos/FocusMiniWindow'
+import TodoReminderWindow from './components/todos/TodoReminderWindow'
 import StandaloneProvider, { useStandaloneContext } from './components/common/StandaloneProvider'
 import { useStandaloneStore } from './store/useStandaloneStore'
 import { ErrorProvider } from './components/common/ErrorProvider'
@@ -225,6 +227,38 @@ function StandaloneWindow() {
             return
           }
 
+        } else if (type === 'focus') {
+          logger.log('设置专注伴随窗口类型，通过IPC拉取数据...')
+          try {
+            const result = await window.electronAPI.window.getInitData()
+            if (!result?.success || !result.data) {
+              setError('无法加载专注会话')
+              return
+            }
+            setWindowType('focus')
+            setWindowData(result.data)
+          } catch (e) {
+            console.error('IPC拉取专注会话失败:', e)
+            setError('加载专注会话时出错')
+            return
+          }
+
+        } else if (type === 'reminder') {
+          logger.log('设置待办提醒窗口类型，通过IPC拉取数据...')
+          try {
+            const result = await window.electronAPI.window.getInitData()
+            if (!result?.success || !result.data) {
+              setError('无法加载待办提醒')
+              return
+            }
+            setWindowType('reminder')
+            setWindowData(result.data)
+          } catch (e) {
+            console.error('IPC拉取待办提醒失败:', e)
+            setError('加载待办提醒时出错')
+            return
+          }
+
         } else {
           console.error('无效的窗口参数:', { type, noteId: noteIdParam })
           setError('无效的窗口参数')
@@ -352,25 +386,27 @@ function StandaloneWindow() {
         <CssBaseline />
         <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
           {/* 使用主应用的TitleBar组件 */}
-          <TitleBar 
-          isStandalone={true} 
-          isMinibarMode={store.minibarMode}
-          onMinibarClick={async () => {
-            if (store.minibarMode) {
-              // 退出minibar模式
-              store.setMinibarMode(false);
-              if (window.electronAPI) {
-                await window.electronAPI.window.setSize(800, 600); // 恢复默认大小
-              }
-            } else {
-              // 进入minibar模式
-              store.setMinibarMode(true);
-              if (window.electronAPI) {
-                await window.electronAPI.window.setSize(300, 280);
-              }
-            }
-          }}
-        />
+          {windowType && !['focus', 'reminder'].includes(windowType) && (
+            <TitleBar
+              isStandalone={true}
+              isMinibarMode={store.minibarMode}
+              onMinibarClick={async () => {
+                if (store.minibarMode) {
+                  // 退出minibar模式
+                  store.setMinibarMode(false);
+                  if (window.electronAPI) {
+                    await window.electronAPI.window.setSize(800, 600); // 恢复默认大小
+                  }
+                } else {
+                  // 进入minibar模式
+                  store.setMinibarMode(true);
+                  if (window.electronAPI) {
+                    await window.electronAPI.window.setSize(300, 280);
+                  }
+                }
+              }}
+            />
+          )}
         {isLoading && (
           <Box sx={{
             display: 'flex',
@@ -400,7 +436,15 @@ function StandaloneWindow() {
           </Box>
         )}
 
-        {!isLoading && !error && windowType && windowData && (
+        {!isLoading && !error && windowType === 'focus' && windowData && (
+          <FocusMiniWindow initialData={windowData} />
+        )}
+
+        {!isLoading && !error && windowType === 'reminder' && windowData && (
+          <TodoReminderWindow initialData={windowData} />
+        )}
+
+        {!isLoading && !error && windowType && !['focus', 'reminder'].includes(windowType) && windowData && (
           <StandaloneProvider windowType={windowType} windowData={windowData}>
             <StandaloneContent windowType={windowType} />
           </StandaloneProvider>

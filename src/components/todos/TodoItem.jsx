@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ListItem,
   ListItemIcon,
@@ -10,7 +10,8 @@ import {
   Box,
   Tooltip,
   Checkbox,
-  Paper
+  Paper,
+  Collapse
 } from '@mui/material';
 import {
   CheckCircle,
@@ -32,6 +33,7 @@ import {
 import { ANIMATIONS, createAnimationString, createTransitionString, GREEN_SWEEP_KEYFRAMES } from '../../utils/animationConfig';
 import { t } from '../../utils/i18n';
 import { isRecurringTodo, isTodoCompleted, isTodoOverdue, isTodoDueToday, isFutureRecurringTodo } from '../../utils/todoDisplayUtils';
+import InlineSubtaskList, { SubtaskExpandButton, todoRowActionRevealSx } from './InlineSubtaskList';
 
 const COMPLETION_BUTTON_SIZE = 32;
 const COMPLETION_ICON_SIZE = 22;
@@ -108,15 +110,20 @@ const TodoItem = ({
   compact = false,
   variant = 'default', // 'default', 'calendar', 'mydaypanel', 'quadrant'
   onDragStart,
-  onDragEnd
+  onDragEnd,
+  subtasks = [],
+  subtaskBusyIds = new Set(),
+  onToggleSubtask
 }) => {
   const theme = useTheme();
+  const [subtasksExpanded, setSubtasksExpanded] = useState(false);
 
   // Schedule model: for recurring todos, derive completion state from due_date
   const isRecurring = isRecurringTodo(todo);
   const isCompleted = isTodoCompleted(todo);
   // due_date > today → 下一周期未到，不可提前完成
   const isFutureRecurring = isFutureRecurringTodo(todo);
+  const hasInlineSubtasks = variant !== 'calendar' && subtasks.length > 0;
 
   // 优先级信息
   const priority = getPriorityLabel(todo);
@@ -138,6 +145,7 @@ const TodoItem = ({
       },
       opacity: isCompleted ? 0.6 : 1
     };
+    Object.assign(baseStyles, todoRowActionRevealSx);
 
     // 庆祝动画样式
     if (celebratingTodos.has(todo.id)) {
@@ -162,11 +170,22 @@ const TodoItem = ({
 
   // 渲染完成状态图标
   const renderCompletionIcon = () => {
+    if (hasInlineSubtasks) {
+      return (
+        <SubtaskExpandButton
+          subtasks={subtasks}
+          expanded={subtasksExpanded}
+          onToggle={() => setSubtasksExpanded((current) => !current)}
+          size={COMPLETION_BUTTON_SIZE}
+        />
+      );
+    }
+
     // 未来重复周期：显示时钟图标，不可点击
     if (isFutureRecurring) {
       return (
         <Tooltip title="下一周期未到，暂不可完成">
-          <IconButton size="small" disabled sx={{ ...completionButtonBaseSx, opacity: 0.35 }}>
+          <IconButton className="todo-row-action" size="small" disabled sx={completionButtonBaseSx}>
             <ScheduleIcon sx={completionIconSx} />
           </IconButton>
         </Tooltip>
@@ -174,6 +193,7 @@ const TodoItem = ({
     }
 
     const iconProps = {
+      className: 'todo-row-action',
       size: "small",
       onClick: (e) => {
         e.stopPropagation();
@@ -210,11 +230,22 @@ const TodoItem = ({
 
   // TodoList 变体的复杂图标渲染
   const renderTodoListIcon = () => {
+    if (hasInlineSubtasks) {
+      return (
+        <SubtaskExpandButton
+          subtasks={subtasks}
+          expanded={subtasksExpanded}
+          onToggle={() => setSubtasksExpanded((current) => !current)}
+          size={COMPLETION_BUTTON_SIZE}
+        />
+      );
+    }
+
     // 未来重复周期：显示时钟图标，不可点击
     if (isFutureRecurring) {
       return (
         <Tooltip title="下一周期未到，暂不可完成">
-          <IconButton size="small" disabled sx={{ ...completionButtonBaseSx, opacity: 0.35 }}>
+          <IconButton className="todo-row-action" size="small" disabled sx={completionButtonBaseSx}>
             <ScheduleIcon sx={completionIconSx} />
           </IconButton>
         </Tooltip>
@@ -223,6 +254,7 @@ const TodoItem = ({
 
     return (
       <IconButton
+        className="todo-row-action"
         size="small"
         onClick={(e) => {
           e.stopPropagation();
@@ -340,6 +372,22 @@ const TodoItem = ({
     );
   };
 
+  const renderInlineSubtasks = (inlineSx) => {
+    if (!hasInlineSubtasks) return null;
+
+    return (
+      <Collapse in={subtasksExpanded} timeout={180} unmountOnExit>
+        <InlineSubtaskList
+          subtasks={subtasks}
+          busyIds={subtaskBusyIds}
+          onToggle={onToggleSubtask}
+          compact={compact}
+          sx={inlineSx}
+        />
+      </Collapse>
+    );
+  };
+
   // 根据变体选择不同的渲染方式
   if (variant === 'calendar') {
     // 日历视图的简化版本
@@ -349,14 +397,15 @@ const TodoItem = ({
         sx={{
           display: 'flex',
           alignItems: 'center',
-          gap: 1,
           p: 0.5,
           borderRadius: 1,
           cursor: 'pointer',
           ...getItemStyles()
         }}
       >
-        {renderCompletionIcon()}
+        <Box sx={{ position: 'absolute', left: 4, top: '50%', transform: 'translateY(-50%)', zIndex: 2 }}>
+          {renderCompletionIcon()}
+        </Box>
         <Typography
           variant="caption"
           sx={{
@@ -387,27 +436,29 @@ const TodoItem = ({
         onDragEnd={(e) => onDragEnd && onDragEnd(e)}
         elevation={0}
         sx={{
-          px: 1.5, py: 1,
+          ...getItemStyles(),
+          px: 1.5,
+          py: 1.05,
+          minHeight: 46,
+          boxSizing: 'border-box',
           borderRadius: '10px',
-          bgcolor: dark
-            ? (isCompleted ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.04)')
-            : (isCompleted ? 'rgba(0,0,0,0.015)' : 'rgba(255,255,255,0.7)'),
-          border: isOverdue
-            ? '1px solid rgba(244,67,54,0.4)'
-            : `1px solid ${dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'}`,
+          bgcolor: theme.custom?.surface?.control,
+          border: `1px solid ${dark ? 'rgba(255,255,255,0.065)' : 'rgba(15,23,42,0.055)'}`,
           transition: createTransitionString(ANIMATIONS.hover),
           cursor: 'grab',
           '&:active': { cursor: 'grabbing', filter: 'brightness(0.97)' },
           '&:hover': {
-            bgcolor: dark ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.9)',
-            boxShadow: dark ? '0 2px 8px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.06)',
+            bgcolor: theme.custom?.surface?.controlHover || theme.palette.action.hover,
+            borderColor: dark ? 'rgba(255,255,255,0.11)' : 'rgba(15,23,42,0.09)',
+            boxShadow: dark ? '0 3px 10px rgba(0,0,0,0.22)' : '0 3px 10px rgba(15,23,42,0.055)'
           },
-          ...getItemStyles()
         }}
         onClick={(e) => onClick && onClick(e, todo)}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {renderTodoListIcon()}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, position: 'relative' }}>
+          <Box sx={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', zIndex: 2 }}>
+            {renderTodoListIcon()}
+          </Box>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography
               variant="body2"
@@ -415,8 +466,9 @@ const TodoItem = ({
                 textDecoration: isCompleted ? 'line-through' : 'none',
                 color: isCompleted ? 'text.disabled' : 'text.primary',
                 wordBreak: 'break-word',
-                lineHeight: 1.4,
-                fontSize: '0.82rem',
+                lineHeight: 1.38,
+                fontSize: '0.84rem',
+                letterSpacing: '-0.005em'
               }}
             >
               {todo.content}
@@ -425,12 +477,17 @@ const TodoItem = ({
           {showSecondaryInfo && dueTime && (
             <Typography variant="caption" sx={{
               color: isOverdue ? 'error.main' : (isDueToday ? 'warning.main' : 'text.secondary'),
-              fontSize: '0.65rem', whiteSpace: 'nowrap', flexShrink: 0,
+              fontSize: '0.68rem',
+              fontWeight: 600,
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              opacity: isOverdue || isDueToday ? 0.9 : 0.72,
             }}>
               {dueTime}
             </Typography>
           )}
         </Box>
+        {renderInlineSubtasks({ mx: 0, ml: 0, mt: 0.75, mb: 0 })}
       </Paper>
     );
   }
@@ -447,7 +504,16 @@ const TodoItem = ({
           />
         </ListItemIcon>
       )}
-      <ListItemIcon sx={{ ...completionSlotSx, minWidth: variant === 'mydaypanel' ? 36 : 40 }}>
+      <ListItemIcon sx={{
+        ...completionSlotSx,
+        position: 'absolute',
+        left: isMultiSelectMode ? 44 : 8,
+        top: '50%',
+        transform: 'translateY(-50%)',
+        minWidth: 0,
+        width: COMPLETION_BUTTON_SIZE,
+        zIndex: 2
+      }}>
         {variant === 'default' ? renderTodoListIcon() : renderCompletionIcon()}
       </ListItemIcon>
       {renderContent()}
@@ -457,22 +523,26 @@ const TodoItem = ({
   // 如果有点击或右键菜单处理，使用 ListItemButton
   if (onClick || onContextMenu) {
     return (
-      <ListItem sx={getItemStyles()}>
+      <ListItem sx={{ ...getItemStyles(), display: 'block' }}>
         <ListItemButton
           onClick={(e) => onClick && onClick(e, todo)}
           onContextMenu={(e) => onContextMenu && onContextMenu(e, todo)}
-          sx={{ py: compact ? 1 : 1.5 }}
+          sx={{ py: compact ? 1 : 1.5, position: 'relative' }}
         >
           {content}
         </ListItemButton>
+        {renderInlineSubtasks()}
       </ListItem>
     );
   }
 
   // 简单的 ListItem
   return (
-    <ListItem sx={getItemStyles()}>
-      {content}
+    <ListItem sx={{ ...getItemStyles(), display: 'block' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', position: 'relative' }}>
+        {content}
+      </Box>
+      {renderInlineSubtasks()}
     </ListItem>
   );
 };

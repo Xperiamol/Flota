@@ -16,7 +16,8 @@ import {
   InputAdornment,
   Fade,
   CircularProgress,
-  Checkbox
+  Checkbox,
+  Collapse
 } from '@mui/material';
 import {
   CheckCircle as CheckCircleIcon,
@@ -46,6 +47,7 @@ import FilterPopover from '../filters/FilterPopover';
 import FilterToggleButton from '../filters/FilterToggleButton';
 import ChoiceFilter from '../filters/ChoiceFilter';
 import DropdownMenu from '../common/DropdownMenu';
+import InlineSubtaskList, { SubtaskExpandButton, todoRowActionRevealSx } from './InlineSubtaskList';
 import zhCN from '../../locales/zh-CN';
 import { t } from '../../utils/i18n';
 
@@ -79,7 +81,6 @@ const completionIconSx = {
 };
 import {
   getPriorityFromQuadrant,
-  getPriorityIcon,
   getPriorityColor,
   getPriorityText,
   comparePriority
@@ -89,6 +90,7 @@ import {
   fetchTodosByPriority,
   fetchTodosByDueDate,
   fetchTodosByCreatedAt,
+  fetchSubtasksForParents,
   toggleTodoComplete,
   deleteTodo as deleteTodoAPI
 } from '../../api/todoAPI';
@@ -133,6 +135,9 @@ const playChristmasBell = () => {
 const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSelectRefChange, refreshTrigger, sortBy, onSortByChange, externalTodos, isExternalData = false, onTodoUpdated }) => {
   const christmasMode = useStore((state) => state.christmasMode);
   const [todos, setTodos] = useState([]);
+  const [subtasksByParent, setSubtasksByParent] = useState({});
+  const [subtaskBusyIds, setSubtaskBusyIds] = useState(new Set());
+  const [expandedSubtaskParents, setExpandedSubtaskParents] = useState(new Set());
   const [isLoading, setIsLoading] = useState(false);
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedTodo, setSelectedTodo] = useState(null);
@@ -152,6 +157,31 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
   // 保持 todos 的最新引用，供 loadTodos 判断是否已有数据
   useEffect(() => {
     todosRef.current = todos;
+  }, [todos]);
+
+  useEffect(() => {
+    const parentSyncIds = [...new Set((todos || []).map((todo) => todo.sync_id).filter(Boolean))];
+    if (parentSyncIds.length === 0) {
+      setSubtasksByParent({});
+      return undefined;
+    }
+
+    let active = true;
+    fetchSubtasksForParents(parentSyncIds)
+      .then((rows = []) => {
+        if (!active) return;
+        const grouped = {};
+        rows.forEach((subtask) => {
+          if (!grouped[subtask.parent_todo_id]) grouped[subtask.parent_todo_id] = [];
+          grouped[subtask.parent_todo_id].push(subtask);
+        });
+        setSubtasksByParent(grouped);
+      })
+      .catch((error) => {
+        if (active) console.error('批量获取子任务失败:', error);
+      });
+
+    return () => { active = false; };
   }, [todos]);
 
   // 双击完成相关状态
@@ -462,6 +492,91 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
         });
       }, 3000);
     }
+  };
+
+  const handleToggleSubtask = async (parentSyncId, subtask) => {
+    if (!parentSyncId || subtaskBusyIds.has(subtask.id)) return;
+    const previousCompleted = subtask.is_completed;
+    const nextCompleted = !Boolean(previousCompleted);
+    const currentSubtasks = subtasksByParent[parentSyncId] || [];
+    const nextSubtasks = currentSubtasks.map((item) => (
+      item.id === subtask.id ? { ...item, is_completed: nextCompleted ? 1 : 0 } : item
+    ));
+    const parentTodo = todosRef.current.find((todo) => todo.sync_id === parentSyncId);
+    const allSubtasksCompleted = nextSubtasks.length > 0
+      && nextSubtasks.every((item) => Boolean(item.is_completed));
+
+    setSubtaskBusyIds((current) => new Set(current).add(subtask.id));
+    setSubtasksByParent((current) => ({
+      ...current,
+      [parentSyncId]: nextSubtasks
+    }));
+
+    try {
+      const updated = await toggleTodoComplete(subtask.id);
+      if (updated) {
+        setSubtasksByParent((current) => ({
+          ...current,
+          [parentSyncId]: (current[parentSyncId] || []).map((item) => (
+            item.id === subtask.id ? { ...item, ...updated } : item
+          ))
+        }));
+      }
+
+      const parentCompleted = parentTodo ? isTodoCompleted(parentTodo) : false;
+      const shouldSyncParent = parentTodo
+        && !isFutureRecurringTodo(parentTodo)
+        && parentCompleted !== allSubtasksCompleted;
+
+      if (shouldSyncParent) {
+        if (allSubtasksCompleted) {
+          setCelebratingTodos((current) => new Set([...current, parentTodo.id]));
+          await new Promise((resolve) => setTimeout(resolve, 360));
+        }
+
+        try {
+          await toggleTodoComplete(parentTodo.id);
+          await loadTodos();
+        } catch (parentError) {
+          console.error('同步主任务完成状态失败:', parentError);
+        } finally {
+          if (allSubtasksCompleted) {
+            setTimeout(() => {
+              setCelebratingTodos((current) => {
+                const next = new Set(current);
+                next.delete(parentTodo.id);
+                return next;
+              });
+            }, 1000);
+          }
+        }
+      }
+
+      onTodoUpdated?.();
+    } catch (error) {
+      setSubtasksByParent((current) => ({
+        ...current,
+        [parentSyncId]: (current[parentSyncId] || []).map((item) => (
+          item.id === subtask.id ? { ...item, is_completed: previousCompleted } : item
+        ))
+      }));
+      console.error('更新子任务失败:', error);
+    } finally {
+      setSubtaskBusyIds((current) => {
+        const next = new Set(current);
+        next.delete(subtask.id);
+        return next;
+      });
+    }
+  };
+
+  const toggleSubtasksExpanded = (parentSyncId) => {
+    setExpandedSubtaskParents((current) => {
+      const next = new Set(current);
+      if (next.has(parentSyncId)) next.delete(parentSyncId);
+      else next.add(parentSyncId);
+      return next;
+    });
   };
 
   const handleDelete = async () => {
@@ -803,7 +918,8 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                     overflow: 'visible',
                     width: '100%',
                     display: 'block',
-                    borderRadius: TODO_ITEM_RADIUS
+                    borderRadius: TODO_ITEM_RADIUS,
+                    ...todoRowActionRevealSx
                   }}
                 >
                   <ListItemButton
@@ -826,7 +942,9 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                       pr: 0.75,
                       borderRadius: TODO_ITEM_RADIUS,
                       border: '1px solid transparent',
-                      backgroundColor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.6)',
+                      backgroundColor: (theme) => theme.palette.mode === 'dark'
+                        ? 'rgba(255,255,255,0.02)'
+                        : 'rgba(255,255,255,0.6)',
                       transition: 'background-color 0.18s cubic-bezier(0.32,0.72,0,1), box-shadow 0.18s cubic-bezier(0.32,0.72,0,1), border-color 0.18s cubic-bezier(0.32,0.72,0,1)',
                       position: 'relative',
                       overflow: 'hidden',
@@ -884,13 +1002,30 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                         />
                       </ListItemIcon>
                     )}
-                    <ListItemIcon sx={completionSlotSx}>
-                      {isFutureRecurringTodo(todo) ? (
-                        <IconButton size="small" disabled sx={{ ...completionButtonSx, opacity: 0.35 }}>
+                    <ListItemIcon sx={{
+                      ...completionSlotSx,
+                      position: 'absolute',
+                      left: multiSelect.isMultiSelectMode ? 36 : 4,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      minWidth: 0,
+                      width: COMPLETION_BUTTON_SIZE,
+                      zIndex: 3
+                    }}>
+                      {(subtasksByParent[todo.sync_id] || []).length > 0 ? (
+                        <SubtaskExpandButton
+                          subtasks={subtasksByParent[todo.sync_id] || []}
+                          expanded={expandedSubtaskParents.has(todo.sync_id)}
+                          onToggle={() => toggleSubtasksExpanded(todo.sync_id)}
+                          size={COMPLETION_BUTTON_SIZE}
+                        />
+                      ) : isFutureRecurringTodo(todo) ? (
+                        <IconButton className="todo-row-action" size="small" disabled sx={completionButtonSx}>
                           <ScheduleIcon sx={{ ...completionIconSx, color: 'text.disabled' }} />
                         </IconButton>
                       ) : (
                       <IconButton
+                        className="todo-row-action"
                         size="small"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -967,7 +1102,7 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                               color: getPriorityColor(todo.priority),
                               fontSize: '0.675rem',
                               height: 18,
-                              borderRadius: '7px'
+                              borderRadius: '8px'
                             }}
                           />
                           {todo.due_date && (
@@ -979,7 +1114,7 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                                 color: isOverdue(todo.due_date) ? '#f44336' : '#2196f3',
                                 fontSize: '0.675rem',
                                 height: 18,
-                                borderRadius: '7px'
+                                borderRadius: '8px'
                               }}
                             />
                           )}
@@ -993,7 +1128,7 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                                 color: '#9c27b0',
                                 fontSize: '0.675rem',
                                 height: 18,
-                                borderRadius: '7px'
+                                borderRadius: '8px'
                               }}
                             />
                           ))}
@@ -1003,9 +1138,17 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                       slotProps={{ secondary: { component: 'div' } }}
                     />
 
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, ml: 0.5 }}>
-                      {getPriorityIcon(todo.priority)}
+                    <Box sx={{
+                      position: 'absolute',
+                      right: 4,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      zIndex: 3
+                    }}>
                       <IconButton
+                        className="todo-row-action"
                         size="small"
                         onClick={(e) => {
                           e.preventDefault();
@@ -1018,19 +1161,29 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                           e.stopPropagation();
                         }}
                         sx={{
-                          width: 26,
-                          height: 26,
+                          width: 28,
+                          height: 28,
                           p: 0,
-                          opacity: 0.36,
-                          '&:hover': {
-                            opacity: 1
-                          }
+                          color: 'text.primary'
                         }}
                       >
                         <MoreVertIcon fontSize="small" />
                       </IconButton>
                     </Box>
                   </ListItemButton>
+                  <Collapse
+                    in={expandedSubtaskParents.has(todo.sync_id)}
+                    timeout={180}
+                    unmountOnExit
+                  >
+                    <InlineSubtaskList
+                      subtasks={subtasksByParent[todo.sync_id] || []}
+                      busyIds={subtaskBusyIds}
+                      compact
+                      onToggle={(subtask) => handleToggleSubtask(todo.sync_id, subtask)}
+                      sx={{ ml: multiSelect.isMultiSelectMode ? 5 : 1.25, mr: 1.25 }}
+                    />
+                  </Collapse>
                 </ListItem>
               </Fade>
             ))}
@@ -1056,8 +1209,10 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
             sx: (theme) => ({
               backdropFilter: theme?.custom?.glass?.backdropFilter || 'blur(6px)',
               backgroundColor: theme?.custom?.glass?.background || (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.4)'),
+              backgroundImage: theme?.custom?.glass?.backgroundImage,
               border: theme?.custom?.glass?.border || `1px solid ${theme.palette.divider}`,
-              borderRadius: 1
+              borderRadius: '12px',
+              boxShadow: theme?.custom?.glass?.boxShadow
             })
           }
         }}

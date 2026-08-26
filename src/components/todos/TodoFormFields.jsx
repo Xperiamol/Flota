@@ -96,24 +96,40 @@ const TodoFormFields = ({
         helperText={errors.description}
       />
 
-      <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          gap: 1.5,
+          mb: 2,
+          px: 1.25,
+          py: 0.5,
+          border: '1px solid',
+          borderColor: 'divider',
+          borderRadius: '12px',
+          bgcolor: (theme) => theme.custom?.surface?.control || theme.palette.action.hover
+        }}
+      >
         <FormControlLabel
           control={
             <Checkbox
               checked={Boolean(value.is_important)}
               onChange={handleCheckboxChange('is_important')}
+              size="small"
             />
           }
           label={fields.importantLabel}
+          sx={{ m: 0, '& .MuiFormControlLabel-label': { fontSize: '0.85rem' } }}
         />
         <FormControlLabel
           control={
             <Checkbox
               checked={Boolean(value.is_urgent)}
               onChange={handleCheckboxChange('is_urgent')}
+              size="small"
             />
           }
           label={fields.urgentLabel}
+          sx={{ m: 0, '& .MuiFormControlLabel-label': { fontSize: '0.85rem' } }}
         />
       </Box>
 

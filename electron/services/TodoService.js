@@ -97,6 +97,7 @@ class TodoService extends EventEmitter {
     this._ipc('todo:getRecurring', () => this.getRecurringTodos())
     this._ipc('todo:processRecurring', () => this.processRecurringTodos())
     this._ipc('todo:getSubtasks', (parentSyncId) => this.getSubtasks(parentSyncId))
+    this._ipc('todo:getSubtasksForParents', (parentSyncIds) => this.getSubtasksForParents(parentSyncIds))
   }
 
   /**
@@ -165,6 +166,10 @@ class TodoService extends EventEmitter {
    */
   getSubtasks(parentSyncId) {
     return this.todoDAO.getSubtasks(parentSyncId);
+  }
+
+  getSubtasksForParents(parentSyncIds) {
+    return this.todoDAO.getSubtasksForParents(parentSyncIds);
   }
 
   /**
@@ -285,8 +290,6 @@ class TodoService extends EventEmitter {
       //  按 UTC substring(0,10) 是 5.8，会被误判为已逾期/正常周期）
       const naiveDueDate = RepeatUtils.toLocalNaive(todo.due_date);
       const dueDateKey = String(naiveDueDate).substring(0, 10);
-      if (dueDateKey > todayKey) return todo;
-
       let completions = RepeatUtils.parseCompletions(todo.completions);
       const isDoneToday = completions.includes(todayKey);
 
@@ -298,21 +301,24 @@ class TodoService extends EventEmitter {
           completions: JSON.stringify(completions),
           due_date: todayKey + timePart
         });
-      } else {
-        // Check: add today to completions, advance due_date
-        completions.push(todayKey);
-        // GC old completions (keep 90 days)
-        completions = RepeatUtils.gcCompletions(completions, 90);
-        // 逾期修正：如果 due_date < 今天，从今天开始推进，避免推进后仍落在过去
-        const baseDueDate = RepeatUtils.adjustOverdueDueDate(naiveDueDate);
-        const nextDueDate = RepeatUtils.calculateNextDueDate(
-          baseDueDate, todo.repeat_type, todo.repeat_interval, todo.repeat_days
-        );
-        return this.todoDAO.update(id, {
-          completions: JSON.stringify(completions),
-          due_date: nextDueDate || todo.due_date
-        });
       }
+
+      // 下一周期尚未到达时不可提前完成；但上面的“撤销今天完成”必须仍然可用。
+      if (dueDateKey > todayKey) return todo;
+
+      // Check: add today to completions, advance due_date
+      completions.push(todayKey);
+      // GC old completions (keep 90 days)
+      completions = RepeatUtils.gcCompletions(completions, 90);
+      // 逾期修正：如果 due_date < 今天，从今天开始推进，避免推进后仍落在过去
+      const baseDueDate = RepeatUtils.adjustOverdueDueDate(naiveDueDate);
+      const nextDueDate = RepeatUtils.calculateNextDueDate(
+        baseDueDate, todo.repeat_type, todo.repeat_interval, todo.repeat_days
+      );
+      return this.todoDAO.update(id, {
+        completions: JSON.stringify(completions),
+        due_date: nextDueDate || todo.due_date
+      });
     }
 
     // Non-recurring: standard toggle

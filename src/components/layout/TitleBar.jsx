@@ -75,11 +75,9 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
         userSelect: 'none',
         position: 'relative',
         zIndex: 1000,
-        background: theme.palette.mode === 'dark'
-          ? 'rgba(30, 41, 59, 0.6)'
-          : 'rgba(255, 255, 255, 0.6)',
-        backdropFilter: 'blur(30px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(30px) saturate(180%)',
+        background: theme.custom?.surface?.glassHeavy,
+        backdropFilter: theme.custom?.glass?.backdropFilter,
+        WebkitBackdropFilter: theme.custom?.glass?.backdropFilter,
         borderBottom: `1px solid ${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'}`,
       }}
     >

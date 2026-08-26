@@ -1,4 +1,4 @@
-const { BrowserWindow, screen, shell } = require('electron');
+const { app, BrowserWindow, screen, shell } = require('electron');
 const { EventEmitter } = require('events');
 const path = require('path');
 const http = require('http');
@@ -14,6 +14,24 @@ class WindowManager extends EventEmitter {
     this.mainWindow = null;
     this.floatingWindow = null;
     this.quickInputWindow = null;
+    this.focusWindow = null;
+    this.focusOwnerWindow = null;
+    this.focusSessionData = null;
+    this.focusVisibilityTimer = null;
+    this.focusAppBlurHandler = null;
+    this.focusAppFocusHandler = null;
+    this.focusDockSide = null;
+    this.focusDockedHidden = false;
+    this.focusDockTimer = null;
+    this.focusDockMoveTimer = null;
+    this.focusDockMoveGuard = false;
+    this.focusDockHoverTimer = null;
+    this.focusDockAnimationTimer = null;
+    this.focusDockWorkArea = null;
+    this.todoReminderWindow = null;
+    this.todoReminderCurrent = null;
+    this.todoReminderQueue = [];
+    this.todoReminderAnimationTimer = null;
   }
 
   /**
@@ -162,6 +180,624 @@ class WindowManager extends EventEmitter {
       console.error('创建悬浮窗口失败:', error);
       throw error;
     }
+  }
+
+  /**
+   * 创建专注伴随浮窗。窗口默认隐藏，仅在 Flota 整体失去前台焦点后显示。
+   */
+  async createFocusWindow() {
+    if (this.focusWindow && !this.focusWindow.isDestroyed()) {
+      return this.focusWindow;
+    }
+
+    const ownerBounds = this.focusOwnerWindow && !this.focusOwnerWindow.isDestroyed()
+      ? this.focusOwnerWindow.getBounds()
+      : null;
+    const display = ownerBounds
+      ? screen.getDisplayMatching(ownerBounds)
+      : screen.getPrimaryDisplay();
+    const width = 294;
+    const height = 104;
+    const margin = 18;
+
+    this.focusWindow = new BrowserWindow({
+      width,
+      height,
+      x: display.workArea.x + display.workArea.width - width - margin,
+      y: display.workArea.y + margin,
+      show: false,
+      frame: false,
+      transparent: true,
+      backgroundColor: '#00000000',
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      resizable: false,
+      maximizable: false,
+      minimizable: false,
+      fullscreenable: false,
+      closable: false,
+      hasShadow: false,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, '../preload.js'),
+        webSecurity: true,
+        allowRunningInsecureContent: false
+      }
+    });
+
+    this.focusWindow.setAlwaysOnTop(true, 'floating');
+    this.focusWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    this.windows.set('focus-session', this.focusWindow);
+    this.pendingWindowData.set('focus-session', this.focusSessionData);
+
+    this.focusWindow.on('closed', () => {
+      this.stopFocusDockMonitor();
+      if (this.focusDockAnimationTimer) clearTimeout(this.focusDockAnimationTimer);
+      this.focusDockAnimationTimer = null;
+      this.windows.delete('focus-session');
+      this.pendingWindowData.delete('focus-session');
+      this.focusWindow = null;
+    });
+    this.focusWindow.on('move', () => this.scheduleFocusWindowDockingUpdate());
+    this.focusWindow.on('blur', () => this.scheduleFocusWindowConceal());
+    this.startFocusDockMonitor();
+
+    if (isDev) {
+      await this.focusWindow.loadURL('http://localhost:5174/standalone.html?type=focus');
+    } else {
+      await this.focusWindow.loadFile(path.join(__dirname, '../../dist/standalone.html'), {
+        query: { type: 'focus' }
+      });
+    }
+
+    this.focusWindow.once('ready-to-show', () => {
+      this.syncFocusWindowVisibility();
+    });
+
+    return this.focusWindow;
+  }
+
+  animateFocusWindowTo(x, y, { duration = 190, onComplete } = {}) {
+    const focusWindow = this.focusWindow;
+    if (!focusWindow || focusWindow.isDestroyed()) return;
+    if (this.focusDockAnimationTimer) {
+      clearTimeout(this.focusDockAnimationTimer);
+      this.focusDockAnimationTimer = null;
+    }
+
+    const startBounds = focusWindow.getBounds();
+    const targetX = Math.round(x);
+    const targetY = Math.round(y);
+    const startedAt = Date.now();
+    this.focusDockMoveGuard = true;
+
+    const finish = () => {
+      this.focusDockAnimationTimer = null;
+      this.focusDockMoveGuard = false;
+      onComplete?.();
+    };
+
+    const step = () => {
+      if (!this.focusWindow || this.focusWindow.isDestroyed()) {
+        finish();
+        return;
+      }
+
+      const progress = Math.min(1, (Date.now() - startedAt) / duration);
+      const eased = progress < 0.5
+        ? 4 * progress * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+      const nextX = Math.round(startBounds.x + (targetX - startBounds.x) * eased);
+      const nextY = Math.round(startBounds.y + (targetY - startBounds.y) * eased);
+      this.focusWindow.setPosition(nextX, nextY, false);
+
+      if (progress >= 1) {
+        finish();
+        return;
+      }
+      this.focusDockAnimationTimer = setTimeout(step, 16);
+    };
+
+    step();
+  }
+
+  scheduleFocusWindowDockingUpdate() {
+    if (this.focusDockMoveGuard || this.focusDockedHidden) return;
+    if (this.focusDockMoveTimer) clearTimeout(this.focusDockMoveTimer);
+    this.focusDockMoveTimer = setTimeout(() => {
+      this.focusDockMoveTimer = null;
+      this.updateFocusWindowDocking();
+    }, 180);
+  }
+
+  isFocusDockEdgeExposed(workArea, side, bounds) {
+    const edgeX = side === 'left' ? workArea.x : workArea.x + workArea.width;
+    return !screen.getAllDisplays().some((display) => {
+      const other = display.workArea;
+      if (
+        other.x === workArea.x
+        && other.y === workArea.y
+        && other.width === workArea.width
+        && other.height === workArea.height
+      ) {
+        return false;
+      }
+
+      const touchesEdge = side === 'left'
+        ? Math.abs(other.x + other.width - edgeX) <= 1
+        : Math.abs(other.x - edgeX) <= 1;
+      const overlapsWindowVertically = Math.max(bounds.y, other.y)
+        < Math.min(bounds.y + bounds.height, other.y + other.height);
+      return touchesEdge && overlapsWindowVertically;
+    });
+  }
+
+  updateFocusWindowDocking() {
+    const focusWindow = this.focusWindow;
+    if (!focusWindow || focusWindow.isDestroyed() || this.focusDockMoveGuard) return;
+
+    const bounds = focusWindow.getBounds();
+    const { workArea } = screen.getDisplayMatching(bounds);
+    const workAreaRight = workArea.x + workArea.width;
+    const windowRight = bounds.x + bounds.width;
+    const contactTolerance = 12;
+    const leftTouchesEdge = bounds.x <= workArea.x + contactTolerance
+      && windowRight > workArea.x + contactTolerance;
+    const rightTouchesEdge = windowRight >= workAreaRight - contactTolerance
+      && bounds.x < workAreaRight - contactTolerance;
+    const nextSide = leftTouchesEdge && this.isFocusDockEdgeExposed(workArea, 'left', bounds)
+      ? 'left'
+      : rightTouchesEdge && this.isFocusDockEdgeExposed(workArea, 'right', bounds)
+        ? 'right'
+        : null;
+
+    if (!nextSide) {
+      this.focusDockSide = null;
+      this.focusDockWorkArea = null;
+      this.focusDockedHidden = false;
+      if (this.focusDockTimer) {
+        clearTimeout(this.focusDockTimer);
+        this.focusDockTimer = null;
+      }
+      return;
+    }
+
+    this.focusDockSide = nextSide;
+    this.focusDockWorkArea = { ...workArea };
+    this.focusDockedHidden = false;
+
+    const x = nextSide === 'left'
+      ? workArea.x
+      : workArea.x + workArea.width - bounds.width;
+    const y = Math.min(
+      Math.max(bounds.y, workArea.y),
+      workArea.y + workArea.height - bounds.height
+    );
+    this.focusDockMoveGuard = true;
+    focusWindow.setPosition(Math.round(x), Math.round(y), false);
+    setTimeout(() => {
+      this.focusDockMoveGuard = false;
+      this.startFocusDockMonitor();
+    }, 80);
+  }
+
+  startFocusDockMonitor() {
+    if (this.focusDockHoverTimer) return;
+    this.focusDockHoverTimer = setInterval(() => this.syncFocusWindowDockHover(), 90);
+  }
+
+  stopFocusDockMonitor() {
+    if (!this.focusDockHoverTimer) return;
+    clearInterval(this.focusDockHoverTimer);
+    this.focusDockHoverTimer = null;
+  }
+
+  syncFocusWindowDockHover() {
+    const focusWindow = this.focusWindow;
+    if (!focusWindow || focusWindow.isDestroyed() || !focusWindow.isVisible()) return;
+    if (this.focusDockMoveGuard) return;
+    if (!this.focusDockSide || !this.focusDockWorkArea) {
+      this.updateFocusWindowDocking();
+      return;
+    }
+
+    const workArea = this.focusDockWorkArea;
+
+    const cursorPoint = screen.getCursorScreenPoint();
+    const bounds = focusWindow.getBounds();
+    const withinVerticalRange = cursorPoint.y >= bounds.y - 3
+      && cursorPoint.y <= bounds.y + bounds.height + 3;
+
+    if (this.focusDockedHidden) {
+      const atDockEdge = this.focusDockSide === 'left'
+        ? cursorPoint.x <= workArea.x + 14
+        : cursorPoint.x >= workArea.x + workArea.width - 15;
+      if (withinVerticalRange && atDockEdge) this.revealFocusWindow();
+      return;
+    }
+
+    const cursorInsideWindow = cursorPoint.x >= bounds.x - 3
+      && cursorPoint.x <= bounds.x + bounds.width + 3
+      && withinVerticalRange;
+    if (cursorInsideWindow) {
+      if (this.focusDockTimer) {
+        clearTimeout(this.focusDockTimer);
+        this.focusDockTimer = null;
+      }
+      return;
+    }
+
+    this.scheduleFocusWindowConceal(460);
+  }
+
+  revealFocusWindow() {
+    const focusWindow = this.focusWindow;
+    if (!this.focusDockSide || !focusWindow || focusWindow.isDestroyed()) return { success: true };
+    if (this.focusDockTimer) {
+      clearTimeout(this.focusDockTimer);
+      this.focusDockTimer = null;
+    }
+
+    const bounds = focusWindow.getBounds();
+    const workArea = this.focusDockWorkArea || screen.getDisplayMatching(bounds).workArea;
+    const x = this.focusDockSide === 'left'
+      ? workArea.x
+      : workArea.x + workArea.width - bounds.width;
+    this.focusDockedHidden = false;
+    this.animateFocusWindowTo(x, bounds.y, { duration: 180 });
+    return { success: true };
+  }
+
+  scheduleFocusWindowConceal(delay = 380) {
+    if (!this.focusDockSide) return { success: true };
+    if (this.focusDockTimer) return { success: true };
+    this.focusDockTimer = setTimeout(() => {
+      this.focusDockTimer = null;
+      const focusWindow = this.focusWindow;
+      if (!focusWindow || focusWindow.isDestroyed() || !focusWindow.isVisible() || this.focusDockMoveGuard) return;
+      const cursorPoint = screen.getCursorScreenPoint();
+      const bounds = focusWindow.getBounds();
+      const cursorInsideWindow = cursorPoint.x >= bounds.x - 3
+        && cursorPoint.x <= bounds.x + bounds.width + 3
+        && cursorPoint.y >= bounds.y - 3
+        && cursorPoint.y <= bounds.y + bounds.height + 3;
+      if (!cursorInsideWindow) this.concealFocusWindow();
+    }, delay);
+    return { success: true };
+  }
+
+  concealFocusWindow() {
+    const focusWindow = this.focusWindow;
+    if (!this.focusDockSide || !focusWindow || focusWindow.isDestroyed()) return { success: true };
+
+    if (this.focusDockedHidden) return { success: true };
+    const bounds = focusWindow.getBounds();
+    const workArea = this.focusDockWorkArea || screen.getDisplayMatching(bounds).workArea;
+    const visibleStrip = 12;
+    const x = this.focusDockSide === 'left'
+      ? workArea.x - bounds.width + visibleStrip
+      : workArea.x + workArea.width - visibleStrip;
+    this.animateFocusWindowTo(x, bounds.y, {
+      duration: 220,
+      onComplete: () => {
+        this.focusDockedHidden = true;
+      }
+    });
+    return { success: true };
+  }
+
+  scheduleFocusWindowVisibilitySync() {
+    if (this.focusVisibilityTimer) clearTimeout(this.focusVisibilityTimer);
+    this.focusVisibilityTimer = setTimeout(() => {
+      this.focusVisibilityTimer = null;
+      this.syncFocusWindowVisibility();
+    }, 90);
+  }
+
+  syncFocusWindowVisibility() {
+    const focusWindow = this.focusWindow;
+    if (!this.focusSessionData || !focusWindow || focusWindow.isDestroyed()) return;
+
+    const focusedWindow = BrowserWindow.getFocusedWindow();
+    const flotaIsForeground = Boolean(focusedWindow && focusedWindow !== focusWindow);
+
+    if (flotaIsForeground) {
+      focusWindow.hide();
+      return;
+    }
+
+    if (!focusWindow.isVisible()) {
+      focusWindow.showInactive();
+    }
+    focusWindow.setAlwaysOnTop(true, 'floating');
+  }
+
+  bindFocusWindowVisibilityEvents() {
+    if (this.focusAppBlurHandler || this.focusAppFocusHandler) return;
+
+    this.focusAppBlurHandler = () => this.scheduleFocusWindowVisibilitySync();
+    this.focusAppFocusHandler = (_event, focusedWindow) => {
+      if (focusedWindow && focusedWindow !== this.focusWindow && this.focusWindow && !this.focusWindow.isDestroyed()) {
+        this.focusWindow.hide();
+      }
+    };
+
+    app.on('browser-window-blur', this.focusAppBlurHandler);
+    app.on('browser-window-focus', this.focusAppFocusHandler);
+  }
+
+  unbindFocusWindowVisibilityEvents() {
+    if (this.focusAppBlurHandler) {
+      app.removeListener('browser-window-blur', this.focusAppBlurHandler);
+      this.focusAppBlurHandler = null;
+    }
+    if (this.focusAppFocusHandler) {
+      app.removeListener('browser-window-focus', this.focusAppFocusHandler);
+      this.focusAppFocusHandler = null;
+    }
+    if (this.focusVisibilityTimer) {
+      clearTimeout(this.focusVisibilityTimer);
+      this.focusVisibilityTimer = null;
+    }
+  }
+
+  async startFocusSession(sessionData, ownerWindow) {
+    this.focusSessionData = sessionData || {};
+    this.focusOwnerWindow = ownerWindow || this.focusOwnerWindow;
+    this.bindFocusWindowVisibilityEvents();
+
+    const focusWindow = await this.createFocusWindow();
+    if (focusWindow && !focusWindow.isDestroyed()) {
+      focusWindow.webContents.send('focus-session:update', this.focusSessionData);
+    }
+    this.syncFocusWindowVisibility();
+    return { success: true };
+  }
+
+  updateFocusSession(sessionData) {
+    if (!this.focusSessionData) return { success: false, error: 'no active focus session' };
+    this.focusSessionData = { ...this.focusSessionData, ...(sessionData || {}) };
+    if (this.focusWindow && !this.focusWindow.isDestroyed()) {
+      this.focusWindow.webContents.send('focus-session:update', this.focusSessionData);
+    }
+    return { success: true };
+  }
+
+  endFocusSession() {
+    this.focusSessionData = null;
+    this.focusOwnerWindow = null;
+    this.unbindFocusWindowVisibilityEvents();
+    this.pendingWindowData.delete('focus-session');
+    this.focusDockSide = null;
+    this.focusDockWorkArea = null;
+    this.focusDockedHidden = false;
+    this.focusDockMoveGuard = false;
+    this.stopFocusDockMonitor();
+    if (this.focusDockTimer) {
+      clearTimeout(this.focusDockTimer);
+      this.focusDockTimer = null;
+    }
+    if (this.focusDockMoveTimer) {
+      clearTimeout(this.focusDockMoveTimer);
+      this.focusDockMoveTimer = null;
+    }
+    if (this.focusDockAnimationTimer) {
+      clearTimeout(this.focusDockAnimationTimer);
+      this.focusDockAnimationTimer = null;
+    }
+
+    if (this.focusWindow && !this.focusWindow.isDestroyed()) {
+      this.focusWindow.destroy();
+    }
+    this.focusWindow = null;
+    this.windows.delete('focus-session');
+    return { success: true };
+  }
+
+  handleFocusWindowAction(action) {
+    if (!action) {
+      return { success: false, error: 'invalid focus window action' };
+    }
+
+    if (action.type === 'reveal-overlay') return this.revealFocusWindow();
+    if (action.type === 'conceal-overlay') return this.scheduleFocusWindowConceal();
+
+    if (!this.focusOwnerWindow || this.focusOwnerWindow.isDestroyed()) {
+      return { success: false, error: 'focus owner window unavailable' };
+    }
+
+    if (action.type === 'show-main') {
+      if (this.focusOwnerWindow.isMinimized()) this.focusOwnerWindow.restore();
+      this.focusOwnerWindow.show();
+      this.focusOwnerWindow.focus();
+      return { success: true };
+    }
+
+    this.focusOwnerWindow.webContents.send('focus-session:action', action);
+    return { success: true };
+  }
+
+  getTodoReminderPayload() {
+    if (!this.todoReminderCurrent) return null;
+    return {
+      todo: this.todoReminderCurrent,
+      remainingCount: this.todoReminderQueue.length,
+      totalCount: this.todoReminderQueue.length + 1
+    };
+  }
+
+  sendTodoReminderUpdate() {
+    const payload = this.getTodoReminderPayload();
+    if (!payload) return;
+    this.pendingWindowData.set('todo-reminder', payload);
+    if (this.todoReminderWindow && !this.todoReminderWindow.isDestroyed()) {
+      this.todoReminderWindow.webContents.send('todo-reminder:update', payload);
+    }
+  }
+
+  animateTodoReminderWindowX(targetX, { duration = 210, onComplete } = {}) {
+    const reminderWindow = this.todoReminderWindow;
+    if (!reminderWindow || reminderWindow.isDestroyed()) return;
+    if (this.todoReminderAnimationTimer) {
+      clearTimeout(this.todoReminderAnimationTimer);
+      this.todoReminderAnimationTimer = null;
+    }
+
+    const [startX, y] = reminderWindow.getPosition();
+    const startedAt = Date.now();
+    const step = () => {
+      if (!this.todoReminderWindow || this.todoReminderWindow.isDestroyed()) return;
+      const progress = Math.min(1, (Date.now() - startedAt) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const x = Math.round(startX + (targetX - startX) * eased);
+      this.todoReminderWindow.setPosition(x, y, false);
+      if (progress >= 1) {
+        this.todoReminderAnimationTimer = null;
+        onComplete?.();
+        return;
+      }
+      this.todoReminderAnimationTimer = setTimeout(step, 16);
+    };
+    step();
+  }
+
+  async createTodoReminderWindow() {
+    if (this.todoReminderWindow && !this.todoReminderWindow.isDestroyed()) {
+      return this.todoReminderWindow;
+    }
+
+    const { workArea } = screen.getPrimaryDisplay();
+    const width = 360;
+    const height = 156;
+    const margin = 16;
+    const targetX = workArea.x + workArea.width - width - margin;
+    const y = workArea.y + workArea.height - height - margin;
+
+    this.todoReminderWindow = new BrowserWindow({
+      width,
+      height,
+      x: workArea.x + workArea.width + 4,
+      y,
+      show: false,
+      frame: false,
+      transparent: true,
+      backgroundColor: '#00000000',
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      resizable: false,
+      movable: false,
+      maximizable: false,
+      minimizable: false,
+      fullscreenable: false,
+      closable: false,
+      hasShadow: false,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, '../preload.js'),
+        webSecurity: true,
+        allowRunningInsecureContent: false
+      }
+    });
+
+    this.todoReminderWindow.setAlwaysOnTop(true, 'floating');
+    this.todoReminderWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    this.windows.set('todo-reminder', this.todoReminderWindow);
+    this.pendingWindowData.set('todo-reminder', this.getTodoReminderPayload());
+
+    this.todoReminderWindow.on('closed', () => {
+      if (this.todoReminderAnimationTimer) clearTimeout(this.todoReminderAnimationTimer);
+      this.todoReminderAnimationTimer = null;
+      this.windows.delete('todo-reminder');
+      this.pendingWindowData.delete('todo-reminder');
+      this.todoReminderWindow = null;
+    });
+
+    let hasShown = false;
+    const showReminderWindow = () => {
+      if (hasShown || !this.todoReminderWindow || this.todoReminderWindow.isDestroyed()) return;
+      hasShown = true;
+      this.todoReminderWindow.showInactive();
+      this.todoReminderWindow.setAlwaysOnTop(true, 'floating');
+      this.animateTodoReminderWindowX(targetX);
+    };
+    this.todoReminderWindow.once('ready-to-show', showReminderWindow);
+
+    if (isDev) {
+      await this.todoReminderWindow.loadURL('http://localhost:5174/standalone.html?type=reminder');
+    } else {
+      await this.todoReminderWindow.loadFile(path.join(__dirname, '../../dist/standalone.html'), {
+        query: { type: 'reminder' }
+      });
+    }
+
+    // ready-to-show 可能在 loadURL/loadFile Promise resolve 前触发；这里提供强制兜底。
+    if (!hasShown) showReminderWindow();
+
+    return this.todoReminderWindow;
+  }
+
+  async showTodoReminder(todo) {
+    if (!todo || todo.id === undefined || todo.id === null) return { success: false, error: 'invalid todo' };
+    const todoId = String(todo.id);
+    const alreadyQueued = String(this.todoReminderCurrent?.id) === todoId
+      || this.todoReminderQueue.some((item) => String(item.id) === todoId);
+    if (alreadyQueued) return { success: true, queued: false };
+
+    if (!this.todoReminderCurrent) {
+      this.todoReminderCurrent = todo;
+      if (this.todoReminderWindow && !this.todoReminderWindow.isDestroyed()) {
+        if (this.todoReminderAnimationTimer) {
+          clearTimeout(this.todoReminderAnimationTimer);
+          this.todoReminderAnimationTimer = null;
+        }
+        const { workArea } = screen.getDisplayMatching(this.todoReminderWindow.getBounds());
+        const [width] = this.todoReminderWindow.getSize();
+        this.animateTodoReminderWindowX(workArea.x + workArea.width - width - 16, { duration: 160 });
+      } else {
+        await this.createTodoReminderWindow();
+      }
+    } else {
+      this.todoReminderQueue.push(todo);
+    }
+    this.sendTodoReminderUpdate();
+    return { success: true, queued: true };
+  }
+
+  closeTodoReminderWindow() {
+    const reminderWindow = this.todoReminderWindow;
+    if (!reminderWindow || reminderWindow.isDestroyed()) return;
+    const { workArea } = screen.getDisplayMatching(reminderWindow.getBounds());
+    this.animateTodoReminderWindowX(workArea.x + workArea.width + 4, {
+      duration: 180,
+      onComplete: () => {
+        if (this.todoReminderWindow && !this.todoReminderWindow.isDestroyed()) {
+          this.todoReminderWindow.destroy();
+        }
+        this.todoReminderWindow = null;
+      }
+    });
+  }
+
+  advanceTodoReminder() {
+    this.todoReminderCurrent = this.todoReminderQueue.shift() || null;
+    if (this.todoReminderCurrent) {
+      this.sendTodoReminderUpdate();
+      return;
+    }
+    this.pendingWindowData.delete('todo-reminder');
+    this.closeTodoReminderWindow();
+  }
+
+  handleTodoReminderAction(action) {
+    if (!action?.type || !this.todoReminderCurrent) {
+      return { success: false, error: 'no active todo reminder' };
+    }
+    const todo = this.todoReminderCurrent;
+    this.emit('todo-reminder-action', { ...action, todo });
+    this.advanceTodoReminder();
+    return { success: true };
   }
 
   /**

@@ -484,10 +484,8 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
             overflow: 'hidden',
             minWidth: '560px',
             backgroundColor: muiTheme.palette.mode === 'dark'
-              ? 'rgba(30, 41, 59, 0.85)'
-              : 'rgba(255, 255, 255, 0.85)',
-            backdropFilter: 'blur(12px) saturate(150%)',
-            WebkitBackdropFilter: 'blur(12px) saturate(150%)'
+              ? 'rgba(30, 41, 59, 0.9)'
+              : 'rgba(255, 255, 255, 0.94)'
           })}
         >
           {weekDays.map((day, index) => (
@@ -902,11 +900,10 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                             p: 0.75,
                             borderRadius: 1,
                             cursor: 'pointer',
-                            background: itemsToDisplay.focusTimeSeconds > 0
-                              ? `linear-gradient(135deg, ${theme.palette.mode === 'dark'
-                                ? 'rgba(168, 85, 247, 0.15), rgba(139, 92, 246, 0.08)'
-                                : 'rgba(168, 85, 247, 0.15), rgba(139, 92, 246, 0.08)'
-                              })`
+                            backgroundColor: itemsToDisplay.focusTimeSeconds > 0
+                              ? theme.palette.mode === 'dark'
+                                ? 'rgba(139, 92, 246, 0.14)'
+                                : 'rgba(139, 92, 246, 0.09)'
                               : theme.palette.mode === 'dark'
                                 ? 'rgba(100, 116, 139, 0.15)'
                                 : 'rgba(100, 116, 139, 0.08)',
@@ -918,25 +915,21 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                                 ? 'rgba(100, 116, 139, 0.3)'
                                 : 'rgba(100, 116, 139, 0.2)'
                               }`,
-                            backdropFilter: 'blur(8px)',
-                            WebkitBackdropFilter: 'blur(8px)',
                             transition: createTransitionString(ANIMATIONS.listItem),
                             '&:hover': {
-                              background: itemsToDisplay.focusTimeSeconds > 0
-                                ? `linear-gradient(135deg, ${theme.palette.mode === 'dark'
-                                  ? 'rgba(168, 85, 247, 0.25), rgba(139, 92, 246, 0.15)'
-                                  : 'rgba(168, 85, 247, 0.25), rgba(139, 92, 246, 0.15)'
-                                })`
+                              backgroundColor: itemsToDisplay.focusTimeSeconds > 0
+                                ? theme.palette.mode === 'dark'
+                                  ? 'rgba(139, 92, 246, 0.22)'
+                                  : 'rgba(139, 92, 246, 0.14)'
                                 : theme.palette.mode === 'dark'
                                   ? 'rgba(100, 116, 139, 0.25)'
                                   : 'rgba(100, 116, 139, 0.15)'
                             },
                             '&:active': {
-                              background: itemsToDisplay.focusTimeSeconds > 0
-                                ? `linear-gradient(135deg, ${theme.palette.mode === 'dark'
-                                  ? 'rgba(168, 85, 247, 0.35), rgba(139, 92, 246, 0.25)'
-                                  : 'rgba(168, 85, 247, 0.35), rgba(139, 92, 246, 0.25)'
-                                })`
+                              backgroundColor: itemsToDisplay.focusTimeSeconds > 0
+                                ? theme.palette.mode === 'dark'
+                                  ? 'rgba(139, 92, 246, 0.28)'
+                                  : 'rgba(139, 92, 246, 0.19)'
                                 : theme.palette.mode === 'dark'
                                   ? 'rgba(100, 116, 139, 0.35)'
                                   : 'rgba(100, 116, 139, 0.25)'
@@ -955,10 +948,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                                 sx={{
                                   fontSize: '0.95rem',
                                   fontWeight: 700,
-                                  background: 'linear-gradient(135deg, rgb(168, 85, 247), rgb(139, 92, 246))',
-                                  WebkitBackgroundClip: 'text',
-                                  WebkitTextFillColor: 'transparent',
-                                  backgroundClip: 'text',
+                                  color: theme.palette.secondary.main,
                                   lineHeight: 1.2,
                                   textAlign: 'center'
                                 }}
@@ -1131,9 +1121,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                 </Typography>
                 <Paper sx={{ p: 2, backgroundColor: theme.palette.mode === 'dark' ? 'rgba(168, 85, 247, 0.1)' : 'rgba(168, 85, 247, 0.05)' }}>
                   <Typography variant="h4" sx={{
-                    background: 'linear-gradient(135deg, rgb(168, 85, 247), rgb(139, 92, 246))',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
+                    color: theme.palette.secondary.main,
                     fontWeight: 700
                   }}>
                     {formatFocusTime(selectedDayData.focusTimeSeconds)}
@@ -1264,20 +1252,17 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
           paper: {
             sx: {
               backgroundColor: theme.palette.mode === 'dark'
-                ? 'rgba(30, 41, 59, 0.85)'
-                : 'rgba(255, 255, 255, 0.85)',
-              backdropFilter: 'blur(12px) saturate(150%)',
-              WebkitBackdropFilter: 'blur(12px) saturate(150%)',
+                ? 'rgba(30, 41, 59, 0.96)'
+                : 'rgba(255, 255, 255, 0.98)',
               maxHeight: '80vh',
               boxShadow: theme.palette.mode === 'dark'
-                ? '0 8px 32px rgba(0, 0, 0, 0.5)'
-                : '0 8px 32px rgba(0, 0, 0, 0.15)'
+                ? '0 14px 36px rgba(0, 0, 0, 0.34)'
+                : '0 14px 36px rgba(15, 23, 42, 0.13)'
             }
           },
           backdrop: {
             sx: {
-              backdropFilter: 'blur(4px)',
-              backgroundColor: 'rgba(0, 0, 0, 0.3)'
+              backgroundColor: 'rgba(0, 0, 0, 0.34)'
             }
           }
         }}

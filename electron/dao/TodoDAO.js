@@ -185,6 +185,30 @@ class TodoDAO {
   }
 
   /**
+   * 批量获取多个父待办的子任务，供列表视图一次查询后分组展示。
+   * 分批执行以避开 SQLite 绑定参数数量上限。
+   */
+  getSubtasksForParents(parentSyncIds = []) {
+    const ids = [...new Set(parentSyncIds.filter((id) => typeof id === 'string' && id.trim()))];
+    if (ids.length === 0) return [];
+
+    const db = this.getDB();
+    const rows = [];
+    const chunkSize = 400;
+    for (let index = 0; index < ids.length; index += chunkSize) {
+      const chunk = ids.slice(index, index + chunkSize);
+      const placeholders = chunk.map(() => '?').join(', ');
+      const stmt = db.prepare(`
+        SELECT * FROM todos
+        WHERE parent_todo_id IN (${placeholders}) AND is_deleted = 0
+        ORDER BY parent_todo_id ASC, created_at ASC
+      `);
+      rows.push(...stmt.all(...chunk));
+    }
+    return rows;
+  }
+
+  /**
    * 根据ID查找待办事项(包括已删除)
    */
   findByIdIncludeDeleted(id) {

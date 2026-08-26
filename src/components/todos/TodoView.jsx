@@ -3,7 +3,6 @@ import { useTranslation } from '../../utils/i18n';
 import {
   Box,
   Typography,
-  Chip,
   Divider,
   useTheme,
   Card,
@@ -17,10 +16,6 @@ import MultiSelectToolbar from '../layout/MultiSelectToolbar';
 import {
   CheckCircle as CheckCircleIcon,
   SelectAll as SelectAllIcon,
-  Warning as WarningIcon,
-  Flag as FlagIcon,
-  FlashOn as FlashOnIcon,
-  Circle as CircleIcon,
   Edit as EditIcon,
   Delete as DeleteIcon
 } from '@mui/icons-material';
@@ -29,6 +24,7 @@ import TodoItem from './TodoItem';
 import FocusModeView from './FocusModeView';
 import {
   fetchTodosByQuadrant,
+  fetchSubtasksForParents,
   toggleTodoComplete,
   deleteTodo as deleteTodoAPI,
   addTodoFocusTime
@@ -47,6 +43,8 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
   const consumeTodoNavigationRequest = useStore((state) => state.consumeTodoNavigationRequest);
   const effectiveViewMode = viewMode === 'list' ? 'focus' : viewMode;
   const [todos, setTodos] = useState([]);
+  const [subtasksByParent, setSubtasksByParent] = useState({});
+  const [subtaskBusyIds, setSubtaskBusyIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [filterBy, setFilterBy] = useState('all'); // 'all', 'pending', 'completed', 'overdue', 'today'
 
@@ -81,16 +79,36 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
         setLoading(true);
       }
       const data = await fetchTodosByQuadrant(showCompleted);
-      setTodos(data || {
+      const nextTodos = data || {
         urgent_important: [],
         not_urgent_important: [],
         urgent_not_important: [],
         not_urgent_not_important: []
-      });
+      };
+      setTodos(nextTodos);
+
+      const parentSyncIds = [...new Set(
+        Object.values(nextTodos).flat().map((todo) => todo.sync_id).filter(Boolean)
+      )];
+      try {
+        const rows = parentSyncIds.length > 0
+          ? await fetchSubtasksForParents(parentSyncIds)
+          : [];
+        const grouped = {};
+        (rows || []).forEach((subtask) => {
+          if (!grouped[subtask.parent_todo_id]) grouped[subtask.parent_todo_id] = [];
+          grouped[subtask.parent_todo_id].push(subtask);
+        });
+        setSubtasksByParent(grouped);
+      } catch (subtaskError) {
+        console.error('批量获取子任务失败:', subtaskError);
+        setSubtasksByParent({});
+      }
     } catch (error) {
       console.error('加载待办事项失败:', error);
       showError(error, '加载待办事项失败');
       setTodos([]);
+      setSubtasksByParent({});
     } finally {
       if (!silent) {
         setLoading(false);
@@ -217,6 +235,84 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
     }
   };
 
+  const handleToggleSubtask = async (parentSyncId, subtask) => {
+    if (!parentSyncId || subtaskBusyIds.has(subtask.id)) return;
+    const previousCompleted = subtask.is_completed;
+    const nextCompleted = !Boolean(previousCompleted);
+    const currentSubtasks = subtasksByParent[parentSyncId] || [];
+    const nextSubtasks = currentSubtasks.map((item) => (
+      item.id === subtask.id ? { ...item, is_completed: nextCompleted ? 1 : 0 } : item
+    ));
+    const visibleTodos = Array.isArray(todos) ? todos : Object.values(todos || {}).flat();
+    const parentTodo = visibleTodos.find((todo) => todo.sync_id === parentSyncId);
+    const allSubtasksCompleted = nextSubtasks.length > 0
+      && nextSubtasks.every((item) => Boolean(item.is_completed));
+
+    setSubtaskBusyIds((current) => new Set(current).add(subtask.id));
+    setSubtasksByParent((current) => ({
+      ...current,
+      [parentSyncId]: nextSubtasks
+    }));
+
+    try {
+      const updated = await toggleTodoComplete(subtask.id);
+      if (updated) {
+        setSubtasksByParent((current) => ({
+          ...current,
+          [parentSyncId]: (current[parentSyncId] || []).map((item) => (
+            item.id === subtask.id ? { ...item, ...updated } : item
+          ))
+        }));
+      }
+
+      const parentCompleted = parentTodo ? isTodoCompleted(parentTodo) : false;
+      const shouldSyncParent = parentTodo
+        && !isFutureRecurringTodo(parentTodo)
+        && parentCompleted !== allSubtasksCompleted;
+
+      if (shouldSyncParent) {
+        if (allSubtasksCompleted) {
+          setCelebratingTodos((current) => new Set([...current, parentTodo.id]));
+          await new Promise((resolve) => setTimeout(resolve, 360));
+        }
+
+        try {
+          await toggleTodoComplete(parentTodo.id);
+          await loadTodos();
+        } catch (parentError) {
+          console.error('同步主任务完成状态失败:', parentError);
+          showError(parentError, '同步主任务完成状态失败');
+        } finally {
+          if (allSubtasksCompleted) {
+            setTimeout(() => {
+              setCelebratingTodos((current) => {
+                const next = new Set(current);
+                next.delete(parentTodo.id);
+                return next;
+              });
+            }, 1000);
+          }
+        }
+      }
+
+      onRefresh?.();
+    } catch (error) {
+      setSubtasksByParent((current) => ({
+        ...current,
+        [parentSyncId]: (current[parentSyncId] || []).map((item) => (
+          item.id === subtask.id ? { ...item, is_completed: previousCompleted } : item
+        ))
+      }));
+      showError(error, '更新子任务失败');
+    } finally {
+      setSubtaskBusyIds((current) => {
+        const next = new Set(current);
+        next.delete(subtask.id);
+        return next;
+      });
+    }
+  };
+
   const handleFocusTimeLogged = useCallback((updatedTodo) => {
     if (!updatedTodo || !updatedTodo.id) return;
 
@@ -276,6 +372,9 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
         compact={false}
         pendingComplete={pendingComplete}
         celebratingTodos={celebratingTodos}
+        subtasks={subtasksByParent[todo.sync_id] || []}
+        subtaskBusyIds={subtaskBusyIds}
+        onToggleSubtask={(subtask) => handleToggleSubtask(todo.sync_id, subtask)}
         isMultiSelectMode={multiSelectMode}
         isSelected={selectedTodos.includes(todo.id)}
         onDragStart={handleDragStart}
@@ -320,7 +419,6 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
         title: t('quadrant.urgentImportant'),
         subtitle: t('quadrant.urgentImportantDesc'),
         color: '#f44336',
-        icon: <WarningIcon />,
         todos: todos.urgent_important || [],
         isImportant: true,
         isUrgent: true
@@ -330,7 +428,6 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
         title: t('quadrant.importantNotUrgent'),
         subtitle: t('quadrant.importantNotUrgentDesc'),
         color: '#ff9800',
-        icon: <FlagIcon />,
         todos: todos.not_urgent_important || [],
         isImportant: true,
         isUrgent: false
@@ -340,7 +437,6 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
         title: t('quadrant.urgentNotImportant'),
         subtitle: t('quadrant.urgentNotImportantDesc'),
         color: '#2196f3',
-        icon: <FlashOnIcon />,
         todos: todos.urgent_not_important || [],
         isImportant: false,
         isUrgent: true
@@ -350,7 +446,6 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
         title: t('quadrant.neitherUrgentNorImportant'),
         subtitle: t('quadrant.neitherUrgentNorImportantDesc'),
         color: '#9e9e9e',
-        icon: <CircleIcon />,
         todos: todos.not_urgent_not_important || [],
         isImportant: false,
         isUrgent: false
@@ -411,78 +506,106 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
                     minHeight: 0,
                     display: 'flex',
                     flexDirection: 'column',
-                    borderRadius: '14px',
-                    backdropFilter: 'blur(12px) saturate(140%)',
-                    WebkitBackdropFilter: 'blur(12px) saturate(140%)',
-                    background: dark
-                      ? `linear-gradient(135deg, ${quadrant.color}08 0%, rgba(255,255,255,0.03) 100%)`
-                      : `linear-gradient(135deg, ${quadrant.color}06 0%, rgba(255,255,255,0.65) 100%)`,
+                    borderRadius: '16px',
+                    backgroundColor: theme.custom?.surface?.glassLight,
+                    backgroundImage: `linear-gradient(180deg, ${quadrant.color}${dark ? '0d' : '08'} 0%, transparent 34%)`,
+                    backdropFilter: theme.custom?.glass?.backdropFilter,
+                    WebkitBackdropFilter: theme.custom?.glass?.backdropFilter,
                     border: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
                     transition: createTransitionString(ANIMATIONS.hover),
                     overflow: 'hidden',
                     '&:hover': {
                       boxShadow: dark
-                        ? `0 8px 32px ${quadrant.color}20`
-                        : `0 8px 32px ${quadrant.color}18`,
-                      border: `1px solid ${quadrant.color}35`,
+                        ? '0 6px 18px rgba(0,0,0,0.18)'
+                        : '0 6px 18px rgba(15,23,42,0.07)',
+                      borderColor: `${quadrant.color}35`,
                     },
                     ...(isDragOver(quadrant.key) && {
                       border: `2px dashed ${quadrant.color}`,
-                      boxShadow: `0 0 0 4px ${quadrant.color}15, 0 8px 32px ${quadrant.color}30`,
-                      background: dark
-                        ? `linear-gradient(135deg, ${quadrant.color}15 0%, rgba(255,255,255,0.05) 100%)`
-                        : `linear-gradient(135deg, ${quadrant.color}12 0%, rgba(255,255,255,0.8) 100%)`,
+                      boxShadow: `0 0 0 3px ${quadrant.color}12`,
+                      backgroundColor: dark ? `${quadrant.color}14` : `${quadrant.color}0d`,
                     })
                   }}
                 >
                   {/* 简洁头部 */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1.5 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, px: 2, pt: 1.75, pb: 1.5 }}>
                     <Box sx={{
-                      width: 32, height: 32, borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      background: `${quadrant.color}15`,
-                      color: quadrant.color,
-                      '& .MuiSvgIcon-root': { fontSize: 18 },
-                    }}>
-                      {quadrant.icon}
-                    </Box>
+                      width: 3,
+                      height: 28,
+                      borderRadius: 999,
+                      flexShrink: 0,
+                      bgcolor: quadrant.color,
+                      opacity: dark ? 0.78 : 0.9,
+                      boxShadow: `0 0 12px ${quadrant.color}24`
+                    }} />
                     <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 700, color: quadrant.color, lineHeight: 1.3 }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 750, color: 'text.primary', lineHeight: 1.25, letterSpacing: '-0.01em' }}>
                         {quadrant.title}
                       </Typography>
-                      <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.2, fontSize: '0.68rem' }}>
+                      <Typography variant="caption" sx={{ display: 'block', mt: 0.25, color: 'text.secondary', lineHeight: 1.2, fontSize: '0.68rem' }}>
                         {quadrant.subtitle}
                       </Typography>
                     </Box>
-                    <Chip
-                      label={quadrant.todos.length}
-                      size="small"
+                    <Box
+                      aria-label={`${quadrant.todos.length} 项待办`}
                       sx={{
-                        height: 22, minWidth: 22,
-                        fontWeight: 700, fontSize: '0.7rem',
-                        bgcolor: `${quadrant.color}15`,
+                        minWidth: 28,
+                        height: 28,
+                        px: 0.75,
+                        display: 'grid',
+                        placeItems: 'center',
+                        borderRadius: '9px',
+                        border: `1px solid ${quadrant.color}20`,
+                        fontWeight: 750,
+                        fontSize: '0.72rem',
+                        bgcolor: `${quadrant.color}${dark ? '12' : '0b'}`,
                         color: quadrant.color,
-                        '& .MuiChip-label': { px: 0.8 },
                       }}
-                    />
+                    >
+                      {quadrant.todos.length}
+                    </Box>
                   </Box>
 
-                  <CardContent sx={{ flex: 1, minHeight: 0, pt: 0, pb: '12px !important', px: 1.5, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                  <CardContent sx={{ flex: 1, minHeight: 0, pt: 0, pb: '14px !important', px: 1.5, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                     {quadrant.todos.length === 0 ? (
                       <Box
                         sx={{
-                          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          textAlign: 'center', opacity: 0.4,
+                          flex: 1,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          textAlign: 'center',
+                          opacity: 0.44,
                         }}
                       >
-                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                        <Box sx={{ width: 28, height: 2, mb: 1, borderRadius: 999, bgcolor: `${quadrant.color}70` }} />
+                        <Typography variant="caption" sx={{ color: 'text.secondary', letterSpacing: '0.02em' }}>
                             {t('quadrant.empty')}
                           </Typography>
                       </Box>
                     ) : (
                       <Box
-                        sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}
+                        sx={{
+                          flex: 1,
+                          minHeight: 0,
+                          overflowY: 'auto',
+                          overflowX: 'hidden',
+                          pr: 0.35,
+                          scrollbarWidth: 'thin',
+                          scrollbarColor: `${quadrant.color}28 transparent`,
+                          '&::-webkit-scrollbar': { width: 5 },
+                          '&::-webkit-scrollbar-track': { background: 'transparent' },
+                          '&::-webkit-scrollbar-thumb': {
+                            borderRadius: 999,
+                            backgroundColor: `${quadrant.color}24`
+                          },
+                          '&:hover::-webkit-scrollbar-thumb': {
+                            backgroundColor: `${quadrant.color}40`
+                          }
+                        }}
                       >
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.625 }}>
                           {quadrant.todos.map(renderTodoItem)}
                         </Box>
                       </Box>

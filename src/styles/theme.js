@@ -1,5 +1,12 @@
+import React from 'react';
 import { createTheme, alpha } from '@mui/material/styles';
 import { EASING, DURATION_MS } from '../utils/animationConfig';
+
+const checkboxIcon = React.createElement('span', { className: 'FlotaCheckbox-icon' });
+const checkboxCheckedIcon = React.createElement('span', { className: 'FlotaCheckbox-icon FlotaCheckbox-iconChecked' });
+const checkboxIndeterminateIcon = React.createElement('span', { className: 'FlotaCheckbox-icon FlotaCheckbox-iconIndeterminate' });
+const radioIcon = React.createElement('span', { className: 'FlotaRadio-icon' });
+const radioCheckedIcon = React.createElement('span', { className: 'FlotaRadio-icon FlotaRadio-iconChecked' });
 
 /**
  * Create the application theme based on mode and primary color
@@ -18,15 +25,21 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
     const backgroundDefault = isDark ? '#0f172a' : '#f0f4f8';
     const backgroundPaper = isDark ? '#1e293b' : '#ffffff';
 
-    // Glassmorphism tokens (subtle / refined)
-    // Make frosted effect more delicate: smaller blur and lower white overlay
+    // 统一浮层材质：Dialog / Menu / Popover / AI 浮层共享同一套玻璃参数。
+    // 保持背景可辨识，同时用较高透明度保证正文对比度。
     const glassBackground = isDark
-        ? alpha('#1e293b', 0.45)
-        : alpha('#ffffff', 0.85); // Increased opacity for better visibility in light mode
+        ? alpha('#172033', 0.68)
+        : alpha('#f8fafc', 0.72);
     const glassBorder = isDark
-        ? '1px solid rgba(255, 255, 255, 0.06)'
-        : '1px solid rgba(0, 0, 0, 0.08)'; // Darker border for light mode
-    const glassBlur = 'blur(6px)';
+        ? '1px solid rgba(255, 255, 255, 0.11)'
+        : '1px solid rgba(255, 255, 255, 0.68)';
+    const glassBlur = 'blur(20px) saturate(165%)';
+    const glassBackgroundImage = isDark
+        ? `linear-gradient(145deg, ${alpha('#ffffff', 0.075)} 0%, ${alpha('#ffffff', 0.018)} 46%, ${alpha(primaryColor, 0.055)} 100%)`
+        : `linear-gradient(145deg, ${alpha('#ffffff', 0.38)} 0%, ${alpha('#ffffff', 0.08)} 48%, ${alpha(primaryColor, 0.028)} 100%)`;
+    const glassShadow = isDark
+        ? '0 16px 44px rgba(2, 6, 23, 0.34), inset 0 1px 0 rgba(255,255,255,0.055)'
+        : '0 16px 44px rgba(15, 23, 42, 0.13), inset 0 1px 0 rgba(255,255,255,0.74)';
 
     // Surface tokens — 用于替换全应用的 rgba(255,255,255,0.x) / rgba(0,0,0,0.x) 硬编码
     const surface = {
@@ -37,6 +50,9 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
         hover:    isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.04)',
         active:   isDark ? 'rgba(255,255,255,0.10)' : 'rgba(15,23,42,0.06)',
         pressed:  isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,23,42,0.08)',
+        // 表单与嵌入面板使用同一层低对比材质，避免透明、灰底、白底混用。
+        control: isDark ? 'rgba(255,255,255,0.035)' : 'rgba(15,23,42,0.025)',
+        controlHover: isDark ? 'rgba(255,255,255,0.055)' : 'rgba(15,23,42,0.04)',
         // 细分割线
         subtleBorder:  isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)',
         strongBorder:  isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,23,42,0.12)',
@@ -83,7 +99,8 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
             },
         },
         shape: {
-            borderRadius: 16,
+            // sx 中的数字圆角会乘以该基数：1 / 1.5 / 2 对应 8 / 12 / 16px。
+            borderRadius: 8,
         },
         transitions: {
             easing: {
@@ -144,13 +161,13 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                     },
                     elevation1: {
                         boxShadow: isDark
-                            ? '0 4px 20px -2px rgba(0, 0, 0, 0.4)' // Softer dark shadow
-                            : '0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0,0,0,0.02)', // Ultra soft light shadow
+                            ? '0 3px 12px rgba(0, 0, 0, 0.26)'
+                            : '0 3px 12px rgba(15, 23, 42, 0.055)',
                     },
                     elevation2: {
                         boxShadow: isDark
-                            ? '0 10px 30px -4px rgba(0, 0, 0, 0.5)'
-                            : '0 10px 30px -4px rgba(0, 0, 0, 0.08)',
+                            ? '0 8px 24px rgba(0, 0, 0, 0.3)'
+                            : '0 8px 24px rgba(15, 23, 42, 0.08)',
                     }
                 }
             },
@@ -184,17 +201,20 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                         },
                     },
                     contained: {
-                        boxShadow: `0 1px 2px ${alpha('#000000', isDark ? 0.28 : 0.10)}`,
+                        boxShadow: `0 1px 2px ${alpha('#000000', isDark ? 0.24 : 0.08)}`,
                         '&:hover': {
-                            boxShadow: `0 2px 8px ${alpha('#000000', isDark ? 0.24 : 0.10)}`,
+                            boxShadow: `0 2px 6px ${alpha('#000000', isDark ? 0.22 : 0.08)}`,
                         },
                     },
                     containedPrimary: {
-                        background: `linear-gradient(135deg, ${alpha(primaryColor, 0.95)} 0%, ${alpha(primaryColor, 0.82)} 100%)`,
-                        boxShadow: `0 2px 8px ${alpha(primaryColor, isDark ? 0.22 : 0.18)}`,
+                        backgroundColor: primaryColor,
+                        backgroundImage: 'none',
+                        boxShadow: `0 1px 3px ${alpha(primaryColor, isDark ? 0.2 : 0.14)}`,
                         '&:hover': {
-                            background: `linear-gradient(135deg, ${primaryColor} 0%, ${alpha(primaryColor, 0.88)} 100%)`,
-                            boxShadow: `0 3px 10px ${alpha(primaryColor, isDark ? 0.26 : 0.20)}`,
+                            backgroundColor: primaryColor,
+                            backgroundImage: 'none',
+                            filter: 'brightness(0.94)',
+                            boxShadow: `0 2px 6px ${alpha(primaryColor, isDark ? 0.22 : 0.16)}`,
                         }
                     }
                 },
@@ -239,8 +259,9 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                             '& + .MuiSwitch-track': {
                                 opacity: 1,
                                 borderColor: alpha(primaryColor, isDark ? 0.28 : 0.22),
-                                background: `linear-gradient(135deg, ${alpha(primaryColor, isDark ? 0.92 : 0.88)} 0%, ${alpha(primaryColor, isDark ? 0.72 : 0.68)} 100%)`,
-                                boxShadow: `0 4px 12px ${alpha(primaryColor, isDark ? 0.18 : 0.16)}`,
+                                backgroundColor: alpha(primaryColor, isDark ? 0.92 : 0.88),
+                                backgroundImage: 'none',
+                                boxShadow: `0 1px 4px ${alpha(primaryColor, isDark ? 0.18 : 0.14)}`,
                             },
                             '& .MuiSwitch-thumb': {
                                 backgroundColor: '#ffffff',
@@ -269,9 +290,10 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                         opacity: 1,
                         boxSizing: 'border-box',
                         border: `1px solid ${alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.08 : 0.10)}`,
-                        background: isDark
-                            ? 'linear-gradient(135deg, rgba(148,163,184,0.14), rgba(71,85,105,0.18))'
-                            : 'linear-gradient(135deg, rgba(203,213,225,0.58), rgba(226,232,240,0.9))',
+                        backgroundColor: isDark
+                            ? 'rgba(100,116,139,0.22)'
+                            : 'rgba(203,213,225,0.72)',
+                        backgroundImage: 'none',
                         boxShadow: isDark
                             ? 'inset 0 1px 1px rgba(255,255,255,0.04)'
                             : 'inset 0 1px 1px rgba(255,255,255,0.72)',
@@ -279,14 +301,134 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                     },
                 },
             },
+            MuiCheckbox: {
+                defaultProps: {
+                    icon: checkboxIcon,
+                    checkedIcon: checkboxCheckedIcon,
+                    indeterminateIcon: checkboxIndeterminateIcon,
+                    disableRipple: true,
+                },
+                styleOverrides: {
+                    root: {
+                        padding: 6,
+                        borderRadius: 8,
+                        transition: 'background-color 150ms ease',
+                        '& .FlotaCheckbox-icon': {
+                            position: 'relative',
+                            display: 'inline-block',
+                            width: 18,
+                            height: 18,
+                            boxSizing: 'border-box',
+                            borderRadius: 6,
+                            border: `1.5px solid ${alpha(isDark ? '#cbd5e1' : '#475569', isDark ? 0.58 : 0.68)}`,
+                            backgroundColor: isDark ? 'rgba(255,255,255,0.025)' : 'rgba(255,255,255,0.42)',
+                            boxShadow: isDark
+                                ? 'inset 0 1px 0 rgba(255,255,255,0.035)'
+                                : 'inset 0 1px 0 rgba(255,255,255,0.72)',
+                            transition: 'background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease',
+                        },
+                        '& .FlotaCheckbox-iconChecked, & .FlotaCheckbox-iconIndeterminate': {
+                            borderColor: primaryColor,
+                            backgroundColor: primaryColor,
+                            boxShadow: isDark
+                                ? `0 1px 4px ${alpha(primaryColor, 0.38)}, inset 0 1px 0 rgba(255,255,255,0.24)`
+                                : `0 1px 4px ${alpha(primaryColor, 0.3)}, inset 0 1px 0 rgba(255,255,255,0.16)`,
+                        },
+                        '& .FlotaCheckbox-iconChecked::after': {
+                            content: '""',
+                            position: 'absolute',
+                            left: 6,
+                            top: 2.5,
+                            width: 4.5,
+                            height: 8.5,
+                            border: 'solid #ffffff',
+                            borderWidth: '0 2px 2px 0',
+                            transform: 'rotate(45deg)',
+                            transformOrigin: 'center',
+                        },
+                        '& .FlotaCheckbox-iconIndeterminate::after': {
+                            content: '""',
+                            position: 'absolute',
+                            left: 4,
+                            top: 7,
+                            width: 8,
+                            height: 2,
+                            borderRadius: 2,
+                            backgroundColor: '#ffffff',
+                        },
+                        '&:hover': {
+                            backgroundColor: isDark ? 'rgba(255,255,255,0.055)' : 'rgba(15,23,42,0.045)',
+                        },
+                        '&.Mui-focusVisible .FlotaCheckbox-icon': {
+                            boxShadow: `0 0 0 3px ${alpha(primaryColor, 0.22)}`,
+                        },
+                        '&.Mui-disabled': {
+                            opacity: 0.4,
+                        },
+                        '&:active .FlotaCheckbox-icon': {
+                            transform: 'scale(0.92)',
+                        },
+                    },
+                },
+            },
+            MuiRadio: {
+                defaultProps: {
+                    icon: radioIcon,
+                    checkedIcon: radioCheckedIcon,
+                    disableRipple: true,
+                },
+                styleOverrides: {
+                    root: {
+                        padding: 6,
+                        borderRadius: '50%',
+                        transition: 'background-color 150ms ease',
+                        '& .FlotaRadio-icon': {
+                            position: 'relative',
+                            display: 'inline-block',
+                            width: 18,
+                            height: 18,
+                            boxSizing: 'border-box',
+                            borderRadius: '50%',
+                            border: `1.5px solid ${alpha(isDark ? '#cbd5e1' : '#475569', isDark ? 0.58 : 0.68)}`,
+                            backgroundColor: isDark ? 'rgba(255,255,255,0.025)' : 'rgba(255,255,255,0.42)',
+                            transition: 'border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease',
+                        },
+                        '& .FlotaRadio-iconChecked': {
+                            borderColor: primaryColor,
+                            boxShadow: isDark
+                                ? `0 1px 4px ${alpha(primaryColor, 0.34)}`
+                                : `0 1px 4px ${alpha(primaryColor, 0.26)}`,
+                        },
+                        '& .FlotaRadio-iconChecked::after': {
+                            content: '""',
+                            position: 'absolute',
+                            inset: 4,
+                            borderRadius: '50%',
+                            backgroundColor: primaryColor,
+                        },
+                        '&:hover': {
+                            backgroundColor: isDark ? 'rgba(255,255,255,0.055)' : 'rgba(15,23,42,0.045)',
+                        },
+                        '&.Mui-focusVisible .FlotaRadio-icon': {
+                            boxShadow: `0 0 0 3px ${alpha(primaryColor, 0.22)}`,
+                        },
+                        '&.Mui-disabled': {
+                            opacity: 0.4,
+                        },
+                        '&:active .FlotaRadio-icon': {
+                            transform: 'scale(0.92)',
+                        },
+                    },
+                },
+            },
             MuiOutlinedInput: {
                 styleOverrides: {
                     root: {
                         borderRadius: 12,
-                        backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                        backgroundColor: surface.control,
                         transition: 'background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease',
                         '&:hover': {
-                            backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+                            backgroundColor: surface.controlHover,
                         },
                         '&.Mui-focused': {
                             backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.8)',
@@ -294,20 +436,21 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                         }
                     },
                     notchedOutline: {
-                        border: 'none', // Remove default border
+                        border: `1px solid ${surface.subtleBorder}`,
                     },
                 }
             },
             MuiDialog: {
                 styleOverrides: {
                     paper: {
-                        borderRadius: 20,
+                        borderRadius: 16,
                         backdropFilter: glassBlur,
+                        WebkitBackdropFilter: glassBlur,
                         backgroundColor: glassBackground,
+                        backgroundImage: glassBackgroundImage,
                         border: glassBorder,
-                        boxShadow: isDark
-                            ? '0 28px 70px rgba(0,0,0,0.36)'
-                            : '0 28px 70px rgba(15,23,42,0.18)',
+                        borderRadius: 12,
+                        boxShadow: glassShadow,
                     }
                 }
             },
@@ -345,12 +488,52 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                 styleOverrides: {
                     paper: {
                         backdropFilter: glassBlur,
+                        WebkitBackdropFilter: glassBlur,
                         backgroundColor: glassBackground,
+                        backgroundImage: glassBackgroundImage,
                         border: glassBorder,
                         borderRadius: 12,
-                        boxShadow: isDark
-                            ? '0 14px 42px rgba(0,0,0,0.32)'
-                            : '0 14px 42px rgba(15,23,42,0.14)',
+                        boxShadow: glassShadow,
+                    }
+                }
+            },
+            MuiPopover: {
+                styleOverrides: {
+                    paper: {
+                        backdropFilter: glassBlur,
+                        WebkitBackdropFilter: glassBlur,
+                        backgroundColor: glassBackground,
+                        backgroundImage: glassBackgroundImage,
+                        border: glassBorder,
+                        borderRadius: 12,
+                        boxShadow: glassShadow,
+                    }
+                }
+            },
+            MuiAutocomplete: {
+                styleOverrides: {
+                    paper: {
+                        backdropFilter: glassBlur,
+                        WebkitBackdropFilter: glassBlur,
+                        backgroundColor: glassBackground,
+                        backgroundImage: glassBackgroundImage,
+                        border: glassBorder,
+                        borderRadius: 12,
+                        boxShadow: glassShadow,
+                    }
+                }
+            },
+            MuiSnackbarContent: {
+                styleOverrides: {
+                    root: {
+                        backdropFilter: glassBlur,
+                        WebkitBackdropFilter: glassBlur,
+                        backgroundColor: glassBackground,
+                        backgroundImage: glassBackgroundImage,
+                        border: glassBorder,
+                        borderRadius: 12,
+                        boxShadow: glassShadow,
+                        color: isDark ? '#f8fafc' : '#1e293b',
                     }
                 }
             },
@@ -460,8 +643,10 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
         custom: {
             glass: {
                 background: glassBackground,
+                backgroundImage: glassBackgroundImage,
                 backdropFilter: glassBlur,
                 border: glassBorder,
+                boxShadow: glassShadow,
             },
             surface,
             gradients: {

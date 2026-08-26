@@ -376,10 +376,9 @@ const Sidebar = () => {
         paddingBottom: '8px',
         position: 'relative',
         zIndex: 100,
-        background: theme.palette.mode === 'dark'
-          ? 'rgba(30, 41, 59, 0.7)'
-          : 'rgba(255, 255, 255, 0.7)',
-        backdropFilter: 'blur(20px)',
+        background: theme.custom?.surface?.glassLight,
+        backdropFilter: theme.custom?.glass?.backdropFilter,
+        WebkitBackdropFilter: theme.custom?.glass?.backdropFilter,
         boxShadow: 'none',
         overflow: 'visible',
         minHeight: 0,
