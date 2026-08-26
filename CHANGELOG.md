@@ -2,6 +2,12 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [3.7.0] - 2026-08-26
+
+### Changed / 更新内容
+- feat: improve todo workflows
+
+
 ## [3.6.0] - 2026-08-20
 
 ### Changed / 更新内容
