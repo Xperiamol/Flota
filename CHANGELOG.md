@@ -2,6 +2,12 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [3.7.4] - 2026-08-27
+
+### Changed / 更新内容
+- fix: preserve Windows taskbar pin on upgrade
+
+
 ## [3.7.3] - 2026-08-27
 
 ### Changed / 更新内容
