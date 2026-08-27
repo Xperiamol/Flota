@@ -2,6 +2,12 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [3.7.3] - 2026-08-27
+
+### Changed / 更新内容
+- fix: remove missing NSIS include
+
+
 ## [3.7.2] - 2026-08-27
 
 ### Changed / 更新内容
