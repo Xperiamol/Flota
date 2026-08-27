@@ -53,7 +53,9 @@ const enUS = {
     windowButtons: {
       close: 'Close',
       minimize: 'Minimize',
-      maximize: 'Maximize/Restore'
+      maximize: 'Maximize/Restore',
+      pin: 'Always on top',
+      unpin: 'Stop keeping on top'
     }
   },
   common: {
@@ -201,7 +203,9 @@ const enUS = {
     userNamePlaceholder: 'Enter your name',
     userNameHelper: 'This will be displayed in profile center',
     defaultMinibarMode: 'Default Minibar Mode for Standalone Windows',
-    defaultMinibarModeDesc: 'Enable minibar mode by default when opening standalone windows (hide toolbar, compact display)'
+    defaultMinibarModeDesc: 'Enable minibar mode by default when opening standalone windows (hide toolbar, compact display)',
+    hiddenMode: 'Hidden Mode',
+    hiddenModeDesc: 'Use system-level content protection to keep every Flota window out of screenshots, recordings, and screen shares'
   },
   sidebar: {
     notes: 'Notes',

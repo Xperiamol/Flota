@@ -8,6 +8,7 @@ class WindowManager extends EventEmitter {
   constructor(settingsService) {
     super();
     this.settingsService = settingsService;
+    this.contentProtectionEnabled = false;
     this.windows = new Map(); // 存储所有窗口
     this.noteWindows = new Map(); // 存储笔记ID到窗口ID的映射
     this.pendingWindowData = new Map(); // 待渲染进程拉取的初始化数据
@@ -778,6 +779,40 @@ class WindowManager extends EventEmitter {
         this.todoReminderWindow = null;
       }
     });
+  }
+
+  /**
+   * 从持久化设置中恢复窗口内容保护状态。
+   */
+  async initializeContentProtection() {
+    try {
+      const result = await this.settingsService.getSetting('hiddenMode');
+      this.contentProtectionEnabled = Boolean(result?.success && result.data);
+    } catch (error) {
+      this.contentProtectionEnabled = false;
+      console.error('初始化隐藏模式失败:', error);
+    }
+  }
+
+  /**
+   * 对单个窗口应用系统级内容保护。
+   */
+  applyContentProtection(window) {
+    if (!window || window.isDestroyed() || typeof window.setContentProtection !== 'function') return;
+
+    try {
+      window.setContentProtection(this.contentProtectionEnabled);
+    } catch (error) {
+      console.error('应用窗口内容保护失败:', error);
+    }
+  }
+
+  /**
+   * 更新所有现有窗口的内容保护；之后创建的窗口会通过 browser-window-created 继承。
+   */
+  setContentProtection(enabled) {
+    this.contentProtectionEnabled = Boolean(enabled);
+    BrowserWindow.getAllWindows().forEach(window => this.applyContentProtection(window));
   }
 
   advanceTodoReminder() {

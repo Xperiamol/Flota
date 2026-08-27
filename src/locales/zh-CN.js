@@ -53,7 +53,9 @@ const zhCN = {
     windowButtons: {
       close: '关闭',
       minimize: '最小化',
-      maximize: '最大化/还原'
+      maximize: '最大化/还原',
+      pin: '窗口置顶',
+      unpin: '取消置顶'
     }
   },
   common: {
@@ -201,7 +203,9 @@ const zhCN = {
     userNamePlaceholder: '输入您的姓名',
     userNameHelper: '这将在个人中心显示',
     defaultMinibarMode: '独立窗口默认迷你栏模式',
-    defaultMinibarModeDesc: '打开独立窗口时默认启用迷你栏模式（隐藏工具栏，紧凑显示）'
+    defaultMinibarModeDesc: '打开独立窗口时默认启用迷你栏模式（隐藏工具栏，紧凑显示）',
+    hiddenMode: '隐藏模式',
+    hiddenModeDesc: '启用系统级内容保护，让 Flota 的所有窗口不出现在截图、录屏或屏幕共享画面中'
   },
   sidebar: {
     notes: '笔记',

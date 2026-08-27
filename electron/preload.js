@@ -226,6 +226,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     hide: inv('window:hide'),
     show: inv('window:show'),
     focus: inv('window:focus'),
+    toggleAlwaysOnTop: inv('window:toggle-always-on-top'),
+    isAlwaysOnTop: inv('window:is-always-on-top'),
     toggleDevTools: inv('window:toggle-dev-tools'),
     isMaximized: inv('window:is-maximized'),
     isMinimized: inv('window:is-minimized'),
@@ -246,6 +248,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onWindowCreated: listen('window:created'),
     onWindowClosed: listen('window:closed'),
     onWindowClosing: listen('window-closing'),
+    onAlwaysOnTopChanged: listen('window:always-on-top-changed'),
     removeWindowClosingListener: (callback) => {
       ipcRenderer.removeListener('window-closing', callback)
     },

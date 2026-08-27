@@ -568,6 +568,7 @@ const Settings = () => {
         userName: '',
         language: 'zh-CN',
         defaultMinibarMode: false,
+        hiddenMode: false,
         mcpEnabled: false,
         attachmentMaxSizeMB: 50
     });
@@ -620,6 +621,7 @@ const Settings = () => {
             `titleBarStyle: ${titleBarStyle || 'unknown'}`,
             `mcpEnabled: ${settings?.mcpEnabled ? 'true' : 'false'}`,
             `defaultMinibarMode: ${settings?.defaultMinibarMode ? 'true' : 'false'}`,
+            `hiddenMode: ${settings?.hiddenMode ? 'true' : 'false'}`,
             `userAgent: ${navigator.userAgent}`,
         ].join('\n');
 
@@ -646,6 +648,9 @@ const Settings = () => {
                     const normalizedData = { ...result.data };
                     if (normalizedData.autoLaunch !== undefined) {
                         normalizedData.autoLaunch = Boolean(normalizedData.autoLaunch);
+                    }
+                    if (normalizedData.hiddenMode !== undefined) {
+                        normalizedData.hiddenMode = Boolean(normalizedData.hiddenMode);
                     }
                     if (normalizedData.christmasMode !== undefined) {
                         normalizedData.christmasMode = Boolean(normalizedData.christmasMode);
@@ -1188,6 +1193,16 @@ const Settings = () => {
                                 <Switch
                                     checked={settings.defaultMinibarMode}
                                     onChange={(e) => handleSettingChange('defaultMinibarMode', e.target.checked)}
+                                />
+                            )}
+                        />
+                        <SettingRow
+                            primary={t('settings.hiddenMode')}
+                            secondary={t('settings.hiddenModeDesc')}
+                            action={(
+                                <Switch
+                                    checked={settings.hiddenMode}
+                                    onChange={(e) => handleSettingChange('hiddenMode', e.target.checked)}
                                 />
                             )}
                         />

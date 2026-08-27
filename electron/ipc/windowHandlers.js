@@ -34,6 +34,18 @@ const registerWindowHandlers = (windowManager) => {
     'window:hide': async (event) => { const w = getEventWindow(event); if (w) w.hide(); return true },
     'window:show': async (event) => { const w = getEventWindow(event); if (w) w.show(); return true },
     'window:focus': async (event) => { const w = getEventWindow(event); if (w) w.focus(); return true },
+    'window:toggle-always-on-top': async (event) => {
+      const w = getEventWindow(event)
+      if (!w) return false
+      const alwaysOnTop = !w.isAlwaysOnTop()
+      w.setAlwaysOnTop(alwaysOnTop)
+      w.webContents.send('window:always-on-top-changed', alwaysOnTop)
+      return alwaysOnTop
+    },
+    'window:is-always-on-top': async (event) => {
+      const w = getEventWindow(event)
+      return w ? w.isAlwaysOnTop() : false
+    },
     'window:is-maximized': async (event) => { const w = getEventWindow(event); return w ? w.isMaximized() : false },
     'window:is-minimized': async (event) => { const w = getEventWindow(event); return w ? w.isMinimized() : false },
     'window:is-visible': async (event) => { const w = getEventWindow(event); return w ? w.isVisible() : false },

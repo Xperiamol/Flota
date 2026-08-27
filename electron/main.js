@@ -749,6 +749,10 @@ async function initializeServices() {
 
     // 初始化窗口管理器
     windowManager = new WindowManager(services.settingsService)
+    await windowManager.initializeContentProtection()
+    app.on('browser-window-created', (_event, window) => {
+      windowManager.applyContentProtection(window)
+    })
     services.notificationService.setWindowManager(windowManager)
 
     // windowManager 就绪后再注册依赖它的 IPC 处理器，避免闭包捕获 undefined
@@ -808,6 +812,9 @@ async function initializeServices() {
     // 转发 SettingsService 的设置变更事件到所有渲染进程
     if (services && services.settingsService) {
       services.settingsService.on('setting-changed', (data) => {
+        if (data?.key === 'hiddenMode') {
+          windowManager.setContentProtection(data.value)
+        }
         broadcastToAll('setting:changed', data)
       })
     }

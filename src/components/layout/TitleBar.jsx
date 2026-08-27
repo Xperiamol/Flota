@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Box, Typography, Tooltip } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
+import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
 import { createTransitionString, ANIMATIONS } from '../../utils/animationConfig';
 import { useStore } from '../../store/useStore';
 import { useTranslation } from '../../utils/i18n';
@@ -11,6 +12,26 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
   const { t } = useTranslation();
   const { currentView, titleBarStyle } = useStore();
   const isMac = titleBarStyle === 'mac';
+  const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
+
+  useEffect(() => {
+    const windowApi = window.electronAPI?.window;
+    if (!windowApi) return undefined;
+
+    let disposed = false;
+    windowApi.isAlwaysOnTop?.().then((value) => {
+      if (!disposed) setIsAlwaysOnTop(Boolean(value));
+    }).catch(() => {});
+
+    const unsubscribe = windowApi.onAlwaysOnTopChanged?.((value) => {
+      setIsAlwaysOnTop(Boolean(value));
+    });
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  }, []);
 
   // 根据当前视图获取对应的标题
   const getViewTitle = () => {
@@ -54,6 +75,13 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
     }
   };
 
+  const handleToggleAlwaysOnTop = async () => {
+    if (window.electronAPI?.window?.toggleAlwaysOnTop) {
+      const value = await window.electronAPI.window.toggleAlwaysOnTop();
+      setIsAlwaysOnTop(Boolean(value));
+    }
+  };
+
   const handleMinibar = async () => {
     if (onMinibarClick) {
       onMinibarClick();
@@ -81,33 +109,42 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
         borderBottom: `1px solid ${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'}`,
       }}
     >
-      {/* Minibar按钮 - 独立窗口时显示 */}
-      {isStandalone && (
-        <Box
-          sx={{
-            position: 'absolute',
-            // macOS 左上角为系统窗口控制区域，minibar 需要避开该区域
-            left: isMac ? '80px' : '12px',
-            top: '50%',
-            // macOS 下向下微调一点，避免贴得太上
-            transform: isMac ? 'translateY(calc(-50% + 2px))' : 'translateY(-50%)',
-            WebkitAppRegion: 'no-drag',
-          }}
-        >
+      {/* 左上角窗口工具组 */}
+      <Box
+        sx={{
+          position: 'absolute',
+          left: isMac ? '76px' : '6px',
+          top: '2px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '2px',
+          WebkitAppRegion: 'no-drag',
+        }}
+      >
+        <AlwaysOnTopButton
+          active={isAlwaysOnTop}
+          onClick={handleToggleAlwaysOnTop}
+          theme={theme}
+          label={t(`toolbar.windowButtons.${isAlwaysOnTop ? 'unpin' : 'pin'}`)}
+        />
+        {isStandalone && (
           <Tooltip title={t('toolbar.minibarMode')} placement="bottom">
             <Box
               onClick={handleMinibar}
               sx={{
-                width: '32px',
-                height: '20px',
+                width: '28px',
+                height: '28px',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'pointer',
-                borderRadius: '4px',
+                borderRadius: '7px',
+                color: theme.palette.text.secondary,
+                opacity: 0.58,
                 transition: createTransitionString(ANIMATIONS.button),
                 '&:hover': {
+                  opacity: 1,
                   backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
                 },
                 '&:active': {
@@ -119,23 +156,23 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
                 sx={{
                   width: '10px',
                   height: '2px',
-                  backgroundColor: theme.palette.mode === 'dark' ? '#ffffff' : '#1a1a1a',
+                  backgroundColor: 'currentColor',
                   borderRadius: '1px',
-                  marginBottom: '2px',
+                  marginBottom: '3px',
                 }}
               />
               <Box
                 sx={{
                   width: '10px',
                   height: '2px',
-                  backgroundColor: theme.palette.mode === 'dark' ? '#ffffff' : '#1a1a1a',
+                  backgroundColor: 'currentColor',
                   borderRadius: '1px',
                 }}
               />
             </Box>
           </Tooltip>
-        </Box>
-      )}
+        )}
+      </Box>
 
       {titleBarStyle === 'mac' ? (
         /* macOS 下不渲染自定义窗口控制按钮（系统自带），避免重复与误导 */
@@ -296,5 +333,47 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
     </Box>
   );
 };
+
+const AlwaysOnTopButton = ({ active, onClick, theme, label }) => (
+  <Tooltip title={label} placement="bottom">
+    <Box
+      onClick={onClick}
+      role="button"
+      aria-pressed={active}
+      aria-label={label}
+      sx={{
+        width: '28px',
+        height: '28px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+        position: 'relative',
+        borderRadius: '7px',
+        color: active ? theme.palette.primary.main : theme.palette.text.secondary,
+        opacity: active ? 1 : 0.58,
+        backgroundColor: active
+          ? (theme.palette.mode === 'dark' ? 'rgba(144, 202, 249, 0.12)' : 'rgba(25, 118, 210, 0.08)')
+          : 'transparent',
+        transition: createTransitionString(ANIMATIONS.button),
+        '&:hover': {
+          opacity: 1,
+          backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
+        },
+        '&:active': {
+          backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
+        },
+      }}
+    >
+      <PushPinOutlinedIcon
+        sx={{
+          fontSize: 14,
+          transform: active ? 'rotate(-35deg)' : 'none',
+          transition: 'transform 160ms ease',
+        }}
+      />
+    </Box>
+  </Tooltip>
+);
 
 export default TitleBar;
