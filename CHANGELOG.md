@@ -2,6 +2,12 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [3.7.2] - 2026-08-27
+
+### Changed / 更新内容
+- feat: add window pinning and hidden mode
+
+
 ## [3.7.1] - 2026-08-26
 
 ### Changed / 更新内容
