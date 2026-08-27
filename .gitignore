@@ -10,6 +10,7 @@ dist-electron/
 build-output/
 # build/ 目录保留图标文件，但忽略构建产物
 build/*.nsh
+!build/installer.nsh
 !build/logo.ico
 !build/logo.icns
 !build/logo.png
