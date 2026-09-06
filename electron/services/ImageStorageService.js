@@ -2,6 +2,19 @@ const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
 
+const IMAGE_MIME_TYPES = {
+  png: 'image/png',
+  jpeg: 'image/jpeg',
+  jpg: 'image/jpeg',
+  gif: 'image/gif',
+  svg: 'image/svg+xml',
+  webp: 'image/webp',
+  bmp: 'image/bmp'
+};
+const IMAGE_EXTENSIONS = Object.fromEntries(
+  Object.entries(IMAGE_MIME_TYPES).map(([extension, mimeType]) => [mimeType, extension])
+);
+
 // 尝试加载 Electron，如果失败则使用 null（独立运行模式）
 let app = null;
 try {
@@ -76,8 +89,9 @@ class ImageStorageService {
     const hash = crypto.createHash('md5').update(base64Content).digest('hex');
     
     // 从base64头部提取文件扩展名
-    const mimeMatch = base64Data.match(/^data:image\/(\w+);base64,/);
-    const ext = mimeMatch ? mimeMatch[1] : 'png';
+    const mimeMatch = base64Data.match(/^data:([^;,]+)(?:;[^,]*)?;base64,/i);
+    const mimeType = (mimeMatch?.[1] || '').toLowerCase();
+    const ext = IMAGE_EXTENSIONS[mimeType] || 'png';
     
     return `${hash}.${ext}`;
   }
@@ -197,6 +211,16 @@ class ImageStorageService {
     const promises = [];
 
     for (const [fileId, fileInfo] of Object.entries(fileMap)) {
+      // 兼容旧版本曾直接写入笔记的 BinaryFileData。新版本会统一落盘，
+      // 但这里保留读取能力，让已经生成却显示为空白的 SVG/图片可以恢复。
+      if (fileInfo && fileInfo.dataURL) {
+        files[fileId] = {
+          ...fileInfo,
+          id: fileId,
+          created: fileInfo.created || Date.now()
+        };
+        continue;
+      }
       const promise = this.loadWhiteboardImage(fileInfo.fileName)
         .then(base64Data => {
           files[fileId] = {
@@ -317,17 +341,7 @@ class ImageStorageService {
    * 根据扩展名获取MIME类型
    */
   getMimeType(ext) {
-    const mimeTypes = {
-      'png': 'image/png',
-      'jpg': 'image/jpeg',
-      'jpeg': 'image/jpeg',
-      'gif': 'image/gif',
-      'svg': 'image/svg+xml',
-      'webp': 'image/webp',
-      'bmp': 'image/bmp'
-    };
-    
-    return mimeTypes[ext.toLowerCase()] || 'image/png';
+    return IMAGE_MIME_TYPES[ext.toLowerCase()] || 'image/png';
   }
 }
 

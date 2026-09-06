@@ -23,7 +23,7 @@ import {
   Check as CheckIcon,
   ExpandMore as ExpandMoreIcon,
   Info as InfoIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 import { settingsFieldGroupSx, settingsRowSx, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../../styles/commonStyles';
 
 const isEnabledSetting = (value) => value === true || value === 'true' || value === 1 || value === '1';

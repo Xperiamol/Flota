@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
+import { Close, HorizontalRule, WebAsset } from '../common/AppIcons';
 import { Box, Typography, Tooltip } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
+import { PushPinOutlined as PushPinOutlinedIcon } from '../common/AppIcons';
 import { createTransitionString, ANIMATIONS } from '../../utils/animationConfig';
 import { useStore } from '../../store/useStore';
 import { useTranslation } from '../../utils/i18n';
@@ -209,13 +210,7 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
                 },
               }}
             >
-              <svg width="10" height="1" viewBox="0 0 10 1" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect
-                  width="10"
-                  height="1"
-                  fill={theme.palette.mode === 'dark' ? '#ffffff' : '#333333'}
-                />
-              </svg>
+              <HorizontalRule sx={{ fontSize: 16, color: 'text.primary' }} />
             </Box>
           </Tooltip>
 
@@ -239,14 +234,7 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
                 },
               }}
             >
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path
-                  d="M1 1h8v8H1V1z"
-                  stroke={theme.palette.mode === 'dark' ? '#ffffff' : '#333333'}
-                  strokeWidth="1.2"
-                  fill="none"
-                />
-              </svg>
+              <WebAsset sx={{ fontSize: 16, color: 'text.primary' }} />
             </Box>
           </Tooltip>
 
@@ -266,8 +254,8 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
                 transition: createTransitionString(ANIMATIONS.button),
                 '&:hover': {
                   backgroundColor: theme.palette.error.main,
-                  '& svg path': {
-                    stroke: theme.palette.error.contrastText || '#ffffff',
+                  '& svg': {
+                    color: theme.palette.error.contrastText || '#ffffff',
                   }
                 },
                 '&:active': {
@@ -275,14 +263,7 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
                 },
               }}
             >
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path
-                  d="M1 1l8 8M9 1L1 9"
-                  stroke={theme.palette.mode === 'dark' ? '#ffffff' : '#333333'}
-                  strokeWidth="1.2"
-                  strokeLinecap="round"
-                />
-              </svg>
+              <Close sx={{ fontSize: 16, color: 'text.primary' }} />
             </Box>
           </Tooltip>
         </Box>

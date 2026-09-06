@@ -1,7 +1,7 @@
 import React from 'react'
-import RocketLaunchRounded from '@mui/icons-material/RocketLaunchRounded'
-import ExtensionRounded from '@mui/icons-material/ExtensionRounded'
-import ShuffleRounded from '@mui/icons-material/ShuffleRounded'
+import { RocketLaunchRounded as RocketLaunchRounded } from '../components/common/AppIcons'
+import { ExtensionRounded as ExtensionRounded } from '../components/common/AppIcons'
+import { ShuffleRounded as ShuffleRounded } from '../components/common/AppIcons'
 import { Box } from '@mui/material'
 import FlotaAIIcon from '../components/common/FlotaAIIcon'
 

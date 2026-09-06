@@ -11,6 +11,62 @@ const escapeHtml = (s) => String(s || '')
   .replace(/</g, '&lt;')
   .replace(/>/g, '&gt;')
 
+const AUDIO_EXTS = new Set(['.m4a', '.mp3', '.ogg', '.wav', '.aac', '.opus', '.flac', '.webm'])
+const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.avif', '.ico'])
+
+const getExtension = (value) => {
+  const match = String(value || '').toLowerCase().match(/\.([a-z0-9]+)(?:[?#]|$)/)
+  return match ? `.${match[1]}` : ''
+}
+
+const isManagedLocalFile = (value) => /^(?:app:\/\/)?(?:attachments|audio)\//i.test(String(value || ''))
+
+// PDF/HTML 无法可靠携带 Flota 私有目录里的附件。先保留和编辑器一致的文件卡片外观，
+// 明确标为本地附件；不要写入不可移植、还会泄露用户目录结构的 file:// 绝对路径。
+const renderLocalFileCards = (rootEl, { linkAttachments = false } = {}) => {
+  const attachments = []
+  const candidates = Array.from(rootEl.querySelectorAll('img, a'))
+  for (const node of candidates) {
+    const ref = node.getAttribute('data-original-src')
+      || node.getAttribute(node.tagName === 'A' ? 'href' : 'src')
+      || ''
+    if (!isManagedLocalFile(ref)) continue
+
+    const ext = getExtension(ref)
+    if (IMAGE_EXTS.has(ext)) continue
+    const sourceName = ref.split('/').pop() || ''
+    const fallbackName = /^[a-f0-9]{40}(?:\.|$)/i.test(sourceName)
+      ? `附件${ext}`
+      : (sourceName || `附件${ext}`)
+    const filename = (node.getAttribute('alt') || node.textContent || '').trim() || fallbackName
+    const typeLabel = AUDIO_EXTS.has(ext) ? 'AUDIO' : (ext.slice(1).toUpperCase() || '文件').slice(0, 5)
+    const attachmentId = attachments.length
+    attachments.push({ id: attachmentId, ref: ref.replace(/^app:\/\//i, ''), name: filename })
+
+    const card = document.createElement(linkAttachments ? 'a' : 'span')
+    card.className = 'export-attachment-card'
+    card.setAttribute('data-flota-attachment-ref', ref.replace(/^app:\/\//i, ''))
+    if (linkAttachments) card.setAttribute('href', `flota-attachment://${attachmentId}`)
+
+    const icon = document.createElement('span')
+    icon.className = 'export-attachment-icon'
+    icon.textContent = typeLabel
+
+    const content = document.createElement('span')
+    content.className = 'export-attachment-content'
+    const name = document.createElement('span')
+    name.className = 'export-attachment-name'
+    name.textContent = filename
+    const hint = document.createElement('span')
+    hint.className = 'export-attachment-hint'
+    hint.textContent = linkAttachments ? '资料包附件' : '本地附件 · 未嵌入此文档'
+    content.append(name, hint)
+    card.append(icon, content)
+    node.replaceWith(card)
+  }
+  return attachments
+}
+
 // 把 markdown 里的相对 / app:// 图片解析为 base64 data URL
 const inlineImages = async (rootEl) => {
   const imgs = Array.from(rootEl.querySelectorAll('img'))
@@ -57,12 +113,17 @@ const renderMarkdownToFragment = (markdown) => {
  * 构建自包含 HTML 文档字符串
  * @param {{ title?: string, content?: string, tags?: string, theme?: 'light'|'dark' }} note
  */
-export const buildExportHtml = async ({ title = '', content = '', tags = '', theme = 'light' } = {}) => {
+export const buildExportHtml = async (
+  { title = '', content = '', tags = '', theme = 'light' } = {},
+  { linkAttachments = false, attachmentManifest = null } = {},
+) => {
   const bodyHtml = renderMarkdownToFragment(content)
 
   // 在临时容器里内联图片
   const holder = document.createElement('div')
   holder.innerHTML = bodyHtml
+  const attachments = renderLocalFileCards(holder, { linkAttachments })
+  if (Array.isArray(attachmentManifest)) attachmentManifest.push(...attachments)
   await inlineImages(holder)
   const inlinedBody = holder.innerHTML
 
@@ -100,6 +161,20 @@ body {
 .export-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 20px; }
 .export-tag { font-size: 12px; color: ${tagColor}; }
 .export-body img { max-width: 100%; height: auto; }
+.export-attachment-card {
+  display: inline-flex; align-items: center; gap: 10px; max-width: 100%; box-sizing: border-box;
+  margin: 6px 0; padding: 9px 12px; border: 1px solid ${isDark ? '#334155' : '#e2e8f0'};
+  border-radius: 10px; background: ${isDark ? '#172033' : '#f8fafc'}; break-inside: avoid;
+  color: inherit; text-decoration: none;
+}
+.export-attachment-icon {
+  flex: 0 0 auto; min-width: 34px; height: 32px; padding: 0 5px; box-sizing: border-box;
+  border-radius: 6px; background: #2563eb; color: #fff; display: inline-flex;
+  align-items: center; justify-content: center; font-size: 9px; font-weight: 700; letter-spacing: .35px;
+}
+.export-attachment-content { min-width: 0; display: inline-flex; flex-direction: column; line-height: 1.3; }
+.export-attachment-name { overflow-wrap: anywhere; font-size: 13px; color: ${pageColor}; }
+.export-attachment-hint { margin-top: 2px; font-size: 10px; color: ${isDark ? '#94a3b8' : '#64748b'}; }
 .markdown-preview, .export-body { color: ${pageColor}; }
 </style>
 </head>
@@ -115,7 +190,7 @@ body {
 
 /**
  * 导出笔记到本地文件
- * @param {'md'|'html'|'pdf'|'png'} format
+ * @param {'md'|'html'|'pdf'|'png'|'bundle'} format
  * @param {{ title?: string, content?: string, tags?: string, theme?: 'light'|'dark' }} note
  */
 export const exportNoteAs = async (format, note = {}) => {
@@ -126,7 +201,15 @@ export const exportNoteAs = async (format, note = {}) => {
   if (format === 'md') {
     payload.markdown = note.content || ''
   } else {
-    payload.html = await buildExportHtml(note)
+    const attachmentManifest = []
+    payload.html = await buildExportHtml(note, {
+      linkAttachments: format === 'bundle',
+      attachmentManifest,
+    })
+    if (format === 'bundle') {
+      payload.markdown = note.content || ''
+      payload.attachments = attachmentManifest
+    }
   }
   return window.electronAPI.notes.exportDocument(payload)
 }

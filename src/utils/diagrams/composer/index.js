@@ -18,7 +18,6 @@
 import {
   DIAGRAM_THEME,
   beautifyElements,
-  containsCJK,
   ensureReadableTextColor,
   makeArrow,
   makeEllipse,
@@ -26,8 +25,8 @@ import {
   makeRect,
   makeText,
   measureTextBlock,
+  wrapTextToWidth,
   palette,
-  wrapLabel,
 } from '../shared'
 import logger from '../../logger'
 import { layoutGraph } from './graphLayout'
@@ -43,15 +42,6 @@ const levelFont = (level) => LEVEL_FONT[level] || LEVEL_FONT.body
 const DEVICE_W = { phone: 300, tablet: 480, desktop: 760, window: 560 }
 const TITLEBAR_H = 40
 const SCREEN_PAD = 12
-
-const charWidth = (fontSize, cjk) => (cjk ? fontSize : fontSize * 0.58)
-
-// 估算给定宽度下每行可容纳字符数（用于文字换行）
-const charsForWidth = (maxW, fontSize, sample = '') => {
-  const cjk = containsCJK(sample)
-  const usable = Math.max(20, maxW - 8)
-  return Math.max(4, Math.floor(usable / charWidth(fontSize, cjk)))
-}
 
 const toColor = (tone) => {
   if (!tone) return null
@@ -93,7 +83,7 @@ export const placeNode = (node, x, y, w, out) => {
   if (node.props?.id != null && node._el == null) {
     for (let i = startIdx; i < out.length; i++) {
       const t = out[i].type
-      if (t === 'rectangle' || t === 'ellipse' || t === 'diamond') { node._el = out[i]; break }
+      if (t === 'rectangle' || t === 'ellipse' || t === 'diamond' || t === 'image') { node._el = out[i]; break }
     }
   }
 }
@@ -107,8 +97,11 @@ register('text', {
     const props = node.props || {}
     const content = String(props.content ?? props.text ?? '')
     const fs = levelFont(props.level)
-    const maxChars = maxW != null ? charsForWidth(maxW, fs, content) : (containsCJK(content) ? 18 : 36)
-    const wrap = wrapLabel(content, maxChars)
+    const preferredW = Number.isFinite(Number(props.w)) && Number(props.w) > 0
+      ? Number(props.w)
+      : ({ h1: 720, h2: 640, h3: 560, body: 520, caption: 400 }[props.level] || 520)
+    const availableW = maxW != null ? Math.max(fs * 4, maxW) : preferredW
+    const wrap = wrapTextToWidth(content, availableW, fs)
     const m = measureTextBlock(wrap, fs)
     node._wrap = wrap
     node._m = m
@@ -207,7 +200,7 @@ register('card', {
     const body = String(p.body ?? p.text ?? '')
     let h = PAD
     if (title) {
-      const tw = wrapLabel(title, charsForWidth(innerW, 16, title))
+      const tw = wrapTextToWidth(title, innerW, 16)
       const m = measureTextBlock(tw, 16)
       node._titleWrap = tw
       node._titleM = m
@@ -215,7 +208,7 @@ register('card', {
     }
     if (body) {
       if (title) h += 6
-      const bw = wrapLabel(body, charsForWidth(innerW, 14, body))
+      const bw = wrapTextToWidth(body, innerW, 14)
       const m = measureTextBlock(bw, 14)
       node._bodyWrap = bw
       node._bodyM = m
@@ -562,8 +555,8 @@ register('list', {
       const textMaxW = Math.max(40, w - leadX - 14 - (trailM.width ? trailM.width + 12 : 0))
       const title = String(obj.title || '')
       const sub = String(obj.subtitle || '')
-      const titleWrap = wrapLabel(title, charsForWidth(textMaxW, 14, title))
-      const subWrap = sub ? wrapLabel(sub, charsForWidth(textMaxW, 12, sub)) : ''
+      const titleWrap = wrapTextToWidth(title, textMaxW, 14)
+      const subWrap = sub ? wrapTextToWidth(sub, textMaxW, 12) : ''
       const titleM = measureTextBlock(titleWrap, 14)
       const subM = subWrap ? measureTextBlock(subWrap, 12) : { width: 0, height: 0 }
       const contentH = titleM.height + (subWrap ? subM.height : 0)
@@ -670,6 +663,32 @@ register('image', {
   },
 })
 
+// ─── AI 生成的 SVG 资产 ───────────────────────────
+
+register('svg', {
+  measure(node, maxW) {
+    const p = node.props || {}
+    const asset = node._asset
+    const naturalW = asset?.width || Number(p.w) || 480
+    const naturalH = asset?.height || Number(p.h) || 360
+    const width = maxW != null ? Math.min(naturalW, maxW) : naturalW
+    const height = Math.max(24, Math.round(width * naturalH / Math.max(1, naturalW)))
+    node._svgW = width
+    return { w: width, h: height }
+  },
+  place(node, x, y, w, out) {
+    if (!node._asset) return
+    const width = Math.min(w, node._svgW || w)
+    out.push({
+      ...node._asset,
+      x,
+      y,
+      width,
+      height: node._h,
+    })
+  },
+})
+
 // ─── avatar 头像 ───────────────────────────────────
 
 register('avatar', {
@@ -730,7 +749,7 @@ register('callout', {
     const p = node.props || {}
     const txt = String(p.text || p.content || '')
     const w = maxW != null ? maxW : Math.min(300, measureTextBlock(txt, 14).width + 32)
-    const wrap = wrapLabel(txt, charsForWidth(w - 28, 14, txt))
+    const wrap = wrapTextToWidth(txt, w - 28, 14)
     const m = measureTextBlock(wrap, 14)
     node._wrap = wrap; node._m = m; node._w0 = w
     return { w, h: m.height + 16 }
@@ -842,7 +861,7 @@ register('__fallback', {
   measure(node) {
     logger.warn('[composer] 未知原语类型，降级为文字:', node.type)
     const content = String(node.props?.content || node.props?.title || node.props?.text || node.type || '')
-    const wrap = wrapLabel(content, 24)
+    const wrap = wrapTextToWidth(content, 360, 14)
     const m = measureTextBlock(wrap, 14)
     node._wrap = wrap; node._m = m
     return { w: m.width, h: m.height }
@@ -1196,14 +1215,21 @@ const normalizeRoot = (tree) => {
   return tree
 }
 
+const collectEmbeddedFiles = (node, files) => {
+  if (!node || typeof node !== 'object') return
+  if (node._files) Object.assign(files, node._files)
+  for (const child of childList(node)) collectEmbeddedFiles(child, files)
+}
+
 export const renderComposer = (tree, { offsetX = 100, offsetY = 100 } = {}) => {
   if (!tree) return { elements: [], files: {} }
   const out = []
   let oy = offsetY
 
   if (tree.title) {
-    const m = measureTextBlock(tree.title, 26)
-    out.push(makeText({ x: offsetX, y: oy, text: tree.title, fontSize: 26, color: DIAGRAM_THEME.text, align: 'left', metrics: m }))
+    const wrappedTitle = wrapTextToWidth(tree.title, 760, 26)
+    const m = measureTextBlock(wrappedTitle, 26)
+    out.push(makeText({ x: offsetX, y: oy, text: wrappedTitle, fontSize: 26, color: DIAGRAM_THEME.text, align: 'left', metrics: m }))
     oy += m.height + 20
   }
 
@@ -1240,7 +1266,9 @@ export const renderComposer = (tree, { offsetX = 100, offsetY = 100 } = {}) => {
     if (el.type === 'text') el.fontFamily = 2
   }
 
-  return { elements: beautifyElements(out), files: {}, width: root._w, height: root._h }
+  const files = {}
+  collectEmbeddedFiles(root, files)
+  return { elements: beautifyElements(out), files, width: root._w, height: root._h }
 }
 
 export { REGISTRY, register, palette }

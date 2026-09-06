@@ -5,7 +5,7 @@ import {
   FlashOn as FlashOnIcon,
   Schedule as ScheduleIcon,
   Circle as CircleIcon
-} from '@mui/icons-material';
+} from '../components/common/AppIcons';
 
 /**
  * 优先级工具函数

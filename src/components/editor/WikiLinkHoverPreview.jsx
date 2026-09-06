@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Box, Typography, Stack, Portal } from '@mui/material'
-import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
+import { DescriptionOutlined as DescriptionOutlinedIcon } from '../common/AppIcons'
 import { useStore } from '../../store/useStore'
 import { stripMarkdownToPreviewText } from '../../utils/markdownTextUtils'
 import { floatingGlassSx } from '../../utils/floatingGlassSx'

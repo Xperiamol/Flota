@@ -6,7 +6,7 @@ import {
   CloseRounded as CloseIcon,
   OpenInNewRounded as OpenIcon,
   SnoozeRounded as SnoozeIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 import TimeZoneUtils from '../../utils/timeZoneUtils';
 
 const TodoReminderWindow = ({ initialData = {} }) => {

@@ -18,7 +18,7 @@ import {
   ExpandLess as ExpandLessIcon,
   CloudUpload as ExportIcon,
   CloudDownload as ImportIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 import {
   importObsidianVault,
   exportToObsidian,

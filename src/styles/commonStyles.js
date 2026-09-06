@@ -3,6 +3,50 @@
  * 减少样式碎片化，提高可维护性
  */
 
+// 列表操作覆盖在内容上，仅交互时显示，不为隐藏按钮预留整列。
+export const rowActionRevealSx = {
+  '& .row-inline-action': {
+    isolation: 'isolate',
+    color: 'text.primary',
+    pointerEvents: 'none',
+    backgroundColor: 'transparent',
+    transition: 'color 150ms ease',
+    '& > svg, & > .MuiCircularProgress-root': {
+      opacity: 0,
+      zIndex: 1,
+      transition: 'opacity 150ms ease',
+    },
+    '& > svg': { position: 'relative' },
+    '&::before': {
+      content: '""',
+      position: 'absolute',
+      inset: -12,
+      zIndex: 0,
+      opacity: 0,
+      borderRadius: '50%',
+      backgroundColor: 'action.hover',
+      backdropFilter: 'blur(9px)',
+      WebkitBackdropFilter: 'blur(9px)',
+      maskImage: 'radial-gradient(circle, #000 30%, transparent 90%)',
+      pointerEvents: 'none',
+    },
+    '&:hover': { color: 'primary.main', backgroundColor: 'transparent' },
+  },
+  '&:hover .row-inline-action, &:focus-within .row-inline-action, &[data-menu-open="true"] .row-inline-action': {
+    pointerEvents: 'auto',
+    '& > svg, & > .MuiCircularProgress-root, &::before': { opacity: 1 },
+  },
+  '@media (hover: none)': {
+    '& .row-inline-action': {
+      pointerEvents: 'auto',
+      '& > svg, & > .MuiCircularProgress-root, &::before': { opacity: 1 },
+    },
+  },
+  '@media (prefers-reduced-motion: reduce)': {
+    '& .row-inline-action, & .row-inline-action > svg, & .row-inline-action > .MuiCircularProgress-root': { transition: 'none' },
+  },
+};
+
 // ========== 间距相关 ==========
 export const spacing = {
   mb1: { mb: 1 },

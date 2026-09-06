@@ -26,8 +26,7 @@ import {
   InfoOutlined as RelatedIcon,
   PushPin as PinIcon,
   PushPinOutlined as PinOutlinedIcon,
-  Article as ArticleIcon,
-  Brush as WhiteboardIcon,
+  AutoAwesome as ToolbarAIIcon,
   WebAsset as WindowIcon,
   Fullscreen as FullscreenIcon,
   FullscreenExit as FullscreenExitIcon,
@@ -39,6 +38,7 @@ import {
   KeyboardArrowDown as ExpandToolbarIcon,
   MoreHoriz as MoreIcon
 } from '@mui/icons-material'
+import { FlotaNoteIcon as ArticleIcon, FlotaWhiteboardIcon as WhiteboardIcon } from '../common/FlotaIcons'
 import { useStore } from '../../store/useStore'
 import { useStandaloneContext } from '../common/StandaloneProvider'
 import { zhCN } from 'date-fns/locale/zh-CN'
@@ -71,6 +71,7 @@ import { replaceDataImagesInMarkdown } from '../../utils/dataUrlImage'
 import { insertIntoTextarea, placeCursorAfterInsert } from '../../utils/textareaInsert'
 import { useRecentNotes } from '../../store/useRecentNotes'
 import { exportNoteAs } from '../../utils/noteExport'
+import { segmentedButtonSx, segmentedControlSx } from '../../styles/commonStyles'
 
 const WYSIWYGEditor = lazy(() => import('./WYSIWYGEditor'))
 const WhiteboardEditor = lazy(() => import('./WhiteboardEditor'))
@@ -784,7 +785,11 @@ const NoteEditor = ({ onCollapseSidebar }) => {
       })
       if (result?.canceled) return
       if (result?.success) {
-        setExportNotice({ open: true, severity: 'success', message: `已导出到 ${result.filePath}` })
+        setExportNotice({
+          open: true,
+          severity: result.warning ? 'warning' : 'success',
+          message: result.warning ? `已导出到 ${result.filePath}；${result.warning}` : `已导出到 ${result.filePath}`,
+        })
       } else {
         setExportNotice({ open: true, severity: 'error', message: result?.error || '导出失败' })
       }
@@ -1878,7 +1883,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     {
       key: 'ai',
       label: resolvedAICommandCenterOpen ? '关闭 AI 小窗' : '打开 AI 小窗',
-      icon: <FlotaAIIcon sx={{ fontSize: 20 }} />,
+      icon: <ToolbarAIIcon sx={{ fontSize: 20 }} />,
       active: resolvedAICommandCenterOpen,
       onClick: () => {
         if (isStandaloneMode) {
@@ -1978,7 +1983,9 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     return (
       <Box
         sx={{
-          height: '100vh',
+          height: '100%',
+          minHeight: 0,
+          p: 3,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -1986,8 +1993,9 @@ const NoteEditor = ({ onCollapseSidebar }) => {
           overflow: 'hidden'
         }}
       >
-        <Box sx={{ textAlign: 'center' }}>
-          <Typography variant="h6" gutterBottom>
+        <Box sx={{ textAlign: 'center', maxWidth: 360 }}>
+          <ArticleIcon sx={{ fontSize: 40, color: 'primary.main', mb: 2 }} />
+          <Typography variant="h6" color="text.primary" gutterBottom>
             {t('common.selectNoteToEdit')}
           </Typography>
           <Typography variant="body2">
@@ -2031,6 +2039,9 @@ const NoteEditor = ({ onCollapseSidebar }) => {
           </MenuItem>
           <MenuItem disabled={exporting} onClick={() => handleExportNote('pdf')}>
             <ListItemText primary="导出 PDF" />
+          </MenuItem>
+          <MenuItem disabled={exporting} onClick={() => handleExportNote('bundle')}>
+            <ListItemText primary="导出资料包 (.zip)" secondary="PDF、HTML、Markdown 与附件" />
           </MenuItem>
           <MenuItem disabled={exporting} onClick={() => handleExportNote('md')}>
             <ListItemText primary="导出 Markdown (.md)" />
@@ -2341,14 +2352,12 @@ const NoteEditor = ({ onCollapseSidebar }) => {
         </Box>
 
         {/* 笔记类型切换 - 移到工具栏 */}
-        <Box ref={typeSwitchRef} sx={{
-          display: 'flex', alignItems: 'center', gap: '3px',
+        <Box ref={typeSwitchRef} sx={[segmentedControlSx, {
           flexShrink: 0,
           height: 32,
           boxSizing: 'border-box',
-          bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)',
-          borderRadius: '10px', p: '2px',
-        }}>
+          p: '2px',
+        }]}>
           {[{ value: 'markdown', Icon: ArticleIcon, label: 'Markdown' },
             { value: 'whiteboard', Icon: WhiteboardIcon, label: '画布' }].map((item) => {
             const isActive = noteType === item.value;
@@ -2358,41 +2367,15 @@ const NoteEditor = ({ onCollapseSidebar }) => {
                 disableElevation
                 disableRipple
                 variant="text"
+                aria-label={item.label}
+                aria-pressed={isActive}
                 onClick={() => isActive ? null : handleNoteTypeChange(item.value)}
-                sx={{
+                sx={[segmentedButtonSx(isActive), {
                   px: compactToolbar ? 0 : 1.25, py: 0,
                   width: compactToolbar ? 28 : 'auto',
                   height: 28, minHeight: 28, minWidth: compactToolbar ? 28 : 0,
-                  fontSize: '0.78rem', fontWeight: 600,
-                  borderRadius: '8px', textTransform: 'none', lineHeight: 1,
-                  border: '1px solid transparent',
-                  letterSpacing: '0.01em',
-                  transition: 'background-color 180ms cubic-bezier(.4,0,.2,1), color 180ms cubic-bezier(.4,0,.2,1), box-shadow 180ms cubic-bezier(.4,0,.2,1)',
-                  ...(isActive ? {
-                    bgcolor: (theme) => theme.palette.mode === 'dark'
-                      ? 'rgba(255,255,255,0.105)'
-                      : 'rgba(255,255,255,0.82)',
-                    color: 'text.primary',
-                    borderColor: (theme) => theme.palette.mode === 'dark'
-                      ? 'rgba(255,255,255,0.1)'
-                      : 'rgba(15,23,42,0.09)',
-                    boxShadow: (theme) => theme.palette.mode === 'dark'
-                      ? '0 1px 3px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.05)'
-                      : '0 1px 4px rgba(15,23,42,0.07), inset 0 1px 0 rgba(255,255,255,0.8)',
-                    '&:hover': {
-                      bgcolor: (theme) => theme.palette.mode === 'dark'
-                        ? 'rgba(255,255,255,0.13)'
-                        : 'rgba(255,255,255,0.94)',
-                    },
-                  } : {
-                    color: 'text.secondary',
-                    bgcolor: 'transparent',
-                    '&:hover': {
-                      bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
-                      color: 'text.primary',
-                    },
-                  }),
-                }}
+                  lineHeight: 1,
+                }]}
               >
                 <item.Icon sx={{ fontSize: 15, mr: compactToolbar ? 0 : 0.5 }} />
                 {!compactToolbar && item.label}

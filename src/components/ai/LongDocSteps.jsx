@@ -7,7 +7,7 @@ import {
   CheckCircle as CheckCircleIcon,
   ErrorOutline as ErrorIcon,
   Article as ArticleIcon,
-} from '@mui/icons-material'
+} from '../common/AppIcons'
 
 // 步骤树：根节点（长文档生成）下挂规划/各章节/归并子节点
 // steps 为扁平节点数组：{ id, parentId, title, status, stepType, content, meta }

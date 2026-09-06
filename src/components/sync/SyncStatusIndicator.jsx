@@ -24,7 +24,7 @@ import {
   Settings as SettingsIcon,
   CheckBox as TodoIcon,
   AttachFile as AttachFileIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 import { useStore } from '../../store/useStore';
 import { useTranslation } from '../../utils/i18n';
 

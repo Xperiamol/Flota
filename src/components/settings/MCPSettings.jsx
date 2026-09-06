@@ -20,7 +20,7 @@ import {
     Storage as StorageIcon,
     Code as CodeIcon,
     ContentCopy as CopyIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 import mcpAPI from '../../api/mcpAPI';
 import { settingsFieldGroupSx, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../../styles/commonStyles';
 

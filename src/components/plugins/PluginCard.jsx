@@ -18,7 +18,10 @@ import {
   PowerSettingsNewRounded,
   RocketLaunchRounded,
   CheckCircleOutline,
-} from '@mui/icons-material'
+  Extension,
+  Computer,
+  Cloud,
+} from '../common/AppIcons'
 import { getDisplayCategories } from './pluginUtils'
 import { createSoftGlassCardSx } from '../../styles/commonStyles'
 
@@ -109,9 +112,12 @@ const PluginCard = ({
           <Stack direction="row" sx={{ flexWrap: 'wrap', gap: 0.5, '& .MuiChip-root': { height: 22, fontSize: '0.7rem' } }}>
             {plugin.sourceType && (
               <Chip size="small"
+                icon={plugin.sourceType === 'development'
+                  ? (plugin.sourceLabel === 'examples' ? <Extension /> : <Computer />)
+                  : <Cloud />}
                 label={plugin.sourceType === 'development'
-                  ? (plugin.sourceLabel === 'examples' ? '📦 示例' : '💻 本地')
-                  : '☁️ 云端'}
+                  ? (plugin.sourceLabel === 'examples' ? '示例' : '本地')
+                  : '云端'}
                 color={plugin.sourceType === 'development' ? 'secondary' : 'default'}
                 variant="filled" sx={{ fontWeight: 500, opacity: 0.9 }} />
             )}

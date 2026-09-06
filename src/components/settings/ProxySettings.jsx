@@ -11,7 +11,7 @@ import {
   ListItemText,
   Chip,
 } from '@mui/material';
-import { CheckCircle, WifiOff } from '@mui/icons-material';
+import { CheckCircle, WifiOff } from '../common/AppIcons';
 import { flex, settingsFieldGroupSx, settingsRowSx, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../../styles/commonStyles';
 import logger from '../../utils/logger';
 

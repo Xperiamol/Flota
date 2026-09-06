@@ -27,21 +27,17 @@ import {
   Button
 } from '@mui/material'
 import {
-  PushPin as PinIcon,
-  PushPinOutlined as PinOutlinedIcon,
   Delete as DeleteIcon,
   ContentCopy as CopyIcon,
   SelectAll as SelectAllIcon,
   MoreVert as MoreVertIcon,
   Search as SearchIcon,
   Clear as ClearIcon,
-  Note as NoteIcon,
-  Brush as WhiteboardIcon,
   Restore as RestoreIcon,
   DeleteForever as DeleteForeverIcon,
-  CheckCircle as TodoIcon,
   WebAsset as WindowIcon
-} from '@mui/icons-material'
+} from '../common/AppIcons'
+import { FlotaPinIcon as PinIcon, FlotaNoteIcon as NoteIcon, FlotaWhiteboardIcon as WhiteboardIcon, FlotaTodoIcon as TodoIcon } from '../common/FlotaIcons'
 import { useStore } from '../../store/useStore'
 import { zhCN as dateFnsZhCN } from 'date-fns/locale/zh-CN'
 import { createTodo } from '../../api/todoAPI'
@@ -54,23 +50,24 @@ import FilterContainer from '../filters/FilterContainer'
 import FilterPopover from '../filters/FilterPopover'
 import FilterToggleButton from '../filters/FilterToggleButton'
 import ChoiceFilter from '../filters/ChoiceFilter'
-import { Image as ImageIcon, AccessTime as AccessTimeIcon, Description as MarkdownIcon, Category as CategoryIcon } from '@mui/icons-material'
+import { Image as ImageIcon, AccessTime as AccessTimeIcon, Description as MarkdownIcon, Category as CategoryIcon } from '../common/AppIcons'
 import zhCN from '../../locales/zh-CN'
 
 const {
   filters: { placeholder }
 } = zhCN;
 import MultiSelectToolbar from '../layout/MultiSelectToolbar'
-import { useDragAnimation } from '../common/DragAnimationProvider'
+import { useDragAnimation } from '../../hooks/useDragAnimation'
 import { useError } from '../common/ErrorProvider'
 import logger from '../../utils/logger'
 import { formatRelativeNoteTime } from '../../utils/noteDateUtils'
 import { stripMarkdownToPreviewText } from '../../utils/markdownTextUtils'
+import { rowActionRevealSx } from '../../styles/commonStyles'
+import { alpha } from '@mui/material/styles'
 
 const NOTE_LIST_GUTTER = '10px'
 const NOTE_SCROLLBAR_COMPENSATION = '8px'
 const NOTE_ITEM_RADIUS = '12px'
-const NOTE_ITEM_SHADOW = '0 4px 12px rgba(0,0,0,0.08)'
 
 const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefChange }) => {
   const { t } = useTranslation()
@@ -659,8 +656,8 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
         sx={{
           pl: NOTE_LIST_GUTTER,
           pr: `calc(${NOTE_LIST_GUTTER} + ${NOTE_SCROLLBAR_COMPENSATION})`,
-          pt: 0.625,
-          pb: 0.5,
+          pt: 1.25,
+          pb: 1,
           flexShrink: 0
         }}
       >
@@ -670,15 +667,13 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
           placeholder={showDeleted ? placeholder.searchNotesDeleted : placeholder.searchNotes}
           value={localSearchQuery}
           onChange={(e) => setLocalSearchQuery(e.target.value)}
-          aria-label="搜索笔记"
           sx={{
             '& .MuiOutlinedInput-root': {
-              height: 34,
-              borderRadius: '12px',
+              height: 36,
+              borderRadius: '10px',
               fontSize: '0.8125rem',
               paddingLeft: '8px',
               paddingRight: '4px',
-              backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.035)' : 'rgba(255,255,255,0.62)',
             },
             '& .MuiOutlinedInput-input': {
               padding: '6px 4px',
@@ -691,6 +686,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
             },
           }}
           slotProps={{
+            htmlInput: { 'aria-label': showDeleted ? placeholder.searchNotesDeleted : placeholder.searchNotes },
             input: {
               startAdornment: (
                 <InputAdornment position="start">
@@ -847,12 +843,12 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
           <Box>
             {filteredNotes.length === 0 ? (
               <Box sx={{ p: 4, textAlign: 'center' }}>
-                <NoteIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
-                <Typography variant="h6" color="text.secondary">
-                  {showDeleted ? t('notes.trashEmpty') : t('notes.noNotes')}
+                {localSearchQuery || totalSelectedFilters ? <SearchIcon sx={{ fontSize: 36, color: 'text.secondary', mb: 2 }} /> : <NoteIcon sx={{ fontSize: 36, color: 'text.secondary', mb: 2 }} />}
+                <Typography variant="subtitle1" color="text.primary" sx={{ fontWeight: 600 }}>
+                  {localSearchQuery || totalSelectedFilters ? t('notes.noResults') : showDeleted ? t('notes.trashEmpty') : t('notes.noNotes')}
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                  {showDeleted ? t('notes.trashEmptyDesc') : t('notes.noNotesDesc')}
+                  {localSearchQuery || totalSelectedFilters ? t('notes.noResultsDesc') : showDeleted ? t('notes.trashEmptyDesc') : t('notes.noNotesDesc')}
                 </Typography>
               </Box>
             ) : (
@@ -861,26 +857,20 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                   <React.Fragment key={note.id}>
                     <ListItem
                       disablePadding
+                      data-menu-open={Boolean(anchorEl) && selectedNote?.id === note.id}
                       sx={{
-                        mb: 0.25,
+                        mb: 0.5,
                         position: 'relative',
+                        overflow: 'hidden',
                         width: '100%',
                         display: 'block',
                         borderRadius: NOTE_ITEM_RADIUS,
-                        '&:hover .note-menu-button': {
-                          opacity: 1
-                        }
+                        ...rowActionRevealSx,
                       }}
                     >
                       <ListItemButton
                         selected={!multiSelect.isMultiSelectMode && selectedNoteId === note.id}
                         onClick={(e) => {
-                          // 检查是否点击了菜单按钮或其子元素
-                          if (e.target.closest('.note-menu-button')) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            return;
-                          }
                           multiSelect.handleClick(e, note.id, handleNoteClick)
                         }}
                         onContextMenu={(e) => multiSelect.handleContextMenu(
@@ -890,18 +880,12 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                           () => handleMenuClick(e, note)
                         )}
                         onMouseDown={(e) => {
-                          // 检查是否点击了菜单按钮
-                          if (e.target.closest('.note-menu-button')) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            return;
-                          }
                           // 只在非多选模式下启用拖拽
                           if (!multiSelect.isMultiSelectMode && e.button === 0) {
                             dragHandler.handleDragStart(e, note)
                           }
                         }}
-                        sx={{
+                        sx={(theme) => ({
                           position: 'relative',
                           width: '100%',
                           maxWidth: 'none',
@@ -911,52 +895,33 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                           overflow: 'hidden',
                           backgroundClip: 'padding-box',
                           border: '1px solid',
-                          borderColor: note.is_pinned
-                            ? theme.palette.primary.main + '80'
-                            : 'transparent',
-                          backgroundColor: note.is_pinned
-                            ? (theme.palette.mode === 'dark' ? theme.palette.primary.main + '14' : theme.palette.primary.main + '0A')
-                            : (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.6)'),
-                          transition: 'background-color 0.18s cubic-bezier(0.32,0.72,0,1), box-shadow 0.18s cubic-bezier(0.32,0.72,0,1), border-color 0.18s cubic-bezier(0.32,0.72,0,1)',
-                          minHeight: 46,
-                          py: 0.5,
+                          borderColor: 'transparent',
+                          backgroundColor: 'transparent',
+                          transition: 'background-color 160ms ease, border-color 160ms ease',
+                          minHeight: 58,
+                          py: 0.875,
                           px: 1.25,
-                          pr: 1.25,
                           '& .MuiTouchRipple-root': {
                             borderRadius: 'inherit'
                           },
                           '&:hover': {
                             backgroundColor: theme.palette.action.hover,
-                            borderRadius: NOTE_ITEM_RADIUS,
-                            boxShadow: NOTE_ITEM_SHADOW,
-                            borderColor: note.is_pinned ? theme.palette.primary.main : theme.palette.divider,
-                            zIndex: 1,
                           },
                           '&.Mui-selected': {
-                            borderRadius: NOTE_ITEM_RADIUS,
-                            backgroundColor: theme.palette.mode === 'dark'
-                              ? theme.palette.primary.main + '1F'
-                              : theme.palette.primary.main + '12',
-                            borderColor: theme.palette.primary.main + '40',
+                            backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.07),
+                            borderColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.24 : 0.14),
                             '&:hover': {
-                              borderRadius: NOTE_ITEM_RADIUS,
-                              boxShadow: NOTE_ITEM_SHADOW,
-                              backgroundColor: theme.palette.mode === 'dark'
-                                ? theme.palette.primary.main + '29'
-                                : theme.palette.primary.main + '1A'
+                              backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.2 : 0.1),
                             }
                           },
                           ...(multiSelect.isMultiSelectMode && multiSelect.isSelected(note.id) && {
                             backgroundColor: 'action.selected',
                             borderColor: theme.palette.primary.main,
-                            borderRadius: NOTE_ITEM_RADIUS,
                             '&:hover': {
-                              borderRadius: NOTE_ITEM_RADIUS,
-                              boxShadow: NOTE_ITEM_SHADOW,
                               backgroundColor: 'action.selected'
                             }
                           })
-                        }}
+                        })}
                       >
                         {multiSelect.isMultiSelectMode && (
                           <ListItemIcon sx={{ minWidth: 30 }}>
@@ -970,15 +935,17 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                         <ListItemText
                           primary={
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
+                              {!!note.is_pinned && <PinIcon sx={{ fontSize: 13, color: 'primary.main', flexShrink: 0 }} />}
                               {!!note.note_type && note.note_type === 'whiteboard' && (
-                                <WhiteboardIcon sx={{ fontSize: 12, color: 'text.disabled', flexShrink: 0, alignSelf: 'center' }} />
+                                <WhiteboardIcon sx={{ fontSize: 14, color: 'text.secondary', flexShrink: 0 }} />
                               )}
                               <Typography
                                 variant="subtitle2"
                                 sx={{
-                                  fontWeight: note.is_pinned ? 600 : 500,
-                                  fontSize: '0.8125rem',
-                                  lineHeight: 1.35,
+                                  fontWeight: note.is_pinned || selectedNoteId === note.id ? 600 : 500,
+                                  fontSize: '0.875rem',
+                                  letterSpacing: 0,
+                                  lineHeight: 1.5,
                                   overflow: 'hidden',
                                   textOverflow: 'ellipsis',
                                   whiteSpace: 'nowrap',
@@ -1004,7 +971,6 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                                     display: 'block',
                                     fontSize: '0.75rem',
                                     lineHeight: 1.4,
-                                    opacity: 0.85,
                                     flex: 1,
                                     minWidth: 0
                                   }}
@@ -1019,60 +985,44 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                                 sx={{
                                   whiteSpace: 'nowrap',
                                   flexShrink: 0,
-                                  fontSize: '0.6875rem',
+                                  fontSize: '0.7rem',
+                                  fontVariantNumeric: 'tabular-nums',
                                   lineHeight: 1.35,
-                                  opacity: 0.56,
                                   ml: getNotePreviewText(note) ? 0 : 'auto',
-                                  pr: 2.25
                                 }}
                               >
                                 {formatDate(note.updated_at || note.created_at)}
                               </Typography>
                             </Box>
                           }
-                          sx={{ my: 0 }}
+                          sx={{ my: 0, minWidth: 0 }}
                           slotProps={{
                             primary: { component: 'div' },
                             secondary: { component: 'div' }
                           }}
                         />
-                        {/* 菜单按钮 - 绝对定位在右上角 */}
+                      </ListItemButton>
+                        {/* 视觉上嵌入行内，事件不冒泡到笔记选择按钮 */}
                         {!multiSelect.isMultiSelectMode && (
                           <IconButton
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              handleMenuClick(e, note);
-                            }}
+                            onClick={(e) => handleMenuClick(e, note)}
                             aria-label="更多操作"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                            }}
                             size="small"
-                            className="note-menu-button"
+                            className="note-menu-button row-inline-action"
                             sx={{
                               position: 'absolute',
-                              right: 6,
+                              right: 4,
                               top: '50%',
                               transform: 'translateY(-50%)',
-                              width: 26,
-                              height: 26,
-                              opacity: 0,
-                              transition: 'opacity 0.2s, background-color 0.2s',
-                              zIndex: 10,
+                              width: 28,
+                              height: 28,
+                              zIndex: 3,
                               padding: 0,
-                              backgroundColor: 'transparent',
-                              '&:hover': {
-                                opacity: 1,
-                                backgroundColor: theme.palette.action.hover
-                              }
                             }}
                           >
                             <MoreVertIcon fontSize="small" />
                           </IconButton>
                         )}
-                      </ListItemButton>
                     </ListItem>
                   </React.Fragment>
                 ))}
@@ -1163,7 +1113,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
               <MenuItem key="pin" onClick={handleTogglePin}>
                 <ListItemIcon>
                   {selectedNote?.is_pinned ? (
-                    <PinOutlinedIcon fontSize="small" />
+                    <PinIcon fontSize="small" sx={{ opacity: 0.6 }} />
                   ) : (
                     <PinIcon fontSize="small" />
                   )}

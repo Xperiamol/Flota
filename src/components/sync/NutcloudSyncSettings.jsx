@@ -50,7 +50,7 @@ import {
   HelpOutline as HelpOutlineIcon,
   PlayArrow as PlayArrowIcon,
   Logout as LogoutIcon,
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 import { spacing } from '../../styles/commonStyles';
 import { useError } from '../common/ErrorProvider';
 

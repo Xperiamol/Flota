@@ -1,6 +1,6 @@
 import { forwardRef } from 'react';
 import { IconButton, Tooltip, Badge } from '@mui/material';
-import { FilterList as FilterIcon } from '@mui/icons-material';
+import { FilterList as FilterIcon } from '../common/AppIcons';
 import zhCN from '../../locales/zh-CN';
 
 const {

@@ -22,18 +22,19 @@ import { defaultMarkdownSerializer } from 'prosemirror-markdown'
 import { common, createLowlight } from 'lowlight'
 import { WikiLinkMark } from './extensions/WikiLinkMark'
 import { WikiLinkSuggestion } from './extensions/WikiLinkSuggestion'
+import AIAssistSelection from './extensions/AIAssistSelection'
 import WikiLinkSuggestionPopup from './WikiLinkSuggestionPopup'
 import { Box, IconButton, Typography as MuiTypography, TextField, Tooltip, Portal, ButtonBase } from '@mui/material'
-import CloseIcon from '@mui/icons-material/Close'
-import PlayArrowIcon from '@mui/icons-material/PlayArrow'
-import PauseIcon from '@mui/icons-material/Pause'
-import RecordVoiceOverIcon from '@mui/icons-material/RecordVoiceOver'
-import OpenInNewIcon from '@mui/icons-material/OpenInNew'
-import ContentCopyIcon from '@mui/icons-material/ContentCopy'
-import LinkOffIcon from '@mui/icons-material/LinkOff'
-import LinkIcon from '@mui/icons-material/Link'
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import { Close as CloseIcon } from '../common/AppIcons'
+import { PlayArrow as PlayArrowIcon } from '../common/AppIcons'
+import { Pause as PauseIcon } from '../common/AppIcons'
+import { RecordVoiceOver as RecordVoiceOverIcon } from '../common/AppIcons'
+import { OpenInNew as OpenInNewIcon } from '../common/AppIcons'
+import { ContentCopy as ContentCopyIcon } from '../common/AppIcons'
+import { LinkOff as LinkOffIcon } from '../common/AppIcons'
+import { Link as LinkIcon } from '../common/AppIcons'
+import { DeleteOutline as DeleteOutlineIcon } from '../common/AppIcons'
+import { ExpandMore as ExpandMoreIcon } from '../common/AppIcons'
 import { urlToWav } from '../../utils/audioCodec'
 import { imageAPI } from '../../api/imageAPI'
 import { replaceDataImagesInHtml } from '../../utils/dataUrlImage'
@@ -2458,6 +2459,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       TextColor,
       CustomUnderline,
       EditorTabIndent,
+      AIAssistSelection,
       Link.configure({
         openOnClick: false,
         protocols: ['file', 'app'],
@@ -3061,6 +3063,15 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
             backgroundColor: '#fef08a',
             padding: '0.1em 0.2em',
             borderRadius: '2px',
+          },
+          // AI 浮动栏获得焦点后，浏览器会停止绘制原生选区；该 decoration 维持上下文高亮。
+          '& .ai-assist-selection': {
+            backgroundColor: (theme) => theme.palette.mode === 'dark'
+              ? 'rgba(96, 165, 250, 0.32)'
+              : 'rgba(37, 99, 235, 0.20)',
+            borderRadius: '2px',
+            boxDecorationBreak: 'clone',
+            WebkitBoxDecorationBreak: 'clone',
           },
           // ── 彩色文本（TextColor mark）──────────────────────────────────────────────────
           '& span[style*="color"]': {

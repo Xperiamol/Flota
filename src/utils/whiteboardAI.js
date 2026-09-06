@@ -30,6 +30,7 @@ const WHITEBOARD_DIAGRAM_TYPE_LABELS = {
   gantt: '甘特图',
   quadrant: '四象限图',
   pie: '饼图',
+  svg: 'SVG 矢量图',
 }
 
 const truncateText = (text = '', max = 1200) => {
@@ -121,6 +122,7 @@ const deriveFallbackWhiteboardTitle = (prompt = '', note = null) => {
   if (/时序图/i.test(text)) return baseTitle ? `${baseTitle}·时序图` : '时序图'
   if (/甘特图/i.test(text)) return baseTitle ? `${baseTitle}·甘特图` : '甘特图'
   if (/鱼骨图/i.test(text)) return baseTitle ? `${baseTitle}·鱼骨图` : '鱼骨图'
+  if (/(?:SVG|矢量)/i.test(text)) return baseTitle ? `${baseTitle}·矢量图` : 'SVG 矢量图'
   return baseTitle ? `${baseTitle}·画布` : '未命名画布'
 }
 
@@ -157,11 +159,13 @@ export const summarizeWhiteboardElementsForAI = (elements = [], fileMap = {}) =>
     .join('，')
 
   const imageCount = activeElements.filter((item) => item?.type === 'image').length || Object.keys(fileMap || {}).length
+  const svgCount = activeElements.filter((item) => item?.customData?.kind === 'svg-image').length
 
   return [
     `元素总数：${activeElements.length}`,
     topTypes ? `元素类型：${topTypes}` : '',
     imageCount > 0 ? `图片数量：${imageCount}` : '',
+    svgCount > 0 ? `其中 SVG 整体元素：${svgCount}（不能拆分编辑，只能整体调整或修改源码）` : '',
     textSnippets.length ? `画布文字：${textSnippets.join(' | ')}` : '画布文字：无明显文本标签',
   ].filter(Boolean).join('\n')
 }
@@ -373,7 +377,6 @@ export const generateWhiteboardElementsByAction = async ({
   prompt,
   elements = [],
   appState = {},
-  fileMap = {},
   currentWhiteboardSummary = '',
 }) => {
   const activeElements = elements.filter(element => element && !element.isDeleted)
@@ -383,43 +386,19 @@ export const generateWhiteboardElementsByAction = async ({
     if (Array.isArray(res)) return { elements: res, files: {}, warnings: [] }
     return { elements: res?.elements || [], files: res?.files || {}, warnings: res?.warnings || [] }
   }
-
-  if (normalizedAction === WHITEBOARD_AI_ACTIONS.REPLACE) {
-    const aiGenerateExcalidrawElements = await loadAIGenerator()
-    const r = unwrap(await aiGenerateExcalidrawElements(String(prompt || '').trim(), []))
-    return {
-      action: normalizedAction,
-      elements: r.elements,
-      appState: normalizeAppState(appState),
-      fileMap: r.files,
-      addedCount: r.elements.length,
-      warnings: r.warnings,
-    }
-  }
-
-  if (normalizedAction === WHITEBOARD_AI_ACTIONS.EDIT) {
-    const editPrompt = buildEditGenerationPrompt({ prompt, currentWhiteboardSummary })
-    const aiGenerateExcalidrawElements = await loadAIGenerator()
-    const r = unwrap(await aiGenerateExcalidrawElements(editPrompt, []))
-    return {
-      action: normalizedAction,
-      elements: r.elements,
-      appState: normalizeAppState(appState),
-      fileMap: r.files,
-      addedCount: r.elements.length,
-      warnings: r.warnings,
-    }
-  }
-
   const aiGenerateExcalidrawElements = await loadAIGenerator()
-  const r = unwrap(await aiGenerateExcalidrawElements(prompt, activeElements))
-  const nextElements = [...activeElements, ...r.elements]
+  const isAppend = normalizedAction === WHITEBOARD_AI_ACTIONS.APPEND
+  const generationPrompt = normalizedAction === WHITEBOARD_AI_ACTIONS.EDIT
+    ? buildEditGenerationPrompt({ prompt, currentWhiteboardSummary })
+    : String(prompt || '').trim()
+  const r = unwrap(await aiGenerateExcalidrawElements(generationPrompt, isAppend ? activeElements : []))
 
   return {
     action: normalizedAction,
-    elements: nextElements,
+    elements: isAppend ? [...activeElements, ...r.elements] : r.elements,
     appState: normalizeAppState(appState),
-    fileMap: { ...(fileMap || {}), ...r.files },
+    // fileMap 始终只承载本次生成的 BinaryFileData；磁盘索引由保存层合并。
+    fileMap: r.files,
     addedCount: r.elements.length,
     warnings: r.warnings,
   }
@@ -432,15 +411,6 @@ const normalizeWhiteboardGenerationError = (error) => {
   }
   return error instanceof Error ? error : new Error(message || '画布生成失败')
 }
-
-export const generateAndAppendWhiteboardElements = async ({ prompt, elements = [], appState = {}, fileMap = {} }) =>
-  generateWhiteboardElementsByAction({
-    action: WHITEBOARD_AI_ACTIONS.APPEND,
-    prompt,
-    elements,
-    appState,
-    fileMap,
-  })
 
 export const requestActiveWhiteboardGeneration = ({ noteId, prompt, action = WHITEBOARD_AI_ACTIONS.APPEND }) => {
   if (typeof window === 'undefined') return Promise.resolve(null)
@@ -476,11 +446,29 @@ export const applyWhiteboardGenerationToNote = async ({ note, prompt, action = W
     prompt,
     elements: currentData.elements,
     appState: currentData.appState,
-    fileMap: currentData.fileMap,
     currentWhiteboardSummary: summarizeWhiteboardElementsForAI(currentData.elements, currentData.fileMap),
   })
 
-  const content = buildWhiteboardContent(nextData)
+  // 未在编辑器中打开的画布会走这里。生成器返回的是 Excalidraw BinaryFileData，
+  // 必须先落盘再把 { fileName, mimeType } 索引写入笔记，否则重新打开时无法加载图片。
+  const generatedFiles = nextData.fileMap || {}
+  let persistedGeneratedFiles = {}
+  if (Object.keys(generatedFiles).length > 0) {
+    const saveResult = await window.electronAPI.whiteboard.saveImages(generatedFiles)
+    if (!saveResult?.success) {
+      throw new Error(saveResult?.error || '保存 AI 生成的画布图片失败')
+    }
+    persistedGeneratedFiles = saveResult.data || {}
+  }
+
+  const normalizedAction = normalizeWhiteboardAction(nextData.action, action)
+  const persistedFileMap = normalizedAction === WHITEBOARD_AI_ACTIONS.APPEND
+    ? { ...(currentData.fileMap || {}), ...persistedGeneratedFiles }
+    : persistedGeneratedFiles
+  const content = buildWhiteboardContent({
+    ...nextData,
+    fileMap: persistedFileMap,
+  })
   const result = await updateNote(note.id, {
     content,
     note_type: 'whiteboard',
@@ -490,7 +478,7 @@ export const applyWhiteboardGenerationToNote = async ({ note, prompt, action = W
     throw new Error(result.error || '画布写入失败')
   }
 
-  return nextData
+  return { ...nextData, fileMap: persistedFileMap }
 }
 
 const buildWhiteboardActionMessage = (result = {}) => {
@@ -524,7 +512,7 @@ export const executeCreateWhiteboardToolAction = async ({
   const rawPrompt = String(args.prompt || '').trim()
   if (!rawPrompt) throw new Error('缺少画布生成描述')
 
-  const useCurrentNoteContext = args.use_current_note_context !== false
+  const useCurrentNoteContext = args.use_current_note_context === true
   const snapshotNote = resolveNoteById(notes, resolveContextNoteId(actionContext))
   const explicitSourceNote = resolveNoteById(notes, args.source_note_id)
   const sourceNote = explicitSourceNote || (useCurrentNoteContext ? (snapshotNote || currentNote) : null)

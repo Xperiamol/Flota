@@ -20,7 +20,7 @@ import {
   RadioButtonUnchecked as RadioButtonUncheckedIcon,
   Repeat as RepeatIcon,
   Schedule as ScheduleIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 import { useTheme } from '@mui/material/styles';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -33,7 +33,8 @@ import {
 import { ANIMATIONS, createAnimationString, createTransitionString, GREEN_SWEEP_KEYFRAMES } from '../../utils/animationConfig';
 import { t } from '../../utils/i18n';
 import { isRecurringTodo, isTodoCompleted, isTodoOverdue, isTodoDueToday, isFutureRecurringTodo } from '../../utils/todoDisplayUtils';
-import InlineSubtaskList, { SubtaskExpandButton, todoRowActionRevealSx } from './InlineSubtaskList';
+import InlineSubtaskList, { SubtaskExpandButton } from './InlineSubtaskList';
+import { rowActionRevealSx } from '../../styles/commonStyles';
 
 const COMPLETION_BUTTON_SIZE = 32;
 const COMPLETION_ICON_SIZE = 22;
@@ -145,7 +146,7 @@ const TodoItem = ({
       },
       opacity: isCompleted ? 0.6 : 1
     };
-    Object.assign(baseStyles, todoRowActionRevealSx);
+    Object.assign(baseStyles, rowActionRevealSx);
 
     // 庆祝动画样式
     if (celebratingTodos.has(todo.id)) {
@@ -185,7 +186,7 @@ const TodoItem = ({
     if (isFutureRecurring) {
       return (
         <Tooltip title="下一周期未到，暂不可完成">
-          <IconButton className="todo-row-action" size="small" disabled sx={completionButtonBaseSx}>
+          <IconButton className="row-inline-action" size="small" disabled sx={completionButtonBaseSx}>
             <ScheduleIcon sx={completionIconSx} />
           </IconButton>
         </Tooltip>
@@ -193,7 +194,7 @@ const TodoItem = ({
     }
 
     const iconProps = {
-      className: 'todo-row-action',
+      className: 'row-inline-action',
       size: "small",
       onClick: (e) => {
         e.stopPropagation();
@@ -245,7 +246,7 @@ const TodoItem = ({
     if (isFutureRecurring) {
       return (
         <Tooltip title="下一周期未到，暂不可完成">
-          <IconButton className="todo-row-action" size="small" disabled sx={completionButtonBaseSx}>
+          <IconButton className="row-inline-action" size="small" disabled sx={completionButtonBaseSx}>
             <ScheduleIcon sx={completionIconSx} />
           </IconButton>
         </Tooltip>
@@ -254,7 +255,7 @@ const TodoItem = ({
 
     return (
       <IconButton
-        className="todo-row-action"
+        className="row-inline-action"
         size="small"
         onClick={(e) => {
           e.stopPropagation();

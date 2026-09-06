@@ -11,7 +11,7 @@ import {
 import {
   Clear as ClearIcon,
   Refresh as ResetIcon
-} from '@mui/icons-material';
+} from './AppIcons';
 import { validateShortcut, formatShortcutDisplay } from '../../utils/shortcutUtils';
 
 const ShortcutInput = ({ 

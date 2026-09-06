@@ -6,7 +6,7 @@ import {
   Typography,
 } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
-import { Refresh as RefreshIcon } from '@mui/icons-material';
+import { Refresh as RefreshIcon } from './AppIcons';
 
 const clampPercent = (value) => {
   if (!Number.isFinite(value)) return null;

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box } from '@mui/material';
-import { Flag as FlagIcon } from '@mui/icons-material';
+import { Flag as FlagIcon } from '../common/AppIcons';
 import BaseFilter from './BaseFilter';
 import FilterChip from './FilterChip';
 import { getAllPriorities, getPriorityIcon } from '../../utils/priorityUtils';

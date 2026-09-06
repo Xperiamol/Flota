@@ -1,6 +1,6 @@
 {
   "name": "flota",
-  "version": "3.7.4",
+  "version": "3.8.0",
   "description": "Flota - 简洁高效的记录应用",
   "main": "electron/main.js",
   "homepage": "./",
@@ -19,6 +19,7 @@
     "sqlite:electron": "node scripts/manage-sqlite.js electron",
     "sqlite:node": "node scripts/manage-sqlite.js node",
     "test": "echo \"Error: no test specified\" && exit 1",
+    "test:ai-actions": "node --test scripts/tests/pending-actions.test.mjs",
     "release:notes": "node scripts/extract-release-notes.js",
     "release:patch": "npm version patch -m \"chore: release v%s\"",
     "release:minor": "npm version minor -m \"chore: release v%s\"",

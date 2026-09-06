@@ -40,7 +40,7 @@ import {
   Checklist as MeetingTodoIcon,
   Email as FollowupEmailIcon,
   SelectAll as BlockSelectIcon
-} from '@mui/icons-material'
+} from '../common/AppIcons'
 import ImageUploadButton from './ImageUploadButton'
 import AudioRecordButton from './AudioRecordButton'
 import { useStore } from '../../store/useStore'

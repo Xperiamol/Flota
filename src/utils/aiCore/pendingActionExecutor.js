@@ -16,7 +16,8 @@ import {
 } from '../whiteboardAI'
 
 const WHITEBOARD_ACTIONS = new Set(['create_whiteboard', 'update_whiteboard'])
-const NOTE_REFRESH_ACTIONS = new Set(['create_note', 'edit_note', 'edit_notes', 'create_whiteboard', 'update_whiteboard'])
+// 白板执行器已在保存后刷新笔记。
+const NOTE_REFRESH_ACTIONS = new Set(['create_note', 'edit_note', 'edit_notes'])
 const TODO_REFRESH_ACTIONS = new Set(['create_todo', 'create_todos'])
 
 // 白板动作走后端 gate：先 claim（consume = 单次 + TTL 校验），拿不到就直接失败，

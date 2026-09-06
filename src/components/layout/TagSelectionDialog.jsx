@@ -20,7 +20,7 @@ import {
   Clear as ClearIcon,
   Add as AddIcon,
   Label as LabelIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 import { parseTags, formatTags } from '../../utils/tagUtils';
 
 /**

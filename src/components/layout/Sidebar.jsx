@@ -1,20 +1,23 @@
 import React, { useState, useMemo } from 'react';
 import { useTranslation } from '../../utils/i18n';
 import { Box, ButtonBase, Tooltip, Typography, Zoom } from '@mui/material';
-import * as MuiIcons from '@mui/icons-material';
+import * as MuiIcons from '../common/AppIcons';
 import {
-  StickyNote2,
-  CheckBox,
-  CalendarToday,
-  Timeline,
   Hub,
-  Settings,
-  Person,
-  Store,
+  Person as AvatarIcon,
   WavingHand,
   Code
-} from '@mui/icons-material';
-import { useTheme } from '@mui/material/styles';
+} from '../common/AppIcons';
+import {
+  FlotaNoteIcon as StickyNote2,
+  FlotaTodoIcon as CheckBox,
+  FlotaCalendarIcon as CalendarToday,
+  FlotaTimelineIcon as Timeline,
+  FlotaSettingsIcon as Settings,
+  FlotaPersonIcon as Person,
+  FlotaPluginIcon as Store,
+} from '../common/FlotaIcons';
+import { alpha, useTheme } from '@mui/material/styles';
 import { useStore } from '../../store/useStore';
 import { usePluginViewsBySurface } from '../../store/usePluginViews';
 import { useSidebarOrder } from '../../store/useSidebarOrder';
@@ -53,7 +56,7 @@ const NavItem = React.memo(function NavItem({
   const isDark = theme.palette.mode === 'dark';
 
   const hoverBg = theme.palette.action.hover;
-  const activeBg = theme.palette.action.selected;
+  const activeBg = alpha(theme.palette.primary.main, isDark ? 0.18 : 0.1);
   const pressBg = theme.custom?.surface?.pressed || (isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,23,42,0.08)');
 
   return (
@@ -110,6 +113,8 @@ const NavItem = React.memo(function NavItem({
         />
         <ButtonBase
           onClick={onClick}
+          aria-label={tooltip}
+          aria-current={active ? 'page' : undefined}
           focusRipple={false}
           disableRipple
           sx={{
@@ -392,8 +397,9 @@ const Sidebar = () => {
           marginBottom: '7px',
         }}
       >
-        <Box
+        <ButtonBase
           onClick={handleAvatarClick}
+          aria-label={displayName}
           onMouseEnter={() => setAvatarHover(true)}
           onMouseLeave={() => setAvatarHover(false)}
           sx={{
@@ -433,9 +439,9 @@ const Sidebar = () => {
               }}
             />
           ) : (
-            <Person sx={{ color: 'white', fontSize: '20px' }} />
+            <AvatarIcon sx={{ color: 'white', fontSize: '20px' }} />
           )}
-        </Box>
+        </ButtonBase>
 
         {/* 欢迎消息气泡 */}
         <Zoom in={showWelcome}>

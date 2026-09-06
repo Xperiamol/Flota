@@ -20,7 +20,7 @@ import {
 	Search as SearchIcon,
 	RefreshRounded,
 	FolderOpenRounded
-} from '@mui/icons-material'
+} from '../common/AppIcons'
 
 import {
 	fetchAvailablePlugins,

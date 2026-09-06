@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Box, IconButton, TextField, CircularProgress, Tooltip, alpha } from '@mui/material'
-import ContentCopyIcon from '@mui/icons-material/ContentCopy'
-import CloseIcon from '@mui/icons-material/Close'
-import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
-import AddIcon from '@mui/icons-material/Add'
-import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
+import { ContentCopy as ContentCopyIcon } from '../common/AppIcons'
+import { Close as CloseIcon } from '../common/AppIcons'
+import { SwapHoriz as SwapHorizIcon } from '../common/AppIcons'
+import { Add as AddIcon } from '../common/AppIcons'
+import { DragIndicator as DragIndicatorIcon } from '../common/AppIcons'
 import FloatingGlassSurface from '../common/FloatingGlassSurface'
 import FlotaAIIcon from '../common/FlotaAIIcon'
 import { useStore } from '../../store/useStore'
@@ -12,13 +12,14 @@ import useAIStream from '../../hooks/useAIStream'
 import useDraggableFloatingPanel from '../../hooks/useDraggableFloatingPanel'
 import { ALL_TOOLBAR_ITEMS, DEFAULT_FLOATING_ORDER, execWYSIWYGCommand } from '../editor/MarkdownToolbar'
 import { buildContext, CONTEXT_PROFILES } from '../../utils/aiCore/contextBuilder'
+import { hideAIAssistSelection, showAIAssistSelection } from '../editor/extensions/AIAssistSelection'
 
 const PANEL_MARGIN = 8
 const PANEL_ESTIMATED_WIDTH = 280
 const PANEL_ESTIMATED_HEIGHT = 52
 
 /**
- * 浮动面板 — 选中文字后浮现，提供改写/摘要/翻译/续写/自由提问 + 自定义格式工具
+ * 浮动面板 — 右键选中文字后浮现，提供改写/摘要/翻译/续写/自由提问 + 自定义格式工具
  * 支持两种模式：
  *   1. WYSIWYG 模式：传入 editor (TipTap)
  *   2. 源码模式：传入 textareaRef + onInsert
@@ -42,6 +43,8 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
   const mouseDownRef = useRef(false)
   const selRangeRef = useRef({ start: 0, end: 0 })
   const isTextareaMode = !editor && !!textareaRef
+  // 兼容旧设置值 selection；其产品语义已迁移为“右键选中文本”。
+  const isContextSelectionMode = aiPanelMode === 'selection' || aiPanelMode === 'contextmenu'
   const { runStream } = useAIStream()
   const { dragging, handleDragStart, clampPosition } = useDraggableFloatingPanel({
     panelRef,
@@ -74,6 +77,13 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
   const getSelectionText = useCallback(() => (
     lastSelRef.current || selectedText
   ), [selectedText])
+
+  const resetPanelOutput = useCallback(() => {
+    setResult('')
+    setError('')
+    setShowCustom(false)
+    setActiveAction(null)
+  }, [])
 
   const updatePosition = useCallback((mouseEvent) => {
     const positionNearPoint = (x, y) => {
@@ -159,21 +169,23 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
       mouseDownRef.current = false
       if (aiPanelMode === 'disabled') return
       if (panelRef.current?.contains(e.target)) return
+      if (isContextSelectionMode) {
+        // 先收起旧面板；随后触发的 contextmenu 会在选区有效时重新打开。
+        setVisible(false)
+        return
+      }
       // 缓存当前 mouseup 的位置，setTimeout 内 e 仍可用，但显式拷贝更稳
       const mouseSnapshot = { clientX: e.clientX, clientY: e.clientY }
       setTimeout(() => {
         const { from, to } = editor.state.selection
         const text = editor.state.doc.textBetween(from, to, ' ')
-        if (text.trim().length > 1) {
+        if (text.trim().length > 1 && aiPanelMode === 'always') {
           selRangeRef.current = { from, to }
           lastSelRef.current = text
           setSelectedText(text)
           updatePosition(mouseSnapshot)
           setVisible(true)
-          setResult('')
-          setError('')
-          setShowCustom(false)
-          setActiveAction(null)
+          resetPanelOutput()
         } else if (aiPanelMode === 'always') {
           setSelectedText('')
           updatePosition(mouseSnapshot)
@@ -182,13 +194,33 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
       }, 50)
     }
 
+    const onContextMenu = (e) => {
+      mouseDownRef.current = false
+      if (!isContextSelectionMode || panelRef.current?.contains(e.target)) return
+      const { from, to } = editor.state.selection
+      const text = editor.state.doc.textBetween(from, to, ' ')
+      if (text.trim().length <= 1) return
+
+      // 有文本选区时由 AI bar 接管右键；空选区仍交给编辑器原有右键菜单。
+      e.preventDefault()
+      e.stopPropagation()
+      selRangeRef.current = { from, to }
+      lastSelRef.current = text
+      setSelectedText(text)
+      updatePosition({ clientX: e.clientX, clientY: e.clientY })
+      setVisible(true)
+      resetPanelOutput()
+    }
+
     dom.addEventListener('mousedown', onMouseDown)
     document.addEventListener('mouseup', onMouseUp)
+    dom.addEventListener('contextmenu', onContextMenu)
     return () => {
       dom.removeEventListener('mousedown', onMouseDown)
       document.removeEventListener('mouseup', onMouseUp)
+      dom.removeEventListener('contextmenu', onContextMenu)
     }
-  }, [editor, updatePosition, aiPanelMode])
+  }, [editor, updatePosition, aiPanelMode, isContextSelectionMode, resetPanelOutput])
 
   useEffect(() => {
     if (!editor) return
@@ -197,9 +229,9 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
       if (panelRef.current?.contains(document.activeElement)) return
       const { from, to } = editor.state.selection
       const text = editor.state.doc.textBetween(from, to, ' ')
-      if (text.trim().length <= 1 && !result && !loading && aiPanelMode !== 'always') {
+      if (aiPanelMode !== 'always' && !result && !loading) {
         setVisible(false)
-        lastSelRef.current = ''
+        if (text.trim().length <= 1) lastSelRef.current = ''
       }
     }
     editor.on('selectionUpdate', onSelectionUpdate)
@@ -228,30 +260,58 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
     const onMouseUp = (e) => {
       if (aiPanelMode === 'disabled') return
       if (panelRef.current?.contains(e.target)) return
+      if (isContextSelectionMode) {
+        setVisible(false)
+        return
+      }
       setTimeout(() => {
         const start = textarea.selectionStart
         const end = textarea.selectionEnd
         const text = textarea.value.substring(start, end)
-        if (text.trim().length > 1) {
+        if (text.trim().length > 1 && aiPanelMode === 'always') {
           selRangeRef.current = { start, end }
           lastSelRef.current = text
           setSelectedText(text)
           updatePosition(e)
           setVisible(true)
-          setResult('')
-          setError('')
-          setShowCustom(false)
-          setActiveAction(null)
-        } else if (aiPanelMode !== 'always') {
-          setVisible(false)
-          lastSelRef.current = ''
+          resetPanelOutput()
         }
       }, 50)
     }
 
+    const onContextMenu = (e) => {
+      if (!isContextSelectionMode || panelRef.current?.contains(e.target)) return
+      const start = textarea.selectionStart
+      const end = textarea.selectionEnd
+      const text = textarea.value.substring(start, end)
+      if (text.trim().length <= 1) return
+      e.preventDefault()
+      e.stopPropagation()
+      selRangeRef.current = { start, end }
+      lastSelRef.current = text
+      setSelectedText(text)
+      updatePosition({ clientX: e.clientX, clientY: e.clientY })
+      setVisible(true)
+      resetPanelOutput()
+    }
+
     textarea.addEventListener('mouseup', onMouseUp)
-    return () => textarea.removeEventListener('mouseup', onMouseUp)
-  }, [isTextareaMode, textareaRef, aiPanelMode, updatePosition])
+    textarea.addEventListener('contextmenu', onContextMenu)
+    return () => {
+      textarea.removeEventListener('mouseup', onMouseUp)
+      textarea.removeEventListener('contextmenu', onContextMenu)
+    }
+  }, [isTextareaMode, textareaRef, aiPanelMode, isContextSelectionMode, resetPanelOutput, updatePosition])
+
+  useEffect(() => {
+    if (!editor) return undefined
+    if (visible && selectedText) {
+      showAIAssistSelection(editor, selRangeRef.current)
+    } else {
+      hideAIAssistSelection(editor)
+    }
+    return () => hideAIAssistSelection(editor)
+  }, [editor, selectedText, visible])
 
   const dismiss = useCallback(() => {
     setVisible(false)

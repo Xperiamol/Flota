@@ -15,7 +15,7 @@ import {
   OpenInNew as OpenInNewIcon,
   Close as CloseIcon,
   Schedule as ScheduleIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 import {
   Dialog,
   DialogTitle,

@@ -14,11 +14,11 @@ import {
   Restore as RestoreIcon,
   ChevronLeft,
   ChevronRight,
-  Today,
   EditNote as EditNoteIcon,
   VisibilityRounded as VisibilityIcon,
   VisibilityOffRounded as VisibilityOffIcon
-} from '@mui/icons-material'
+} from '../common/AppIcons'
+import { FlotaCalendarIcon as Today } from '../common/FlotaIcons'
 import { useStore } from '../../store/useStore'
 import DropdownMenu from '../common/DropdownMenu'
 import { executePluginCommand } from '../../api/pluginAPI'
@@ -166,46 +166,29 @@ const Toolbar = ({
   };
 
   const calendarNavButtonSx = {
-    backgroundColor: 'background.paper',
-    border: 1,
-    borderColor: 'divider',
-    transition: 'background-color 180ms cubic-bezier(0.32, 0.72, 0, 1), border-color 180ms cubic-bezier(0.32, 0.72, 0, 1), color 180ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 180ms cubic-bezier(0.32, 0.72, 0, 1)',
+    borderRadius: '8px',
+    color: 'text.secondary',
     '&:hover': {
-      backgroundColor: 'primary.main',
-      borderColor: 'primary.main',
-      color: 'primary.contrastText',
-      boxShadow: '0 4px 14px rgba(15,23,42,0.10)'
-    },
-    '&:active': {
-      backgroundColor: 'primary.dark',
-      borderColor: 'primary.dark'
+      backgroundColor: 'action.hover',
+      color: 'text.primary',
     }
   };
 
   const calendarTodayButtonSx = {
-    backgroundColor: 'primary.main',
-    color: 'primary.contrastText',
-    ml: 1,
-    transition: 'background-color 180ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 180ms cubic-bezier(0.32, 0.72, 0, 1), filter 120ms cubic-bezier(0.32, 0.72, 0, 1)',
-    '&:hover': {
-      backgroundColor: 'primary.dark',
-      boxShadow: '0 4px 14px rgba(15,23,42,0.12)'
-    },
-    '&:active': {
-      filter: 'brightness(0.94)'
-    }
+    ...calendarNavButtonSx,
+    color: 'primary.main',
+    ml: 0.5,
   };
 
   /** 日历导航按钮组 */
   const CalendarNavButtons = ({ button }) => (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
       <Tooltip title={t('common.previous')}>
-        <IconButton onClick={goToPreviousMonth} size="small" sx={calendarNavButtonSx}>
+        <IconButton aria-label={t('common.previous')} onClick={goToPreviousMonth} size="small" sx={calendarNavButtonSx}>
           <ChevronLeft />
         </IconButton>
       </Tooltip>
-      <Box sx={{ minWidth: '140px', textAlign: 'center', px: 2, py: 0.5, borderRadius: 1,
-        backgroundColor: 'primary.main', color: 'primary.contrastText' }}>
+      <Box sx={{ minWidth: 112, textAlign: 'center', px: 1, py: 0.5, color: 'text.primary', fontVariantNumeric: 'tabular-nums' }}>
         <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.875rem' }}>
           {button.currentDate
             ? `${button.currentDate.getFullYear()}年${button.currentDate.getMonth() + 1}月`
@@ -213,12 +196,12 @@ const Toolbar = ({
         </Typography>
       </Box>
       <Tooltip title={t('common.next')}>
-        <IconButton onClick={goToNextMonth} size="small" sx={calendarNavButtonSx}>
+        <IconButton aria-label={t('common.next')} onClick={goToNextMonth} size="small" sx={calendarNavButtonSx}>
           <ChevronRight />
         </IconButton>
       </Tooltip>
       <Tooltip title={t('common.today')}>
-        <IconButton onClick={goToToday} size="small" color="primary" sx={calendarTodayButtonSx}>
+        <IconButton aria-label={t('common.today')} onClick={goToToday} size="small" color="primary" sx={calendarTodayButtonSx}>
           <Today />
         </IconButton>
       </Tooltip>
@@ -374,11 +357,17 @@ const Toolbar = ({
         backdropFilter: theme.custom?.glass?.backdropFilter,
         WebkitBackdropFilter: theme.custom?.glass?.backdropFilter,
         minHeight: '48px !important',
-        px: 1.25
+        px: 1.25,
+        py: 0.75,
+        gap: 1,
+        flexWrap: 'wrap',
+        flexShrink: 0,
+        '& .MuiButton-root': { whiteSpace: 'nowrap' },
+        '& .MuiIconButton-root': { minWidth: 32, minHeight: 32 },
       })}
     >
       {/* 左侧按钮组 */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
         {viewConfig.showSidebarToggle && (
           <Tooltip title={sidebarOpen ? '收起侧栏' : '展开侧栏'}>
             <IconButton
@@ -511,7 +500,7 @@ const Toolbar = ({
 
       {/* 居中区域 - 日历视图模式选择器和待办视图切换 */}
       {viewConfig.customButtons && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mx: 'auto' }}>
           {viewConfig.customButtons
             .filter(button =>
               (button.type === 'calendarViewMode' && button.position === 'right') ||
@@ -529,6 +518,7 @@ const Toolbar = ({
                           disableElevation
                           disableRipple
                           variant="text"
+                          aria-pressed={isActive}
                           onClick={() => {
                             logger.log('Calendar view mode clicked:', option.value);
                             if (onCalendarViewModeChange) {
@@ -555,6 +545,7 @@ const Toolbar = ({
                           disableElevation
                           disableRipple
                           variant="text"
+                          aria-pressed={isActive}
                           onClick={() => onTodoViewModeChange && onTodoViewModeChange(option.value)}
                           sx={segmentedButtonSx(isActive)}
                         >
@@ -620,6 +611,7 @@ const Toolbar = ({
                     disableElevation
                     disableRipple
                     variant="text"
+                    aria-pressed={active}
                     onClick={() => setTimelineFilter({ dateRange: option.value })}
                     sx={segmentedButtonSx(active)}
                   >
@@ -708,7 +700,7 @@ const Toolbar = ({
         {/* 回收站按钮 - 仅在笔记视图显示 */}
         {viewConfig.showDeletedButton && (
           <Tooltip title={showDeleted ? t('common.restore') : t('sidebar.trash')}>
-            <IconButton size="small" onClick={onToggleDeleted}>
+            <IconButton size="small" onClick={onToggleDeleted} aria-label={showDeleted ? t('common.restore') : t('sidebar.trash')} aria-pressed={Boolean(showDeleted)} color={showDeleted ? 'primary' : 'default'}>
               <Badge badgeContent={deletedNotesCount} color="error">
                 {showDeleted ? <RestoreIcon fontSize="small" /> : <DeleteIcon fontSize="small" />}
               </Badge>
@@ -716,13 +708,6 @@ const Toolbar = ({
           </Tooltip>
         )}
 
-        {/* 暂时隐藏设置按钮 */}
-        {/* <DropdownMenu
-          icon={<SettingsIcon />}
-          tooltip="设置"
-          options={settingsOptions}
-          onSelect={handleSettingsSelect}
-        /> */}
       </Box>
     </MuiToolbar>
   )

@@ -6,7 +6,7 @@ import { History as HistoryIcon, Close as CloseIcon, Add as AddIcon,
   CheckBoxOutlineBlank, CheckBox as CheckBoxIcon, MoreHoriz as MoreHorizIcon,
   ExpandMore as ExpandMoreIcon, ExpandLess as ExpandLessIcon,
   CheckCircleOutline as CompleteIcon, UndoRounded as UndoIcon,
-  DeleteOutlineRounded as DeleteIcon, ChecklistRounded as ChecklistIcon } from '@mui/icons-material';
+  DeleteOutlineRounded as DeleteIcon, ChecklistRounded as ChecklistIcon } from '../common/AppIcons';
 import TodoFormFields from './TodoFormFields';
 import TimeZoneUtils from '../../utils/timeZoneUtils';
 import { updateTodo, getTodoTagSuggestions, fetchSubtasks, createTodo, deleteTodo, toggleTodoComplete } from '../../api/todoAPI';

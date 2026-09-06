@@ -19,7 +19,7 @@ import {
   ManageSearch as InsightIcon,
   Memory as MemoryIcon,
   NoteAlt as NoteIcon
-} from '@mui/icons-material'
+} from '../common/AppIcons'
 import { useStore } from '../../store/useStore'
 import { getRelatedNotes, getTodoTemporalStatus, isTodoCompleted, normalizeMemories, truncateText } from '../../utils/aiContextUtils'
 import { toListResult } from '../../utils/todoDisplayUtils'

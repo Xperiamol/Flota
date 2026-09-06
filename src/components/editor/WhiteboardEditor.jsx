@@ -27,6 +27,7 @@ import { canvasToPngBlob } from '../common/ImagePreviewModal'
 import '@excalidraw/excalidraw/index.css'
 import logger from '../../utils/logger'
 import { renderMermaidNative } from '../../utils/diagrams/mermaidNative'
+import { createSvgAsset, createSvgDataURL } from '../../utils/diagrams/svgAsset'
 import { getWhiteboardPreviewKey } from '../../utils/whiteboardPreview'
 
 const createExcalidrawGlassTokens = ({ isDark, accent }) => {
@@ -882,24 +883,94 @@ const createMermaidDialogSlotProps = ({ isDark, primaryColor }) => {
   }
 }
 
+const SvgSourcePreview = ({ source, emptyText = '输入 SVG 源码后在这里预览' }) => {
+  if (!String(source || '').trim()) {
+    return <Typography variant="body2" color="text.secondary">{emptyText}</Typography>
+  }
+  try {
+    return (
+      <Box
+        component="img"
+        src={createSvgDataURL(source)}
+        alt="SVG 预览"
+        sx={{ display: 'block', width: '100%', height: '100%', objectFit: 'contain' }}
+      />
+    )
+  } catch (error) {
+    return <Typography variant="body2" color="text.secondary">{error?.message || 'SVG 暂时无法预览'}</Typography>
+  }
+}
+
+const SvgSourceDialog = ({
+  open,
+  title,
+  description,
+  source,
+  error,
+  busy,
+  placeholder,
+  submitLabel,
+  busyLabel,
+  slotProps,
+  onChange,
+  onClose,
+  onSubmit,
+}) => (
+  <Dialog
+    open={open}
+    onClose={onClose}
+    maxWidth="lg"
+    fullWidth
+    slotProps={slotProps}
+    sx={{ zIndex: (theme) => theme.zIndex.modal + 10 }}
+  >
+    <DialogTitle>{title}</DialogTitle>
+    <DialogContent>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{description}</Typography>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1.25fr) minmax(280px, 0.75fr)' }, gap: 2 }}>
+        <TextField
+          autoFocus
+          fullWidth
+          multiline
+          minRows={18}
+          value={source}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          disabled={busy}
+        />
+        <Box sx={{ minHeight: 360, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 2, bgcolor: 'background.default', display: 'grid', placeItems: 'center', overflow: 'hidden' }}>
+          <SvgSourcePreview source={source} />
+        </Box>
+      </Box>
+      {error ? <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert> : null}
+    </DialogContent>
+    <DialogActions>
+      <Button onClick={onClose} disabled={busy} color="inherit">取消</Button>
+      <Button onClick={onSubmit} disabled={busy} variant="contained">
+        {busy ? busyLabel : submitLabel}
+      </Button>
+    </DialogActions>
+  </Dialog>
+)
+
+const getSelectedEditableImage = (elements = [], appState = {}) => {
+  const selectedIds = Object.keys(appState?.selectedElementIds || {})
+  if (selectedIds.length !== 1) return null
+
+  const selected = elements.find((element) => element?.id === selectedIds[0] && !element?.isDeleted)
+  if (selected?.type !== 'image') return null
+
+  const { kind, mermaidSource, svgSource } = selected.customData || {}
+  return (kind === 'mermaid-image' && mermaidSource) || (kind === 'svg-image' && svgSource)
+    ? selected
+    : null
+}
+
 /**
  * 画布编辑器组件
  * 直接使用 @excalidraw/excalidraw React 组件
  */
 const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onExportPNG }) => {
-  const getEditableMermaidImage = useCallback((elements = [], appState = {}) => {
-    const selectedIds = Object.keys(appState?.selectedElementIds || {})
-    if (selectedIds.length !== 1) return null
-
-    const selected = elements.find((element) => element?.id === selectedIds[0] && !element?.isDeleted)
-    if (!selected || selected.type !== 'image') return null
-
-    const customData = selected.customData || {}
-    if (customData.kind !== 'mermaid-image' || !customData.mermaidSource) return null
-
-    return selected
-  }, [])
-
   const translateElementsTo = useCallback((elements = [], targetX = 0, targetY = 0) => {
     const validElements = elements.filter((element) => element && !element.isDeleted)
     if (!validElements.length) return elements
@@ -918,6 +989,25 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
       }
     })
   }, [])
+
+  const centerElementsInViewport = useCallback((elements = [], appState = {}) => {
+    const active = elements.filter((element) => element && !element.isDeleted)
+    if (!active.length) return elements
+
+    const minX = Math.min(...active.map((element) => element.x || 0))
+    const minY = Math.min(...active.map((element) => element.y || 0))
+    const maxX = Math.max(...active.map((element) => (element.x || 0) + (element.width || 0)))
+    const maxY = Math.max(...active.map((element) => (element.y || 0) + (element.height || 0)))
+    const zoom = appState?.zoom?.value || 1
+    const centerX = -(appState?.scrollX || 0) + (appState?.width || 0) / zoom / 2
+    const centerY = -(appState?.scrollY || 0) + (appState?.height || 0) / zoom / 2
+
+    return translateElementsTo(
+      elements,
+      centerX - (maxX - minX) / 2,
+      centerY - (maxY - minY) / 2,
+    )
+  }, [translateElementsTo])
 
   // Get context from either main store or standalone context
   let store
@@ -953,7 +1043,13 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [excalidrawKey, setExcalidrawKey] = useState(() => `excalidraw-${noteId || 'unknown'}`)
   const [bridgeActive, setBridgeActive] = useState(false)
-  const [selectedMermaidImage, setSelectedMermaidImage] = useState(null)
+  const [selectedEditableImage, setSelectedEditableImage] = useState(null)
+  const selectedMermaidImage = selectedEditableImage?.customData?.kind === 'mermaid-image'
+    ? selectedEditableImage
+    : null
+  const selectedSvgImage = selectedEditableImage?.customData?.kind === 'svg-image'
+    ? selectedEditableImage
+    : null
   const [dslEditorOpen, setDslEditorOpen] = useState(false)
   const [dslDraft, setDslDraft] = useState('')
   const [dslError, setDslError] = useState('')
@@ -962,6 +1058,14 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
   const [creatorDraft, setCreatorDraft] = useState('')
   const [creatorError, setCreatorError] = useState('')
   const [isCreatingDiagram, setIsCreatingDiagram] = useState(false)
+  const [svgCreatorOpen, setSvgCreatorOpen] = useState(false)
+  const [svgCreatorDraft, setSvgCreatorDraft] = useState('')
+  const [svgCreatorError, setSvgCreatorError] = useState('')
+  const [isCreatingSvg, setIsCreatingSvg] = useState(false)
+  const [svgEditorOpen, setSvgEditorOpen] = useState(false)
+  const [svgDraft, setSvgDraft] = useState('')
+  const [svgError, setSvgError] = useState('')
+  const [isRegeneratingSvg, setIsRegeneratingSvg] = useState(false)
   const hasUnsavedChangesRef = useRef(false)
   // 保存上一个noteId，用于检测noteId变化（初始为null，避免首次加载时触发保存）
   const prevNoteIdRef = useRef(null)
@@ -1044,6 +1148,34 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     })
   }, [styleMode])
 
+  const commitWhiteboardScene = useCallback(async ({ elements, appState, files }) => {
+    const persistedAppState = {
+      viewBackgroundColor: appState?.viewBackgroundColor,
+      currentItemFontFamily: appState?.currentItemFontFamily,
+      gridSize: appState?.gridSize,
+    }
+    let fileMap = {}
+    if (Object.keys(files || {}).length > 0) {
+      const saveResult = await window.electronAPI.whiteboard.saveImages(files)
+      if (!saveResult?.success) throw new Error(saveResult?.error || '保存画布图片失败')
+      fileMap = saveResult.data || {}
+    }
+
+    const updateResult = await updateNote(noteId, {
+      content: buildWhiteboardContent({ elements, appState: persistedAppState, fileMap }),
+      note_type: 'whiteboard',
+    })
+    if (updateResult?.success === false) throw new Error(updateResult.error || '保存画布失败')
+
+    const nextScene = { elements, appState: persistedAppState, files }
+    setInitialData(nextScene)
+    setExcalidrawKey(`excalidraw-${noteId || 'unknown'}-${Date.now()}`)
+    latestSceneRef.current = nextScene
+    lastSavedSceneRef.current = serializeScene(elements, persistedAppState, files)
+    setHasUnsavedChanges(false)
+    hasUnsavedChangesRef.current = false
+  }, [noteId, serializeScene, updateNote])
+
   const regenerateMermaidImage = useCallback(async () => {
     if (!selectedMermaidImage || !dslDraft.trim()) {
       setDslError('请输入 Mermaid DSL')
@@ -1078,39 +1210,13 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
         delete nextFiles[selectedMermaidImage.fileId]
       }
       Object.assign(nextFiles, rendered.files || {})
-
-      const persistedAppState = {
-        viewBackgroundColor: currentAppState.viewBackgroundColor,
-        currentItemFontFamily: currentAppState.currentItemFontFamily,
-        gridSize: currentAppState.gridSize,
-      }
-
-      setSelectedMermaidImage(null)
+      await commitWhiteboardScene({
+        elements: nextElements,
+        appState: currentAppState,
+        files: nextFiles,
+      })
+      setSelectedEditableImage(null)
       setDslEditorOpen(false)
-      setInitialData({
-        elements: nextElements,
-        appState: persistedAppState,
-        files: nextFiles,
-      })
-      setExcalidrawKey(`excalidraw-${noteId || 'unknown'}-${Date.now()}`)
-
-      latestSceneRef.current = {
-        elements: nextElements,
-        appState: persistedAppState,
-        files: nextFiles,
-      }
-      lastSavedSceneRef.current = serializeScene(nextElements, persistedAppState, nextFiles)
-      setHasUnsavedChanges(false)
-      hasUnsavedChangesRef.current = false
-
-      await updateNote(noteId, {
-        content: buildWhiteboardContent({
-          elements: nextElements,
-          appState: persistedAppState,
-          fileMap: nextFiles,
-        }),
-        note_type: 'whiteboard',
-      })
     } catch (error) {
       logger.warn('[WhiteboardEditor] Mermaid DSL 重画失败:', error)
       setDslError(error?.message || 'Mermaid 解析失败，请检查 DSL 语法')
@@ -1127,10 +1233,8 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     dslDraft,
     excalidrawAPI,
     translateElementsTo,
-    noteId,
-    serializeScene,
-    updateNote,
     applyWhiteboardStyleToElements,
+    commitWhiteboardScene,
   ])
 
   const openMermaidCreator = useCallback(() => {
@@ -1164,79 +1268,16 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
       const currentElements = excalidrawAPI.getSceneElements()
       const currentAppState = excalidrawAPI.getAppState()
       const currentFiles = excalidrawAPI.getFiles()
-
-      // 视口中心（场景坐标）= -scroll + viewport/zoom/2
-      const zoom = currentAppState?.zoom?.value || 1
-      const viewportW = currentAppState?.width || 0
-      const viewportH = currentAppState?.height || 0
-      const centerX = -(currentAppState?.scrollX || 0) + viewportW / zoom / 2
-      const centerY = -(currentAppState?.scrollY || 0) + viewportH / zoom / 2
-
-      const validNew = styledRenderedElements.filter((el) => el && !el.isDeleted)
-      let translatedElements = styledRenderedElements
-      if (validNew.length) {
-        const minX = Math.min(...validNew.map((el) => typeof el.x === 'number' ? el.x : 0))
-        const minY = Math.min(...validNew.map((el) => typeof el.y === 'number' ? el.y : 0))
-        const maxX = Math.max(
-          ...validNew.map((el) => (typeof el.x === 'number' ? el.x : 0) + (typeof el.width === 'number' ? el.width : 0)),
-        )
-        const maxY = Math.max(
-          ...validNew.map((el) => (typeof el.y === 'number' ? el.y : 0) + (typeof el.height === 'number' ? el.height : 0)),
-        )
-        const width = maxX - minX
-        const height = maxY - minY
-        translatedElements = translateElementsTo(
-          styledRenderedElements,
-          centerX - width / 2,
-          centerY - height / 2,
-        )
-      }
-
+      const translatedElements = centerElementsInViewport(styledRenderedElements, currentAppState)
       const nextElements = [...currentElements, ...translatedElements]
       const nextFiles = { ...(currentFiles || {}), ...(rendered.files || {}) }
-
-      // Tier3 回退分支会产 image 元素，需要把图片资源注入 Excalidraw 文件系统
-      if (excalidrawAPI?.addFiles && rendered.files && Object.keys(rendered.files).length > 0) {
-        try {
-          const filesPayload = Object.values(rendered.files).filter(Boolean)
-          if (filesPayload.length > 0) excalidrawAPI.addFiles(filesPayload)
-        } catch (fileErr) {
-          logger.warn('[WhiteboardEditor] Mermaid 成图 addFiles 失败:', fileErr)
-        }
-      }
-
-      const persistedAppState = {
-        viewBackgroundColor: currentAppState.viewBackgroundColor,
-        currentItemFontFamily: currentAppState.currentItemFontFamily,
-        gridSize: currentAppState.gridSize,
-      }
-
+      await commitWhiteboardScene({
+        elements: nextElements,
+        appState: currentAppState,
+        files: nextFiles,
+      })
       setCreatorOpen(false)
       setCreatorDraft('')
-      setInitialData({
-        elements: nextElements,
-        appState: persistedAppState,
-        files: nextFiles,
-      })
-      setExcalidrawKey(`excalidraw-${noteId || 'unknown'}-${Date.now()}`)
-
-      latestSceneRef.current = {
-        elements: nextElements,
-        appState: persistedAppState,
-        files: nextFiles,
-      }
-      lastSavedSceneRef.current = serializeScene(nextElements, persistedAppState, nextFiles)
-      setHasUnsavedChanges(false)
-      hasUnsavedChangesRef.current = false
-
-      await updateNote(noteId, {
-        content: buildWhiteboardContent({
-          elements: nextElements,
-          appState: persistedAppState,
-          fileMap: nextFiles,
-        }),
-        note_type: 'whiteboard',
-      })
     } catch (error) {
       logger.warn('[WhiteboardEditor] Mermaid 成图失败:', error)
       setCreatorError(error?.message || 'Mermaid 解析失败，请检查 DSL 语法')
@@ -1251,12 +1292,132 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
   }, [
     creatorDraft,
     excalidrawAPI,
-    translateElementsTo,
-    noteId,
-    serializeScene,
-    updateNote,
     applyWhiteboardStyleToElements,
+    centerElementsInViewport,
+    commitWhiteboardScene,
   ])
+
+  const openSvgCreator = useCallback(() => {
+    setSvgCreatorDraft('')
+    setSvgCreatorError('')
+    setSvgCreatorOpen(true)
+  }, [])
+
+  const closeSvgCreator = useCallback(() => {
+    if (isCreatingSvg) return
+    setSvgCreatorOpen(false)
+    setSvgCreatorError('')
+  }, [isCreatingSvg])
+
+  const createSvgDiagram = useCallback(async () => {
+    if (!svgCreatorDraft.trim()) {
+      setSvgCreatorError('请输入 SVG 源码')
+      return
+    }
+    if (!excalidrawAPI) return
+
+    setIsCreatingSvg(true)
+    setSvgCreatorError('')
+    isApplyingRemoteDataRef.current = true
+
+    try {
+      const rendered = createSvgAsset(svgCreatorDraft, { offsetX: 0, offsetY: 0, source: 'manual' })
+      const currentElements = excalidrawAPI.getSceneElements()
+      const currentAppState = excalidrawAPI.getAppState()
+      const currentFiles = excalidrawAPI.getFiles()
+      const centeredElements = centerElementsInViewport(rendered.elements, currentAppState)
+      const nextElements = [...currentElements, ...centeredElements]
+      const nextFiles = { ...(currentFiles || {}), ...(rendered.files || {}) }
+      await commitWhiteboardScene({
+        elements: nextElements,
+        appState: currentAppState,
+        files: nextFiles,
+      })
+      setSvgCreatorOpen(false)
+      setSvgCreatorDraft('')
+    } catch (error) {
+      logger.warn('[WhiteboardEditor] SVG 成图失败:', error)
+      setSvgCreatorError(error?.message || 'SVG 生成失败，请检查源码')
+      isApplyingRemoteDataRef.current = false
+    } finally {
+      setIsCreatingSvg(false)
+    }
+
+    setTimeout(() => {
+      isApplyingRemoteDataRef.current = false
+    }, 200)
+  }, [svgCreatorDraft, excalidrawAPI, centerElementsInViewport, commitWhiteboardScene])
+
+  const openSvgEditor = useCallback(() => {
+    if (!selectedSvgImage) return
+    setSvgDraft(selectedSvgImage.customData?.svgSource || '')
+    setSvgError('')
+    setSvgEditorOpen(true)
+  }, [selectedSvgImage])
+
+  const closeSvgEditor = useCallback(() => {
+    if (isRegeneratingSvg) return
+    setSvgEditorOpen(false)
+    setSvgError('')
+  }, [isRegeneratingSvg])
+
+  const regenerateSvgImage = useCallback(async () => {
+    if (!selectedSvgImage || !svgDraft.trim()) {
+      setSvgError('请输入 SVG 源码')
+      return
+    }
+    if (!excalidrawAPI) return
+
+    setIsRegeneratingSvg(true)
+    setSvgError('')
+    isApplyingRemoteDataRef.current = true
+
+    try {
+      const rendered = createSvgAsset(svgDraft, {
+        offsetX: selectedSvgImage.x,
+        offsetY: selectedSvgImage.y,
+        source: selectedSvgImage.customData?.generatedBy || 'manual',
+        maxWidth: Math.max(24, selectedSvgImage.width),
+        maxHeight: Math.max(24, selectedSvgImage.height),
+      })
+      const replacement = {
+        ...selectedSvgImage,
+        fileId: rendered.elements[0].fileId,
+        width: selectedSvgImage.width,
+        height: selectedSvgImage.height,
+        version: (selectedSvgImage.version || 1) + 1,
+        versionNonce: rendered.elements[0].versionNonce,
+        updated: Date.now(),
+        customData: rendered.elements[0].customData,
+      }
+      const currentElements = excalidrawAPI.getSceneElements()
+      const currentAppState = excalidrawAPI.getAppState()
+      const currentFiles = excalidrawAPI.getFiles()
+      const nextElements = currentElements.map((element) => (
+        element.id === selectedSvgImage.id ? replacement : element
+      ))
+      const nextFiles = { ...(currentFiles || {}) }
+      if (selectedSvgImage.fileId) delete nextFiles[selectedSvgImage.fileId]
+      Object.assign(nextFiles, rendered.files)
+      await commitWhiteboardScene({
+        elements: nextElements,
+        appState: currentAppState,
+        files: nextFiles,
+      })
+      setSelectedEditableImage(null)
+      setSvgEditorOpen(false)
+    } catch (error) {
+      logger.warn('[WhiteboardEditor] SVG 原位重画失败:', error)
+      setSvgError(error?.message || 'SVG 重画失败，请检查源码')
+      isApplyingRemoteDataRef.current = false
+    } finally {
+      setIsRegeneratingSvg(false)
+    }
+
+    setTimeout(() => {
+      isApplyingRemoteDataRef.current = false
+    }, 200)
+  }, [selectedSvgImage, svgDraft, excalidrawAPI, commitWhiteboardScene])
   
   // 监听类型转换事件
   useEffect(() => {
@@ -1297,15 +1458,17 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
   }, [styleMode, excalidrawAPI])
 
   useEffect(() => {
-    if (!selectedMermaidImage) return
+    if (!selectedEditableImage) return
     const currentElements = excalidrawAPI?.getSceneElements?.() || []
-    const stillExists = currentElements.some((element) => element.id === selectedMermaidImage.id && !element.isDeleted)
+    const stillExists = currentElements.some((element) => element.id === selectedEditableImage.id && !element.isDeleted)
     if (!stillExists) {
-      setSelectedMermaidImage(null)
+      setSelectedEditableImage(null)
       setDslEditorOpen(false)
       setDslError('')
+      setSvgEditorOpen(false)
+      setSvgError('')
     }
-  }, [selectedMermaidImage, excalidrawAPI, excalidrawKey])
+  }, [selectedEditableImage, excalidrawAPI, excalidrawKey])
 
   // 只在开发环境输出调试日志
   if (process.env.NODE_ENV === 'development') {
@@ -1945,11 +2108,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
 
       detail.handled = true
       try {
-        // ── 事务化（问题5）：先把"生成 + 持久化"全部跑通，最后才提交到画布 UI。
-        // 任何一步失败都在提交 UI 之前抛出，这样既不会留下空白/半保存画布，
-        // 也不会出现"UI 显示成功但其实没存盘"的假成功。
-
-        // 1) 取最新场景 + 生成（纯计算，不碰 UI）
+        // 先生成并持久化，成功后再重挂载画布，避免半保存状态。
         const existingElements = excalidrawAPI.getSceneElements().filter(e => !e.isDeleted)
         const appState = excalidrawAPI.getAppState()
         const files = excalidrawAPI.getFiles()
@@ -1960,71 +2119,18 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
           prompt: detail.prompt,
           elements: existingElements,
           appState,
-          fileMap: persistedData.fileMap || {},
           currentWhiteboardSummary: summarizeWhiteboardElementsForAI(existingElements, persistedData.fileMap || {}),
         })
 
         const nextFiles = result.action === 'append'
           ? { ...(files || {}), ...(result.fileMap || {}) }
           : { ...(result.fileMap || {}) }
-        const nextScene = {
+        isApplyingRemoteDataRef.current = true
+        await commitWhiteboardScene({
           elements: result.elements,
           appState: result.appState,
           files: nextFiles,
-        }
-        const persistedAppState = {
-          viewBackgroundColor: nextScene.appState?.viewBackgroundColor,
-          currentItemFontFamily: nextScene.appState?.currentItemFontFamily,
-          gridSize: nextScene.appState?.gridSize,
-        }
-
-        // 2) 持久化：先存图片拿到 fileName 引用，再写 note。任一失败直接抛出，UI 不动。
-        let persistedFileMap = {}
-        if (nextFiles && Object.keys(nextFiles).length > 0) {
-          const saveImagesResult = await window.electronAPI.whiteboard.saveImages(nextFiles)
-          if (!saveImagesResult.success) {
-            throw new Error(saveImagesResult.error || '保存图片失败')
-          }
-          persistedFileMap = saveImagesResult.data || {}
-        }
-
-        const updateResult = await updateNote(noteId, {
-          content: buildWhiteboardContent({
-            elements: nextScene.elements,
-            appState: persistedAppState,
-            fileMap: persistedFileMap,
-          }),
-          note_type: 'whiteboard',
         })
-        if (!updateResult?.success) {
-          throw new Error(updateResult?.error || '保存画布失败')
-        }
-
-        // 3) 提交到画布 UI（持久化已成功，此后不会再失败）。
-        // 与切换笔记一致，走 initialData + 重挂载路径，确保自研生成器产出的元素
-        // 也能被 Excalidraw 内核正确归一化、立即渲染（仅 updateScene 在缺 index 等字段时会失败）
-        latestSceneRef.current = nextScene
-        isApplyingRemoteDataRef.current = true
-        setInitialData(nextScene)
-        setExcalidrawKey(`excalidraw-${noteId || 'unknown'}-${Date.now()}`)
-
-        // 把生成器产出的图片资源注入 Excalidraw 资源系统（block-beta/gantt/pie 等回退会产 image 元素）
-        if (excalidrawAPI?.addFiles && result.fileMap && Object.keys(result.fileMap).length > 0) {
-          try {
-            const filesPayload = Object.values(result.fileMap).filter(Boolean)
-            if (filesPayload.length > 0) excalidrawAPI.addFiles(filesPayload)
-          } catch (fileErr) {
-            logger.warn('[WhiteboardEditor] addFiles 失败:', fileErr)
-          }
-        }
-
-        lastSavedSceneRef.current = serializeScene(
-          nextScene.elements,
-          persistedAppState,
-          nextScene.files,
-        )
-        hasUnsavedChangesRef.current = false
-        setHasUnsavedChanges(false)
 
         // 重挂载完成后再放开 onChange 拦截，避免误判为用户操作触发自动保存
         setTimeout(() => {
@@ -2040,7 +2146,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
 
     window.addEventListener(WHITEBOARD_AI_GENERATE_EVENT, handleExternalGenerate)
     return () => window.removeEventListener(WHITEBOARD_AI_GENERATE_EVENT, handleExternalGenerate)
-  }, [excalidrawAPI, noteId, notes, setHasUnsavedChanges, updateNote, serializeScene])
+  }, [excalidrawAPI, noteId, notes, commitWhiteboardScene])
 
   // 获取当前画布内容（用于类型转换）
   const getCurrentContent = useCallback(async () => {
@@ -2250,14 +2356,14 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
               return
             }
 
-            const editableMermaidImage = getEditableMermaidImage(elements, appState)
-            setSelectedMermaidImage((prev) => {
-              if (!editableMermaidImage && !prev) return prev
-              if (!editableMermaidImage) return null
-              if (prev?.id === editableMermaidImage.id && prev?.version === editableMermaidImage.version) {
+            const editableImage = getSelectedEditableImage(elements, appState)
+            setSelectedEditableImage((prev) => {
+              if (!editableImage && !prev) return prev
+              if (!editableImage) return null
+              if (prev?.id === editableImage.id && prev?.version === editableImage.version) {
                 return prev
               }
-              return editableMermaidImage
+              return editableImage
             })
 
             const persistedAppState = {
@@ -2302,6 +2408,14 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
               >
                 Mermaid 成图
               </Button>
+              <Button
+                size="small"
+                variant="text"
+                onClick={openSvgCreator}
+                sx={imageEditButtonSx}
+              >
+                SVG 成图
+              </Button>
               {selectedMermaidImage ? (
                 <Button
                   size="small"
@@ -2310,6 +2424,16 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
                   sx={imageEditButtonSx}
                 >
                   修改
+                </Button>
+              ) : null}
+              {selectedSvgImage ? (
+                <Button
+                  size="small"
+                  variant="text"
+                  onClick={openSvgEditor}
+                  sx={imageEditButtonSx}
+                >
+                  编辑 SVG
                 </Button>
               ) : null}
             </Box>
@@ -2392,6 +2516,35 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
           </Button>
         </DialogActions>
       </Dialog>
+      <SvgSourceDialog
+        open={svgCreatorOpen}
+        title="SVG 代码成图"
+        description="粘贴完整 SVG 源码。系统会移除脚本、外链、动画等不安全内容，并以可无损缩放的图片元素插入视口中心。"
+        source={svgCreatorDraft}
+        error={svgCreatorError}
+        busy={isCreatingSvg}
+        placeholder={'<svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">\n  ...\n</svg>'}
+        submitLabel="插入到画布"
+        busyLabel="插入中..."
+        slotProps={mermaidDialogSlotProps}
+        onChange={setSvgCreatorDraft}
+        onClose={closeSvgCreator}
+        onSubmit={createSvgDiagram}
+      />
+      <SvgSourceDialog
+        open={svgEditorOpen}
+        title="编辑 SVG 源码"
+        description="保存后会在原位置替换图形，并保留当前元素的大小、旋转和层级关系。"
+        source={svgDraft}
+        error={svgError}
+        busy={isRegeneratingSvg}
+        submitLabel="保存并替换"
+        busyLabel="替换中..."
+        slotProps={mermaidDialogSlotProps}
+        onChange={setSvgDraft}
+        onClose={closeSvgEditor}
+        onSubmit={regenerateSvgImage}
+      />
     </Box>
   )
 }

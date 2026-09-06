@@ -22,7 +22,7 @@ import {
   TaskAlt as TaskAltIcon,
   List as ListIcon,
   CheckCircle as CheckCircleIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 import TimeZoneUtils from '../../utils/timeZoneUtils';
 import {
   getPriorityColor,

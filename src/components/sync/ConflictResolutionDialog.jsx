@@ -21,7 +21,7 @@ import {
   Computer as LocalIcon,
   Cloud as CloudIcon,
   CompareArrows as CompareIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 
 /**
  * 冲突解决对话框组件

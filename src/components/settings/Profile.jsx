@@ -25,7 +25,7 @@ import {
   WavingHand as WavingHandIcon,
   CalendarMonth as CalendarMonthIcon,
   Tag as TagIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 import { heroCardSx, createSoftGlassCardSx } from '../../styles/commonStyles';
 import { useStore } from '../../store/useStore';
 import { fetchTodoStats } from '../../api/todoAPI';

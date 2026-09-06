@@ -36,7 +36,7 @@ import {
   Brush as WhiteboardIcon,
   RestartAlt as ResetIcon,
   Tag as TagIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 import FlotaAIIcon from '../common/FlotaAIIcon';
 import { useStore } from '../../store/useStore';
 import NoteList from '../notes/NoteList';

@@ -1,5 +1,6 @@
 import React from 'react';
 import { createTheme, alpha } from '@mui/material/styles';
+import { ArrowDropDown, CheckCircle, Error as ErrorIcon, Info, Warning } from '../components/common/AppIcons';
 import { EASING, DURATION_MS } from '../utils/animationConfig';
 
 const checkboxIcon = React.createElement('span', { className: 'FlotaCheckbox-icon' });
@@ -28,8 +29,8 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
     // 统一浮层材质：Dialog / Menu / Popover / AI 浮层共享同一套玻璃参数。
     // 保持背景可辨识，同时用较高透明度保证正文对比度。
     const glassBackground = isDark
-        ? alpha('#172033', 0.68)
-        : alpha('#f8fafc', 0.72);
+        ? alpha('#172033', 0.92)
+        : alpha('#f8fafc', 0.94);
     const glassBorder = isDark
         ? '1px solid rgba(255, 255, 255, 0.11)'
         : '1px solid rgba(255, 255, 255, 0.68)';
@@ -171,6 +172,16 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                     }
                 }
             },
+            MuiButtonBase: {
+                styleOverrides: {
+                    root: {
+                        '&.Mui-focusVisible': {
+                            outline: `2px solid ${primaryColor}`,
+                            outlineOffset: -2,
+                        },
+                    },
+                },
+            },
             MuiButton: {
                 styleOverrides: {
                     root: {
@@ -232,13 +243,6 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                         '&:active': {
                             boxShadow: 'none',
                         },
-                    },
-                },
-            },
-            MuiFab: {
-                styleOverrides: {
-                    root: {
-                        // 保留现有定位/布局 transform，避免绝对定位组件在 hover 时跳动。
                     },
                 },
             },
@@ -443,7 +447,6 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
             MuiDialog: {
                 styleOverrides: {
                     paper: {
-                        borderRadius: 16,
                         backdropFilter: glassBlur,
                         WebkitBackdropFilter: glassBlur,
                         backgroundColor: glassBackground,
@@ -548,8 +551,7 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
             MuiMenuItem: {
                 styleOverrides: {
                     root: {
-                        // 恢复接近 MUI 默认密度，避免菜单/列表项过窄
-                        minHeight: 48,
+                        minHeight: 40,
                         fontSize: '0.875rem',
                         lineHeight: 1.6,
                         borderRadius: 10,
@@ -570,6 +572,7 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                 }
             },
             MuiSelect: {
+                defaultProps: { IconComponent: ArrowDropDown },
                 styleOverrides: {
                     select: {
                         fontSize: '0.9rem',
@@ -580,6 +583,16 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                         opacity: 0.75,
                     }
                 }
+            },
+            MuiAlert: {
+                defaultProps: {
+                    iconMapping: {
+                        success: React.createElement(CheckCircle),
+                        error: React.createElement(ErrorIcon),
+                        info: React.createElement(Info),
+                        warning: React.createElement(Warning),
+                    },
+                },
             },
             MuiDrawer: {
                 styleOverrides: {

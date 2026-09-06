@@ -9,7 +9,7 @@ import {
   Alert,
   Box
 } from '@mui/material'
-import { Info as InfoIcon } from '@mui/icons-material'
+import { Info as InfoIcon } from '../common/AppIcons'
 import FlotaAIIcon from '../common/FlotaAIIcon'
 
 /** 五彩转圈 + 逐点文字加载指示器 */

@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react'
 import { Box, Tooltip, Menu, MenuItem, ListItemIcon, ListItemText, Typography, ButtonBase, Divider } from '@mui/material'
-import PushPinIcon from '@mui/icons-material/PushPin'
-import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
-import CloseIcon from '@mui/icons-material/Close'
-import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop'
-import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom'
-import ClearAllIcon from '@mui/icons-material/ClearAll'
+import { FlotaPinIcon as PushPinIcon } from '../common/FlotaIcons'
+import { Close as CloseIcon } from '../common/AppIcons'
+import { VerticalAlignTop as VerticalAlignTopIcon } from '../common/AppIcons'
+import { VerticalAlignBottom as VerticalAlignBottomIcon } from '../common/AppIcons'
+import { ClearAll as ClearAllIcon } from '../common/AppIcons'
 import { useTheme } from '@mui/material/styles'
 import { useStore } from '../../store/useStore'
 import { useRecentNotes } from '../../store/useRecentNotes'
@@ -276,7 +275,7 @@ const RecentNotesRail = () => {
               {menuItem.pinned ? (
                 <PushPinIcon fontSize="small" />
               ) : (
-                <PushPinOutlinedIcon fontSize="small" />
+                <PushPinIcon fontSize="small" sx={{ opacity: 0.6 }} />
               )}
             </ListItemIcon>
             <ListItemText primary={menuItem.pinned ? '取消固定' : '固定'} />

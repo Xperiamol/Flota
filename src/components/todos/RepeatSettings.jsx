@@ -15,7 +15,7 @@ import {
   Repeat as RepeatIcon,
   CalendarToday as CalendarIcon,
   ExpandMore as ExpandMoreIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 
 const RepeatSettings = ({ value = {}, onChange }) => {
   const [repeatType, setRepeatType] = useState(value.repeat_type || 'none');

@@ -45,6 +45,70 @@ export const containsCJK = (text = '') => /[\u4e00-\u9fa5]/.test(text)
 
 export const normalizeWhitespace = (text = '') => String(text).replace(/\s+/g, ' ').trim()
 
+let textMeasureContext = null
+
+const getTextMeasureContext = () => {
+  if (textMeasureContext) return textMeasureContext
+  if (typeof document === 'undefined') return null
+  const canvas = document.createElement('canvas')
+  textMeasureContext = canvas.getContext('2d')
+  return textMeasureContext
+}
+
+// 与 AI 画布最终使用的 Helvetica/Arial 无衬线字体保持一致。Canvas 不可用时才回退字符估算。
+export const measureTextWidth = (text, fontSize = 16) => {
+  const value = String(text || '')
+  const context = getTextMeasureContext()
+  if (context) {
+    context.font = `${fontSize}px Helvetica, Arial, "PingFang SC", "Microsoft YaHei", sans-serif`
+    return context.measureText(value).width
+  }
+  let width = 0
+  for (const char of [...value]) {
+    if (/\s/.test(char)) width += fontSize * 0.33
+    else if (char.charCodeAt(0) > 255) width += fontSize
+    else if (/[MW@#%&]/.test(char)) width += fontSize * 0.82
+    else if (/[ilI1.,'`]/.test(char)) width += fontSize * 0.3
+    else width += fontSize * 0.56
+  }
+  return width
+}
+
+// 按实际像素宽度换行，同时保留用户/模型给出的显式换行。英文优先在空格处断行，
+// 中日韩文字可逐字断行，避免“整段含一个中文字符就把所有英文当全角字”的过度换行。
+export const wrapTextToWidth = (text, maxWidth, fontSize = 16) => {
+  const source = String(text ?? '')
+  const limit = Number.isFinite(maxWidth) ? Math.max(fontSize * 4, maxWidth) : Infinity
+  if (!source || limit === Infinity) return source
+
+  const output = []
+  for (const rawLine of source.split('\n')) {
+    const line = rawLine.replace(/[\t ]+/g, ' ').trim()
+    if (!line) {
+      output.push('')
+      continue
+    }
+    let current = ''
+    for (const char of [...line]) {
+      const candidate = current + char
+      if (current && measureTextWidth(candidate, fontSize) > limit) {
+        const breakAt = current.lastIndexOf(' ')
+        if (breakAt > 0) {
+          output.push(current.slice(0, breakAt).trimEnd())
+          current = `${current.slice(breakAt + 1)}${char}`.trimStart()
+        } else {
+          output.push(current)
+          current = char.trimStart()
+        }
+      } else {
+        current = candidate
+      }
+    }
+    output.push(current.trimEnd())
+  }
+  return output.join('\n')
+}
+
 // ─── 文字可读性护栏 ──────────────────────────────────
 // 画布底色恒为浅色，LLM 有时会按"深色主题"思路输出近白/浅色文字 → 浅底浅字不可见。
 // 这里在引擎层兜底：按文字与其背景的对比度，必要时换成深色或白色，保证始终能看清。
@@ -99,19 +163,14 @@ export const wrapLabel = (text, maxChars = null) => {
 }
 
 export const measureTextBlock = (text, fontSize = 16) => {
-  const lines = String(text || '').split('\n').filter(Boolean)
-  const measured = lines.length > 0 ? lines : ['']
-  let width = 0
-  for (const line of measured) {
-    let lineWidth = 0
-    for (const ch of [...line]) {
-      lineWidth += ch.charCodeAt(0) > 255 ? fontSize : fontSize * 0.58
-    }
-    width = Math.max(width, lineWidth)
-  }
+  const measured = String(text ?? '').split('\n')
+  const lineHeight = 1.25
+  const width = measured.reduce((max, line) => Math.max(max, measureTextWidth(line, fontSize)), 0)
   return {
-    width: Math.max(width + 26, 80),
-    height: Math.max(measured.length * fontSize * 1.45 + 18, fontSize * 1.5 + 16),
+    // 文本元素自身只记录真实字形尺寸；留白由 card/group/callout 等容器负责。
+    // 旧实现把 26px/18px 内边距塞进文本框，导致选框与布局尺寸都失真。
+    width: Math.max(1, Math.ceil(width) + 2),
+    height: Math.max(fontSize * lineHeight, Math.ceil(measured.length * fontSize * lineHeight)),
     lines: measured.length,
   }
 }
@@ -159,6 +218,7 @@ export const makeText = ({ x, y, text, fontSize = 16, color, align = 'center', v
     containerId,
     originalText: wrapped,
     lineHeight: 1.25,
+    autoResize: true,
     strokeColor: safeColor,
     backgroundColor: 'transparent',
     roundness: null,
@@ -267,8 +327,18 @@ export const beautifyElements = (elements = []) => elements.map((el) => {
   const next = { ...el }
   if (typeof next.x === 'number') next.x = snapToGrid(next.x)
   if (typeof next.y === 'number') next.y = snapToGrid(next.y)
-  if (typeof next.width === 'number') next.width = snapToGrid(next.width)
-  if (typeof next.height === 'number') next.height = snapToGrid(next.height)
+  // 文本尺寸来自真实字形测量，不能再吸附网格；四舍五入会把边界缩小，
+  // 向上吸附整个网格又会制造明显空白，两者都会让选框与文字不一致。
+  if (typeof next.width === 'number') {
+    next.width = next.type === 'text'
+      ? Math.max(1, Math.ceil(next.width))
+      : snapToGrid(next.width)
+  }
+  if (typeof next.height === 'number') {
+    next.height = next.type === 'text'
+      ? Math.max(1, Math.ceil(next.height))
+      : snapToGrid(next.height)
+  }
   if (Array.isArray(next.points)) {
     next.points = next.points.map(([x, y]) => [snapToGrid(x), snapToGrid(y)])
   }

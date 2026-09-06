@@ -19,7 +19,7 @@ import {
   DeleteOutline as DeleteIcon,
   KeyboardArrowUp as PrevIcon,
   KeyboardArrowDown as NextIcon
-} from '@mui/icons-material'
+} from '../common/AppIcons'
 import FloatingGlassSurface from '../common/FloatingGlassSurface'
 import useDraggableFloatingPanel from '../../hooks/useDraggableFloatingPanel'
 import { useBookmarks } from '../../store/useBookmarks'

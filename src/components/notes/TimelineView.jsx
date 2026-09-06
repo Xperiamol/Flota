@@ -38,7 +38,7 @@ import {
   RadioButtonUnchecked,
   Send,
   Visibility
-} from '@mui/icons-material'
+} from '../common/AppIcons'
 import { useStore } from '../../store/useStore'
 import { createTodo, deleteTodo, fetchTodos, toggleTodoComplete, updateTodo } from '../../api/todoAPI'
 import ImagePreviewModal, { canvasToPngBlob } from '../common/ImagePreviewModal'

@@ -33,7 +33,7 @@ import {
   Psychology as PsychologyIcon,
   CleaningServices as CleanIcon,
   Timeline as TimelineIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 import { emptyStateSx, settingsFieldGroupSx, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../../styles/commonStyles';
 import FlotaAIIcon from '../common/FlotaAIIcon';
 

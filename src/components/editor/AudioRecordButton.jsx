@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react'
 import { IconButton, Tooltip } from '@mui/material'
-import { Mic as MicIcon, Stop as StopIcon } from '@mui/icons-material'
+import { Mic as MicIcon, Stop as StopIcon } from '../common/AppIcons'
 import { blobToWav } from '../../utils/audioCodec'
 
 const AudioRecordButton = ({ onAudioInsert, onTranscription, disabled = false, sx }) => {

@@ -5,88 +5,8 @@ import {
   CheckCircleRounded as CompletedIcon,
   ExpandMoreRounded as ExpandIcon,
   RadioButtonUncheckedRounded as PendingIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 
-export const todoRowActionRevealSx = {
-  '& .todo-row-action': {
-    position: 'relative',
-    isolation: 'isolate',
-    minWidth: 28,
-    minHeight: 28,
-    pointerEvents: 'none',
-    color: 'text.primary',
-    border: 0,
-    backgroundColor: 'transparent',
-    boxShadow: 'none',
-    transition: 'color 160ms ease',
-    '&::before': {
-      content: '""',
-      position: 'absolute',
-      inset: -12,
-      zIndex: 0,
-      borderRadius: '50%',
-      backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.025),
-      backdropFilter: 'blur(9px)',
-      WebkitBackdropFilter: 'blur(9px)',
-      maskImage: 'radial-gradient(circle, #000 0%, rgba(0,0,0,0.96) 34%, rgba(0,0,0,0.62) 56%, rgba(0,0,0,0.2) 74%, transparent 90%)',
-      WebkitMaskImage: 'radial-gradient(circle, #000 0%, rgba(0,0,0,0.96) 34%, rgba(0,0,0,0.62) 56%, rgba(0,0,0,0.2) 74%, transparent 90%)',
-      opacity: 0,
-      transform: 'none',
-      pointerEvents: 'none',
-      transition: 'none'
-    },
-    '& > svg, & > .MuiCircularProgress-root': {
-      zIndex: 1,
-      opacity: 0,
-      scale: 0.84,
-      translate: '0 2px',
-      transition: 'opacity 150ms ease, scale 220ms cubic-bezier(0.22,1,0.36,1), translate 220ms cubic-bezier(0.22,1,0.36,1), color 180ms ease',
-      filter: (theme) => theme.palette.mode === 'dark'
-        ? 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))'
-        : 'drop-shadow(0 1px 1px rgba(28,43,65,0.2))'
-    },
-    '& > svg': {
-      position: 'relative'
-    },
-    '& > .MuiCircularProgress-root': {
-      position: 'absolute'
-    }
-  },
-  '&:hover .todo-row-action, &:focus-within .todo-row-action': {
-    pointerEvents: 'auto'
-  },
-  '&:hover .todo-row-action > svg, &:hover .todo-row-action > .MuiCircularProgress-root, &:focus-within .todo-row-action > svg, &:focus-within .todo-row-action > .MuiCircularProgress-root': {
-    opacity: 1,
-    scale: 1,
-    translate: '0 0'
-  },
-  '&:hover .todo-row-action::before, &:focus-within .todo-row-action::before': {
-    opacity: 0.96,
-    transform: 'none'
-  },
-  '&:hover .todo-row-action:hover, &:focus-within .todo-row-action:hover': {
-    color: 'primary.main',
-    backgroundColor: 'transparent'
-  },
-  '@media (hover: none)': {
-    '& .todo-row-action': {
-      pointerEvents: 'auto'
-    },
-    '& .todo-row-action > svg, & .todo-row-action > .MuiCircularProgress-root': {
-      opacity: 1,
-      scale: 1,
-      translate: '0 0'
-    },
-    '& .todo-row-action::before': {
-      display: 'none'
-    }
-  },
-  '@media (prefers-reduced-motion: reduce)': {
-    '& .todo-row-action, & .todo-row-action::before, & .todo-row-action > svg, & .todo-row-action > .MuiCircularProgress-root': {
-      transition: 'none'
-    }
-  }
-};
 
 export const SubtaskExpandButton = React.memo(({
   subtasks = [],
@@ -105,7 +25,7 @@ export const SubtaskExpandButton = React.memo(({
   return (
     <Tooltip title={title} enterDelay={450}>
       <IconButton
-        className="todo-row-action"
+        className="row-inline-action"
         size="small"
         aria-label={title}
         aria-expanded={expanded}

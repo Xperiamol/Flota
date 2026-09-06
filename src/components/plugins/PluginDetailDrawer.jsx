@@ -25,7 +25,7 @@ import {
   RocketLaunchRounded,
   ErrorOutline,
   FolderOpenRounded
-} from '@mui/icons-material'
+} from '../common/AppIcons'
 import { getDisplayCategories, formatPermissions, permissionDescriptions } from './pluginUtils'
 
 const PluginDetailDrawer = ({

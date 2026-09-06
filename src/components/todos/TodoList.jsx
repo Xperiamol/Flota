@@ -31,9 +31,9 @@ import {
   Schedule as ScheduleIcon,
   Flag as FlagIcon,
   Sort as SortIcon,
-  AccessTime as AccessTimeIcon,
-  Note as NoteIcon
-} from '@mui/icons-material';
+  AccessTime as AccessTimeIcon
+} from '../common/AppIcons';
+import { FlotaNoteIcon as NoteIcon } from '../common/FlotaIcons';
 import { format, isToday, isPast, parseISO } from 'date-fns';
 import { zhCN as dateFnsZhCN } from 'date-fns/locale';
 import { useSearch } from '../../hooks/useSearch';
@@ -47,7 +47,8 @@ import FilterPopover from '../filters/FilterPopover';
 import FilterToggleButton from '../filters/FilterToggleButton';
 import ChoiceFilter from '../filters/ChoiceFilter';
 import DropdownMenu from '../common/DropdownMenu';
-import InlineSubtaskList, { SubtaskExpandButton, todoRowActionRevealSx } from './InlineSubtaskList';
+import InlineSubtaskList, { SubtaskExpandButton } from './InlineSubtaskList';
+import { rowActionRevealSx } from '../../styles/commonStyles';
 import zhCN from '../../locales/zh-CN';
 import { t } from '../../utils/i18n';
 
@@ -57,7 +58,6 @@ const {
 
 const TODO_LIST_GUTTER = '10px';
 const TODO_ITEM_RADIUS = '12px';
-const TODO_ITEM_SHADOW = '0 4px 12px rgba(0,0,0,0.08)';
 const COMPLETION_BUTTON_SIZE = 28;
 const COMPLETION_ICON_SIZE = 20;
 const completionSlotSx = {
@@ -85,7 +85,7 @@ import {
   getPriorityText,
   comparePriority
 } from '../../utils/priorityUtils';
-import { useDragAnimation } from '../common/DragAnimationProvider';
+import { useDragAnimation } from '../../hooks/useDragAnimation';
 import {
   fetchTodosByPriority,
   fetchTodosByDueDate,
@@ -744,8 +744,8 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
       <Box
         sx={{
           px: TODO_LIST_GUTTER,
-          pt: 0.625,
-          pb: 0.5,
+          pt: 1.25,
+          pb: 1,
           flexShrink: 0
         }}
       >
@@ -755,15 +755,13 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
           placeholder={placeholder.searchTodos}
           value={localSearchQuery}
           onChange={(e) => setLocalSearchQuery(e.target.value)}
-          aria-label="搜索待办"
           sx={(theme) => ({
             '& .MuiOutlinedInput-root': {
-              height: 34,
-              borderRadius: '12px',
+              height: 36,
+              borderRadius: '10px',
               fontSize: '0.8125rem',
               paddingLeft: '8px',
               paddingRight: '4px',
-              backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.035)' : 'rgba(255,255,255,0.62)',
             },
             '& .MuiOutlinedInput-input': {
               padding: '6px 4px',
@@ -776,6 +774,7 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
             },
           })}
           slotProps={{
+            htmlInput: { 'aria-label': placeholder.searchTodos },
             input: {
               startAdornment: (
                 <InputAdornment position="start">
@@ -913,13 +912,13 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                 <ListItem
                   disablePadding
                   sx={{
-                    mb: 0.25,
+                    mb: 0.5,
                     position: 'relative',
                     overflow: 'visible',
                     width: '100%',
                     display: 'block',
                     borderRadius: TODO_ITEM_RADIUS,
-                    ...todoRowActionRevealSx
+                    ...rowActionRevealSx
                   }}
                 >
                   <ListItemButton
@@ -936,16 +935,14 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                       maxWidth: 'none',
                       boxSizing: 'border-box',
                       m: '0 !important',
-                      minHeight: 46,
-                      py: 0.5,
+                      minHeight: 58,
+                      py: 0.875,
                       px: 1.25,
                       pr: 0.75,
                       borderRadius: TODO_ITEM_RADIUS,
                       border: '1px solid transparent',
-                      backgroundColor: (theme) => theme.palette.mode === 'dark'
-                        ? 'rgba(255,255,255,0.02)'
-                        : 'rgba(255,255,255,0.6)',
-                      transition: 'background-color 0.18s cubic-bezier(0.32,0.72,0,1), box-shadow 0.18s cubic-bezier(0.32,0.72,0,1), border-color 0.18s cubic-bezier(0.32,0.72,0,1)',
+                      backgroundColor: 'transparent',
+                      transition: 'background-color 160ms ease, border-color 160ms ease',
                       position: 'relative',
                       overflow: 'hidden',
                       backgroundClip: 'padding-box',
@@ -972,20 +969,13 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                       }),
                       '&:hover': {
                         backgroundColor: (theme) => theme.palette.action.hover,
-                        borderRadius: TODO_ITEM_RADIUS,
-                        boxShadow: TODO_ITEM_SHADOW,
-                        borderColor: (theme) => theme.palette.divider,
-                        zIndex: 1,
                       },
                       '&.Mui-selected': {
-                        borderRadius: TODO_ITEM_RADIUS,
                         backgroundColor: (theme) => theme.palette.mode === 'dark'
                           ? theme.palette.primary.main + '1F'
                           : theme.palette.primary.main + '12',
-                        borderColor: (theme) => theme.palette.primary.main + '40',
+                        borderColor: (theme) => theme.palette.primary.main + '24',
                         '&:hover': {
-                          borderRadius: TODO_ITEM_RADIUS,
-                          boxShadow: TODO_ITEM_SHADOW,
                           backgroundColor: (theme) => theme.palette.mode === 'dark'
                             ? theme.palette.primary.main + '29'
                             : theme.palette.primary.main + '1A'
@@ -1020,12 +1010,12 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                           size={COMPLETION_BUTTON_SIZE}
                         />
                       ) : isFutureRecurringTodo(todo) ? (
-                        <IconButton className="todo-row-action" size="small" disabled sx={completionButtonSx}>
+                        <IconButton className="row-inline-action" size="small" disabled sx={completionButtonSx}>
                           <ScheduleIcon sx={{ ...completionIconSx, color: 'text.disabled' }} />
                         </IconButton>
                       ) : (
                       <IconButton
-                        className="todo-row-action"
+                        className="row-inline-action"
                         size="small"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -1077,8 +1067,9 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                           sx={{
                             textDecoration: todo.completed ? 'line-through' : 'none',
                             opacity: todo.completed ? 0.6 : 1,
-                            fontSize: '0.8125rem',
-                            lineHeight: 1.35,
+                            fontSize: '0.875rem',
+                            lineHeight: 1.5,
+                            letterSpacing: 0,
                             fontWeight: 500
                           }}
                         >
@@ -1148,7 +1139,7 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                       zIndex: 3
                     }}>
                       <IconButton
-                        className="todo-row-action"
+                        className="row-inline-action"
                         size="small"
                         onClick={(e) => {
                           e.preventDefault();

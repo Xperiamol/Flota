@@ -1,10 +1,8 @@
-import { createContext, useContext, useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef } from 'react';
+import { DragAnimationContext } from '../../hooks/useDragAnimation';
 import DragPreview from './DragPreview';
 import dragManager from '../../utils/DragManager';
 import logger from '../../utils/logger';
-
-// 创建拖拽动画上下文
-const DragAnimationContext = createContext();
 
 /**
  * 拖拽动画提供者组件
@@ -194,17 +192,6 @@ export const DragAnimationProvider = ({ children }) => {
       />
     </DragAnimationContext.Provider>
   );
-};
-
-/**
- * 使用拖拽动画的Hook
- */
-export const useDragAnimation = () => {
-  const context = useContext(DragAnimationContext);
-  if (!context) {
-    throw new Error('useDragAnimation must be used within a DragAnimationProvider');
-  }
-  return context;
 };
 
 export default DragAnimationProvider;

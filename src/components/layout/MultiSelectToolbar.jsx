@@ -12,9 +12,9 @@ import {
   SelectAll as SelectAllIcon,
   Clear as ClearIcon,
   Delete as DeleteIcon,
-  Label as LabelIcon,
   Close as CloseIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
+import { FlotaTagIcon as LabelIcon } from '../common/FlotaIcons';
 
 /**
  * 通用多选工具栏组件

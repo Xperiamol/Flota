@@ -26,7 +26,7 @@ import {
   Edit as EditIcon,
   Psychology as MemoryIcon,
   CalendarToday as CalendarIcon
-} from '@mui/icons-material'
+} from '../common/AppIcons'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import FloatingGlassSurface from '../common/FloatingGlassSurface'
@@ -36,11 +36,14 @@ import { useShallow } from 'zustand/react/shallow'
 import useAIStream from '../../hooks/useAIStream'
 import useDraggableFloatingPanel from '../../hooks/useDraggableFloatingPanel'
 import { truncateText } from '../../utils/aiContextUtils'
-import { routeIntent } from '../../utils/aiCore/intentRouter'
 import { buildContext, CONTEXT_PROFILES } from '../../utils/aiCore/contextBuilder'
-import { getMessagePendingActions, patchMessagePendingAction } from '../../utils/aiCore/pendingActions'
+import {
+  getLatestConfirmableAction,
+  getMessagePendingActions,
+  isExplicitPendingActionConfirmation,
+} from '../../utils/aiCore/pendingActions'
 import { buildMessageMetadata, createUserMessage, createAssistantMessage } from '../../utils/aiCore/messageModel'
-import { runPendingAction } from '../../utils/aiCore/pendingActionExecutor'
+import usePendingActionExecution from '../../hooks/usePendingActionExecution'
 import logger from '../../utils/logger'
 
 const QUICK_PROMPTS = [
@@ -227,7 +230,8 @@ const AICommandCenter = ({
   const [loading, setLoading] = useState(false)
   const [position, setPosition] = useState(null)
   const [thinkingPhrase, setThinkingPhrase] = useState('Thinking… 思考中')
-  const [executingActionIds, setExecutingActionIds] = useState(() => new Set())
+  const executingActionIds = useMemo(() => new Set(messages.flatMap(getMessagePendingActions)
+    .filter(action => action.status === 'running').map(action => action.actionId)), [messages])
 
   const { runStream, cancel } = useAIStream()
   const { dragging, handleDragStart, restorePosition } = useDraggableFloatingPanel({
@@ -328,44 +332,10 @@ const AICommandCenter = ({
     if (loading) cancel()
   }, [cancel, loading])
 
-  const handleExecuteAction = useCallback(async (action, overrides = null) => {
-    if (!action?.actionId || executingActionIds.has(action.actionId)) return
-    setExecutingActionIds(prev => new Set(prev).add(action.actionId))
-    const persist = (msgs) => {
-      messagesRef.current = msgs
-      setMessages(msgs)
-      persistConversation(conversationIdRef.current, msgs)
-    }
-    persist((messagesRef.current || []).map((m) =>
-      patchMessagePendingAction(m, action.actionId, { status: 'running' })
-    ))
-    try {
-      const { success, message, error, reloadNotes } = await runPendingAction({
-        action,
-        overrides,
-        deps: { currentNote, notes, createNote, deleteNote, updateNote, loadNotes, setSelectedNoteId },
-      })
-      const okText = success ? `✅ ${message}` : `❌ ${message}`
-      persist((messagesRef.current || []).map((m) => {
-        const patched = patchMessagePendingAction(m, action.actionId, {
-          status: success ? 'done' : 'failed',
-          resultMessage: okText,
-        })
-        if (patched === m) return m
-        return success
-          ? { ...patched, content: `${m.content || ''}\n\n${okText}`.trim() }
-          : patched
-      }))
-      if (reloadNotes) await loadNotes?.()
-      if (!success) logger.warn('[AICommandCenter] executePendingAction failed', error)
-    } finally {
-      setExecutingActionIds(prev => {
-        const next = new Set(prev)
-        next.delete(action.actionId)
-        return next
-      })
-    }
-  }, [createNote, currentNote, deleteNote, executingActionIds, loadNotes, notes, persistConversation, setSelectedNoteId, updateNote])
+  const handleExecuteAction = usePendingActionExecution({
+    conversationIdRef, messagesRef, setMessages,
+    deps: { currentNote, notes, createNote, deleteNote, updateNote, loadNotes, setSelectedNoteId },
+  })
 
   const handleNewChat = useCallback(() => {
     if (loading) return
@@ -383,6 +353,16 @@ const AICommandCenter = ({
     const text = (overridePrompt ?? input).trim()
     if (!text || loading) return
 
+    const pendingAction = isExplicitPendingActionConfirmation(text)
+      ? getLatestConfirmableAction(messagesRef.current)
+      : null
+    if (pendingAction) {
+      setInput('')
+      await handleExecuteAction(pendingAction)
+      inputRef.current?.focus()
+      return
+    }
+
     let conversationId = currentConversationId
     if (!conversationId) {
       conversationId = selectedNoteId == null
@@ -399,6 +379,7 @@ const AICommandCenter = ({
 
     // 该请求归属的对话；用户切走后旧请求只更新持久化数据，不写当前视图，避免“串台”。
     const isActiveView = () => conversationIdRef.current === conversationId
+    const readLatestMessages = () => useStore.getState().aiConversations.find(c => c.id === conversationId)?.messages
 
     const userMsg = createUserMessage({
       content: text,
@@ -421,21 +402,6 @@ const AICommandCenter = ({
 
     try {
       const apiMessages = nextMessages.map(m => ({ role: m.role, content: m.content }))
-      const { disabledTools, needClarification, clarifyQuestion } = await routeIntent({
-        prompt: text,
-        messages: nextMessages,
-        currentNote,
-      })
-      if (needClarification) {
-        const finalMessages = [...nextMessages, { role: 'assistant', content: clarifyQuestion }]
-        messagesRef.current = finalMessages
-        if (isActiveView()) {
-          setMessages(finalMessages)
-          setStreamContent('')
-        }
-        persistConversation(conversationId, finalMessages)
-        return
-      }
       const contextPackage = await buildContext({ notes, selectedNoteId, query: text, contextEnabled: CONTEXT_PROFILES.floating_panel })
 
       const { result, content, cancelledByUser, requestId } = await runStream({
@@ -451,7 +417,6 @@ const AICommandCenter = ({
             selectedNoteId: noteScope.noteId,
             source: noteScope.source,
           },
-          disabledTools,
         },
         onContent: (c) => { if (isActiveView()) setStreamContent(c) },
         onChunk: (chunk) => {
@@ -475,7 +440,7 @@ const AICommandCenter = ({
               label: parsed.label
             })
           }
-          if (['create_note', 'edit_note'].includes(chunk.name) && parsed?.success !== false && !parsed?.error) {
+          if (['create_note', 'edit_note'].includes(chunk.name) && parsed?.success === true && !parsed?.requiresConfirmation) {
             shouldReloadNotes = true
           }
         },
@@ -495,7 +460,9 @@ const AICommandCenter = ({
         ? `${assistantContentBase}\n\n${truncatedHint}`
         : assistantContentBase
 
-      const finalMessages = [...nextMessages, createAssistantMessage({
+      const latestMessages = readLatestMessages()
+      if (!latestMessages) return
+      const finalMessages = [...latestMessages, createAssistantMessage({
         content: assistantContent,
         stopped: stoppedByUser,
         actions: pendingActions,
@@ -505,8 +472,8 @@ const AICommandCenter = ({
           requestId,
         }),
       })]
-      messagesRef.current = finalMessages
       if (isActiveView()) {
+        messagesRef.current = finalMessages
         setMessages(finalMessages)
         setStreamContent('')
       }
@@ -516,12 +483,14 @@ const AICommandCenter = ({
       }
     } catch (error) {
       logger.warn('[AICommandCenter] chatStream failed', error)
-      const errorMessages = [...nextMessages, {
+      const latestMessages = readLatestMessages()
+      if (!latestMessages) return
+      const errorMessages = [...latestMessages, {
         role: 'assistant',
         content: `❌ 发生错误: ${error?.message || '未知错误'}`
       }]
-      messagesRef.current = errorMessages
       if (isActiveView()) {
+        messagesRef.current = errorMessages
         setMessages(errorMessages)
         setStreamContent('')
       }
@@ -532,7 +501,7 @@ const AICommandCenter = ({
       setLoading(false)
       if (isActiveView()) window.setTimeout(() => inputRef.current?.focus(), 30)
     }
-  }, [aiEnsureNoteChat, aiNewChat, aiSetActiveConv, clearActiveTool, currentConversationId, currentNote, input, loadNotes, loading, noteScope, notes, persistConversation, runStream, selectedNoteId, showActiveTool])
+  }, [aiEnsureNoteChat, aiNewChat, aiSetActiveConv, clearActiveTool, currentConversationId, currentNote, handleExecuteAction, input, loadNotes, loading, noteScope, notes, persistConversation, runStream, selectedNoteId, showActiveTool])
 
   const handleKeyDown = (event) => {
     if (event.key === 'Escape') {
@@ -576,7 +545,6 @@ const AICommandCenter = ({
         })}
       >
         <DragIcon sx={{ fontSize: 15, color: 'text.disabled', opacity: 0.55 }} />
-        <FlotaAIIcon sx={{ fontSize: 18 }} />
         <Typography sx={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>问 AI</Typography>
         {currentNote && (
           <Chip
@@ -823,7 +791,7 @@ const batchRowSx = (theme, selected) => ({
 const BatchActionCard = ({
   action, theme, executing, onExecute,
   itemsKey, makeKey, title, intro = '',
-  removable = false, fallbackOnComplete = false,
+  removable = false,
   submitLabel, submittingLabel, renderItem
 }) => {
   const initial = Array.isArray(action.args?.[itemsKey]) ? action.args[itemsKey] : []
@@ -831,7 +799,7 @@ const BatchActionCard = ({
     initial.map((it, i) => ({ ...it, _key: makeKey(it, i), _selected: true }))
   )
   const status = action.status || (executing ? 'running' : 'pending')
-  if (fallbackOnComplete && (status === 'done' || status === 'failed')) {
+  if (status === 'done' || status === 'failed') {
     return <SimpleActionCard action={action} theme={theme} executing={executing} onExecute={onExecute} />
   }
   const selectedCount = items.filter((it) => it._selected).length
@@ -940,7 +908,6 @@ const BatchEditNotesActionCard = ({ action, theme, executing, onExecute }) => (
     itemsKey="edits"
     makeKey={(e, i) => `${i}-${e.id}`}
     title={(n) => `AI 想批量整理 ${n} 条笔记`}
-    fallbackOnComplete
     submitLabel={(n) => `应用 ${n} 条`}
     submittingLabel="应用中…"
     renderItem={(e) => (

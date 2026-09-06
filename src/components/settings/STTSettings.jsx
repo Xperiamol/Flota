@@ -15,7 +15,7 @@ import {
   Check as CheckIcon,
   Info as InfoIcon,
   GraphicEq as TranscribeIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 import { settingsFieldGroupSx, settingsRowSx, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../../styles/commonStyles';
 
 const STTSettings = ({ showSnackbar }) => {

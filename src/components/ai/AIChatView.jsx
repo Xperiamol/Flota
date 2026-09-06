@@ -17,7 +17,8 @@ import {
   MenuBook as ReadIcon,
   Stop as StopIcon,
   Close as CloseIcon,
-} from '@mui/icons-material'
+  Label as TagIcon,
+} from '../common/AppIcons'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useStore } from '../../store/useStore'
@@ -26,11 +27,14 @@ import LongDocSteps from './LongDocSteps'
 import FlotaAIIcon from '../common/FlotaAIIcon'
 import FlotaAIOrb from '../common/FlotaAIOrb'
 import { getContextSources, truncateText } from '../../utils/aiContextUtils'
-import { routeIntent } from '../../utils/aiCore/intentRouter'
 import { buildContext } from '../../utils/aiCore/contextBuilder'
-import { getMessagePendingActions, patchMessagePendingAction } from '../../utils/aiCore/pendingActions'
+import {
+  getLatestConfirmableAction,
+  getMessagePendingActions,
+  isExplicitPendingActionConfirmation,
+} from '../../utils/aiCore/pendingActions'
 import { buildMessageMetadata, createUserMessage, createAssistantMessage, extractPendingActions } from '../../utils/aiCore/messageModel'
-import { runPendingAction } from '../../utils/aiCore/pendingActionExecutor'
+import usePendingActionExecution from '../../hooks/usePendingActionExecution'
 import useAIStream from '../../hooks/useAIStream'
 
 // ─── Markdown 渲染（react-markdown + remark-gfm） ───
@@ -292,10 +296,10 @@ const formatToolLabel = (tc) => {
 
 
 const QUICK_ACTIONS = [
-  { label: '🏷️ 整理标题', prompt: '帮我把最近的笔记标题润色一下，让它们更清晰统一。先搜索我的笔记，再用批量编辑一次性给出修改建议让我确认。' },
-  { label: '🔖 整理标签', prompt: '帮我给最近的笔记补充并统一标签。先搜索我的笔记，再用批量编辑一次性给出标签建议让我确认。' },
-  { label: '📰 生成日报', prompt: '根据我今天的笔记和待办，帮我生成一份今日工作日报，包含已完成事项、进展和明日计划。' },
-  { label: '📖 写部小说', prompt: '我想写一部小说，帮我构思并撰写。请先和我确认题材、主角和大致情节走向。' },
+  { label: '整理标题', icon: <EditIcon />, prompt: '帮我把最近的笔记标题润色一下，让它们更清晰统一。先搜索我的笔记，再用批量编辑一次性给出修改建议让我确认。' },
+  { label: '整理标签', icon: <TagIcon />, prompt: '帮我给最近的笔记补充并统一标签。先搜索我的笔记，再用批量编辑一次性给出标签建议让我确认。' },
+  { label: '生成日报', icon: <NoteIcon />, prompt: '根据我今天的笔记和待办，帮我生成一份今日工作日报，包含已完成事项、进展和明日计划。' },
+  { label: '写部小说', icon: <ReadIcon />, prompt: '我想写一部小说，帮我构思并撰写。请先和我确认题材、主角和大致情节走向。' },
 ]
 
 const CONTEXT_OPTIONS = [
@@ -325,6 +329,9 @@ const BatchTodoActionCard = ({ action, theme, executing, onExecute }) => {
   const [localTodos, setLocalTodos] = useState(() =>
     initialTodos.map((t, i) => ({ ...t, _key: `${i}-${t.content || ''}`, _selected: true }))
   )
+  if (action.status === 'done' || action.status === 'failed') {
+    return <SimpleActionCard action={action} theme={theme} executing={executing} onExecute={onExecute} />
+  }
   const intro = action.args?.intro || ''
   const selectedCount = localTodos.filter((t) => t._selected).length
 
@@ -854,7 +861,8 @@ export default function AIChatView({ onTodoUpdated }) {
   const [steps, setSteps] = useState([])
   const [activeTool, setActiveTool] = useState(null)
   const [contextEnabled, setContextEnabled] = useState({ currentNote: true, relatedNotes: true, todos: true, memories: true })
-  const [executingActionIds, setExecutingActionIds] = useState(() => new Set())
+  const executingActionIds = useMemo(() => new Set(messages.flatMap(getMessagePendingActions)
+    .filter(action => action.status === 'running').map(action => action.actionId)), [messages])
   const [messageContextMenu, setMessageContextMenu] = useState(null)
   const [inputContextMenu, setInputContextMenu] = useState(null)
 
@@ -1065,11 +1073,36 @@ export default function AIChatView({ onTodoUpdated }) {
     }
   }
 
+  const updateCurrentConversationMessages = useCallback((updater) => {
+    const nextMessages = updater(messagesRef.current || [])
+    messagesRef.current = nextMessages
+    setMessages(nextMessages)
+    if (conversationIdRef.current) {
+      aiUpdateConv(conversationIdRef.current, { messages: nextMessages, title: getConversationTitle(nextMessages) })
+    }
+    return nextMessages
+  }, [aiUpdateConv])
+
+  const handleExecuteAction = usePendingActionExecution({
+    conversationIdRef, messagesRef, setMessages, onTodoUpdated,
+    deps: { currentNote, notes, createNote, deleteNote, updateNote, loadNotes, setSelectedNoteId },
+  })
+
   // 发送消息
   const handleSend = useCallback(async (customPrompt) => {
     const text = (customPrompt || input).trim()
     const images = pendingImages
     if ((!text && images.length === 0) || loading) return
+
+    const pendingAction = images.length === 0 && isExplicitPendingActionConfirmation(text)
+      ? getLatestConfirmableAction(messagesRef.current)
+      : null
+    if (pendingAction) {
+      setInput('')
+      await handleExecuteAction(pendingAction)
+      inputRef.current?.focus()
+      return
+    }
 
     let currentId = currentConversationId
     if (selectedNoteId == null) {
@@ -1130,32 +1163,11 @@ export default function AIChatView({ onTodoUpdated }) {
     // 该请求归属的对话。流式回包/最终落地前都据此判断用户是否已切到别的对话，
     // 切走后只更新对应会话的持久化数据，绝不把旧请求的内容写进当前视图（否则会“串台”）。
     const isActiveView = () => conversationIdRef.current === currentId
+    const readLatestMessages = () => useStore.getState().aiConversations.find(c => c.id === currentId)?.messages
 
     try {
       // 构建发送给 API 的消息（只含 role + content；多模态 content array 原样透传）
       const apiMessages = newMessages.map(m => ({ role: m.role, content: m.content }))
-      // 仅图片无文字时直接发送，跳过写作意图分类（否则会被判为需要追问）
-      const intentResult = text
-        ? await routeIntent({ prompt: text, messages: newMessages, currentNote })
-        : { allowPersistence: false, disabledTools: [], needClarification: false, clarifyQuestion: '' }
-      const { disabledTools, needClarification, clarifyQuestion } = intentResult
-      if (needClarification) {
-        clearStreamDraft(currentId)
-        const finalMessages = [...newMessages, { role: 'assistant', content: clarifyQuestion }]
-        if (isActiveView()) {
-          messagesRef.current = finalMessages
-          setMessages(finalMessages)
-          setStreamContent('')
-          setToolCalls([])
-        }
-        aiUpdateConv(currentId, {
-          messages: finalMessages,
-          title: getConversationTitle(finalMessages),
-          noteId: selectedNoteId == null ? null : String(selectedNoteId),
-          source: selectedNoteId == null ? 'general' : 'note'
-        })
-        return
-      }
       const contextPackage = await buildContext({ notes, selectedNoteId, query: text, contextEnabled })
 
       let currentToolCalls = []
@@ -1185,7 +1197,6 @@ export default function AIChatView({ onTodoUpdated }) {
             selectedNoteId: selectedNoteId == null ? null : String(selectedNoteId),
             source: selectedNoteId == null ? 'general' : 'note',
           },
-          disabledTools,
         },
         onContent: (c) => {
           writeStreamDraft(currentId, { streamContent: c })
@@ -1276,7 +1287,9 @@ export default function AIChatView({ onTodoUpdated }) {
 
       const pendingActions = extractPendingActions(currentToolCalls)
       clearStreamDraft(currentId)
-      const finalMessages = [...newMessages, createAssistantMessage({
+      const latestMessages = readLatestMessages()
+      if (!latestMessages) return
+      const finalMessages = [...latestMessages, createAssistantMessage({
         content: assistantContent,
         toolCalls: currentToolCalls,
         actions: pendingActions,
@@ -1290,8 +1303,8 @@ export default function AIChatView({ onTodoUpdated }) {
           requestId,
         }),
       })]
-      messagesRef.current = finalMessages
       if (isActiveView()) {
+        messagesRef.current = finalMessages
         setMessages(finalMessages)
         setStreamContent('')
         setToolCalls([])
@@ -1307,12 +1320,14 @@ export default function AIChatView({ onTodoUpdated }) {
       })
     } catch (error) {
       clearStreamDraft(currentId)
-      const errMessages = [...newMessages, {
+      const latestMessages = readLatestMessages()
+      if (!latestMessages) return
+      const errMessages = [...latestMessages, {
         role: 'assistant',
         content: `❌ 发生错误: ${error.message}`
       }]
-      messagesRef.current = errMessages
       if (isActiveView()) {
+        messagesRef.current = errMessages
         setMessages(errMessages)
         setStreamContent('')
         setToolCalls([])
@@ -1337,7 +1352,7 @@ export default function AIChatView({ onTodoUpdated }) {
         inputRef.current?.focus()
       }
     }
-  }, [input, pendingImages, loading, currentConversationId, aiEnsureNoteChat, aiNewChat, aiSetActiveConv, aiUpdateConv, contextEnabled, notes, selectedNoteId, currentNote, runStream, showActiveTool, clearActiveTool, currentView])
+  }, [input, pendingImages, loading, currentConversationId, aiEnsureNoteChat, aiNewChat, aiSetActiveConv, aiUpdateConv, contextEnabled, notes, selectedNoteId, currentNote, handleExecuteAction, runStream, showActiveTool, clearActiveTool, currentView])
 
   const handleCancel = useCallback(async () => {
     if (!loading) return
@@ -1370,58 +1385,6 @@ export default function AIChatView({ onTodoUpdated }) {
   const handleCopy = (content) => {
     navigator.clipboard.writeText(content).catch(() => {})
   }
-
-  const updateCurrentConversationMessages = useCallback((updater) => {
-    const nextMessages = updater(messagesRef.current || [])
-    messagesRef.current = nextMessages
-    setMessages(nextMessages)
-    if (conversationIdRef.current) {
-      aiUpdateConv(conversationIdRef.current, { messages: nextMessages, title: getConversationTitle(nextMessages) })
-    }
-    return nextMessages
-  }, [aiUpdateConv])
-
-  const handleExecuteAction = useCallback(async (action, overrides = null) => {
-    if (!action?.actionId || executingActionIds.has(action.actionId)) return
-    setExecutingActionIds(prev => new Set(prev).add(action.actionId))
-    updateCurrentConversationMessages(prev => prev.map(msg =>
-      patchMessagePendingAction(msg, action.actionId, { status: 'running' })
-    ))
-    try {
-      const { success, message, error, reloadNotes, reloadTodos } = await runPendingAction({
-        action,
-        overrides,
-        deps: { currentNote, notes, createNote, deleteNote, updateNote, loadNotes, setSelectedNoteId },
-      })
-      updateCurrentConversationMessages(prev => [
-        ...prev.map(msg => patchMessagePendingAction(msg, action.actionId, {
-          status: success ? 'done' : 'failed',
-          resultMessage: message,
-          done: success,
-          summary: message,
-          error: success ? undefined : error,
-        })),
-        {
-          role: 'assistant',
-          content: message,
-          toolCalls: [{
-            name: action.name,
-            done: success,
-            summary: message,
-            error: success ? undefined : error,
-          }],
-        }
-      ])
-      if (reloadTodos) onTodoUpdated?.()
-      if (reloadNotes) loadNotes?.()
-    } finally {
-      setExecutingActionIds(prev => {
-        const next = new Set(prev)
-        next.delete(action.actionId)
-        return next
-      })
-    }
-  }, [createNote, currentNote, deleteNote, executingActionIds, loadNotes, notes, onTodoUpdated, setSelectedNoteId, updateCurrentConversationMessages, updateNote])
 
   const handleSaveAsNote = useCallback(async (content) => {
     if (!content?.trim()) return
@@ -1574,6 +1537,7 @@ export default function AIChatView({ onTodoUpdated }) {
               {QUICK_ACTIONS.map((qa) => (
                 <Chip
                   key={qa.label}
+                  icon={qa.icon}
                   label={qa.label}
                   variant="outlined"
                   clickable
@@ -1581,6 +1545,13 @@ export default function AIChatView({ onTodoUpdated }) {
                   onClick={() => handleSend(qa.prompt)}
                   sx={{
                     borderRadius: '16px',
+                    '& .MuiChip-icon': {
+                      fontSize: 15,
+                      color: 'text.secondary',
+                      opacity: 0.75,
+                      ml: 1,
+                      mr: -0.5,
+                    },
                     '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.08) }
                   }}
                 />

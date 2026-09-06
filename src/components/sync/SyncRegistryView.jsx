@@ -21,7 +21,7 @@ import {
   Tune as TuneIcon,
   Description as DescriptionIcon,
   AttachFile as AttachFileIcon,
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 import { iconWithColor, combo, flex, settingsRowSx, spacing } from '../../styles/commonStyles';
 
 const SyncRegistryView = ({ onOpenSettings }) => {

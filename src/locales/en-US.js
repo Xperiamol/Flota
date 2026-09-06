@@ -270,6 +270,7 @@ const enUS = {
     loadingNotes: 'Loading notes...',
     searching: 'Searching...',
     noResults: 'No results found',
+    noResultsDesc: 'Try another keyword or adjust your filters.',
     save: 'Save',
     saving: 'Saving...',
     saved: 'Saved',

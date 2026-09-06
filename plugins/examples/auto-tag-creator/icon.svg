@@ -1,15 +1,3 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
-  <!-- 圆形背景 -->
-  <circle cx="12" cy="12" r="10" fill="url(#gradient3)"/>
-  <!-- 标签图标 -->
-  <path d="M7 7h6l4 5-4 5H7l4-5-4-5z" fill="white" opacity="0.9"/>
-  <!-- 加号表示自动创建 -->
-  <circle cx="16" cy="8" r="3" fill="white" opacity="0.3"/>
-  <path d="M16 6.5v3M14.5 8h3" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
-  <defs>
-    <linearGradient id="gradient3" x1="2" y1="2" x2="22" y2="22">
-      <stop offset="0%" stop-color="#30D158"/>
-      <stop offset="100%" stop-color="#34C759"/>
-    </linearGradient>
-  </defs>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#3978f6">
+  <path fill-rule="evenodd" d="M5 2h5.3a3 3 0 0 1 2.1.9l9.2 9.2a3 3 0 0 1 0 4.2l-5.3 5.3a3 3 0 0 1-4.2 0l-9.2-9.2a3 3 0 0 1-.9-2.1V5a3 3 0 0 1 3-3Zm2.5 3A2.5 2.5 0 1 0 7.5 10a2.5 2.5 0 0 0 0-5Z"/>
 </svg>

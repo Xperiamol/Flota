@@ -12,7 +12,7 @@ import {
   LocalOffer as TagIcon,
   Search as SearchIcon,
   Clear as ClearIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 import { getTagColor } from '../../utils/tagUtils';
 import BaseFilter from './BaseFilter';
 import FilterChip from './FilterChip';

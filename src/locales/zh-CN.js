@@ -270,6 +270,7 @@ const zhCN = {
     loadingNotes: '加载笔记...',
     searching: '搜索中...',
     noResults: '未找到结果',
+    noResultsDesc: '试试其他关键词，或调整筛选条件。',
     save: '保存',
     saving: '保存中...',
     saved: '已保存',

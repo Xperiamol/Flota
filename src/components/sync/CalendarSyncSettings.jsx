@@ -17,7 +17,7 @@ import {
   ListItemButton,
   ListItemText,
 } from '@mui/material';
-import { Sync, CheckCircle } from '@mui/icons-material';
+import { Sync, CheckCircle } from '../common/AppIcons';
 import { spacing, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../../styles/commonStyles';
 
 const DEFAULT_CALDAV_CONFIG = {

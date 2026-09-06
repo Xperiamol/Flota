@@ -18,7 +18,7 @@ import {
   ListItemText,
   Chip,
 } from '@mui/material';
-import { Sync, CheckCircle, Google as GoogleIcon, LinkOff } from '@mui/icons-material';
+import { Sync, CheckCircle, Google as GoogleIcon, LinkOff } from '../common/AppIcons';
 import { spacing, flex, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../../styles/commonStyles';
 
 const GoogleCalendarSettings = () => {

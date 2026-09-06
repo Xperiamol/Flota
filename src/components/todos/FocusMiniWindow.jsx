@@ -5,7 +5,7 @@ import {
   OpenInFullRounded as OpenMainIcon,
   PauseRounded as PauseIcon,
   PlayArrowRounded as ResumeIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 
 const formatSeconds = (seconds) => {
   const total = Math.max(0, Math.floor(Number(seconds) || 0));

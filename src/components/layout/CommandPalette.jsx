@@ -13,14 +13,11 @@ import {
 import {
   Close as CloseIcon,
   Search as SearchIcon,
-  Extension as ExtensionIcon,
   NoteAdd as NoteAddIcon,
-  ListAlt as TodoIcon,
-  Settings as SettingsIcon,
   Info as InfoIcon,
-  CalendarToday as CalendarIcon,
   Dashboard as DashboardIcon
-} from '@mui/icons-material'
+} from '../common/AppIcons'
+import { FlotaPluginIcon as ExtensionIcon, FlotaTodoIcon as TodoIcon, FlotaSettingsIcon as SettingsIcon, FlotaCalendarIcon as CalendarIcon } from '../common/FlotaIcons'
 import { useStore } from '../../store/useStore'
 import { executePluginCommand } from '../../api/pluginAPI'
 import { getPluginCommandIcon } from '../../utils/pluginCommandUtils.jsx'

@@ -16,7 +16,7 @@ import {
   Image as ImageIcon,
   CloudUpload as UploadIcon,
   ContentPaste as PasteIcon
-} from '@mui/icons-material'
+} from '../common/AppIcons'
 import { imageAPI } from '../../api/imageAPI'
 
 const ImageUploadDialog = ({ open, onClose, onImageInsert }) => {

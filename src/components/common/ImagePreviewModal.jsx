@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Box, Fade, IconButton, Modal, Typography } from '@mui/material'
-import CloseIcon from '@mui/icons-material/Close'
-import ZoomInIcon from '@mui/icons-material/ZoomIn'
-import ZoomOutIcon from '@mui/icons-material/ZoomOut'
+import { Close as CloseIcon } from './AppIcons'
+import { ZoomIn as ZoomInIcon } from './AppIcons'
+import { ZoomOut as ZoomOutIcon } from './AppIcons'
 
 const clampImageZoom = (value) => Math.min(3, Math.max(0.5, Math.round(value * 100) / 100))
 

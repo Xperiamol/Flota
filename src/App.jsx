@@ -1,7 +1,7 @@
 import React, { useEffect, useState, lazy, Suspense, useCallback, useRef, useMemo } from 'react'
 import ReactDOM from 'react-dom/client'
 import * as MaterialUI from '@mui/material'
-import * as MaterialIcons from '@mui/icons-material'
+import * as MaterialIcons from './components/common/AppIcons'
 import { CacheProvider } from '@emotion/react'
 import createCache from '@emotion/cache'
 import {
@@ -21,7 +21,7 @@ import {
   DeleteForever as DeleteForeverIcon,
   CheckCircle as CheckCircleIcon,
   Close as CloseIcon
-} from '@mui/icons-material'
+} from './components/common/AppIcons'
 import { useStore } from './store/useStore'
 import { useShallow } from 'zustand/react/shallow'
 import { usePluginViewByNavId } from './store/usePluginViews'

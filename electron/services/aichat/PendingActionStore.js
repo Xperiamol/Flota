@@ -46,6 +46,7 @@ class PendingActionStore {
       args,
       context: action.context,
       summary: this._summarizeAction(name, args),
+      confirmationHint: '确认卡已显示。请等待用户点击卡片或输入简短确认；不要再次调用同一写入工具创建重复计划。',
       memoryReview
     };
   }

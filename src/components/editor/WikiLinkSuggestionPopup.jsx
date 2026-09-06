@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Typography, Portal, ButtonBase } from '@mui/material'
-import ArticleIcon from '@mui/icons-material/Article'
-import AddIcon from '@mui/icons-material/Add'
+import { Article as ArticleIcon } from '../common/AppIcons'
+import { Add as AddIcon } from '../common/AppIcons'
 import { floatingGlassSx } from '../../utils/floatingGlassSx'
 
 const MAX_ITEMS = 8

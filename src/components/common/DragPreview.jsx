@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Box, Typography } from '@mui/material';
 import { keyframes, useTheme } from '@mui/material/styles';
-import NoteIcon from '@mui/icons-material/Note';
-import ChecklistIcon from '@mui/icons-material/Checklist';
-import LaunchIcon from '@mui/icons-material/Launch';
+import { Note as NoteIcon } from './AppIcons';
+import { Checklist as ChecklistIcon } from './AppIcons';
+import { Launch as LaunchIcon } from './AppIcons';
 import { useStore } from '../../store/useStore';
 import { isPlaceholderOnlyPreview, stripMarkdownToPreviewText } from '../../utils/markdownTextUtils'
 

@@ -18,7 +18,7 @@ import {
   SelectAll as SelectAllIcon,
   Edit as EditIcon,
   Delete as DeleteIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 import { isToday, parseISO } from 'date-fns';
 import TodoItem from './TodoItem';
 import FocusModeView from './FocusModeView';

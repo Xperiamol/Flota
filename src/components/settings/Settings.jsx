@@ -27,6 +27,9 @@ import {
 import { alpha } from '@mui/material/styles';
 import {
     GetApp as ImportIcon,
+    MoreVert,
+    EditNote,
+    AutoAwesome,
     Brightness4,
     Brightness7,
     Computer,
@@ -44,7 +47,7 @@ import {
     Check as CheckIcon,
     ArrowOutward as ArrowOutwardIcon,
     Autorenew as AutorenewIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 import { useStore } from '../../store/useStore';
 import ShortcutInput from '../common/ShortcutInput';
 import CloudSyncSettings from '../sync/CloudSyncSettings';
@@ -339,7 +342,7 @@ function EditorSettingsPanel({ aiPanelMode, setAiPanelMode, toolbarOrder, setToo
     }
 
     const aiModeChips = [
-        { value: 'selection', label: '选中文本时' },
+        { value: 'selection', label: '右键选中文本' },
         { value: 'always', label: '始终显示' },
         { value: 'disabled', label: '禁用' },
     ]
@@ -443,7 +446,7 @@ function EditorSettingsPanel({ aiPanelMode, setAiPanelMode, toolbarOrder, setToo
             </Typography>
 
             <Typography variant="subtitle2" color="text.secondary" sx={labelSx}>
-                🖱️ 右键菜单
+                <MoreVert sx={{ fontSize: 16, verticalAlign: 'text-bottom', mr: 0.75 }} />右键菜单
             </Typography>
             <Box sx={zoneSx('context')}>
                 {ALL_CONTEXT_MENU_ITEMS.map(id => {
@@ -467,7 +470,7 @@ function EditorSettingsPanel({ aiPanelMode, setAiPanelMode, toolbarOrder, setToo
 
             {/* ── 工具栏 ── */}
             <Typography variant="subtitle2" color="text.secondary" sx={labelSx} style={{ marginTop: 0 }}>
-                📝 工具栏
+                <EditNote sx={{ fontSize: 16, verticalAlign: 'text-bottom', mr: 0.75 }} />工具栏
             </Typography>
             <Box ref={toolbarZoneRef} sx={zoneSx('toolbar')}>
                 {localToolbar.map((id, idx) => {
@@ -490,7 +493,7 @@ function EditorSettingsPanel({ aiPanelMode, setAiPanelMode, toolbarOrder, setToo
 
             {/* ── 浮动面板 ── */}
             <Typography variant="subtitle2" color="text.secondary" sx={labelSx}>
-                ✨ 浮动面板（选中文字时出现）
+                <AutoAwesome sx={{ fontSize: 16, verticalAlign: 'text-bottom', mr: 0.75 }} />浮动面板（选中文字时出现）
             </Typography>
             <Box ref={floatingZoneRef} sx={zoneSx('floating')}>
                 {localFloating.map((id, idx) => (
@@ -505,7 +508,7 @@ function EditorSettingsPanel({ aiPanelMode, setAiPanelMode, toolbarOrder, setToo
 
             {/* ── 回收站 ── */}
             <Typography variant="subtitle2" color="text.secondary" sx={labelSx}>
-                🗑️ 回收站（隐藏的项目）
+                <Delete sx={{ fontSize: 16, verticalAlign: 'text-bottom', mr: 0.75 }} />回收站（隐藏的项目）
             </Typography>
             <Box ref={recycleZoneRef} sx={zoneSx('recycle')}>
                 {recycleIds.map(id => <React.Fragment key={id}>{renderChip(id, 'recycle')}</React.Fragment>)}

@@ -1,5 +1,5 @@
 import { Box, Chip, Typography, IconButton, Tooltip, alpha } from '@mui/material';
-import { Clear as ClearIcon } from '@mui/icons-material';
+import { Clear as ClearIcon } from '../common/AppIcons';
 
 /**
  * 筛选分组（浮窗内的一段维度，比如「标签」「优先级」「类别」）。

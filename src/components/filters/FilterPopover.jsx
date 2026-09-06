@@ -4,7 +4,7 @@ import {
   Close as CloseIcon,
   FilterList as FilterIcon,
   DragIndicator as DragIcon
-} from '@mui/icons-material';
+} from '../common/AppIcons';
 import FloatingGlassSurface from '../common/FloatingGlassSurface';
 import useDraggableFloatingPanel from '../../hooks/useDraggableFloatingPanel';
 

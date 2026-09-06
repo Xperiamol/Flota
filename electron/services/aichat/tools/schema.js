@@ -3,6 +3,9 @@
  * 改 schema 时务必同步更新 ./handlers.js 里同名 handler。
  */
 
+const WHITEBOARD_DIAGRAM_TYPES = ['auto', 'mindmap', 'flowchart', 'architecture', 'sequence', 'hierarchy', 'fishbone', 'timeline', 'gantt', 'quadrant', 'pie', 'svg'];
+const WHITEBOARD_DIAGRAM_TYPE_DESCRIPTION = '图表类型偏好，默认 auto；auto 可混合可编辑图元与局部 SVG，svg 表示整张整体矢量视觉';
+
 const TOOLS = [
   {
     type: 'function',
@@ -153,7 +156,7 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'create_whiteboard',
-      description: '创建一张新的画布（whiteboard）并根据用户描述生成图形内容。适用于“在新画板/白板里画一个思维导图、流程图、架构图、时序图”等请求。',
+      description: '创建一张新的画布（whiteboard）并根据用户描述生成图形内容。适用于“在新画板/白板里画一个思维导图、流程图、架构图、时序图、SVG 矢量视觉”等请求。',
       parameters: {
         type: 'object',
         properties: {
@@ -161,11 +164,11 @@ const TOOLS = [
           prompt: { type: 'string', description: '要在画布中生成的内容描述，使用自然语言详细说明' },
           diagram_type: {
             type: 'string',
-            enum: ['auto', 'mindmap', 'flowchart', 'architecture', 'sequence', 'hierarchy', 'fishbone', 'timeline', 'gantt', 'quadrant', 'pie'],
-            description: '图表类型偏好，默认 auto'
+            enum: WHITEBOARD_DIAGRAM_TYPES,
+            description: WHITEBOARD_DIAGRAM_TYPE_DESCRIPTION
           },
           source_note_id: { type: 'number', description: '作为内容来源的笔记 ID（可选）' },
-          use_current_note_context: { type: 'boolean', description: '是否参考当前笔记内容，默认 true' }
+          use_current_note_context: { type: 'boolean', description: '是否参考当前笔记内容，默认 false；仅当用户明确要求基于当前笔记生成时设为 true' }
         },
         required: ['prompt']
       }
@@ -188,8 +191,8 @@ const TOOLS = [
           },
           diagram_type: {
             type: 'string',
-            enum: ['auto', 'mindmap', 'flowchart', 'architecture', 'sequence', 'hierarchy', 'fishbone', 'timeline', 'gantt', 'quadrant', 'pie'],
-            description: '图表类型偏好，默认 auto'
+            enum: WHITEBOARD_DIAGRAM_TYPES,
+            description: WHITEBOARD_DIAGRAM_TYPE_DESCRIPTION
           }
         },
         required: ['prompt']

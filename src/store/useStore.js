@@ -140,7 +140,7 @@ const useStore = create(
                 patternOpacity: 1.0, // 花纹透明度倍率 0-2
                 wallpaperPath: '', // 自定义壁纸路径
 
-                // AI 面板显示模式：'selection' 选中文本时 | 'always' 始终显示 | 'disabled' 禁用
+                // AI 面板显示模式：'selection' 右键选中文本 | 'always' 始终显示 | 'disabled' 禁用
                 aiPanelMode: 'selection',
 
                 // AI 聊天对话状态

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { Box, Typography, ButtonBase, Stack } from '@mui/material'
-import LinkIcon from '@mui/icons-material/Link'
+import { Link as LinkIcon } from '../common/AppIcons'
 import { useStore } from '../../store/useStore'
 import { useLinkGraph } from '../../store/useLinkGraph'
 import { stripMarkdownToPreviewText } from '../../utils/markdownTextUtils'
