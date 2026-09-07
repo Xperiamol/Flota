@@ -2,6 +2,12 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [3.9.0] - 2026-09-07
+
+### Changed / 更新内容
+- feat: improve todo drag and whiteboard interactions
+
+
 ## [3.8.1] - 2026-09-07
 
 ### Changed / 更新内容
