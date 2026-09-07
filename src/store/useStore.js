@@ -896,6 +896,9 @@ const useStore = create(
                         filterBy: request.filterBy || 'all',
                         viewMode: request.viewMode || 'focus',
                         showCompleted: typeof request.showCompleted === 'boolean' ? request.showCompleted : false,
+                        todoId: request.todoId || null,
+                        autoStart: Boolean(request.autoStart),
+                        requestedAt: Date.now(),
                     } : null
                 }),
 

@@ -56,9 +56,11 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
   const [multiSelectMode, setMultiSelectMode] = useState(false);
   const [selectedTodos, setSelectedTodos] = useState([]);
   const [contextMenuState, setContextMenuState] = useState(null);
+  const [focusDrop, setFocusDrop] = useState(null);
 
   // 使用拖放 hook
   const {
+    draggedTodo,
     handleDragStart,
     handleDragEnd,
     handleDragOver,
@@ -71,6 +73,16 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
       onRefresh();
     }
   });
+
+  const handleDropFocus = useCallback((event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!draggedTodo) return;
+    setFilterBy('all');
+    setFocusDrop({ id: draggedTodo.id, token: Date.now() });
+    onViewModeChange?.('focus');
+    handleDragEnd({ target: null });
+  }, [draggedTodo, handleDragEnd, onViewModeChange]);
 
   const loadTodos = useCallback(async (options = {}) => {
     const { silent = true } = options;
@@ -132,6 +144,12 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
 
     const nextFilterBy = todoNavigationRequest.filterBy || 'all';
     setFilterBy(nextFilterBy);
+    if (todoNavigationRequest.todoId) {
+      setFocusDrop({
+        id: todoNavigationRequest.todoId,
+        token: todoNavigationRequest.autoStart ? todoNavigationRequest.requestedAt : null
+      });
+    }
 
     if (typeof todoNavigationRequest.showCompleted === 'boolean' && onShowCompletedChange) {
       onShowCompletedChange(todoNavigationRequest.showCompleted);
@@ -491,13 +509,21 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
             {quadrants.map((quadrant) => (
               <Box
                 key={quadrant.key}
+                data-todo-quadrant={quadrant.key}
                 onDragOver={(e) => handleDragOver(e, quadrant.key)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDropQuadrant(e, {
                   isImportant: quadrant.isImportant,
                   isUrgent: quadrant.isUrgent
                 })}
-                sx={{ minHeight: 0 }}
+                sx={{
+                  minHeight: 0,
+                  '&[data-global-drag-over="true"] > .MuiCard-root': {
+                    border: `2px dashed ${quadrant.color}`,
+                    boxShadow: `0 0 0 3px ${quadrant.color}12`,
+                    backgroundColor: dark ? `${quadrant.color}14` : `${quadrant.color}0d`,
+                  },
+                }}
               >
                 <Card
                   elevation={0}
@@ -625,6 +651,8 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
       <FocusModeView
         todos={focusFilteredTodos}
         loading={loading}
+        focusTodoId={focusDrop?.id}
+        autoStartToken={focusDrop?.token}
         onToggleComplete={completeTodoInstantly}
         onLogFocusTime={addTodoFocusTime}
         onTodoUpdated={handleFocusTimeLogged}
@@ -726,8 +754,19 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
       />
 
       {/* 主内容区域 */}
-      <Box sx={{ flex: 1, p: 3, overflow: 'auto' }}>
+      <Box sx={{ flex: 1, p: 3, overflow: 'auto', position: 'relative' }}>
         {effectiveViewMode === 'quadrant' ? renderQuadrantView() : renderFocusView()}
+        {draggedTodo && effectiveViewMode === 'quadrant' && ['top', 'right', 'bottom', 'left'].map((edge) => (
+          <Box key={edge} onDragOver={(event) => handleDragOver(event, 'focus-edge')} onDrop={handleDropFocus}
+            sx={{
+              position: 'absolute', zIndex: 4,
+              ...(edge === 'top' || edge === 'bottom'
+                ? { left: 0, right: 0, height: 28, [edge]: 0 }
+                : { top: 28, bottom: 28, width: 28, [edge]: 0 }),
+              bgcolor: 'primary.main', opacity: isDragOver('focus-edge') ? 0.18 : 0.04,
+              transition: 'opacity 120ms ease',
+            }} />
+        ))}
       </Box>
 
       <Menu

@@ -39,11 +39,11 @@ const localizeMissingExcalidrawLabels = (container, language) => {
 // Excalidraw does not expose extension slots for its main toolbar, property panel
 // or zoom group. Track those stable DOM regions so React can portal Flota controls
 // into their original positions instead of adding detached floating controls.
-export default function useExcalidrawControlSlots(container, language = 'zh-CN') {
+export default function useExcalidrawControlSlots(container, language = 'zh-CN', enabled = true) {
   const [slots, setSlots] = useState({ toolbar: null, zoom: null, properties: null, contextMenu: null })
 
   useEffect(() => {
-    if (!container) return undefined
+    if (!container || !enabled) return undefined
     let frame = 0
     let contextPoint = null
     const findSlots = () => {
@@ -114,7 +114,7 @@ export default function useExcalidrawControlSlots(container, language = 'zh-CN')
       observer.disconnect()
       container.removeEventListener('contextmenu', rememberContextPoint, true)
     }
-  }, [container, language])
+  }, [container, language, enabled])
 
   return slots
 }

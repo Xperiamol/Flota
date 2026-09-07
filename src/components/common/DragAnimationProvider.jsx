@@ -90,25 +90,15 @@ export const DragAnimationProvider = ({ children }) => {
         }
       },
       onBoundaryCheck: (boundaryData) => {
-        // 使用 ref 来避免频繁的状态更新
-        const shouldUpdate =
-          dragState.isNearBoundary !== boundaryData.isNearBoundary ||
-          dragState.boundaryPosition !== boundaryData.boundaryPosition;
-
-        if (shouldUpdate) {
-          setDragState(prev => ({
+        setDragState(prev => {
+          if (prev.isNearBoundary === boundaryData.isNearBoundary && prev.boundaryPosition === boundaryData.boundaryPosition) return prev;
+          return {
             ...prev,
             isNearBoundary: boundaryData.isNearBoundary,
             boundaryPosition: boundaryData.boundaryPosition,
             currentPosition: boundaryData.currentPosition
-          }));
-        } else {
-          // 只更新位置，不触发重新渲染
-          setDragState(prev => ({
-            ...prev,
-            currentPosition: boundaryData.currentPosition
-          }));
-        }
+          };
+        });
 
         // 调用原始回调
         if (originalCallbacks.onBoundaryCheck) {
@@ -141,14 +131,13 @@ export const DragAnimationProvider = ({ children }) => {
       },
       onCreateWindow: async (dragData) => {
         try {
-          // 传递结束位置用于窗口定位
           await createWindowCallback(dragData.item, dragData.endPosition);
-          logger.log(`创建${itemType}独立窗口成功`);
+          if (itemType !== 'todo') logger.log(`创建${itemType}独立窗口成功`);
           if (customCallbacks.onCreateWindow) {
             customCallbacks.onCreateWindow(dragData);
           }
         } catch (error) {
-          console.error(`创建${itemType}独立窗口失败:`, error);
+          console.error(`${itemType === 'todo' ? '开始专注' : `创建${itemType}独立窗口`}失败:`, error);
           if (customCallbacks.onCreateWindowError) {
             customCallbacks.onCreateWindowError(error, dragData);
           }

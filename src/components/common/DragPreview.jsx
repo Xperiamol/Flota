@@ -4,6 +4,7 @@ import { keyframes, useTheme } from '@mui/material/styles';
 import { Note as NoteIcon } from './AppIcons';
 import { Checklist as ChecklistIcon } from './AppIcons';
 import { Launch as LaunchIcon } from './AppIcons';
+import { CenterFocusStrong as FocusIcon } from './AppIcons';
 import { useStore } from '../../store/useStore';
 import { isPlaceholderOnlyPreview, stripMarkdownToPreviewText } from '../../utils/markdownTextUtils'
 
@@ -312,7 +313,9 @@ const DragPreview = ({
                 flexShrink: 0
               }}
             >
-              <LaunchIcon sx={{ fontSize: 16, color: primaryColor }} />
+              {draggedItemType === 'todo'
+                ? <FocusIcon sx={{ fontSize: 16, color: primaryColor }} />
+                : <LaunchIcon sx={{ fontSize: 16, color: primaryColor }} />}
             </Box>
           )}
         </Box>
@@ -338,7 +341,9 @@ const DragPreview = ({
               transition: 'color 0.3s ease, font-weight 0.3s ease'
             }}
           >
-            {isNearBoundary ? '释放创建独立窗口' : '拖动到屏幕边缘创建独立窗口'}
+            {draggedItemType === 'todo'
+              ? (isNearBoundary ? '释放并开始专注' : '拖到象限调整优先级')
+              : (isNearBoundary ? '释放创建独立窗口' : '拖动到屏幕边缘创建独立窗口')}
           </Typography>
         </Box>
       </div>

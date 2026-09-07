@@ -67,6 +67,8 @@ const toArray = (value) => {
 const FocusModeView = ({
   todos = [],
   loading = false,
+  focusTodoId,
+  autoStartToken,
   onToggleComplete,
   onLogFocusTime,
   onTodoUpdated
@@ -121,6 +123,7 @@ const FocusModeView = ({
   const buttonRef = useRef(null);
   const focusWindowSessionRef = useRef(false);
   const focusWindowActionRef = useRef({});
+  const autoStartTokenRef = useRef(null);
 
   const currentTodo = focusCandidates.length > 0 ? focusCandidates[clampIndex(activeIndex, focusCandidates.length)] : null;
 
@@ -131,6 +134,12 @@ const FocusModeView = ({
     }
     setActiveIndex((prev) => clampIndex(prev, focusCandidates.length));
   }, [focusCandidates.length]);
+
+  useEffect(() => {
+    if (!focusTodoId) return;
+    const index = focusCandidates.findIndex((todo) => String(todo.id) === String(focusTodoId));
+    if (index >= 0) setActiveIndex(index);
+  }, [focusCandidates, focusTodoId]);
 
   useEffect(() => {
     if (!isFocusing || isPaused) {
@@ -262,6 +271,12 @@ const FocusModeView = ({
       setShowFocusBackground(true); // 波纹结束后显示背景色
     }, 800); // 波纹动画0.8秒后结束
   };
+
+  useEffect(() => {
+    if (!autoStartToken || autoStartTokenRef.current === autoStartToken || !currentTodo || String(currentTodo.id) !== String(focusTodoId)) return;
+    autoStartTokenRef.current = autoStartToken;
+    handleStartFocus();
+  }, [autoStartToken, currentTodo, focusTodoId]);
 
   const handlePauseFocus = useCallback(() => {
     if (!focusSessionActiveRef.current || isPaused || !focusStartRef.current) return;

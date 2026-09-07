@@ -13,8 +13,11 @@ import {
   Typography,
   Tooltip,
 } from '@mui/material'
-import { Excalidraw, exportToSvg, THEME } from '@excalidraw/excalidraw'
+import { Excalidraw, exportToSvg, convertToExcalidrawElements, THEME } from '@excalidraw/excalidraw'
+import NoteReferencePicker from './NoteReferencePicker'
+import { noteReferenceText } from '../../utils/noteReference'
 import { useStore } from '../../store/useStore'
+import { useShallow } from 'zustand/react/shallow'
 import { useStandaloneContext } from '../common/StandaloneProvider'
 import { useDebouncedSave } from '../../hooks/useDebouncedSave'
 import {
@@ -145,11 +148,21 @@ const getSelectedEditableImage = (elements = [], appState = {}) => {
     : null
 }
 
+const getPersistedAppState = (appState = {}) => ({
+  viewBackgroundColor: appState.viewBackgroundColor,
+  currentItemFontFamily: appState.currentItemFontFamily,
+  gridModeEnabled: Boolean(appState.gridModeEnabled),
+  gridSize: appState.gridSize,
+  scrollX: appState.scrollX,
+  scrollY: appState.scrollY,
+  zoom: appState.zoom,
+})
+
 /**
  * 画布编辑器组件
  * 直接使用 @excalidraw/excalidraw React 组件
  */
-const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onExportPNG }) => {
+const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onExportPNG, viewOnly = false }) => {
   const translateElementsTo = useCallback((elements = [], targetX = 0, targetY = 0) => {
     const validElements = elements.filter((element) => element && !element.isDeleted)
     if (!validElements.length) return elements
@@ -196,11 +209,29 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     actualIsStandaloneMode = true
   } catch (error) {
     // Not in standalone mode, use main store
-    store = useStore()
+    store = useStore(useShallow(state => ({
+      notes: viewOnly ? null : state.notes,
+      currentNote: state.notes.find(note => String(note.id) === String(noteId)) || null,
+      updateNote: state.updateNote,
+      currentView: state.currentView,
+      theme: state.theme,
+      primaryColor: state.primaryColor,
+      whiteboardStyle: state.whiteboardStyle,
+      language: state.language,
+    })))
     actualIsStandaloneMode = false
   }
   
-  const { notes, updateNote, currentView, theme: themePref, primaryColor, whiteboardStyle, language = 'zh-CN' } = store
+  const { notes: storeNotes, currentNote: storeCurrentNote, updateNote, currentView, theme: themePref, primaryColor, whiteboardStyle, language = 'zh-CN' } = store
+  const notes = useMemo(() => storeNotes || (storeCurrentNote ? [storeCurrentNote] : []), [storeNotes, storeCurrentNote])
+  const notesByReference = useMemo(() => {
+    const index = new Map()
+    notes.forEach(note => {
+      index.set(String(note.id), note)
+      if (note.sync_id) index.set(String(note.sync_id), note)
+    })
+    return index
+  }, [notes])
   const styleMode = whiteboardStyle === 'sketchy' ? 'sketchy' : 'neat'
 
   // 解析实际主题（处理 'system'）
@@ -216,12 +247,17 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
   const isDark = themePref === 'dark' || (themePref === 'system' && systemIsDark)
 
   const [excalidrawAPI, setExcalidrawAPI] = useState(null)
+  useEffect(() => {
+    if (!excalidrawAPI) return
+    excalidrawAPI.setActiveTool({ type: viewOnly ? 'hand' : 'selection' })
+  }, [excalidrawAPI, viewOnly])
+  const [notePickerOpen, setNotePickerOpen] = useState(false)
   const [whiteboardContainer, setWhiteboardContainer] = useState(null)
   const [propertiesCollapsed, setPropertiesCollapsed] = useState(() => {
     try { return localStorage.getItem('flota.whiteboard.propertiesCollapsed') === 'true' } catch { return false }
   })
-  useWhiteboardProperties(excalidrawAPI, whiteboardContainer, propertiesCollapsed)
-  const controlSlots = useExcalidrawControlSlots(whiteboardContainer, language)
+  useWhiteboardProperties(excalidrawAPI, whiteboardContainer, propertiesCollapsed || viewOnly)
+  const controlSlots = useExcalidrawControlSlots(whiteboardContainer, language, !viewOnly)
   const toggleProperties = () => {
     const next = !propertiesCollapsed
     setPropertiesCollapsed(next)
@@ -271,16 +307,14 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
   const isApplyingRemoteDataRef = useRef(true)
   // 记录最近一次渲染的完整场景，用于在组件重挂载时仍能保存
   const latestSceneRef = useRef({ elements: [], appState: {}, files: {} })
+  const viewportOnlyChangeRef = useRef(false)
+  const contentChangePendingRef = useRef(false)
+  const lastViewportSaveScheduleRef = useRef(0)
   // 标记是否正在进行类型转换，用于避免卸载时自动保存覆盖转换结果
   const isTypeConvertingRef = useRef(false)
 
   const serializeScene = useCallback((elements = [], appState = {}, files = {}) => {
-    const sanitizedAppState = {
-      viewBackgroundColor: appState.viewBackgroundColor,
-      currentItemFontFamily: appState.currentItemFontFamily,
-      gridModeEnabled: Boolean(appState.gridModeEnabled),
-      gridSize: appState.gridSize
-    }
+    const sanitizedAppState = getPersistedAppState(appState)
 
     const sortedFileKeys = Object.keys(files || {}).sort()
     const sanitizedFiles = {}
@@ -343,12 +377,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
   }, [styleMode])
 
   const commitWhiteboardScene = useCallback(async ({ elements, appState, files }) => {
-    const persistedAppState = {
-      viewBackgroundColor: appState?.viewBackgroundColor,
-      currentItemFontFamily: appState?.currentItemFontFamily,
-      gridModeEnabled: Boolean(appState?.gridModeEnabled),
-      gridSize: appState?.gridSize,
-    }
+    const persistedAppState = getPersistedAppState(appState)
     let fileMap = {}
     if (Object.keys(files || {}).length > 0) {
       const saveResult = await window.electronAPI.whiteboard.saveImages(files)
@@ -369,6 +398,8 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     lastSavedSceneRef.current = serializeScene(elements, persistedAppState, files)
     setHasUnsavedChanges(false)
     hasUnsavedChangesRef.current = false
+    viewportOnlyChangeRef.current = false
+    contentChangePendingRef.current = false
   }, [noteId, serializeScene, updateNote])
 
   const regenerateMermaidImage = useCallback(async () => {
@@ -498,6 +529,47 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     setSvgCreatorOpen(true)
   }, [])
 
+  const insertNoteReference = useCallback(async (note) => {
+    if (!excalidrawAPI) return
+    const reference = String(note.sync_id || note.id)
+    const elements = convertToExcalidrawElements([{ type: 'rectangle', x: 0, y: 0, width: 320, height: 230,
+      backgroundColor: '#f1f5f9', fillStyle: 'solid', strokeColor: primaryColor || '#1976d2', roughness: 0,
+      link: `app://note/${encodeURIComponent(reference)}`, customData: { kind: 'note-reference', reference },
+      label: { text: noteReferenceText(note), fontSize: 16, fontFamily: 2, textAlign: 'left', verticalAlign: 'top' } }])
+    await commitWhiteboardScene({ elements: [...excalidrawAPI.getSceneElements(), ...centerElementsInViewport(elements, excalidrawAPI.getAppState())],
+      appState: excalidrawAPI.getAppState(), files: excalidrawAPI.getFiles() })
+  }, [excalidrawAPI, primaryColor, commitWhiteboardScene, centerElementsInViewport])
+
+  useEffect(() => {
+    if (!excalidrawAPI || viewOnly) return
+    const elements = excalidrawAPI.getSceneElements()
+    const updates = new Map()
+    elements.forEach(card => {
+      if (card.customData?.kind !== 'note-reference') return
+      const reference = card.customData.reference
+      const note = notesByReference.get(String(reference))
+      const text = noteReferenceText(note)
+      const label = elements.find(el => el.type === 'text' && el.containerId === card.id)
+      if (label && label.originalText !== text) updates.set(label.id, { ...label, text, originalText: text, version: label.version + 1, versionNonce: Math.floor(Math.random() * 2147483647), updated: Date.now() })
+    })
+    if (updates.size) excalidrawAPI.updateScene({ elements: elements.map(el => updates.get(el.id) || el) })
+  }, [excalidrawAPI, notesByReference, viewOnly])
+
+  useEffect(() => {
+    if (!whiteboardContainer || !excalidrawAPI || viewOnly) return
+    const openCard = event => {
+      if (!(event.target instanceof HTMLCanvasElement)) return
+      const state = excalidrawAPI.getAppState()
+      const selected = excalidrawAPI.getSceneElements().filter(el => state.selectedElementIds?.[el.id])
+      const card = selected.find(el => el.customData?.kind === 'note-reference')
+      if (!card) return
+      event.preventDefault(); event.stopPropagation()
+      openNoteLink(card.link)
+    }
+    whiteboardContainer.addEventListener('dblclick', openCard, true)
+    return () => whiteboardContainer.removeEventListener('dblclick', openCard, true)
+  }, [whiteboardContainer, excalidrawAPI, viewOnly])
+
   const closeSvgCreator = useCallback(() => {
     if (isCreatingSvg) return
     setSvgCreatorOpen(false)
@@ -617,6 +689,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
   
   // 监听类型转换事件
   useEffect(() => {
+    if (viewOnly) return undefined
     const handleTypeConversion = () => {
       logger.log('[WhiteboardEditor] 收到类型转换事件，标记为正在转换')
       isTypeConvertingRef.current = true
@@ -629,7 +702,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     return () => {
       window.removeEventListener('whiteboard-type-converting', handleTypeConversion)
     }
-  }, [])
+  }, [viewOnly])
   
   // 同步 hasUnsavedChanges 到 ref
   useEffect(() => {
@@ -639,7 +712,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
   // 当用户在设置中切换画布风格时，实时把 appState 的"当前绘图属性"推送到画布
   // 这样无需切换/刷新笔记，新画的元素就会立刻按新风格渲染
   useEffect(() => {
-    if (!excalidrawAPI) return
+    if (!excalidrawAPI || viewOnly) return
     try {
       excalidrawAPI.updateScene({
         appState: {
@@ -651,7 +724,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     } catch (e) {
       logger.warn('[WhiteboardEditor] 推送画布风格失败', e)
     }
-  }, [styleMode, excalidrawAPI])
+  }, [styleMode, excalidrawAPI, viewOnly])
 
   useEffect(() => {
     if (!selectedEditableImage) return
@@ -1113,6 +1186,21 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     }
 
     try {
+      if (viewportOnlyChangeRef.current && !contentChangePendingRef.current) {
+        const stored = JSON.parse(currentNote.content || '{}')
+        const persistedAppState = getPersistedAppState(appState)
+        await updateNote(currentNoteId, {
+          content: JSON.stringify({ ...stored, appState: persistedAppState }),
+          note_type: 'whiteboard'
+        })
+        lastSavedSceneRef.current = serializeScene(elements, persistedAppState, files)
+        viewportOnlyChangeRef.current = false
+        if (noteId === currentNoteId) {
+          setHasUnsavedChanges(false)
+          hasUnsavedChangesRef.current = false
+        }
+        return
+      }
 
       // 将图片保存到文件系统
       let fileMap = {}
@@ -1131,12 +1219,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
         }
       }
 
-      const persistedAppState = {
-        viewBackgroundColor: appState.viewBackgroundColor,
-        currentItemFontFamily: appState.currentItemFontFamily,
-        gridModeEnabled: Boolean(appState.gridModeEnabled),
-        gridSize: appState.gridSize
-      }
+      const persistedAppState = getPersistedAppState(appState)
 
       const data = {
         type: 'excalidraw',
@@ -1159,6 +1242,8 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
         setHasUnsavedChanges(false)
         hasUnsavedChangesRef.current = false
       }
+      viewportOnlyChangeRef.current = false
+      contentChangePendingRef.current = false
 
       // 异步导出 PNG 预览图供移动端查看（不阻塞保存流程）
       // 使用 SVG→Canvas 方式保证清晰度，scale: 2 兼顾质量与文件大小
@@ -1300,6 +1385,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
   }, [currentView, noteId, saveNow, cancelSave, actualIsStandaloneMode])
 
   useEffect(() => {
+    if (viewOnly) return undefined
     const handleExternalGenerate = async (event) => {
       const detail = event.detail
       if (!detail || String(detail.noteId) !== String(noteId) || !excalidrawAPI) return
@@ -1344,7 +1430,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
 
     window.addEventListener(WHITEBOARD_AI_GENERATE_EVENT, handleExternalGenerate)
     return () => window.removeEventListener(WHITEBOARD_AI_GENERATE_EVENT, handleExternalGenerate)
-  }, [excalidrawAPI, noteId, notes, commitWhiteboardScene])
+  }, [excalidrawAPI, noteId, notes, commitWhiteboardScene, viewOnly])
 
   // 获取当前画布内容（用于类型转换）
   const getCurrentContent = useCallback(async () => {
@@ -1363,12 +1449,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
       }
     }
 
-    const persistedAppState = {
-      viewBackgroundColor: appState.viewBackgroundColor,
-      currentItemFontFamily: appState.currentItemFontFamily,
-      gridModeEnabled: Boolean(appState.gridModeEnabled),
-      gridSize: appState.gridSize
-    }
+    const persistedAppState = getPersistedAppState(appState)
 
     const data = {
       type: 'excalidraw',
@@ -1557,6 +1638,11 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
           height: '100% !important',
           width: '100% !important'
         },
+        ...(viewOnly ? {
+          cursor: 'grab',
+          '&:active': { cursor: 'grabbing' },
+          '& .App-menu, & .layer-ui__wrapper__top-right, & .selected-shape-actions': { display: 'none !important' },
+        } : {}),
         ...excalidrawSurfaceSx,
         ...(propertiesCollapsed ? { '& .excalidraw .App-menu__left, & .excalidraw .App-mobile-menu': { display: 'none !important' } } : {}),
       }}>
@@ -1574,7 +1660,32 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
             }
           }}
           initialData={initialData}
+          viewModeEnabled={viewOnly}
           onChange={(elements, appState, files) => {
+            if (isApplyingRemoteDataRef.current) return
+
+            const persistedAppState = getPersistedAppState(appState)
+            if (viewOnly) {
+              const previous = latestSceneRef.current.appState || {}
+              latestSceneRef.current = { elements, appState: persistedAppState, files }
+              const viewportChanged = previous.scrollX !== persistedAppState.scrollX
+                || previous.scrollY !== persistedAppState.scrollY
+                || previous.zoom?.value !== persistedAppState.zoom?.value
+              if (viewportChanged) {
+                if (!contentChangePendingRef.current) viewportOnlyChangeRef.current = true
+                if (!hasUnsavedChangesRef.current) {
+                  setHasUnsavedChanges(true)
+                  hasUnsavedChangesRef.current = true
+                }
+                const now = Date.now()
+                if (now - lastViewportSaveScheduleRef.current >= 250) {
+                  lastViewportSaveScheduleRef.current = now
+                  debouncedSave()
+                }
+              }
+              return
+            }
+
             const active = appState?.activeTool
             setToolbarState(previous => {
               const next = {
@@ -1585,10 +1696,6 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
                 ? previous
                 : next
             })
-            if (isApplyingRemoteDataRef.current) {
-              return
-            }
-
             const editableImage = getSelectedEditableImage(elements, appState)
             setSelectedEditableImage((prev) => {
               if (!editableImage && !prev) return prev
@@ -1599,12 +1706,8 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
               return editableImage
             })
 
-            const persistedAppState = {
-              viewBackgroundColor: appState.viewBackgroundColor,
-              currentItemFontFamily: appState.currentItemFontFamily,
-              gridModeEnabled: Boolean(appState.gridModeEnabled),
-              gridSize: appState.gridSize
-            }
+            contentChangePendingRef.current = true
+            viewportOnlyChangeRef.current = false
             latestSceneRef.current = {
               elements,
               appState: persistedAppState,
@@ -1634,7 +1737,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
             },
           }}
         />
-        {controlSlots.toolbar && createPortal(
+        {!viewOnly && controlSlots.toolbar && createPortal(
           <WhiteboardToolbar
             api={excalidrawAPI}
             activeTool={toolbarState.activeTool}
@@ -1643,6 +1746,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
             primaryColor={primaryColor}
             onMermaidCreate={openMermaidCreator}
             onSvgCreate={openSvgCreator}
+            onNoteReference={() => setNotePickerOpen(true)}
           />,
           controlSlots.toolbar,
         )}
@@ -1663,7 +1767,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
           </>,
           controlSlots.zoom,
         )}
-        {controlSlots.properties && !propertiesCollapsed && createPortal(
+        {!viewOnly && controlSlots.properties && !propertiesCollapsed && createPortal(
           <div className="flota-properties-header">
             <span>属性</span>
             <Tooltip title="收起属性面板" placement="right">
@@ -1689,6 +1793,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
           controlSlots.contextMenu,
         )}
       </Box>
+      <NoteReferencePicker open={notePickerOpen} excludeId={noteId} onClose={() => setNotePickerOpen(false)} onSelect={insertNoteReference} />
       <Dialog
         open={dslEditorOpen}
         onClose={closeMermaidDslEditor}

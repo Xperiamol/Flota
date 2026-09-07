@@ -434,8 +434,10 @@ const NoteNavigator = ({
     const content = root.querySelector('.ProseMirror, .markdown-preview')
     if (!content) return
     const blocks = content.querySelectorAll(BLOCK_SELECTOR)
-    let target = null
+    let target = [...content.querySelectorAll('[data-bookmark-key]')]
+      .find((element) => element.getAttribute('data-bookmark-key') === anchorText)
     for (const el of blocks) {
+      if (target) break
       const txt = normalize(el.textContent)
       if (!txt) continue
       if (txt === wanted || txt.startsWith(wanted) || txt.includes(wanted)) { target = el; break }
@@ -460,7 +462,7 @@ const NoteNavigator = ({
       ref={panelRef}
       open={open}
       layer="aiPanel"
-      ariaLabel="笔记导航"
+      ariaLabel="笔记导航/书签"
       position={resolvedPosition}
       width={PANEL_WIDTH}
       maxWidth={`calc(100vw - ${PANEL_RIGHT_OFFSET * 2}px)`}
@@ -484,7 +486,7 @@ const NoteNavigator = ({
       >
         <DragIcon sx={{ fontSize: 15, color: 'text.disabled', opacity: 0.55 }} />
         <NavIcon sx={{ fontSize: 16, color: 'primary.main' }} />
-        <Typography sx={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>笔记导航</Typography>
+        <Typography sx={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>笔记导航/书签</Typography>
         <Box sx={{ flex: 1 }} />
         <Tooltip title="关闭">
           <IconButton

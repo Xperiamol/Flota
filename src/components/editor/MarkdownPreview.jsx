@@ -12,6 +12,7 @@ import 'highlight.js/styles/github.css'
 import logger from '../../utils/logger'
 import useFloatingTableScrollbar from '../../hooks/useFloatingTableScrollbar'
 import { getLocalPathFromFileUrl } from '../../utils/fileUrl'
+import { openNoteLink } from '../../utils/linkUtils'
 import { editorScrollbarSx } from '../../styles/commonStyles'
 
 const MarkdownPreview = ({
@@ -239,6 +240,11 @@ const MarkdownPreview = ({
       if (link) {
         const rawHref = link.getAttribute('href') || ''
         const absHref = link.href || ''
+        if (/^app:\/\/(?:note|whiteboard)\//i.test(rawHref)) {
+          e.preventDefault()
+          openNoteLink(rawHref)
+          return
+        }
         // 优先按原始 href 识别应用内附件（attachments/ / audio/ / images/）
         const cleaned = rawHref.replace(/^app:\/\//, '')
         if (/^(?:attachments|audio|images)\//i.test(cleaned)) {

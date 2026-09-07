@@ -30,7 +30,7 @@ export const DEFAULT_SHORTCUTS = {
     category: 'panels', defaultKey: 'CmdOrCtrl+K', currentKey: 'CmdOrCtrl+K', type: 'local',
   },
   'panels.noteNavigator': {
-    id: 'panels.noteNavigator', name: '切换笔记导航', description: '打开或关闭笔记导航小窗（大纲 / 最近笔记快速跳转）',
+    id: 'panels.noteNavigator', name: '切换笔记导航/书签', description: '打开或关闭笔记导航/书签',
     category: 'panels', defaultKey: 'CmdOrCtrl+J', currentKey: 'CmdOrCtrl+J', type: 'local',
   },
   'editor.paragraph': {

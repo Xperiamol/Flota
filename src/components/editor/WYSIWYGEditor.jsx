@@ -23,6 +23,7 @@ import { common, createLowlight } from 'lowlight'
 import { WikiLinkMark } from './extensions/WikiLinkMark'
 import { WikiLinkSuggestion } from './extensions/WikiLinkSuggestion'
 import { InlineMath, BlockMath, MathAwareText } from './extensions/Math'
+import { WhiteboardEmbed } from './extensions/WhiteboardEmbed'
 import { getClipboardLink, normalizePastedHtml, pasteEditorText } from '../../utils/editorClipboard'
 import { normalizeLinkUrl, markdownLinkDestination, openNoteLink } from '../../utils/linkUtils'
 import { transformOutsideMath } from '../../markdown/plugins/math'
@@ -30,7 +31,7 @@ import LinkEditorDialog, { requestLinkEditor } from './LinkEditorDialog'
 import '../../markdown/markdown.css'
 import AIAssistSelection from './extensions/AIAssistSelection'
 import WikiLinkSuggestionPopup from './WikiLinkSuggestionPopup'
-import { Box, IconButton, Typography as MuiTypography, TextField, Tooltip, Portal, ButtonBase } from '@mui/material'
+import { Box, IconButton, Typography as MuiTypography, TextField, Tooltip, Portal, ButtonBase, Menu, MenuItem, ListItemIcon, ListItemText, Divider } from '@mui/material'
 import { Close as CloseIcon } from '../common/AppIcons'
 import { PlayArrow as PlayArrowIcon } from '../common/AppIcons'
 import { Pause as PauseIcon } from '../common/AppIcons'
@@ -41,6 +42,7 @@ import { LinkOff as LinkOffIcon } from '../common/AppIcons'
 import { Link as LinkIcon } from '../common/AppIcons'
 import { DeleteOutline as DeleteOutlineIcon } from '../common/AppIcons'
 import { ExpandMore as ExpandMoreIcon } from '../common/AppIcons'
+import { BookmarkBorder as BookmarkIcon } from '../common/AppIcons'
 import { urlToWav } from '../../utils/audioCodec'
 import { imageAPI } from '../../api/imageAPI'
 import { replaceDataImagesInHtml } from '../../utils/dataUrlImage'
@@ -393,7 +395,7 @@ function isImageSrc(src) {
 }
 
 // ─── 音频播放器组件 ──────────────────────────────────────────────────────────
-const AudioPlayerWidget = ({ src, selected, originalSrc, editor, getPos, nodeSize }) => {
+const AudioPlayerWidget = ({ src, selected, originalSrc, editor, getPos, nodeSize, onContextMenu }) => {
   const audioRef = useRef(null)
   const [playing, setPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -487,7 +489,7 @@ const AudioPlayerWidget = ({ src, selected, originalSrc, editor, getPos, nodeSiz
   const pct = duration > 0 ? (currentTime / duration) * 100 : 0
 
   return (
-    <Box sx={{
+    <Box onContextMenu={onContextMenu} sx={{
       my: 1, borderRadius: '10px', backgroundColor: 'action.hover',
       p: '4px 10px', display: 'flex', alignItems: 'center', gap: 1,
       outline: selected ? '2px solid #1976d2' : 'none',
@@ -528,7 +530,7 @@ const AudioPlayerWidget = ({ src, selected, originalSrc, editor, getPos, nodeSiz
 }
 
 // ─── 附件卡片（PDF/文档等非图片非音频） ───────────────────────────────────────
-const AttachmentCard = ({ src, alt, selected }) => {
+const AttachmentCard = ({ src, alt, selected, onContextMenu }) => {
   const filename = (alt || '').trim() || (String(src).split('/').pop() || '附件').replace(/^[a-f0-9]{40}\.?/, '')
   const ext = getExtFromSrc(src).replace('.', '').toUpperCase() || '文件'
   const handleOpen = async (e) => {
@@ -546,6 +548,7 @@ const AttachmentCard = ({ src, alt, selected }) => {
     <Box
       component="span"
       onClick={handleOpen}
+      onContextMenu={onContextMenu}
       onMouseDown={(e) => e.stopPropagation()}
       sx={{
         display: 'inline-flex', alignItems: 'center', gap: 1,
@@ -571,12 +574,15 @@ const AttachmentCard = ({ src, alt, selected }) => {
   )
 }
 
-const ImageNodeView = ({ node, selected, editor, getPos }) => {
+const ImageNodeView = ({ node, selected, editor, getPos, extension }) => {
   const { src, alt, title } = node.attrs
   // ✅ 初始值 null，避免 <img src=""> 触发浏览器下载当前页面的报错
   const [displaySrc, setDisplaySrc] = useState(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [assetMenu, setAssetMenu] = useState(null)
   const { showSuccess, showError } = useError()
+  const addBookmark = useBookmarks((state) => state.addBookmark)
+  const noteId = extension.options.noteId
   const isAudio = isAudioSrc(src)
   const isAttachment = !isAudio && isAttachmentRef(src) && !isImageSrc(src)
 
@@ -610,11 +616,9 @@ const ImageNodeView = ({ node, selected, editor, getPos }) => {
     return () => { cancelled = true }
   }, [src])
 
-  // 右键：复制图片
-  const handleContextMenu = async (e) => {
-    e.preventDefault()
-    e.stopPropagation()
+  const copyImage = async () => {
     if (!displaySrc) return
+    setAssetMenu(null)
     try {
       const response = await fetch(displaySrc)
       const blob = await response.blob()
@@ -632,21 +636,46 @@ const ImageNodeView = ({ node, selected, editor, getPos }) => {
         const blob = await canvasToPngBlob(canvas)
         await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
         showSuccess('图片已复制到剪贴板')
-      } catch (err) {
-        showError(err, '复制图片失败')
-      }
+      } catch (err) { showError(err, '复制图片失败') }
     }
   }
 
+  const handleContextMenu = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setAssetMenu({ x: e.clientX + 2, y: e.clientY - 6 })
+  }
+
+  const filename = (alt || '').trim() || (String(src).split('/').pop() || (isAudio ? '录音' : isAttachment ? '附件' : '图片')).replace(/^[a-f0-9]{40}\.?/, '')
+  const closeAssetMenu = () => setAssetMenu(null)
+  const openAsset = async () => {
+    closeAssetMenu()
+    if (!isAttachment) { if (!isAudio) setModalOpen(true); return }
+    try { await window.electronAPI?.attachments?.open?.(src) } catch (error) { showError(error, '打开附件失败') }
+  }
+  const copyAssetLink = async () => {
+    closeAssetMenu()
+    try { await navigator.clipboard.writeText(src) } catch (error) { showError(error, '复制链接失败') }
+  }
+  const bookmarkAsset = () => {
+    closeAssetMenu()
+    addBookmark(noteId, { label: filename, anchorText: src })
+  }
+  const deleteAsset = () => {
+    closeAssetMenu()
+    const pos = getPos?.()
+    if (typeof pos === 'number') editor.chain().focus().deleteRange({ from: pos, to: pos + node.nodeSize }).run()
+  }
+
   return (
-    <NodeViewWrapper as="span" style={{ display: 'block' }} data-drag-handle>
+    <NodeViewWrapper as="span" style={{ display: 'block' }} data-drag-handle data-bookmark-key={src}>
       {/* 附件文件（PDF/文档等）：渲染为卡片块 */}
       {isAttachment && (
-        <AttachmentCard src={src} alt={alt} selected={selected} />
+        <AttachmentCard src={src} alt={alt} selected={selected} onContextMenu={handleContextMenu} />
       )}
       {/* 音频文件：渲染为自定义播放器 */}
       {!isAttachment && isAudio && displaySrc && (
-        <AudioPlayerWidget src={displaySrc} selected={selected} originalSrc={src} editor={editor} getPos={getPos} nodeSize={node.nodeSize} />
+        <AudioPlayerWidget src={displaySrc} selected={selected} originalSrc={src} editor={editor} getPos={getPos} nodeSize={node.nodeSize} onContextMenu={handleContextMenu} />
       )}
       {/* 普通图片 */}
       {!isAttachment && !isAudio && displaySrc && (
@@ -684,6 +713,15 @@ const ImageNodeView = ({ node, selected, editor, getPos }) => {
       {!isAudio && modalOpen && displaySrc && (
         <ImagePreviewModal src={displaySrc} onClose={() => setModalOpen(false)} />
       )}
+      <Menu open={Boolean(assetMenu)} onClose={closeAssetMenu} anchorReference="anchorPosition"
+        anchorPosition={assetMenu ? { top: assetMenu.y, left: assetMenu.x } : undefined}>
+        {!isAudio && <MenuItem onClick={openAsset}><ListItemIcon><OpenInNewIcon fontSize="small" /></ListItemIcon><ListItemText>{isAttachment ? '打开文件' : '查看原图'}</ListItemText></MenuItem>}
+        {isAudio || isAttachment ? <MenuItem onClick={copyAssetLink}><ListItemIcon><LinkIcon fontSize="small" /></ListItemIcon><ListItemText>复制链接</ListItemText></MenuItem>
+          : <MenuItem onClick={copyImage} disabled={!displaySrc}><ListItemIcon><ContentCopyIcon fontSize="small" /></ListItemIcon><ListItemText>复制图片</ListItemText></MenuItem>}
+        <MenuItem onClick={bookmarkAsset} disabled={!noteId}><ListItemIcon><BookmarkIcon fontSize="small" /></ListItemIcon><ListItemText>添加书签</ListItemText></MenuItem>
+        <Divider />
+        <MenuItem onClick={deleteAsset} sx={{ color: 'error.main' }}><ListItemIcon><DeleteOutlineIcon fontSize="small" color="error" /></ListItemIcon><ListItemText>删除</ListItemText></MenuItem>
+      </Menu>
     </NodeViewWrapper>
   )
 }
@@ -967,7 +1005,10 @@ const useEditorState = (editor) => {
         hasPendingRender = true
         return
       }
-      flush()
+      if (!rafId) rafId = requestAnimationFrame(() => {
+        rafId = 0
+        flush()
+      })
     }
 
     const onMouseDown = (e) => {
@@ -2495,6 +2536,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       EditorTabIndent,
       AIAssistSelection,
       InlineMath,
+      WhiteboardEmbed,
       BlockMath,
       MathAwareText,
       StableLink.configure({
@@ -2509,7 +2551,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
         HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
       }),
       // 使用自定义 Image（带 NodeView），序列化方式不变
-      CustomImage.configure({ inline: false, allowBase64: true }),
+      CustomImage.configure({ inline: false, allowBase64: true, noteId }),
       TaskList,
       TaskItem.configure({ nested: true }),
       Table.configure({ resizable: true }),

@@ -1903,7 +1903,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     },
     noteType !== 'whiteboard' && {
       key: 'navigator',
-      label: resolvedNoteNavigatorOpen ? '关闭笔记导航' : '打开笔记导航',
+      label: resolvedNoteNavigatorOpen ? '关闭笔记导航/书签' : '打开笔记导航/书签',
       icon: <NavIcon sx={{ fontSize: 18 }} />,
       active: resolvedNoteNavigatorOpen,
       onClick: () => {

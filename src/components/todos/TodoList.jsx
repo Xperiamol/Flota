@@ -92,6 +92,7 @@ import {
   fetchTodosByCreatedAt,
   fetchSubtasksForParents,
   toggleTodoComplete,
+  updateTodo,
   deleteTodo as deleteTodoAPI
 } from '../../api/todoAPI';
 import { ANIMATIONS, createAnimationString, createTransitionString, GREEN_SWEEP_KEYFRAMES } from '../../utils/animationConfig';
@@ -134,6 +135,8 @@ const playChristmasBell = () => {
 
 const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSelectRefChange, refreshTrigger, sortBy, onSortByChange, externalTodos, isExternalData = false, onTodoUpdated }) => {
   const christmasMode = useStore((state) => state.christmasMode);
+  const setCurrentView = useStore((state) => state.setCurrentView);
+  const setTodoNavigationRequest = useStore((state) => state.setTodoNavigationRequest);
   const [todos, setTodos] = useState([]);
   const [subtasksByParent, setSubtasksByParent] = useState({});
   const [subtaskBusyIds, setSubtaskBusyIds] = useState(new Set());
@@ -219,21 +222,22 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
 
   // 使用动画拖拽处理器 - 拖拽整个Todo列表
   const { createAnimatedDragHandler } = useDragAnimation()
-  const dragHandler = createAnimatedDragHandler('todo', async (todoList) => {
-    try {
-      // 传递当前的todos列表作为参数
-      await window.electronAPI.createTodoWindow({ todos: todoList })
-    } catch (error) {
-      console.error('创建Todo独立窗口失败:', error)
-    }
+  const dragHandler = createAnimatedDragHandler('todo', async (todo) => {
+    if (!todo?.id) return
+    setCurrentView('todo')
+    setTodoNavigationRequest({ viewMode: 'focus', filterBy: 'all', showCompleted: false, todoId: todo.id, autoStart: true })
   }, {
-    onDragStart: () => {
-      // 添加Todo拖拽开始时的自定义逻辑
-      logger.log('Todo列表拖拽开始，添加视觉反馈');
-    },
-    onCreateWindow: () => {
-      // Todo独立窗口创建成功后的回调
-      logger.log('Todo独立窗口创建成功');
+    onDragEnd: async ({ item, quadrant }) => {
+      if (!item?.id || !quadrant) return
+      const target = {
+        urgent_important: { is_important: true, is_urgent: true, priority: 'urgent' },
+        not_urgent_important: { is_important: true, is_urgent: false, priority: 'important' },
+        urgent_not_important: { is_important: false, is_urgent: true, priority: 'normal' },
+        not_urgent_not_important: { is_important: false, is_urgent: false, priority: 'low' },
+      }[quadrant]
+      if (!target) return
+      await updateTodo(item.id, { ...item, ...target })
+      loadTodos()
     }
   })
 
@@ -896,7 +900,9 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
               !target.closest('.MuiTextField-root');
 
             if (isClickOnListArea) {
-              dragHandler.handleDragStart(e, todos)
+              const row = target.closest('[data-todo-id]')
+              const todo = row && todos.find((item) => String(item.id) === row.dataset.todoId)
+              if (todo) dragHandler.handleDragStart(e, todo)
             }
           }
         }}
@@ -910,6 +916,7 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
             {todos.map((todo) => (
               <Fade key={todo.id} in timeout={200}>
                 <ListItem
+                  data-todo-id={todo.id}
                   disablePadding
                   sx={{
                     mb: 0.5,

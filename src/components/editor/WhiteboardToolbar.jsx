@@ -20,6 +20,7 @@ import {
   LockOpenRounded,
   LockRounded,
   MoreHorizRounded,
+  Description,
 } from '../common/AppIcons'
 import { createWhiteboardSurfaceTokens } from '../../utils/whiteboardSurfaceTheme'
 
@@ -102,6 +103,7 @@ export default function WhiteboardToolbar({
   primaryColor,
   onMermaidCreate,
   onSvgCreate,
+  onNoteReference,
 }) {
   const [menuAnchor, setMenuAnchor] = useState(null)
   const menuOpen = Boolean(menuAnchor)
@@ -292,6 +294,8 @@ export default function WhiteboardToolbar({
           <ListItemIcon><DataObjectRounded fontSize="small" /></ListItemIcon>
           <ListItemText primary="SVG 源码" />
         </MenuItem>
+        <Divider />
+        <MenuItem onClick={() => runCreateAction(onNoteReference)}><ListItemIcon><Description fontSize="small" /></ListItemIcon><ListItemText primary="引用笔记" /></MenuItem>
       </Menu>
     </Paper>
   )

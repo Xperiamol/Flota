@@ -26,6 +26,14 @@ export const markdownLinkDestination = (href) => `<${String(href || '')
 export const openNoteLink = async (href) => {
   const url = normalizeLinkUrl(href)
   if (!url) return false
+  if (/^app:\/\/(?:note|whiteboard)\//i.test(url)) {
+    const { useStore } = await import('../store/useStore')
+    const reference = decodeURIComponent(new URL(url).pathname.slice(1))
+    const note = useStore.getState().notes.find(item => String(item.sync_id || item.id) === reference || String(item.id) === reference)
+    if (!note) return false
+    useStore.getState().setSelectedNoteId(note.id)
+    return true
+  }
   if (/^file:/i.test(url)) {
     const parsed = new URL(url)
     let path = decodeURIComponent(parsed.pathname)

@@ -1,4 +1,5 @@
 import React from 'react'
+import NoteReferencePicker from './NoteReferencePicker'
 import {
   Box,
   IconButton,
@@ -40,7 +41,8 @@ import {
   DataObject as CodeBlockIcon,
   Checklist as MeetingTodoIcon,
   Email as FollowupEmailIcon,
-  SelectAll as BlockSelectIcon
+  SelectAll as BlockSelectIcon,
+  Brush as WhiteboardIcon
 } from '../common/AppIcons'
 import ImageUploadButton from './ImageUploadButton'
 import AudioRecordButton from './AudioRecordButton'
@@ -69,6 +71,7 @@ const ALL_TOOLBAR_ITEMS = {
   divider:    { group: 'insert', label: '分割线', icon: DividerIcon, insert: '\n---\n' },
   image:      { group: 'insert', label: '图片', type: 'image' },
   audio:      { group: 'insert', label: '录音', type: 'audio' },
+  embedWhiteboard: { group: 'insert', label: '嵌入画布', icon: WhiteboardIcon, type: 'embedWhiteboard' },
   wikiLink:   { group: 'ext', label: 'Wiki 链接', type: 'wikiLink' },
   colorText:  { group: 'ext', label: '彩色文本', icon: ColorIcon, type: 'colorMenu' },
   callout:    { group: 'ext', label: '提示框', icon: CalloutIcon, type: 'calloutMenu' },
@@ -85,10 +88,11 @@ const ALL_TOOLBAR_ITEMS = {
 
 const DEFAULT_TOOLBAR_ORDER = [
   'heading', '|',
-  'bold', 'italic', 'strike', 'inlineCode', 'highlight', '|',
-  'bulletList', 'orderedList', 'taskList', 'quote', 'blockSelect', '|',
-  'link', 'inlineMath', 'blockMath', 'table', 'codeBlock', 'divider', 'image', 'audio', '|',
-  'wikiLink', 'colorText', 'callout', 'clearFormat',
+  'bold', 'italic', 'highlight', 'strike', 'inlineCode', '|',
+  'bulletList', 'orderedList', 'taskList', 'quote', '|',
+  'link', 'wikiLink', 'image', 'audio', 'embedWhiteboard', '|',
+  'table', 'codeBlock', 'inlineMath', 'blockMath', 'divider', '|',
+  'colorText', 'callout', 'clearFormat', 'blockSelect',
 ]
 
 const DEFAULT_FLOATING_ORDER = [
@@ -196,6 +200,7 @@ const MarkdownToolbar = ({
   onToggleBlockSelect,
 }) => {
   const [calloutAnchor, setCalloutAnchor] = React.useState(null)
+  const [embedPickerOpen, setEmbedPickerOpen] = React.useState(false)
 
   const [colorAnchor, setColorAnchor] = React.useState(null)
   const [headingAnchor, setHeadingAnchor] = React.useState(null)
@@ -449,6 +454,12 @@ const MarkdownToolbar = ({
           }}
           sx={btnSx}
         />
+      case 'embedWhiteboard':
+        return (
+          <Tooltip key={id} title="嵌入画布" placement="bottom">
+            <span><IconButton size="small" aria-label="嵌入画布" disabled={disabled} onClick={() => setEmbedPickerOpen(true)} sx={btnSx}><WhiteboardIcon /></IconButton></span>
+          </Tooltip>
+        )
       case 'wikiLink':
         return (
           <Tooltip key={id} title="Wiki 链接 [[Note]]" placement="bottom">
@@ -534,6 +545,13 @@ const MarkdownToolbar = ({
           </Box>
         )
       })}
+      <NoteReferencePicker open={embedPickerOpen} whiteboards onClose={() => setEmbedPickerOpen(false)} onSelect={note => {
+        const reference = String(note.sync_id || note.id)
+        if (editorMode === 'wysiwyg' && editor) {
+          if (!editor.chain().focus().insertContent([{ type: 'whiteboardEmbed', attrs: { reference } }, { type: 'paragraph' }]).run()) throw new Error('当前位置无法插入画布，请回到正文重试')
+        }
+        else onInsert(`\n\n[关联画布](app://whiteboard/${encodeURIComponent(reference)})\n\n`, '', '')
+      }} />
 
       <Box
         sx={{

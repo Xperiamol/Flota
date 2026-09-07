@@ -34,6 +34,9 @@ class DragManager {
       boundaryPosition: null
     };
     this.boundaryCheckThrottle = null;
+    this.activeQuadrantElement = null;
+    this.quadrantFrame = null;
+    this.pendingQuadrantPoint = null;
   }
 
   /**
@@ -125,6 +128,7 @@ class DragManager {
 
     // 如果正在拖拽，触发移动回调
     if (this.dragState.isDragging) {
+      this.updateQuadrantFeedback(event);
       if (this.callbacks.onDragMove) {
         this.callbacks.onDragMove({
           item: this.dragState.draggedItem,
@@ -141,6 +145,22 @@ class DragManager {
     }
   }
 
+  updateQuadrantFeedback(event) {
+    this.pendingQuadrantPoint = { x: event.clientX, y: event.clientY };
+    if (this.quadrantFrame) return;
+    this.quadrantFrame = requestAnimationFrame(() => {
+      this.quadrantFrame = null;
+      const point = this.pendingQuadrantPoint;
+      const next = this.dragState.draggedItemType === 'todo' && point
+        ? document.elementFromPoint(point.x, point.y)?.closest?.('[data-todo-quadrant]') || null
+        : null;
+      if (next === this.activeQuadrantElement) return;
+      this.activeQuadrantElement?.removeAttribute('data-global-drag-over');
+      next?.setAttribute('data-global-drag-over', 'true');
+      this.activeQuadrantElement = next;
+    });
+  }
+
   /**
    * 处理鼠标释放
    * @param {MouseEvent} event 鼠标事件
@@ -149,6 +169,8 @@ class DragManager {
     const wasDragging = this.dragState.isDragging;
     const draggedItem = this.dragState.draggedItem;
     const draggedItemType = this.dragState.draggedItemType;
+    const quadrant = document.elementFromPoint(event.clientX, event.clientY)
+      ?.closest?.('[data-todo-quadrant]')?.dataset?.todoQuadrant || null;
 
     // 检查是否在窗口边界释放
     const shouldCreateWindow = wasDragging && this.isNearWindowBoundary(event);
@@ -162,7 +184,8 @@ class DragManager {
         item: draggedItem,
         itemType: draggedItemType,
         endPosition: { x: event.clientX, y: event.clientY },
-        shouldCreateWindow
+        shouldCreateWindow,
+        quadrant
       });
     }
 
@@ -272,6 +295,11 @@ class DragManager {
       clearTimeout(this.boundaryCheckThrottle);
       this.boundaryCheckThrottle = null;
     }
+    this.activeQuadrantElement?.removeAttribute('data-global-drag-over');
+    this.activeQuadrantElement = null;
+    if (this.quadrantFrame) cancelAnimationFrame(this.quadrantFrame);
+    this.quadrantFrame = null;
+    this.pendingQuadrantPoint = null;
 
     // 重置状态
     this.dragState.isDragging = false;

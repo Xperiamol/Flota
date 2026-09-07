@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { updateTodo } from '../api/todoAPI';
+import { getPriorityFromQuadrant } from '../utils/priorityUtils';
 
 /**
  * 可复用的 Todo 拖放 Hook
@@ -112,9 +113,11 @@ const useTodoDrag = (onUpdate, onError) => {
 
     try {
       // 检查是否需要更新
+      const priority = getPriorityFromQuadrant(quadrant.isImportant, quadrant.isUrgent);
       const needsUpdate = 
         draggedTodo.is_important !== quadrant.isImportant ||
-        draggedTodo.is_urgent !== quadrant.isUrgent;
+        draggedTodo.is_urgent !== quadrant.isUrgent ||
+        draggedTodo.priority !== priority;
 
       if (!needsUpdate) {
         setDraggedTodo(null);
@@ -125,7 +128,8 @@ const useTodoDrag = (onUpdate, onError) => {
       await updateTodo(draggedTodo.id, {
         ...draggedTodo,
         is_important: quadrant.isImportant,
-        is_urgent: quadrant.isUrgent
+        is_urgent: quadrant.isUrgent,
+        priority
       });
       
       if (onUpdate) {
