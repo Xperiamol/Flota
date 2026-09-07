@@ -1,4 +1,5 @@
 import { encodeFlotaTable } from './flotaTableFormat.js'
+import { normalizeLinkUrl, markdownLinkDestination } from './linkUtils.js'
 
 /**
  * 剪贴板内容 → Markdown 转换工具
@@ -251,9 +252,9 @@ const renderInlineHtml = (node) => {
     case 'strike':
       return inner ? `~~${inner}~~` : ''
     case 'a': {
-      const href = sanitizeUrl(node.getAttribute?.('href'))
+      const href = normalizeLinkUrl(node.getAttribute?.('href'), { allowRelative: true })
       if (!href) return inner
-      return inner ? `[${inner}](${href})` : href
+      return inner ? `[${inner.replace(/\[/g, '\\[').replace(/\]/g, '\\]')}](${markdownLinkDestination(href)})` : href
     }
     case 'img': {
       const src = sanitizeUrl(node.getAttribute?.('src'))

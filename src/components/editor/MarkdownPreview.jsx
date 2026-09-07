@@ -12,6 +12,7 @@ import 'highlight.js/styles/github.css'
 import logger from '../../utils/logger'
 import useFloatingTableScrollbar from '../../hooks/useFloatingTableScrollbar'
 import { getLocalPathFromFileUrl } from '../../utils/fileUrl'
+import { editorScrollbarSx } from '../../styles/commonStyles'
 
 const MarkdownPreview = ({
   content,
@@ -640,6 +641,7 @@ const MarkdownPreview = ({
         MozUserSelect: 'text',
         msUserSelect: 'text',
         fontFamily: '"OPPOSans R", "OPPOSans", system-ui, -apple-system, sans-serif',
+        ...editorScrollbarSx,
         '& h1, & h2, & h3, & h4, & h5, & h6': {
           marginTop: 2,
           marginBottom: 1,

@@ -22,6 +22,12 @@ import { defaultMarkdownSerializer } from 'prosemirror-markdown'
 import { common, createLowlight } from 'lowlight'
 import { WikiLinkMark } from './extensions/WikiLinkMark'
 import { WikiLinkSuggestion } from './extensions/WikiLinkSuggestion'
+import { InlineMath, BlockMath, MathAwareText } from './extensions/Math'
+import { getClipboardLink, normalizePastedHtml, pasteEditorText } from '../../utils/editorClipboard'
+import { normalizeLinkUrl, markdownLinkDestination, openNoteLink } from '../../utils/linkUtils'
+import { transformOutsideMath } from '../../markdown/plugins/math'
+import LinkEditorDialog, { requestLinkEditor } from './LinkEditorDialog'
+import '../../markdown/markdown.css'
 import AIAssistSelection from './extensions/AIAssistSelection'
 import WikiLinkSuggestionPopup from './WikiLinkSuggestionPopup'
 import { Box, IconButton, Typography as MuiTypography, TextField, Tooltip, Portal, ButtonBase } from '@mui/material'
@@ -51,8 +57,31 @@ import { useError } from '../common/ErrorProvider'
 import AIAssistPanel from '../ai/AIAssistPanel'
 import ImagePreviewModal, { canvasToPngBlob } from '../common/ImagePreviewModal'
 import { DEFAULT_CONTEXT_MENU_ITEMS, ALL_CONTEXT_MENU_ITEMS, CONTEXT_MENU_ITEM_LABELS } from './contextMenuConfig'
+import { editorScrollbarSx } from '../../styles/commonStyles'
 
 const lowlight = createLowlight(common)
+
+const StableLink = Link.extend({
+  addAttributes() {
+    const parent = this.parent()
+    return { ...parent, href: { ...parent.href, parseHTML: element => normalizeLinkUrl(element.getAttribute('href'), { allowRelative: true }) || null } }
+  },
+  addStorage() {
+    return { markdown: {
+      serialize: {
+        open: () => '[',
+        close: (_state, mark) => `](${markdownLinkDestination(mark.attrs.href)}${mark.attrs.title ? ` "${mark.attrs.title.replace(/["\\]/g, '\\$&')}"` : ''})`,
+        mixable: true,
+      },
+      parse: { setup(md) {
+        if (md.__flotaLocalLinks) return
+        md.__flotaLocalLinks = true
+        const validate = md.validateLink.bind(md)
+        md.validateLink = href => /^file:\/\/|^app:\/\//i.test(href) || validate(href)
+      } },
+    } }
+  },
+})
 
 export { DEFAULT_CONTEXT_MENU_ITEMS, ALL_CONTEXT_MENU_ITEMS, CONTEXT_MENU_ITEM_LABELS }
 
@@ -69,14 +98,14 @@ const rgbToHex = (c) => {
 // 使用更严格的正则，限制不跨段落，避免误匹配跨行内容
 const preprocessMarkdown = (md) => {
   if (!md) return md
-  return prepareMarkdownForDisplay(md)
+  return transformOutsideMath(prepareMarkdownForDisplay(md), text => text
     // 带颜色高亮：限制不跨行
     .replace(/==(?:\{([^}\n]+)\})([^\n=]+?)==/g, (_, color, text) =>
       `<mark data-color="${color}">${text}</mark>`)
     // 普通高亮：限制不跨行
     .replace(/==([^\n=]+?)==/g, (_, text) => `<mark>${text}</mark>`)
     // 下划线：限制不跨行
-    .replace(/\+\+([^\n+]+?)\+\+/g, (_, text) => `<u>${text}</u>`)
+    .replace(/\+\+([^\n+]+?)\+\+/g, (_, text) => `<u>${text}</u>`))
 }
 
 // 序列化后处理：prosemirror-markdown 会把 [!type] 转义为 \[!type\]，需要还原
@@ -1149,6 +1178,7 @@ const placePointMenuInRect = (x, y, rect, width = CONTEXT_MENU_WIDTH, height = 0
 const LinkBubbleMenu = ({ editor, containerRef }) => {
   const [editing, setEditing] = useState(false)
   const [draftUrl, setDraftUrl] = useState('')
+  const [urlError, setUrlError] = useState('')
 
   const isLinkActive = editor?.isActive('link') ?? false
   const rect = (editor && (isLinkActive || editing)) ? getLinkAnchorRect(editor) : null
@@ -1165,19 +1195,23 @@ const LinkBubbleMenu = ({ editor, containerRef }) => {
 
   const startEdit = () => {
     setDraftUrl(currentHref || 'https://')
+    setUrlError('')
     setEditing(true)
   }
   const applyUrl = () => {
-    const url = (draftUrl || '').trim()
-    if (!url) {
+    const url = normalizeLinkUrl(draftUrl)
+    if (!draftUrl.trim()) {
       editor.chain().focus().unsetLink().run()
+    } else if (!url) {
+      setUrlError('请输入有效的网址、邮箱或本地文件链接')
+      return
     } else {
       editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run()
     }
     setEditing(false)
   }
   const cancel = () => setEditing(false)
-  const open = () => { if (currentHref) window.open(currentHref, '_blank', 'noopener,noreferrer') }
+  const open = () => { if (currentHref) openNoteLink(currentHref).catch(console.warn) }
   const copy = () => { if (currentHref) navigator.clipboard?.writeText(currentHref) }
   const remove = () => { editor.chain().focus().extendMarkRange('link').unsetLink().run() }
 
@@ -1206,6 +1240,8 @@ const LinkBubbleMenu = ({ editor, containerRef }) => {
             autoFocus
             size="small"
             value={draftUrl}
+            error={Boolean(urlError)}
+            helperText={urlError || undefined}
             onChange={(e) => setDraftUrl(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') { e.preventDefault(); applyUrl() }
@@ -1503,8 +1539,7 @@ const BlockSelectActionButton = ({ children, danger = false, disabled = false, o
 
 const insertPlainText = (editor, text) => {
   if (!text) return
-  const { from, to } = editor.state.selection
-  editor.view.dispatch(editor.state.tr.insertText(text, from, to).scrollIntoView())
+  pasteEditorText(editor.view, text, { plain: true })
   editor.view.focus()
 }
 
@@ -2186,16 +2221,14 @@ const EditorContextMenu = ({ editor, menu, noteId, containerRef, undoBaseline, b
   })
   const pasteText = () => run(async () => {
     const text = await navigator.clipboard?.readText?.()
-    // 用 insertContentAt 而非 insertContent，让 tiptap-markdown 按 markdown 解析剪贴板文本
-    if (text) editor.chain().focus().insertContentAt(editor.state.selection.from, text).run()
+    if (text) { editor.commands.focus(); pasteEditorText(editor.view, text) }
   })
   const pastePlainText = () => run(async () => {
     const text = await navigator.clipboard?.readText?.()
     insertPlainText(editor, text)
   })
   const createLink = () => run(async () => {
-    const url = window.prompt('输入链接地址', linkHref || 'https://')
-    if (url) editor.chain().focus().extendMarkRange('link').setLink({ href: url.trim() }).run()
+    requestLinkEditor(editor)
   })
   // 书签锚点：优先取选中文字，否则取光标所在块的文本；跳转时按此片段在正文里重新定位
   const addBookmarkHere = () => run(async () => {
@@ -2451,6 +2484,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
         codeBlock: false, // 由 CodeBlockLowlight 接管
         link: false,
         underline: false,
+        text: false,
         // 行内代码关闭拼写检查（避免代码标识符被划红线）
         code: { HTMLAttributes: { spellcheck: 'false' } },
       }),
@@ -2460,8 +2494,12 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       CustomUnderline,
       EditorTabIndent,
       AIAssistSelection,
-      Link.configure({
+      InlineMath,
+      BlockMath,
+      MathAwareText,
+      StableLink.configure({
         openOnClick: false,
+        defaultProtocol: 'https',
         protocols: ['file', 'app'],
         isAllowedUri: (url, ctx) => (
           /^file:\/\//i.test(url) ||
@@ -2532,6 +2570,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
     editorProps: {
       // 默认开启拼写检查（更现代）；代码块/行内代码已通过节点配置关闭
       attributes: { class: 'wysiwyg-editor-content', spellcheck: 'true' },
+      transformPastedHTML: normalizePastedHtml,
 
       // ── 拦截图片粘贴 ──────────────────────────────────────────────────────────
       handlePaste: (view, event) => {
@@ -2542,6 +2581,11 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
         const plainText = data.getData('text/plain') || ''
         const htmlText = data.getData('text/html') || ''
         const hasTextualContent = Boolean(plainText.trim() || htmlText.trim())
+
+        if (plainText && (view.input?.shiftKey || getClipboardLink(plainText))) {
+          event.preventDefault()
+          return pasteEditorText(view, plainText, { plain: Boolean(view.input?.shiftKey) })
+        }
 
         // 1) 图片：仅在没有文本时拦截上传，避免把图文混排里的占位图替换掉文本
         for (let i = 0; i < items.length; i++) {
@@ -2567,17 +2611,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
         //    避免 [], *, _, {color}, URL 等被识别后在保存时反向转义/包裹。
         if (plainText && !htmlText.trim()) {
           event.preventDefault()
-          const { state } = view
-          const { schema } = state
-          const lines = plainText.replace(/\r\n?/g, '\n').split('\n')
-          const paragraph = schema.nodes.paragraph
-          const nodes = lines.map((line) => paragraph.create(
-            null,
-            line ? schema.text(line) : null,
-          ))
-          const slice = new Slice(Fragment.fromArray(nodes), 1, 1)
-          view.dispatch(state.tr.replaceSelection(slice).scrollIntoView())
-          return true
+          return pasteEditorText(view, plainText)
         }
 
         // 3) 富文本 HTML：若包含 <img src="data:image/..."> 这种 base64 内联图（如飞书复制），
@@ -2657,7 +2691,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
           event.stopPropagation()
           // file:// → 转为本地路径走 openPath
           try {
-            const localPath = decodeURIComponent(new URL(href).pathname)
+            const localPath = getLocalPathFromFileUrl(href)
             window.electronAPI?.system?.openPath?.(localPath)
           } catch {
             window.electronAPI?.system?.openPath?.(href.replace(/^file:\/\//, ''))
@@ -2919,6 +2953,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
         flex: 1,
         overflow: 'auto',
         position: 'relative',
+        ...editorScrollbarSx,
         '& .ProseMirror': {
           outline: 'none',
           minHeight: '100%',
@@ -3170,6 +3205,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       />
       {/* 上下文 Bubble Menus：链接 / 表格 / Callout */}
       <LinkBubbleMenu editor={editor} containerRef={overlayContainerRef} />
+      <LinkEditorDialog editor={editor} />
       <TableBubbleMenu editor={editor} containerRef={overlayContainerRef} />
       <CalloutBubbleMenu editor={editor} containerRef={overlayContainerRef} />
       <SlashCommandMenu editor={editor} containerRef={overlayContainerRef} />

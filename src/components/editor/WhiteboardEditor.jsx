@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Box,
   Alert,
@@ -10,8 +11,8 @@ import {
   Button,
   TextField,
   Typography,
+  Tooltip,
 } from '@mui/material'
-import { alpha } from '@mui/material/styles'
 import { Excalidraw, exportToSvg, THEME } from '@excalidraw/excalidraw'
 import { useStore } from '../../store/useStore'
 import { useStandaloneContext } from '../common/StandaloneProvider'
@@ -29,853 +30,31 @@ import logger from '../../utils/logger'
 import { renderMermaidNative } from '../../utils/diagrams/mermaidNative'
 import { createSvgAsset, createSvgDataURL } from '../../utils/diagrams/svgAsset'
 import { getWhiteboardPreviewKey } from '../../utils/whiteboardPreview'
+import useWhiteboardProperties from '../../hooks/useWhiteboardProperties'
+import useExcalidrawControlSlots from '../../hooks/useExcalidrawControlSlots'
+import { Tune, CenterFocusStrong, VisibilityOff } from '../common/AppIcons'
+import { openNoteLink } from '../../utils/linkUtils'
+import { createWhiteboardSurfaceSx, createWhiteboardSurfaceTokens } from '../../utils/whiteboardSurfaceTheme'
+import WhiteboardToolbar from './WhiteboardToolbar'
 
-const createExcalidrawGlassTokens = ({ isDark, accent }) => {
-  const islandBg = isDark
-    ? alpha('#1e293b', 0.9)
-    : alpha('#ffffff', 0.94)
-  const islandBorder = isDark
-    ? `1px solid ${alpha('#ffffff', 0.08)}`
-    : `1px solid ${alpha('#0f172a', 0.08)}`
-  const islandShadow = isDark
-    ? `0 4px 14px ${alpha('#000000', 0.2)}`
-    : `0 4px 14px ${alpha('#0f172a', 0.06)}`
-  const islandBlur = 'blur(8px)'
-
-  const buttonBg = isDark
-    ? alpha('#ffffff', 0.035)
-    : alpha('#f8fafc', 0.92)
-  const buttonHoverBg = isDark
-    ? alpha('#ffffff', 0.08)
-    : alpha('#e2e8f0', 0.72)
-  const buttonPressedBg = isDark
-    ? alpha('#ffffff', 0.11)
-    : alpha('#cbd5e1', 0.68)
-  const buttonBorder = isDark
-    ? alpha('#ffffff', 0.08)
-    : alpha('#0f172a', 0.08)
-  const buttonShadow = 'none'
-  const buttonPressedShadow = 'none'
-  const toolbarButtonHoverBg = isDark
-    ? alpha('#ffffff', 0.08)
-    : alpha('#ffffff', 0.72)
-  const toolbarButtonPressedBg = isDark
-    ? alpha('#ffffff', 0.12)
-    : alpha('#ffffff', 0.84)
-  const toolbarButtonBorder = isDark
-    ? alpha('#ffffff', 0.06)
-    : alpha('#ffffff', 0.72)
-  const toolbarButtonShadow = 'none'
-  const bottomButtonBg = isDark
-    ? alpha('#ffffff', 0.035)
-    : alpha('#ffffff', 0.28)
-  const bottomButtonHoverBg = isDark
-    ? alpha('#ffffff', 0.06)
-    : alpha('#ffffff', 0.44)
-  const bottomButtonPressedBg = isDark
-    ? alpha('#ffffff', 0.09)
-    : alpha('#ffffff', 0.56)
-  const bottomButtonBorder = isDark
-    ? alpha('#ffffff', 0.06)
-    : alpha('#ffffff', 0.5)
-  const bottomButtonShadow = 'none'
-  const menuBg = isDark
-    ? alpha('#1e293b', 0.94)
-    : alpha('#ffffff', 0.98)
-  const menuBorder = isDark
-    ? `1px solid ${alpha('#ffffff', 0.08)}`
-    : `1px solid ${alpha('#ffffff', 0.62)}`
-  const menuShadow = isDark
-    ? `0 10px 28px ${alpha('#000000', 0.26)}`
-    : `0 10px 28px ${alpha('#0f172a', 0.1)}`
-  const menuItemHoverBg = isDark
-    ? alpha('#ffffff', 0.07)
-    : alpha('#ffffff', 0.72)
-  const menuItemDangerBg = isDark
-    ? alpha('#ef4444', 0.14)
-    : alpha('#ef4444', 0.08)
-  const toolIconActiveBg = isDark
-    ? alpha(accent, 0.18)
-    : alpha(accent, 0.12)
-  const toolIconActiveBorder = alpha(accent, isDark ? 0.38 : 0.24)
-  const toolIconActiveShadow = 'none'
-  const selectedSurface = alpha(accent, isDark ? 0.28 : 0.14)
-  const selectedSurfaceHover = alpha(accent, isDark ? 0.36 : 0.2)
-
-  return {
-    islandBg,
-    islandBorder,
-    islandShadow,
-    islandBlur,
-    buttonBg,
-    buttonHoverBg,
-    buttonPressedBg,
-    buttonBorder,
-    buttonShadow,
-    buttonPressedShadow,
-    toolbarButtonHoverBg,
-    toolbarButtonPressedBg,
-    toolbarButtonBorder,
-    toolbarButtonShadow,
-    bottomButtonBg,
-    bottomButtonHoverBg,
-    bottomButtonPressedBg,
-    bottomButtonBorder,
-    bottomButtonShadow,
-    menuBg,
-    menuBorder,
-    menuShadow,
-    menuItemHoverBg,
-    menuItemDangerBg,
-    toolIconActiveBg,
-    toolIconActiveBorder,
-    toolIconActiveShadow,
-    selectedSurface,
-    selectedSurfaceHover,
-  }
-}
-
-const createExcalidrawSurfaceSx = ({ isDark, primaryColor }) => {
-  const accent = primaryColor || '#1976d2'
-
-  const {
-    islandBg,
-    islandBorder,
-    islandShadow,
-    islandBlur,
-    buttonBg,
-    buttonHoverBg,
-    buttonPressedBg,
-    buttonBorder,
-    buttonShadow,
-    buttonPressedShadow,
-    toolbarButtonHoverBg,
-    toolbarButtonPressedBg,
-    toolbarButtonBorder,
-    toolbarButtonShadow,
-    bottomButtonBg,
-    bottomButtonHoverBg,
-    bottomButtonPressedBg,
-    bottomButtonBorder,
-    bottomButtonShadow,
-    menuBg,
-    menuBorder,
-    menuShadow,
-    menuItemHoverBg,
-    menuItemDangerBg,
-    toolIconActiveBg,
-    toolIconActiveBorder,
-    toolIconActiveShadow,
-    selectedSurface,
-    selectedSurfaceHover,
-  } = createExcalidrawGlassTokens({ isDark, accent })
-
-  return {
-    // CSS 变量层：让 Excalidraw 内部跟随主题色
-    '--color-primary': accent,
-    '--color-primary-hover': accent,
-    '--color-primary-darker': accent,
-    '--color-primary-darkest': accent,
-    '--color-primary-light': alpha(accent, 0.18),
-    '--color-primary-light-darker': alpha(accent, 0.28),
-    '--color-selection': accent,
-    '--color-brand-hover': accent,
-    '--color-brand-active': accent,
-    '--color-promo': accent,
-    '--color-logo-icon': accent,
-    '--color-on-primary-container': accent,
-    '--color-surface-primary-container': selectedSurface,
-    '--button-selected-bg': selectedSurface,
-    '--button-selected-hover-bg': selectedSurfaceHover,
-    '--button-selected-border': alpha(accent, isDark ? 0.58 : 0.42),
-    '--button-color': accent,
-    '--button-active-bg': buttonPressedBg,
-
-    // Island 玻璃面板（顶部工具栏 / 左上菜单 / 右上小岛 / 缩放条 / 画布操作）
-    '& .excalidraw .Island': {
-      backgroundColor: `${islandBg} !important`,
-      backdropFilter: islandBlur,
-      WebkitBackdropFilter: islandBlur,
-      border: islandBorder,
-      boxShadow: `${islandShadow} !important`,
-      borderRadius: '14px !important',
-    },
-    '& .excalidraw .App-menu_top .App-menu_top__left .Island': {
-      padding: '6px !important',
-    },
-    '& .excalidraw .App-menu_top': {
-      alignItems: 'center !important',
-    },
-    '& .excalidraw .App-menu_top > *': {
-      alignSelf: 'center',
-    },
-    '& .excalidraw .App-menu_top > *:first-of-type, & .excalidraw .App-menu_top > *:last-of-type': {
-      display: 'flex',
-      alignItems: 'center',
-      minHeight: '48px',
-    },
-    '& .excalidraw .layer-ui__wrapper__top-right': {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'flex-end',
-    },
-    '& .excalidraw .layer-ui__wrapper__top-right > *': {
-      display: 'flex',
-      alignItems: 'center',
-    },
-    '& .excalidraw .layer-ui__wrapper__top-right .default-sidebar-trigger, & .excalidraw .layer-ui__wrapper__top-right .sidebar-trigger': {
-      alignSelf: 'center',
-      marginTop: '0 !important',
-      transform: 'translateY(4px)',
-      height: '40px',
-      minHeight: '40px',
-      paddingTop: '0',
-      paddingBottom: '0',
-      paddingInline: '14px',
-      lineHeight: 1,
-    },
-    '& .excalidraw .layer-ui__wrapper__top-right .sidebar-trigger__label-element, & .excalidraw .layer-ui__wrapper__top-right .sidebar-trigger__label': {
-      display: 'flex',
-      alignItems: 'center',
-      lineHeight: 1,
-    },
-    '& .excalidraw .App-toolbar, & .excalidraw .App-toolbar-content': {
-      alignItems: 'center',
-    },
-    '& .excalidraw .layer-ui__wrapper__top-center, & .excalidraw .App-toolbar-container': {
-      background: 'transparent !important',
-    },
-    // 外层 footer.App-toolbar 仅作布局用，不要再画一层玻璃，避免和内层 Island 叠成两层
-    '& .excalidraw footer.App-toolbar': {
-      background: 'transparent !important',
-      backgroundColor: 'transparent !important',
-      border: 'none !important',
-      boxShadow: 'none !important',
-      backdropFilter: 'none !important',
-      WebkitBackdropFilter: 'none !important',
-    },
-    // 真正的工具岛：内层 .Island.App-toolbar
-    '& .excalidraw .Island.App-toolbar': {
-      position: 'relative',
-      isolation: 'isolate',
-      background: 'transparent !important',
-      backgroundColor: 'transparent !important',
-      border: 'none !important',
-      boxShadow: 'none !important',
-      borderRadius: '16px !important',
-      overflow: 'visible',
-      // 仅按内容高度撑开，避免被父级 grid/flex 容器拉伸（大屏下尤其明显）
-      height: 'fit-content',
-      alignSelf: 'center',
-      justifySelf: 'center',
-    },
-    // 工具岛父容器（Stack.Row.App-toolbar-container）也按内容收缩
-    '& .excalidraw .App-toolbar-container': {
-      height: 'fit-content',
-      alignSelf: 'center',
-      alignItems: 'center',
-    },
-    // 工具岛内部按钮一行（Stack.Row）也按内容收缩
-    '& .excalidraw .Island.App-toolbar > .Stack_horizontal': {
-      alignItems: 'center',
-      height: 'fit-content',
-    },
-    // HintViewer：Excalidraw 在工具栏正下方挂的提示文案，宽窗口下会变得很长很占视野，统一隐藏
-    '& .excalidraw .HintViewer': {
-      display: 'none !important',
-    },
-    '& .excalidraw .Island.App-toolbar::before': {
-      content: '""',
-      position: 'absolute',
-      inset: 0,
-      zIndex: 0,
-      background: buttonBg,
-      backdropFilter: 'blur(8px)',
-      WebkitBackdropFilter: 'blur(8px)',
-      border: `1px solid ${buttonBorder}`,
-      borderRadius: '16px',
-      boxShadow: buttonShadow,
-      pointerEvents: 'none',
-    },
-    '& .excalidraw .App-toolbar-content': {
-      position: 'relative',
-      zIndex: 1,
-      gap: '4px',
-      background: 'transparent !important',
-    },
-    '& .excalidraw .App-toolbar-container .ToolIcon': {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    '& .excalidraw .App-toolbar-container .ToolIcon__icon': {
-      margin: 0,
-    },
-    '& .excalidraw .App-toolbar .App-toolbar__divider': {
-      opacity: 0.45,
-      borderColor: alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.08 : 0.08),
-      marginInline: '4px',
-    },
-
-    // 全部按钮统一成清爽毛玻璃体系
-    '& .excalidraw .ToolIcon__icon, & .excalidraw .ToolIcon_type_button, & .excalidraw .dropdown-menu-button, & .excalidraw .excalidraw-button, & .excalidraw button.standalone, & .excalidraw .sidebar-trigger, & .excalidraw .buttonList label, & .excalidraw .buttonList button, & .excalidraw .buttonList .zIndexButton, & .excalidraw .RadioGroup__choice, & .excalidraw .scroll-back-to-content, & .excalidraw .help-icon, & .excalidraw .undo-redo-buttons button .ToolIcon__icon': {
-      borderRadius: '10px !important',
-      background: `${buttonBg} !important`,
-      border: `1px solid ${buttonBorder} !important`,
-      boxShadow: `${buttonShadow} !important`,
-      backdropFilter: 'blur(8px)',
-      WebkitBackdropFilter: 'blur(8px)',
-      transition: 'background-color 160ms ease, box-shadow 160ms ease, color 160ms ease, border-color 160ms ease',
-    },
-
-    // 顶部工具栏默认态更轻：无明显底色、无明显边框，只在交互时浮起
-    '& .excalidraw .App-toolbar-container .ToolIcon:not(.ToolIcon--selected) .ToolIcon__icon, & .excalidraw .App-toolbar__extra-tools-trigger:not(.App-toolbar__extra-tools-trigger--selected)': {
-      background: 'transparent !important',
-      borderColor: 'transparent !important',
-      boxShadow: 'none !important',
-      backdropFilter: 'none',
-      WebkitBackdropFilter: 'none',
-    },
-
-    // hover 统一偏清爽，不做过重高亮
-    '& .excalidraw .ToolIcon:not(.ToolIcon--selected) .ToolIcon__icon:hover, & .excalidraw .ToolIcon_type_button:hover, & .excalidraw .dropdown-menu-button:hover, & .excalidraw .excalidraw-button:hover, & .excalidraw button.standalone:hover, & .excalidraw .sidebar-trigger:hover, & .excalidraw .buttonList label:hover, & .excalidraw .buttonList button:hover, & .excalidraw .buttonList .zIndexButton:hover, & .excalidraw .RadioGroup__choice:hover, & .excalidraw .scroll-back-to-content:hover, & .excalidraw .help-icon:hover, & .excalidraw .undo-redo-buttons button .ToolIcon__icon:hover': {
-      background: `${buttonHoverBg} !important`,
-      borderColor: `${alpha(accent, isDark ? 0.18 : 0.14)} !important`,
-      boxShadow: `${buttonShadow} !important`,
-      color: `${accent} !important`,
-    },
-    '& .excalidraw .App-toolbar-container .ToolIcon:not(.ToolIcon--selected) .ToolIcon__icon:hover, & .excalidraw .App-toolbar__extra-tools-trigger:not(.App-toolbar__extra-tools-trigger--selected):hover': {
-      background: `${toolbarButtonHoverBg} !important`,
-      borderColor: `${toolbarButtonBorder} !important`,
-      boxShadow: `${toolbarButtonShadow} !important`,
-      backdropFilter: 'blur(10px) saturate(145%)',
-      WebkitBackdropFilter: 'blur(10px) saturate(145%)',
-    },
-
-    // 按下态统一，底部按钮也共用
-    '& .excalidraw .ToolIcon .ToolIcon__icon:active, & .excalidraw .ToolIcon_type_button:active, & .excalidraw .dropdown-menu-button:active, & .excalidraw .excalidraw-button:active, & .excalidraw button.standalone:active, & .excalidraw .sidebar-trigger:active, & .excalidraw .buttonList label:active, & .excalidraw .buttonList button:active, & .excalidraw .buttonList .zIndexButton:active, & .excalidraw .RadioGroup__choice:active, & .excalidraw .scroll-back-to-content:active, & .excalidraw .help-icon:active, & .excalidraw .undo-redo-buttons button .ToolIcon__icon:active': {
-      background: `${buttonPressedBg} !important`,
-      borderColor: `${alpha(accent, isDark ? 0.22 : 0.16)} !important`,
-      boxShadow: `${buttonPressedShadow} !important`,
-    },
-    '& .excalidraw .App-toolbar-container .ToolIcon:not(.ToolIcon--selected) .ToolIcon__icon:active, & .excalidraw .App-toolbar__extra-tools-trigger:not(.App-toolbar__extra-tools-trigger--selected):active': {
-      background: `${toolbarButtonPressedBg} !important`,
-      borderColor: `${toolbarButtonBorder} !important`,
-      boxShadow: `${toolbarButtonShadow} !important`,
-    },
-
-    // selected 统一为轻主题色玻璃，不再用过重渐变
-    '& .excalidraw .ToolIcon--selected .ToolIcon__icon, & .excalidraw .ToolIcon_type_button.ToolIcon--selected, & .excalidraw .ToolIcon__icon[aria-pressed="true"], & .excalidraw .ToolIcon .ToolIcon_type_radio:checked + .ToolIcon__icon, & .excalidraw .ToolIcon .ToolIcon_type_checkbox:checked + .ToolIcon__icon': {
-      background: `${toolIconActiveBg} !important`,
-      color: `${accent} !important`,
-      border: `1px solid ${toolIconActiveBorder} !important`,
-      boxShadow: `${toolIconActiveShadow} !important`,
-      '--icon-fill-color': accent,
-      '--keybinding-color': accent,
-    },
-    '& .excalidraw .ToolIcon--selected .ToolIcon__icon svg, & .excalidraw .ToolIcon_type_button.ToolIcon--selected svg, & .excalidraw .ToolIcon .ToolIcon_type_radio:checked + .ToolIcon__icon svg, & .excalidraw .ToolIcon .ToolIcon_type_checkbox:checked + .ToolIcon__icon svg': {
-      color: `${accent} !important`,
-    },
-    '& .excalidraw button.standalone.active, & .excalidraw .excalidraw-button.active, & .excalidraw .dropdown-menu-button.active, & .excalidraw .sidebar-trigger.active, & .excalidraw .sidebar__header__buttons button.active, & .excalidraw .buttonList label.active, & .excalidraw .buttonList button.active, & .excalidraw .buttonList .zIndexButton.active, & .excalidraw .RadioGroup__choice.active, & .excalidraw .help-icon.active, & .excalidraw .App-toolbar__extra-tools-trigger--selected': {
-      backgroundColor: `${selectedSurface} !important`,
-      borderColor: `${toolIconActiveBorder} !important`,
-      color: `${accent} !important`,
-      boxShadow: `${toolIconActiveShadow} !important`,
-    },
-    '& .excalidraw button.standalone.active:hover, & .excalidraw .excalidraw-button.active:hover, & .excalidraw .dropdown-menu-button.active:hover, & .excalidraw .sidebar-trigger.active:hover, & .excalidraw .sidebar__header__buttons button.active:hover, & .excalidraw .buttonList label.active:hover, & .excalidraw .buttonList button.active:hover, & .excalidraw .buttonList .zIndexButton.active:hover, & .excalidraw .RadioGroup__choice.active:hover, & .excalidraw .help-icon.active:hover, & .excalidraw .App-toolbar__extra-tools-trigger--selected:hover': {
-      backgroundColor: `${selectedSurfaceHover} !important`,
-    },
-    '& .excalidraw button.standalone.active svg, & .excalidraw .excalidraw-button.active svg, & .excalidraw .dropdown-menu-button.active svg, & .excalidraw .sidebar-trigger.active svg, & .excalidraw .sidebar__header__buttons button.active svg, & .excalidraw .buttonList label.active svg, & .excalidraw .buttonList button.active svg, & .excalidraw .buttonList .zIndexButton.active svg, & .excalidraw .RadioGroup__choice.active svg, & .excalidraw .help-icon.active svg, & .excalidraw .App-toolbar__extra-tools-trigger--selected svg': {
-      color: `${accent} !important`,
-    },
-
-    // 下拉菜单 / Popover 玻璃化
-    '& .excalidraw .dropdown-menu .dropdown-menu-container, & .excalidraw .Popover, & .excalidraw .Popover__contextMenu, & .excalidraw .context-menu, & .excalidraw .App-toolbar__extra-tools-dropdown': {
-      backgroundColor: `${menuBg} !important`,
-      backdropFilter: 'blur(8px)',
-      WebkitBackdropFilter: 'blur(8px)',
-      border: menuBorder,
-      boxShadow: `${menuShadow} !important`,
-      borderRadius: '14px !important',
-    },
-    '& .excalidraw .App-menu_top .dropdown-menu, & .excalidraw .App-menu_top .dropdown-menu .dropdown-menu-container': {
-      backgroundColor: `${menuBg} !important`,
-      backdropFilter: 'blur(8px)',
-      WebkitBackdropFilter: 'blur(8px)',
-      border: menuBorder,
-      boxShadow: `${menuShadow} !important`,
-      borderRadius: '16px !important',
-      overflow: 'hidden',
-    },
-    '& .excalidraw .App-menu_top .dropdown-menu .dropdown-menu-item-custom, & .excalidraw .App-menu_top .dropdown-menu .dropdown-menu-group, & .excalidraw .App-menu_top .dropdown-menu .ActiveFile': {
-      backgroundColor: 'transparent !important',
-    },
-    '& .excalidraw .dropdown-menu .dropdown-menu-container, & .excalidraw .context-menu, & .excalidraw .App-toolbar__extra-tools-dropdown': {
-      padding: '6px !important',
-    },
-    '& .excalidraw .dropdown-menu .dropdown-menu-item, & .excalidraw .context-menu-item': {
-      borderRadius: '10px',
-      minHeight: '34px',
-      paddingInline: '10px',
-      transition: 'background-color 140ms ease, color 140ms ease',
-    },
-    '& .excalidraw .dropdown-menu .dropdown-menu-item:hover, & .excalidraw .dropdown-menu .dropdown-menu-item--hovered, & .excalidraw .context-menu-item:hover, & .excalidraw .context-menu-item:focus': {
-      backgroundColor: `${menuItemHoverBg} !important`,
-      color: accent,
-    },
-    '& .excalidraw .dropdown-menu .dropdown-menu-item--selected': {
-      backgroundColor: `${selectedSurface} !important`,
-      color: `${accent} !important`,
-    },
-    '& .excalidraw .dropdown-menu .dropdown-menu-group:has(a[href="https://github.com/excalidraw/excalidraw"])': {
-      display: 'none !important',
-    },
-    '& .excalidraw .dropdown-menu .dropdown-menu-container > div[style*="height: 1px"]:has(+ .dropdown-menu-group:has(a[href="https://github.com/excalidraw/excalidraw"]))': {
-      display: 'none !important',
-    },
-    '& .excalidraw .dropdown-menu .dropdown-menu-group:has(a[href="https://github.com/excalidraw/excalidraw"]) + div[style*="height: 1px"]': {
-      display: 'none !important',
-    },
-    '& .excalidraw .context-menu-item.dangerous:hover, & .excalidraw .context-menu-item:hover.dangerous': {
-      backgroundColor: `${menuItemDangerBg} !important`,
-    },
-    '& .excalidraw .context-menu-item-separator, & .excalidraw .dropdown-menu .dropdown-menu-group:not(:first-of-type)': {
-      borderColor: alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.08 : 0.08),
-    },
-
-    // 素材库面板
-    '& .excalidraw .layer-ui__library': {
-      borderRadius: '14px',
-      backgroundColor: isDark ? alpha('#1e293b', 0.96) : alpha('#ffffff', 0.98),
-      border: isDark
-        ? `1px solid ${alpha('#ffffff', 0.08)}`
-        : `1px solid ${alpha('#ffffff', 0.62)}`,
-      boxShadow: isDark
-        ? `0 10px 28px ${alpha('#000000', 0.24)}`
-        : `0 10px 28px ${alpha('#0f172a', 0.09)}`,
-      backdropFilter: 'blur(8px)',
-      WebkitBackdropFilter: 'blur(8px)',
-      overflow: 'hidden',
-    },
-    '& .excalidraw .sidebar-tabs-root > .sidebar__header': {
-      position: 'relative',
-      zIndex: 3,
-    },
-    '& .excalidraw .sidebar-tabs-root [role=tablist]': {
-      position: 'relative',
-      zIndex: 3,
-      gap: '8px',
-    },
-    '& .excalidraw .sidebar-tabs-root [role=tabpanel]': {
-      position: 'relative',
-      zIndex: 1,
-      overflow: 'hidden',
-      minHeight: 0,
-    },
-    '& .excalidraw .default-sidebar .sidebar-triggers': {
-      padding: 0,
-      marginTop: 0,
-      marginBottom: 0,
-      border: 'none',
-      background: 'transparent',
-      boxShadow: 'none',
-      backdropFilter: 'none',
-      WebkitBackdropFilter: 'none',
-      borderRadius: 0,
-      gap: '6px',
-    },
-    '& .excalidraw .default-sidebar .sidebar-triggers .sidebar-tab-trigger': {
-      height: '40px',
-      width: '40px',
-      minWidth: '40px',
-      minHeight: '40px',
-      borderRadius: '12px',
-      color: alpha(accent, 0.96),
-      border: `1px solid ${alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.08 : 0.08)}`,
-      background: isDark ? alpha('#ffffff', 0.04) : alpha('#ffffff', 0.72),
-      boxShadow: isDark
-        ? `0 2px 8px ${alpha('#000000', 0.08)}`
-        : `0 2px 8px ${alpha('#0f172a', 0.035)}`,
-      backdropFilter: 'blur(8px)',
-      WebkitBackdropFilter: 'blur(8px)',
-      position: 'relative',
-      zIndex: 2,
-    },
-    '& .excalidraw .default-sidebar .sidebar-triggers .sidebar-tab-trigger:hover': {
-      background: isDark ? alpha('#ffffff', 0.08) : alpha('#ffffff', 0.88),
-      borderColor: alpha(accent, isDark ? 0.18 : 0.14),
-      color: accent,
-    },
-    '& .excalidraw .default-sidebar .sidebar-triggers .sidebar-tab-trigger[data-state=active]': {
-      backgroundColor: alpha(accent, isDark ? 0.18 : 0.11),
-      borderColor: alpha(accent, isDark ? 0.26 : 0.18),
-      color: accent,
-      boxShadow: 'none',
-    },
-    '& .excalidraw .default-sidebar .sidebar-triggers .sidebar-tab-trigger svg': {
-      color: 'currentColor',
-    },
-    '& .excalidraw .sidebar__header__buttons': {
-      position: 'relative',
-      zIndex: 3,
-      gap: '6px',
-    },
-    '& .excalidraw .sidebar__header__buttons button': {
-      background: isDark ? alpha('#ffffff', 0.04) : alpha('#ffffff', 0.72),
-      border: `1px solid ${alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.08 : 0.08)} !important`,
-      color: `${accent} !important`,
-      boxShadow: isDark
-        ? `0 2px 8px ${alpha('#000000', 0.08)}`
-        : `0 2px 8px ${alpha('#0f172a', 0.035)}`,
-      backdropFilter: 'blur(8px)',
-      WebkitBackdropFilter: 'blur(8px)',
-    },
-    '& .excalidraw .sidebar__header__buttons button:hover': {
-      background: isDark ? alpha('#ffffff', 0.08) : alpha('#ffffff', 0.88),
-      borderColor: `${alpha(accent, isDark ? 0.18 : 0.14)} !important`,
-    },
-    '& .excalidraw .sidebar__header__buttons button svg': {
-      color: `${accent} !important`,
-    },
-    '& .excalidraw .layer-ui__library .library-menu-items-container__header': {
-      padding: '12px 14px 10px',
-      borderBottom: `1px solid ${alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.08 : 0.08)}`,
-    },
-    '& .excalidraw .layer-ui__library .library-menu-dropdown-container--in-heading': {
-      top: '12px',
-      right: '12px',
-    },
-    '& .excalidraw .layer-ui__library .library-menu-items-container__items, & .excalidraw .layer-ui__library .library-menu-items-private-library-container': {
-      padding: '10px 12px 12px',
-    },
-    '& .excalidraw .layer-ui__library .library-menu-items-container__grid': {
-      gap: '10px',
-    },
-    '& .excalidraw .layer-ui__library .library-unit': {
-      borderRadius: '14px',
-      background: isDark
-        ? alpha('#ffffff', 0.04)
-        : alpha('#ffffff', 0.58),
-      border: `1px solid ${alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.06 : 0.08)}`,
-      boxShadow: isDark
-        ? `0 4px 12px ${alpha('#000000', 0.08)}`
-        : `0 4px 12px ${alpha('#0f172a', 0.035)}`,
-      transition: 'background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease',
-    },
-    '& .excalidraw .layer-ui__library .library-unit--hover': {
-      background: isDark
-        ? alpha('#ffffff', 0.06)
-        : alpha('#ffffff', 0.72),
-      borderColor: alpha(accent, isDark ? 0.18 : 0.14),
-      boxShadow: isDark
-        ? `0 8px 18px ${alpha('#000000', 0.1)}`
-        : `0 8px 18px ${alpha('#0f172a', 0.05)}`,
-      transform: 'translateY(-1px)',
-    },
-    '& .excalidraw .layer-ui__library .library-unit--selected': {
-      background: `${selectedSurface} !important`,
-      borderColor: `${toolIconActiveBorder} !important`,
-      boxShadow: `${toolIconActiveShadow} !important`,
-    },
-    '& .excalidraw .layer-ui__library .library-unit__checkbox .Checkbox-box': {
-      borderRadius: '10px',
-      borderColor: alpha(accent, isDark ? 0.16 : 0.14),
-      background: isDark ? alpha('#ffffff', 0.04) : alpha('#ffffff', 0.72),
-    },
-    '& .excalidraw .layer-ui__library .library-unit__checkbox.Checkbox:hover .Checkbox-box': {
-      background: isDark ? alpha('#ffffff', 0.08) : alpha('#ffffff', 0.9),
-      borderColor: alpha(accent, isDark ? 0.22 : 0.18),
-    },
-    '& .excalidraw .layer-ui__library .library-unit__checkbox.is-checked .Checkbox-box': {
-      background: `${selectedSurface} !important`,
-      borderColor: `${toolIconActiveBorder} !important`,
-    },
-    '& .excalidraw .layer-ui__library .library-unit__checkbox.is-checked .Checkbox-box svg': {
-      color: `${accent} !important`,
-    },
-    '& .excalidraw .layer-ui__library .library-actions-counter': {
-      background: accent,
-      color: isDark ? '#0f172a' : '#ffffff',
-      boxShadow: `0 4px 10px ${alpha(accent, isDark ? 0.2 : 0.18)}`,
-    },
-    '& .excalidraw .layer-ui__library .library-menu-control-buttons': {
-      gap: '8px',
-      padding: '10px 12px 12px',
-    },
-    '& .excalidraw .layer-ui__library .library-menu-control-buttons--at-bottom::before': {
-      width: 'calc(100% - 24px)',
-      top: 0,
-      background: alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.08 : 0.08),
-    },
-    '& .excalidraw .layer-ui__library .library-menu-browse-button': {
-      borderRadius: '12px',
-      backgroundColor: alpha(accent, isDark ? 0.2 : 0.12),
-      color: `${accent} !important`,
-      border: `1px solid ${alpha(accent, isDark ? 0.3 : 0.22)}`,
-      boxShadow: 'none',
-    },
-    '& .excalidraw .layer-ui__library .library-menu-browse-button:hover': {
-      backgroundColor: alpha(accent, isDark ? 0.27 : 0.17),
-    },
-    '& .excalidraw .layer-ui__library .dropdown-menu .dropdown-menu-container': {
-      width: '208px',
-      padding: '6px',
-    },
-    '& .excalidraw .layer-ui__library-message, & .excalidraw .library-menu-items__no-items': {
-      padding: '28px 20px',
-      color: alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.7 : 0.58),
-    },
-    '& .excalidraw .library-menu-items__no-items__label, & .excalidraw .layer-ui__library-message span': {
-      fontSize: '0.82rem',
-    },
-
-    // 缩放条 + 撤销/重做 等控件
-    '& .excalidraw .App-bottom-bar .Island, & .excalidraw .Stack .Island': {
-      background: 'transparent !important',
-      backdropFilter: 'none',
-      WebkitBackdropFilter: 'none',
-      border: 'none !important',
-      boxShadow: 'none !important',
-    },
-    '& .excalidraw .scroll-back-to-content': {
-      color: 'inherit',
-    },
-    '& .excalidraw .App-bottom-bar > .Island': {
-      padding: '6px !important',
-    },
-    '& .excalidraw .App-bottom-bar > .Island .panelColumn': {
-      gap: '6px',
-    },
-    '& .excalidraw .zoom-actions, & .excalidraw .undo-redo-buttons': {
-      gap: '6px',
-      background: 'transparent !important',
-      border: 'none !important',
-      boxShadow: 'none !important',
-      borderRadius: 0,
-    },
-    '& .excalidraw .scroll-back-to-content, & .excalidraw .undo-redo-buttons button .ToolIcon__icon, & .excalidraw .zoom-actions .ToolIcon__icon': {
-      background: `${bottomButtonBg} !important`,
-      border: `1px solid ${bottomButtonBorder} !important`,
-      boxShadow: `${bottomButtonShadow} !important`,
-      backdropFilter: 'blur(12px) saturate(150%)',
-      WebkitBackdropFilter: 'blur(12px) saturate(150%)',
-    },
-    '& .excalidraw .scroll-back-to-content:hover, & .excalidraw .undo-redo-buttons button .ToolIcon__icon:hover, & .excalidraw .zoom-actions .ToolIcon__icon:hover': {
-      background: `${bottomButtonHoverBg} !important`,
-      borderColor: `${alpha(accent, isDark ? 0.16 : 0.12)} !important`,
-      boxShadow: `${bottomButtonShadow} !important`,
-    },
-    '& .excalidraw .scroll-back-to-content:active, & .excalidraw .undo-redo-buttons button .ToolIcon__icon:active, & .excalidraw .zoom-actions .ToolIcon__icon:active': {
-      background: `${bottomButtonPressedBg} !important`,
-      borderColor: `${alpha(accent, isDark ? 0.22 : 0.16)} !important`,
-      boxShadow: `${bottomButtonShadow} !important`,
-    },
-
-    // 主操作按钮（Library / Help / Hamburger 等）
-    '& .excalidraw .HelpIcon, & .excalidraw .help-icon': {
-      color: 'inherit',
-    },
-
-    // 选中元素侧边面板（图层属性）
-    '& .excalidraw .sidebar, & .excalidraw .App-menu__left': {
-      background: `${menuBg} !important`,
-      backdropFilter: 'blur(8px)',
-      WebkitBackdropFilter: 'blur(8px)',
-      borderLeft: menuBorder,
-      boxShadow: `${menuShadow} !important`,
-      overflow: 'visible',
-    },
-    '& .excalidraw .sidebar': {
-      borderTopLeftRadius: '18px',
-      borderBottomLeftRadius: '18px',
-    },
-    '& .excalidraw .App-menu__left': {
-      border: menuBorder,
-      borderRadius: '18px',
-      display: 'flex',
-      flexDirection: 'column',
-    },
-    '& .excalidraw .sidebar__header::after': {
-      background: alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.08 : 0.08),
-    },
-    '& .excalidraw .sidebar .panelColumn, & .excalidraw .App-menu__left .panelColumn': {
-      background: `${menuBg} !important`,
-      backdropFilter: 'blur(8px)',
-      WebkitBackdropFilter: 'blur(8px)',
-      border: menuBorder,
-      borderRadius: '16px',
-      boxShadow: `${menuShadow} !important`,
-      padding: '12px',
-      overflowY: 'auto',
-      minHeight: 0,
-      flex: 1,
-      scrollbarGutter: 'stable',
-    },
-    '& .excalidraw .App-menu__left, & .excalidraw .layer-ui__wrapper__top-right, & .excalidraw .sidebar': {
-      '& .Island': {
-        backgroundColor: `${islandBg} !important`,
-        backdropFilter: islandBlur,
-        WebkitBackdropFilter: islandBlur,
-      },
-    },
-
-    // 画布内部所有滚动区域统一跟随应用全局滚动条样式
-    '& .excalidraw ::-webkit-scrollbar': {
-      width: '6px',
-      height: '6px',
-    },
-    '& .excalidraw ::-webkit-scrollbar-track': {
-      background: 'transparent',
-    },
-    '& .excalidraw ::-webkit-scrollbar-thumb': {
-      background: 'rgba(150, 150, 150, 0.2)',
-      borderRadius: '3px',
-      transition: 'background 0.3s ease',
-    },
-    '& .excalidraw ::-webkit-scrollbar-thumb:hover': {
-      background: 'rgba(150, 150, 150, 0.4)',
-    },
-    '& .excalidraw ::-webkit-scrollbar-thumb:active': {
-      background: 'rgba(150, 150, 150, 0.5)',
-    },
-    '& .excalidraw ::-webkit-scrollbar-button': {
-      display: 'none',
-    },
-
-    // ── 模态层（Dialog / Modal / HelpDialog / ConfirmDialog / Tooltip / ColorPicker） ──
-    // Excalidraw 内置的对话框、提示气泡、颜色选择器等弹层统一玻璃化，
-    // 与上方 dropdown-menu / context-menu 复用同一套 token，避免视觉割裂。
-    // 注意：所有规则都仅作用于 .excalidraw 内部，避免污染外部 MUI Dialog。
-    '& .excalidraw .Modal__background': {
-      background: isDark
-        ? alpha('#000000', 0.36)
-        : alpha('#0f172a', 0.18),
-      backdropFilter: 'blur(4px)',
-      WebkitBackdropFilter: 'blur(4px)',
-    },
-    '& .excalidraw .Dialog, & .excalidraw .Modal__content, & .excalidraw .HelpDialog, & .excalidraw .ConfirmDialog': {
-      backgroundColor: `${menuBg} !important`,
-      backdropFilter: 'blur(8px)',
-      WebkitBackdropFilter: 'blur(8px)',
-      border: menuBorder,
-      boxShadow: `${menuShadow} !important`,
-      borderRadius: '16px !important',
-      color: 'inherit',
-    },
-    '& .excalidraw .Dialog__title, & .excalidraw .HelpDialog__header': {
-      borderBottomColor: alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.08 : 0.08),
-    },
-    '& .excalidraw .Tooltip, & .excalidraw .Tooltip__label': {
-      backgroundColor: `${menuBg} !important`,
-      backdropFilter: 'blur(8px)',
-      WebkitBackdropFilter: 'blur(8px)',
-      border: menuBorder,
-      boxShadow: `${menuShadow} !important`,
-      borderRadius: '10px !important',
-      color: 'inherit',
-    },
-    '& .excalidraw .picker, & .excalidraw .color-picker, & .excalidraw .color-picker__container, & .excalidraw .color-picker-content, & .excalidraw .color-picker-popover': {
-      backgroundColor: `${menuBg} !important`,
-      backdropFilter: 'blur(8px)',
-      WebkitBackdropFilter: 'blur(8px)',
-      border: menuBorder,
-      boxShadow: `${menuShadow} !important`,
-      borderRadius: '14px !important',
-    },
-    '& .excalidraw section.App-mobile-menu, & .excalidraw .App-mobile-menu, & .excalidraw section.App-mobile-menu .panelColumn, & .excalidraw section.App-mobile-menu .picker-content, & .excalidraw section.App-mobile-menu .picker-container': {
-      backgroundColor: `${menuBg} !important`,
-      backdropFilter: 'blur(8px)',
-      WebkitBackdropFilter: 'blur(8px)',
-      border: menuBorder,
-      boxShadow: `${menuShadow} !important`,
-      borderRadius: '14px !important',
-    },
-    '& .excalidraw .picker .color-picker-content--default': {
-      background: 'transparent !important',
-    },
-    '& .excalidraw .picker .picker-content, & .excalidraw .picker .picker-container': {
-      background: 'transparent !important',
-    },
-    '& .excalidraw input, & .excalidraw textarea, & .excalidraw select': {
-      background: isDark ? alpha('#ffffff', 0.04) : alpha('#ffffff', 0.72),
-      border: `1px solid ${alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.1 : 0.1)}`,
-      borderRadius: '10px',
-      color: 'inherit',
-      transition: 'background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease',
-    },
-    '& .excalidraw input:focus, & .excalidraw textarea:focus, & .excalidraw select:focus': {
-      borderColor: alpha(accent, isDark ? 0.4 : 0.32),
-      boxShadow: `0 0 0 3px ${alpha(accent, isDark ? 0.18 : 0.14)}`,
-      outline: 'none',
-    },
-
-    // ── 交互修复：防止某些场景下 Island::before / 半透明伪元素拦截鼠标事件 ──
-    // 配合上方 `pointer-events: none`，确保子按钮能正常点击。
-    // 这里统一兜底一遍，避免后续 token 调整时遗漏。
-    '& .excalidraw .Island.App-toolbar > *': {
-      position: 'relative',
-      zIndex: 1,
-    },
-  }
-
-}
-
-const createImageEditButtonSx = ({ isDark, primaryColor }) => {
-  const accent = primaryColor || '#1976d2'
-
-  return {
-    minWidth: 0,
-    height: 36,
-    px: 1.25,
-    borderRadius: '12px',
-    fontSize: '0.78rem',
-    fontWeight: 650,
-    lineHeight: 1,
-    letterSpacing: '0.01em',
-    color: accent,
-    background: isDark ? alpha('#ffffff', 0.06) : alpha('#ffffff', 0.72),
-    border: `1px solid ${isDark ? alpha('#ffffff', 0.08) : alpha('#ffffff', 0.68)}`,
-    boxShadow: isDark
-      ? `0 2px 8px ${alpha('#000000', 0.08)}`
-      : `0 2px 8px ${alpha('#0f172a', 0.035)}`,
-    backdropFilter: 'blur(8px)',
-    WebkitBackdropFilter: 'blur(8px)',
-    '&:hover': {
-      background: isDark ? alpha(accent, 0.14) : alpha(accent, 0.1),
-      borderColor: alpha(accent, isDark ? 0.24 : 0.18),
-      boxShadow: isDark
-        ? `0 4px 12px ${alpha('#000000', 0.1)}`
-        : `0 4px 12px ${alpha('#0f172a', 0.05)}`,
-    },
-    '&:active': {
-      background: isDark ? alpha(accent, 0.18) : alpha(accent, 0.14),
-      boxShadow: isDark
-        ? `0 2px 6px ${alpha('#000000', 0.08)}`
-        : `0 2px 6px ${alpha('#0f172a', 0.04)}`,
-    },
-  }
-}
-
-// 与 Excalidraw 内置 Dialog 视觉一致的 MUI Dialog 玻璃 token，
-// 复用 createExcalidrawGlassTokens 输出的 menu 系列变量，避免双标。
 const createMermaidDialogSlotProps = ({ isDark, primaryColor }) => {
-  const accent = primaryColor || '#1976d2'
-  const { menuBg, menuBorder, menuShadow } = createExcalidrawGlassTokens({ isDark, accent })
+  const tokens = createWhiteboardSurfaceTokens({ isDark, primaryColor })
   return {
     paper: {
       sx: {
-        backgroundColor: menuBg,
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
-        border: menuBorder,
-        boxShadow: menuShadow,
+        color: tokens.text,
+        backgroundColor: tokens.glassBackground,
+        backgroundImage: tokens.glassBackgroundImage,
+        backdropFilter: tokens.glassBlur,
+        WebkitBackdropFilter: tokens.glassBlur,
+        border: tokens.glassBorder,
+        boxShadow: tokens.glassShadow,
         borderRadius: '16px',
-        backgroundImage: 'none',
       },
     },
     backdrop: {
       sx: {
-        backgroundColor: isDark ? alpha('#000000', 0.36) : alpha('#0f172a', 0.18),
+        backgroundColor: isDark ? 'rgba(0,0,0,.36)' : 'rgba(15,23,42,.18)',
         backdropFilter: 'blur(4px)',
         WebkitBackdropFilter: 'blur(4px)',
       },
@@ -1021,7 +200,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     actualIsStandaloneMode = false
   }
   
-  const { notes, updateNote, currentView, theme: themePref, primaryColor, whiteboardStyle } = store
+  const { notes, updateNote, currentView, theme: themePref, primaryColor, whiteboardStyle, language = 'zh-CN' } = store
   const styleMode = whiteboardStyle === 'sketchy' ? 'sketchy' : 'neat'
 
   // 解析实际主题（处理 'system'）
@@ -1037,12 +216,25 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
   const isDark = themePref === 'dark' || (themePref === 'system' && systemIsDark)
 
   const [excalidrawAPI, setExcalidrawAPI] = useState(null)
+  const [whiteboardContainer, setWhiteboardContainer] = useState(null)
+  const [propertiesCollapsed, setPropertiesCollapsed] = useState(() => {
+    try { return localStorage.getItem('flota.whiteboard.propertiesCollapsed') === 'true' } catch { return false }
+  })
+  useWhiteboardProperties(excalidrawAPI, whiteboardContainer, propertiesCollapsed)
+  const controlSlots = useExcalidrawControlSlots(whiteboardContainer, language)
+  const toggleProperties = () => {
+    const next = !propertiesCollapsed
+    setPropertiesCollapsed(next)
+    try { localStorage.setItem('flota.whiteboard.propertiesCollapsed', String(next)) } catch { /* preference only */ }
+    excalidrawAPI?.updateScene({ appState: { openPopup: null, openMenu: next ? null : 'shape' } })
+  }
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
   const [initialData, setInitialData] = useState(null)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [excalidrawKey, setExcalidrawKey] = useState(() => `excalidraw-${noteId || 'unknown'}`)
   const [bridgeActive, setBridgeActive] = useState(false)
+  const [toolbarState, setToolbarState] = useState({ activeTool: 'selection', locked: false })
   const [selectedEditableImage, setSelectedEditableImage] = useState(null)
   const selectedMermaidImage = selectedEditableImage?.customData?.kind === 'mermaid-image'
     ? selectedEditableImage
@@ -1086,6 +278,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     const sanitizedAppState = {
       viewBackgroundColor: appState.viewBackgroundColor,
       currentItemFontFamily: appState.currentItemFontFamily,
+      gridModeEnabled: Boolean(appState.gridModeEnabled),
       gridSize: appState.gridSize
     }
 
@@ -1102,9 +295,10 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     })
   }, [])
 
-  const openMermaidDslEditor = useCallback(() => {
-    if (!selectedMermaidImage) return
-    setDslDraft(selectedMermaidImage.customData?.mermaidSource || '')
+  const openMermaidDslEditor = useCallback((element = selectedMermaidImage) => {
+    if (!element) return
+    setSelectedEditableImage(element)
+    setDslDraft(element.customData?.mermaidSource || '')
     setDslError('')
     setDslEditorOpen(true)
   }, [selectedMermaidImage])
@@ -1152,6 +346,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     const persistedAppState = {
       viewBackgroundColor: appState?.viewBackgroundColor,
       currentItemFontFamily: appState?.currentItemFontFamily,
+      gridModeEnabled: Boolean(appState?.gridModeEnabled),
       gridSize: appState?.gridSize,
     }
     let fileMap = {}
@@ -1348,9 +543,10 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     }, 200)
   }, [svgCreatorDraft, excalidrawAPI, centerElementsInViewport, commitWhiteboardScene])
 
-  const openSvgEditor = useCallback(() => {
-    if (!selectedSvgImage) return
-    setSvgDraft(selectedSvgImage.customData?.svgSource || '')
+  const openSvgEditor = useCallback((element = selectedSvgImage) => {
+    if (!element) return
+    setSelectedEditableImage(element)
+    setSvgDraft(element.customData?.svgSource || '')
     setSvgError('')
     setSvgEditorOpen(true)
   }, [selectedSvgImage])
@@ -1816,6 +1012,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
               appState: {
                 viewBackgroundColor: appState.viewBackgroundColor,
                 currentItemFontFamily: appState.currentItemFontFamily,
+                gridModeEnabled: Boolean(appState.gridModeEnabled),
                 gridSize: appState.gridSize
               },
               fileMap
@@ -1937,6 +1134,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
       const persistedAppState = {
         viewBackgroundColor: appState.viewBackgroundColor,
         currentItemFontFamily: appState.currentItemFontFamily,
+        gridModeEnabled: Boolean(appState.gridModeEnabled),
         gridSize: appState.gridSize
       }
 
@@ -2168,6 +1366,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     const persistedAppState = {
       viewBackgroundColor: appState.viewBackgroundColor,
       currentItemFontFamily: appState.currentItemFontFamily,
+      gridModeEnabled: Boolean(appState.gridModeEnabled),
       gridSize: appState.gridSize
     }
 
@@ -2288,17 +1487,35 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
   }, [saveNow])
 
   const excalidrawSurfaceSx = useMemo(
-    () => createExcalidrawSurfaceSx({ isDark, primaryColor }),
-    [isDark, primaryColor],
-  )
-  const imageEditButtonSx = useMemo(
-    () => createImageEditButtonSx({ isDark, primaryColor }),
+    () => createWhiteboardSurfaceSx({ isDark, primaryColor }),
     [isDark, primaryColor],
   )
   const mermaidDialogSlotProps = useMemo(
     () => createMermaidDialogSlotProps({ isDark, primaryColor }),
     [isDark, primaryColor],
   )
+
+  const fitWhiteboardContent = useCallback(() => {
+    if (!excalidrawAPI) return
+    const state = excalidrawAPI.getAppState()
+    const all = excalidrawAPI.getSceneElements().filter(element => !element.isDeleted)
+    const selected = all.filter(element => state.selectedElementIds?.[element.id])
+    const target = selected.length ? selected : all
+    if (target.length) excalidrawAPI.scrollToContent(target, { fitToContent: true, animate: true })
+  }, [excalidrawAPI])
+
+  const contextEditableImage = controlSlots.contextMenu && excalidrawAPI
+    ? getSelectedEditableImage(excalidrawAPI.getSceneElements(), excalidrawAPI.getAppState())
+    : null
+  const editContextImage = () => {
+    if (!contextEditableImage) return
+    excalidrawAPI?.updateScene({ appState: { contextMenu: null } })
+    if (contextEditableImage.customData?.kind === 'mermaid-image') {
+      openMermaidDslEditor(contextEditableImage)
+    } else if (contextEditableImage.customData?.kind === 'svg-image') {
+      openSvgEditor(contextEditableImage)
+    }
+  }
 
   if (error) {
     return (
@@ -2331,7 +1548,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
       overflow: 'hidden'
     }}>
       {/* Excalidraw 画布 */}
-      <Box sx={{ 
+      <Box ref={setWhiteboardContainer} sx={{
         flex: 1, 
         minHeight: 0,
         width: '100%',
@@ -2341,6 +1558,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
           width: '100% !important'
         },
         ...excalidrawSurfaceSx,
+        ...(propertiesCollapsed ? { '& .excalidraw .App-menu__left, & .excalidraw .App-mobile-menu': { display: 'none !important' } } : {}),
       }}>
         <Excalidraw
           key={excalidrawKey}
@@ -2348,10 +1566,25 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
             if (api) {
               logger.log('[WhiteboardEditor] Excalidraw API 已设置')
               setExcalidrawAPI(api)
+              const active = api.getAppState()?.activeTool
+              setToolbarState({
+                activeTool: active?.type || 'selection',
+                locked: Boolean(active?.locked),
+              })
             }
           }}
           initialData={initialData}
           onChange={(elements, appState, files) => {
+            const active = appState?.activeTool
+            setToolbarState(previous => {
+              const next = {
+                activeTool: active?.type || 'selection',
+                locked: Boolean(active?.locked),
+              }
+              return previous.activeTool === next.activeTool && previous.locked === next.locked
+                ? previous
+                : next
+            })
             if (isApplyingRemoteDataRef.current) {
               return
             }
@@ -2369,6 +1602,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
             const persistedAppState = {
               viewBackgroundColor: appState.viewBackgroundColor,
               currentItemFontFamily: appState.currentItemFontFamily,
+              gridModeEnabled: Boolean(appState.gridModeEnabled),
               gridSize: appState.gridSize
             }
             latestSceneRef.current = {
@@ -2387,10 +1621,11 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
             }
           }}
           theme={isDark ? THEME.DARK : THEME.LIGHT}
-          langCode="zh-CN"
-          viewModeEnabled={false}
-          zenModeEnabled={false}
-          gridModeEnabled={false}
+          langCode={language === 'zh-CN' ? 'zh-CN' : 'en'}
+          onLinkOpen={(element, event) => {
+            event.preventDefault()
+            openNoteLink(element.link).catch(error => console.warn('打开白板链接失败:', error))
+          }}
           UIOptions={{
             canvasActions: {
               loadScene: false, // 禁用加载场景按钮（我们有自己的笔记管理）
@@ -2398,47 +1633,61 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
               saveAsImage: false, // 禁用另存为图片（我们有自己的PNG导出）
             },
           }}
-          renderTopRightUI={() => (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Button
-                size="small"
-                variant="text"
-                onClick={openMermaidCreator}
-                sx={imageEditButtonSx}
-              >
-                Mermaid 成图
-              </Button>
-              <Button
-                size="small"
-                variant="text"
-                onClick={openSvgCreator}
-                sx={imageEditButtonSx}
-              >
-                SVG 成图
-              </Button>
-              {selectedMermaidImage ? (
-                <Button
-                  size="small"
-                  variant="text"
-                  onClick={openMermaidDslEditor}
-                  sx={imageEditButtonSx}
-                >
-                  修改
-                </Button>
-              ) : null}
-              {selectedSvgImage ? (
-                <Button
-                  size="small"
-                  variant="text"
-                  onClick={openSvgEditor}
-                  sx={imageEditButtonSx}
-                >
-                  编辑 SVG
-                </Button>
-              ) : null}
-            </Box>
-          )}
         />
+        {controlSlots.toolbar && createPortal(
+          <WhiteboardToolbar
+            api={excalidrawAPI}
+            activeTool={toolbarState.activeTool}
+            locked={toolbarState.locked}
+            isDark={isDark}
+            primaryColor={primaryColor}
+            onMermaidCreate={openMermaidCreator}
+            onSvgCreate={openSvgCreator}
+          />,
+          controlSlots.toolbar,
+        )}
+        {controlSlots.zoom && createPortal(
+          <>
+            <Tooltip title="适应选中内容；未选中时显示全部" placement="top">
+              <button type="button" className="flota-native-control" aria-label="适应内容" onClick={fitWhiteboardContent}>
+                <CenterFocusStrong />
+              </button>
+            </Tooltip>
+            {propertiesCollapsed ? (
+              <Tooltip title="显示属性面板" placement="top">
+                <button type="button" className="flota-native-control" aria-label="展开属性面板" onClick={toggleProperties}>
+                  <Tune />
+                </button>
+              </Tooltip>
+            ) : null}
+          </>,
+          controlSlots.zoom,
+        )}
+        {controlSlots.properties && !propertiesCollapsed && createPortal(
+          <div className="flota-properties-header">
+            <span>属性</span>
+            <Tooltip title="收起属性面板" placement="right">
+              <button type="button" className="flota-native-control" aria-label="收起属性面板" onClick={toggleProperties}>
+                <VisibilityOff />
+              </button>
+            </Tooltip>
+          </div>,
+          controlSlots.properties,
+        )}
+        {controlSlots.contextMenu && contextEditableImage && createPortal(
+          <button
+            type="button"
+            className="context-menu-item flota-context-menu-item"
+            aria-label={contextEditableImage.customData?.kind === 'mermaid-image' ? '编辑 Mermaid 源码' : '编辑 SVG 源码'}
+            onClick={editContextImage}
+          >
+            <div className="context-menu-item__label">
+              {contextEditableImage.customData?.kind === 'mermaid-image' ? '编辑 Mermaid 源码' : '编辑 SVG 源码'}
+            </div>
+            <kbd className="context-menu-item__shortcut" />
+          </button>,
+          controlSlots.contextMenu,
+        )}
       </Box>
       <Dialog
         open={dslEditorOpen}

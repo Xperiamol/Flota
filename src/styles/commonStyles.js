@@ -355,6 +355,39 @@ export const thinScrollbarSx = {
   '&::-webkit-scrollbar-button': { display: 'none' },
 };
 
+// ========== 编辑区易抓取滚动条 ==========
+// 12px 命中区域配合透明边框，静止时仍只显示 6px 滑块。
+export const editorScrollbarSx = {
+  scrollbarGutter: 'stable',
+  scrollbarWidth: 'auto',
+  '&::-webkit-scrollbar': {
+    width: '12px',
+    height: '12px',
+  },
+  '&::-webkit-scrollbar-track': {
+    background: 'transparent',
+  },
+  '&::-webkit-scrollbar-thumb': {
+    minHeight: '44px',
+    backgroundColor: 'rgba(100, 116, 139, 0.34)',
+    backgroundClip: 'content-box',
+    border: '3px solid transparent',
+    borderRadius: '999px',
+    transition: 'background-color 160ms ease, border-width 160ms ease',
+  },
+  '&::-webkit-scrollbar-thumb:hover': {
+    backgroundColor: 'rgba(100, 116, 139, 0.58)',
+    borderWidth: '2px',
+  },
+  '&::-webkit-scrollbar-thumb:active': {
+    backgroundColor: 'rgba(71, 85, 105, 0.76)',
+    borderWidth: '2px',
+  },
+  '&::-webkit-scrollbar-button': {
+    display: 'none',
+  },
+};
+
 // ========== 主题色预设色块 ==========
 /**
  * 设置页"主题色预设"色块的 sx 工厂。

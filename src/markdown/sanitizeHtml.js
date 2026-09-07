@@ -2,6 +2,8 @@
 // - 白名单标签 / 属性 / style 属性，移除事件处理器与不安全 URL
 // - 供笔记预览（MarkdownPreview）与导出（noteExport）复用，保证两处渲染结果一致
 
+import { renderMath } from './plugins/math.js'
+
 const ALLOWED_TAGS = new Set([
   'A', 'ABBR', 'B', 'BLOCKQUOTE', 'BR', 'CODE', 'DEL', 'DIV', 'EM', 'H1', 'H2',
   'H3', 'H4', 'H5', 'H6', 'HR', 'I', 'IMG', 'INPUT', 'LI', 'MARK', 'OL', 'P',
@@ -41,7 +43,19 @@ export const sanitizeMarkdownHtml = (html) => {
 
   const walk = (node) => {
     for (const child of [...node.children]) {
+      // Render only from the saved LaTeX; never trust pasted KaTeX/MathML HTML.
+      if (['SPAN', 'DIV'].includes(child.tagName) && ['math-inline', 'math-block'].includes(child.getAttribute('data-type')) && child.hasAttribute('data-latex')) {
+        const display = child.getAttribute('data-type') === 'math-block'
+        const latex = child.getAttribute('data-latex')
+        for (const attr of [...child.attributes]) child.removeAttribute(attr.name)
+        child.className = display ? 'math-block' : 'math-inline'
+        child.setAttribute('data-type', child.className)
+        child.setAttribute('data-latex', latex)
+        child.innerHTML = renderMath(latex, display)
+        continue
+      }
       if (!ALLOWED_TAGS.has(child.tagName)) {
+        walk(child)
         child.replaceWith(...child.childNodes)
         continue
       }

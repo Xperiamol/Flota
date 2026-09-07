@@ -15,6 +15,7 @@ import {
   FormatStrikethrough as StrikethroughIcon,
   Code as CodeIcon,
   Link as LinkIcon,
+  Functions as MathIcon,
   FormatListBulleted as BulletListIcon,
   FormatListNumbered as NumberListIcon,
   CheckBox as TaskListIcon,
@@ -45,6 +46,7 @@ import ImageUploadButton from './ImageUploadButton'
 import AudioRecordButton from './AudioRecordButton'
 import { useStore } from '../../store/useStore'
 import { STANDARD_CALLOUT_TYPES } from '../../markdown/calloutConfig.js'
+import { requestLinkEditor } from './LinkEditorDialog'
 
 // 所有可用工具栏项的定义（id → 渲染配置）
 const ALL_TOOLBAR_ITEMS = {
@@ -60,6 +62,8 @@ const ALL_TOOLBAR_ITEMS = {
   quote:      { group: 'list', label: '引用', icon: QuoteIcon, block: '> ' },
   blockSelect:{ group: 'list', label: '块多选', icon: BlockSelectIcon, type: 'blockSelect' },
   link:       { group: 'insert', label: '链接', icon: LinkIcon, inline: ['[', '](url)', '链接文本'] },
+  inlineMath: { group: 'insert', label: '行内公式 $…$', icon: MathIcon, inline: ['$', '$', 'E = mc^2'] },
+  blockMath:  { group: 'insert', label: '独立公式 $$…$$', icon: MathIcon, inline: ['\n$$\n', '\n$$\n', '\\frac{a}{b}'] },
   table:      { group: 'insert', label: '表格', icon: TableIcon, insert: '| 列1 | 列2 | 列3 |\n|-----|-----|-----|\n| 内容1 | 内容2 | 内容3 |\n' },
   codeBlock:  { group: 'insert', label: '代码块', type: 'codeBlock' },
   divider:    { group: 'insert', label: '分割线', icon: DividerIcon, insert: '\n---\n' },
@@ -83,7 +87,7 @@ const DEFAULT_TOOLBAR_ORDER = [
   'heading', '|',
   'bold', 'italic', 'strike', 'inlineCode', 'highlight', '|',
   'bulletList', 'orderedList', 'taskList', 'quote', 'blockSelect', '|',
-  'link', 'table', 'codeBlock', 'divider', 'image', 'audio', '|',
+  'link', 'inlineMath', 'blockMath', 'table', 'codeBlock', 'divider', 'image', 'audio', '|',
   'wikiLink', 'colorText', 'callout', 'clearFormat',
 ]
 
@@ -119,8 +123,14 @@ function runWYSIWYG(editor, before, after, placeholder, getSelected) {
   if (/^#{1,6}\s$/.test(before)) return c.toggleHeading({ level: before.trim().length }).run()
   // code block
   if (before.startsWith('```')) return c.toggleCodeBlock().run()
+  if (before === '$' || before === '\n$$\n') {
+    return c.insertContent({ type: before === '$' ? 'inlineMath' : 'blockMath', attrs: { latex: sel || placeholder || 'E = mc^2' } }).run()
+  }
   // link
-  if (before === '[' && after === '](url)') return c.setLink({ href: 'https://' }).run()
+  if (before === '[' && after === '](url)') {
+    requestLinkEditor(editor)
+    return true
+  }
   // table
   if (before.includes('|') && before.includes('---')) return c.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
   // hr

@@ -414,3 +414,11 @@ details.markdown-callout .markdown-callout-content {
     color: #000;
   }
 }
+.math-inline { display: inline; padding: 0 .12em; }
+.math-block { display: block; margin: 1em 0; padding: .75em; overflow-x: auto; text-align: center; }
+.math-inline math { font-size: 1.12em; }
+.math-block math { font-size: 1.2em; }
+.math-node { cursor: pointer; border-radius: 6px; }
+.math-node:hover, .math-selected { outline: 2px solid var(--color-primary, #90caf9); outline-offset: 2px; }
+.math-node > [role="button"] { outline-offset: 4px; }
+.math-error, .katex-error { color: #d14343; white-space: pre-wrap; }

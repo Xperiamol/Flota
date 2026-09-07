@@ -71,7 +71,7 @@ import { replaceDataImagesInMarkdown } from '../../utils/dataUrlImage'
 import { insertIntoTextarea, placeCursorAfterInsert } from '../../utils/textareaInsert'
 import { useRecentNotes } from '../../store/useRecentNotes'
 import { exportNoteAs } from '../../utils/noteExport'
-import { segmentedButtonSx, segmentedControlSx } from '../../styles/commonStyles'
+import { editorScrollbarSx, segmentedButtonSx, segmentedControlSx } from '../../styles/commonStyles'
 
 const WYSIWYGEditor = lazy(() => import('./WYSIWYGEditor'))
 const WhiteboardEditor = lazy(() => import('./WhiteboardEditor'))
@@ -2819,6 +2819,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
                         overflow: 'auto !important',
                         padding: '16px',
                         boxSizing: 'border-box',
+                        ...editorScrollbarSx,
                       },
                       // 防止超长无断词文本撑破布局；textarea 本身允许换行，但无空格长串会导致横向溢出
                       '& .MuiInputBase-inputMultiline': {

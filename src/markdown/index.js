@@ -14,6 +14,7 @@ import calloutPlugin from './plugins/callout.js'
 import wikiLinkPlugin from './plugins/wikiLink.js'
 import tagPlugin from './plugins/tag.js'
 import customContainerPlugin from './plugins/customContainer.js'
+import mathPlugin, { transformOutsideMath } from './plugins/math.js'
 import { expandFlotaTableBlocks } from '../utils/flotaTableFormat.js'
 
 export const RICH_TEXT_EMPTY_LINE_SENTINEL = '\u200B'
@@ -21,7 +22,6 @@ const RICH_TEXT_SPACE_SENTINEL = '\u00A0'
 const RICH_TEXT_SPACE_SENTINEL_RE = new RegExp(RICH_TEXT_SPACE_SENTINEL, 'g')
 
 const LOCAL_APP_ASSET_RE = /^(?:images|audio|attachments)\//i
-const LOCAL_RESOURCE_DEST_RE = '(?:file:\\/\\/[^)>\\n]+|(?:app:\\/\\/)?(?:images|audio|attachments)\\/[^)>\\n]+)'
 const isLocalAppAsset = (url) => LOCAL_APP_ASSET_RE.test(String(url || '').trim().replace(/^\/+/, ''))
 
 const formatMarkdownDestination = (href) => {
@@ -34,15 +34,47 @@ const formatMarkdownDestination = (href) => {
 
 const normalizeResourceHref = (href) => String(href || '').trim().replace(/^app:\/\/\/+/i, 'app://')
 
-const normalizeLocalResourceMarkdown = (markdown) => String(markdown)
-  .replace(new RegExp(`!\\[([^\\]\\n]*)]\\s*\\n\\s*\\((<)?(${LOCAL_RESOURCE_DEST_RE})(>)?\\)`, 'gi'), (_, label, _open, href) =>
-    `![${label}](${formatMarkdownDestination(normalizeResourceHref(href))})`)
-  .replace(new RegExp(`\\[([^\\]\\n]+)]\\s*\\n\\s*\\((<)?(${LOCAL_RESOURCE_DEST_RE})(>)?\\)`, 'gi'), (_, label, _open, href) =>
-    `[${label}](${formatMarkdownDestination(normalizeResourceHref(href))})`)
-  .replace(new RegExp(`!\\[([^\\]\\n]*)]\\((<)?(${LOCAL_RESOURCE_DEST_RE})(>)?\\)`, 'gi'), (_, label, _open, href) =>
-    `![${label}](${formatMarkdownDestination(normalizeResourceHref(href))})`)
-  .replace(new RegExp(`\\[([^\\]\\n]+)]\\((<)?(${LOCAL_RESOURCE_DEST_RE})(>)?\\)`, 'gi'), (_, label, _open, href) =>
-    `[${label}](${formatMarkdownDestination(normalizeResourceHref(href))})`)
+const normalizeLocalResourceMarkdown = (markdown) => {
+  const source = String(markdown)
+  const opening = /(!?\[(?:\\.|[^\]\\\n])*\])(?:[ \t]*\n[ \t]*)?\(/g
+  let match
+  let offset = 0
+  let output = ''
+  while ((match = opening.exec(source))) {
+    const start = opening.lastIndex
+    const angle = source[start] === '<'
+    const hrefStart = start + (angle ? 1 : 0)
+    if (!/^(?:file:\/\/|(?:app:\/\/+)?(?:images|audio|attachments)\/)/i.test(source.slice(hrefStart))) continue
+    let end = hrefStart
+    let depth = 1
+    for (; end < source.length && source[end] !== '\n'; end += 1) {
+      if (source[end] === '\\') { end += 1; continue }
+      if (angle) { if (source[end] === '>') break }
+      else {
+        if (source[end] === '(') depth += 1
+        if (source[end] === ')' && --depth === 0) break
+      }
+    }
+    if (end >= source.length || source[end] === '\n') continue
+    let close = end
+    let href = source.slice(hrefStart, end)
+    let title = ''
+    if (angle) {
+      const suffix = source.slice(end + 1).match(/^([ \t]+["'][^\n]*?["'])?[ \t]*\)/)
+      if (!suffix) continue
+      title = suffix[1] || ''
+      close = end + suffix[0].length
+    } else {
+      const titled = href.match(/^(.*?)([ \t]+["'][^\n]*["'])$/)
+      if (titled) { href = titled[1]; title = titled[2] }
+    }
+    href = href.replace(/\\([()])/g, '$1')
+    output += source.slice(offset, match.index) + `${match[1]}(${formatMarkdownDestination(normalizeResourceHref(href))}${title})`
+    offset = close + 1
+    opening.lastIndex = offset
+  }
+  return output + source.slice(offset)
+}
 
 const preserveExtraBlankLines = (markdown) => {
   const lines = String(markdown).split('\n')
@@ -141,7 +173,7 @@ export const normalizeMarkdownForRender = (markdown) => {
 
 export const prepareMarkdownForDisplay = (markdown) => {
   if (!markdown || typeof markdown !== 'string') return markdown || ''
-  return encodeRichTextSpaces(preserveExtraBlankLines(expandFlotaTableBlocks(normalizeMarkdownForRender(markdown))))
+  return transformOutsideMath(markdown, text => encodeRichTextSpaces(preserveExtraBlankLines(expandFlotaTableBlocks(normalizeMarkdownForRender(text)))))
 }
 
 export const finalizeMarkdownForStorage = (markdown) => {
@@ -214,6 +246,7 @@ export function createMarkdownRenderer(options = {}) {
 
   // 注册标准插件
   md.use(markdownItMark) // ==高亮== 语法支持
+  md.use(mathPlugin)
 
   // 自定义图片渲染规则：自动将相对路径转换为 app:// 协议
   // 这样可以避免浏览器尝试加载 file:// 或 http:// 协议的本地图片导致 404
