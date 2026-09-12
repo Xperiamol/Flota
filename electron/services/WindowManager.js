@@ -218,6 +218,8 @@ class WindowManager extends EventEmitter {
       fullscreenable: false,
       closable: false,
       hasShadow: false,
+      // Windows 的无边框窗口默认仍带 WS_THICKFRAME，系统会据此绘制 DWM 阴影。
+      thickFrame: false,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -702,6 +704,7 @@ class WindowManager extends EventEmitter {
       }
     });
 
+    this.todoReminderWindow.setHasShadow(false);
     this.todoReminderWindow.setAlwaysOnTop(true, 'floating');
     this.todoReminderWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     this.windows.set('todo-reminder', this.todoReminderWindow);

@@ -302,6 +302,29 @@ const QUICK_ACTIONS = [
   { label: '写部小说', icon: <ReadIcon />, prompt: '我想写一部小说，帮我构思并撰写。请先和我确认题材、主角和大致情节走向。' },
 ]
 
+const TASK_PLANNING_ACTIONS = [
+  {
+    label: '规划今天',
+    icon: <CalendarIcon />,
+    prompt: '请读取我今天和已经逾期的待办，结合重要性、紧急度与截止时间，帮我规划今天的执行顺序。先给出简洁方案，需要调整或新建待办时统一列出并等我确认。'
+  },
+  {
+    label: '拆解目标',
+    icon: <EditIcon />,
+    prompt: '我有一个目标需要拆解成可执行的待办。请先询问目标、截止时间和限制条件，再按阶段生成具体任务，并合理设置重要性、紧急度与截止时间。'
+  },
+  {
+    label: '安排本周',
+    icon: <NoteIcon />,
+    prompt: '请查看我现有的未完成待办，为本周制定一份现实可执行的计划。识别冲突、逾期和优先级问题，给出调整建议，并在我确认后更新待办。'
+  },
+  {
+    label: '整理积压',
+    icon: <CheckIcon />,
+    prompt: '请帮我整理积压的未完成待办：找出重复、长期逾期、描述模糊或优先级不合理的项目，给出保留、拆解、延期或删除建议，等我确认后再执行修改。'
+  },
+]
+
 const CONTEXT_OPTIONS = [
   { key: 'currentNote', label: '当前笔记' },
   { key: 'relatedNotes', label: '相关笔记' },
@@ -888,6 +911,9 @@ export default function AIChatView({ onTodoUpdated }) {
     () => aiConversations.find((conversation) => conversation.id === currentConversationId) || null,
     [aiConversations, currentConversationId]
   )
+  const isTaskPlanning = currentConversation?.mode === 'task-planning'
+    || currentConversation?.source === 'task-planning'
+  const emptyStateActions = isTaskPlanning ? TASK_PLANNING_ACTIONS : QUICK_ACTIONS
   const previousConversationIdRef = useRef(currentConversationId)
   const pendingConversationIdRef = useRef(null)
 
@@ -1527,14 +1553,16 @@ export default function AIChatView({ onTodoUpdated }) {
             <FlotaAIOrb />
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
-                你好！我是 FlotaAI
+                {isTaskPlanning ? 'AI 任务规划' : '你好！我是 FlotaAI'}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                我可以帮你管理笔记、查询待办、搜索记忆，或者聊聊天
+                {isTaskPlanning
+                  ? '从一个规划模板开始，或直接告诉我你想完成什么'
+                  : '我可以帮你管理笔记、查询待办、搜索记忆，或者聊聊天'}
               </Typography>
             </Box>
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'center', mt: 1 }}>
-              {QUICK_ACTIONS.map((qa) => (
+              {emptyStateActions.map((qa) => (
                 <Chip
                   key={qa.label}
                   icon={qa.icon}

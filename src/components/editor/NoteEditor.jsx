@@ -40,6 +40,7 @@ import {
 } from '@mui/icons-material'
 import { FlotaNoteIcon as ArticleIcon, FlotaWhiteboardIcon as WhiteboardIcon } from '../common/FlotaIcons'
 import { useStore } from '../../store/useStore'
+import { useShallow } from 'zustand/react/shallow'
 import { useStandaloneContext } from '../common/StandaloneProvider'
 import { zhCN } from 'date-fns/locale/zh-CN'
 import { parseTags, formatTags } from '../../utils/tagUtils'
@@ -131,17 +132,40 @@ const NoteEditor = ({ onCollapseSidebar }) => {
   const isMinibarMode = Boolean(standaloneContext?.minibarMode)
 
   // 根据运行环境选择状态管理
-  const mainStore = useStore()
+  const mainStore = useStore(useShallow((state) => ({
+    selectedNoteId: state.selectedNoteId,
+    notes: state.notes,
+    updateNote: state.updateNote,
+    togglePinNote: state.togglePinNote,
+    editorMode: state.editorMode,
+    currentView: state.currentView,
+    setSelectedNoteId: state.setSelectedNoteId,
+    createNote: state.createNote,
+    setSearchQuery: state.setSearchQuery,
+    setCurrentView: state.setCurrentView,
+    renameWikiLinks: state.renameWikiLinks,
+    maskOpacity: state.maskOpacity,
+    aiCommandCenterEnabled: state.aiCommandCenterEnabled,
+    aiCommandCenterOpen: state.aiCommandCenterOpen,
+    setAiCommandCenterEnabled: state.setAiCommandCenterEnabled,
+    setAiCommandCenterOpen: state.setAiCommandCenterOpen,
+    noteNavigatorOpen: state.noteNavigatorOpen,
+    setNoteNavigatorOpen: state.setNoteNavigatorOpen,
+    initializeSettings: state.initializeSettings,
+    userAvatar: state.userAvatar,
+  })))
   const store = standaloneContext || mainStore
-  const maskOpacity = useStore((state) => state.maskOpacity)
-  const aiCommandCenterEnabled = useStore((state) => state.aiCommandCenterEnabled)
-  const aiCommandCenterOpen = useStore((state) => state.aiCommandCenterOpen)
-  const setAiCommandCenterEnabled = useStore((state) => state.setAiCommandCenterEnabled)
-  const setAiCommandCenterOpen = useStore((state) => state.setAiCommandCenterOpen)
-  const noteNavigatorOpen = useStore((state) => state.noteNavigatorOpen)
-  const setNoteNavigatorOpen = useStore((state) => state.setNoteNavigatorOpen)
-  const initializeMainSettings = useStore((state) => state.initializeSettings)
-  const userAvatar = useStore((state) => state.userAvatar)
+  const {
+    maskOpacity,
+    aiCommandCenterEnabled,
+    aiCommandCenterOpen,
+    setAiCommandCenterEnabled,
+    setAiCommandCenterOpen,
+    noteNavigatorOpen,
+    setNoteNavigatorOpen,
+    initializeSettings: initializeMainSettings,
+    userAvatar,
+  } = mainStore
 
   const { t } = useTranslation()
   const { showError } = useError()
@@ -274,11 +298,20 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     note_type: state.noteType || 'markdown'
   })
 
+  const refreshActiveWysiwygSnapshot = () => {
+    if (prevStateRef.current.noteType !== 'markdown' || editorMode !== 'wysiwyg') return
+    const latestMarkdown = wysiwygEditorRef.current?.getMarkdown?.()
+    if (typeof latestMarkdown === 'string') {
+      prevStateRef.current.content = latestMarkdown
+    }
+  }
+
   // 保存函数（稳定引用，带重试机制和队列管理）
   const performSave = async (retries = 3) => {
     const noteId = selectedNoteId
     if (!noteId) return
 
+    refreshActiveWysiwygSnapshot()
     const stateToSave = createSavePayload({ ...prevStateRef.current })
 
     // 使用保存队列避免并发冲突
@@ -489,6 +522,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
       logger.log('[NoteEditor] 切换视图前保存笔记，从', prevView, '切换到', currentView)
       cancelSave()
       const noteId = selectedNoteId
+      refreshActiveWysiwygSnapshot()
       const stateToSave = createSavePayload({ ...prevStateRef.current })
       saveQueue.add(noteId, async () => {
         await updateNote(noteId, stateToSave)
@@ -631,6 +665,10 @@ const NoteEditor = ({ onCollapseSidebar }) => {
       // 组件卸载时立即保存（使用 ref 拿到最新值，避免闭包过期）
       const noteId = selectedNoteIdRef.current
       if (hasUnsavedChangesRef.current && noteId) {
+        const latestMarkdown = wysiwygEditorRef.current?.getMarkdown?.()
+        if (typeof latestMarkdown === 'string' && prevStateRef.current.noteType === 'markdown') {
+          prevStateRef.current.content = latestMarkdown
+        }
         updateNote(noteId, createSavePayload(prevStateRef.current)).catch(error => {
           console.error('组件卸载时保存失败:', error)
         })
@@ -658,6 +696,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
       // Markdown类型的保存逻辑
       if (hasUnsavedChangesRef.current && selectedNoteId) {
         try {
+          refreshActiveWysiwygSnapshot()
           await updateNote(selectedNoteId, createSavePayload(prevStateRef.current))
           logger.log('独立窗口关闭前Markdown保存成功')
           // 通知主进程保存完成
@@ -744,9 +783,10 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     if (!selectedNoteId) return
 
     try {
+      refreshActiveWysiwygSnapshot()
       const result = ensureUpdateSucceeded(await updateNote(selectedNoteId, createSavePayload({
         title,
-        content,
+        content: prevStateRef.current.content,
         tags,
         noteType
       })))
@@ -1815,8 +1855,16 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     prevStateRef.current.tags = newTags
     debouncedSave()
   }
-  // 字数统计 — content 大时正则全文扫描很贵，必须 memo
-  const { wordCount, charCount } = useMemo(() => countEditorWords(content), [content])
+  // 字数统计不参与编辑正确性，稍后更新即可；避免长文每次击键都同步执行多轮全文正则。
+  const [contentForWordStats, setContentForWordStats] = useState(content)
+  useEffect(() => {
+    const timer = setTimeout(() => setContentForWordStats(content), 180)
+    return () => clearTimeout(timer)
+  }, [content])
+  const { wordCount, charCount } = useMemo(
+    () => countEditorWords(contentForWordStats),
+    [contentForWordStats]
+  )
   const noteCreatedAt = currentNote?.created_at || currentNote?.createdAt
   const noteUpdatedAt = lastSaved || currentNote?.updated_at || currentNote?.updatedAt || noteCreatedAt
   const noteMetaItems = [
@@ -1852,6 +1900,36 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     WebkitBackdropFilter: 'blur(10px)',
     userSelect: 'none',
   }
+  const toolbarActionButtonSx = (active = false) => (theme) => ({
+    width: 28,
+    height: 28,
+    p: 0,
+    borderRadius: '8px',
+    color: active ? 'text.primary' : 'text.secondary',
+    bgcolor: active
+      ? (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.105)' : 'rgba(255,255,255,0.82)')
+      : 'transparent',
+    boxShadow: active
+      ? `inset 0 0 0 1px ${alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.08 : 0.055)}`
+      : 'inset 0 0 0 1px transparent',
+    overflow: 'hidden',
+    '& .MuiTouchRipple-root': { inset: 0, borderRadius: 'inherit', overflow: 'hidden' },
+    '& .MuiTouchRipple-child': { borderRadius: '8px !important' },
+    transition: 'color 160ms ease, background-color 160ms ease, box-shadow 160ms ease',
+    '&:hover': {
+      color: 'text.primary',
+      bgcolor: active
+        ? (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.13)' : 'rgba(255,255,255,0.94)')
+        : alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.075 : 0.055),
+    },
+    '&.Mui-focusVisible': {
+      boxShadow: `inset 0 0 0 1px ${alpha(theme.palette.primary.main, 0.5)}`
+    },
+    '@media (prefers-reduced-motion: reduce)': {
+      transition: 'none',
+      '& .MuiSvgIcon-root': { transition: 'none' }
+    }
+  })
   // 顶部工具栏右侧操作项（数据驱动，便于窗口变窄时溢出收纳）
   const toolbarActions = [
     !isStandaloneMode && {
@@ -2384,13 +2462,14 @@ const NoteEditor = ({ onCollapseSidebar }) => {
           })}
         </Box>
 
-        <Box sx={{
+        <Box sx={(theme) => ({
           display: 'flex', alignItems: 'center', gap: 0,
           flexShrink: 0,
           height: 32, boxSizing: 'border-box',
           p: '2px', borderRadius: '10px',
-          bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(15, 23, 42, 0.06)'
-        }}>
+          bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(15, 23, 42, 0.06)',
+          boxShadow: `inset 0 0 0 1px ${alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.035 : 0.025)}`
+        })}>
           {toolbarActions.map((action, index) => {
             const hidden = index >= actionVisibleCount
             return (
@@ -2409,20 +2488,13 @@ const NoteEditor = ({ onCollapseSidebar }) => {
               >
                 <Tooltip title={action.label}>
                   <IconButton
+                    disableRipple={false}
+                    centerRipple={false}
                     onClick={action.onClick}
                     onMouseEnter={action.onMouseEnter}
                     onMouseLeave={action.onMouseLeave}
                     size="small"
-                    sx={{
-                      width: 28,
-                      height: 28,
-                      p: 0,
-                      borderRadius: '8px',
-                      color: action.active ? 'text.primary' : 'text.secondary',
-                      bgcolor: action.active
-                        ? (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.105)' : 'rgba(255,255,255,0.82)'
-                        : 'transparent',
-                    }}
+                    sx={toolbarActionButtonSx(action.active)}
                   >
                     {action.icon}
                   </IconButton>
@@ -2444,18 +2516,11 @@ const NoteEditor = ({ onCollapseSidebar }) => {
           >
             <Tooltip title="更多操作">
               <IconButton
+                disableRipple={false}
+                centerRipple={false}
                 onClick={(e) => setActionMenuAnchor(e.currentTarget)}
                 size="small"
-                sx={{
-                  width: 28,
-                  height: 28,
-                  p: 0,
-                  borderRadius: '8px',
-                  color: actionMenuAnchor ? 'text.primary' : 'text.secondary',
-                  bgcolor: actionMenuAnchor
-                    ? (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.105)' : 'rgba(255,255,255,0.82)'
-                    : 'transparent',
-                }}
+                sx={toolbarActionButtonSx(Boolean(actionMenuAnchor))}
               >
                 <MoreIcon sx={{ fontSize: 18 }} />
               </IconButton>
@@ -2483,6 +2548,8 @@ const NoteEditor = ({ onCollapseSidebar }) => {
 
           <Tooltip title={t('notes.collapseToolbar')}>
             <IconButton
+              disableRipple={false}
+              centerRipple={false}
               onClick={() => {
                 if (isFullscreen) {
                   setFullscreenToolbarExpanded(false)
@@ -2493,7 +2560,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
                 }
               }}
               size="small"
-              sx={{ borderRadius: '8px' }}
+              sx={toolbarActionButtonSx(false)}
             >
               <CollapseToolbarIcon sx={{ fontSize: 18 }} />
             </IconButton>

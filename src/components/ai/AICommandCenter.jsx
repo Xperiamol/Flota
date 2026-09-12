@@ -31,6 +31,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import FloatingGlassSurface from '../common/FloatingGlassSurface'
 import FlotaAIIcon from '../common/FlotaAIIcon'
+import FlotaAIOrb from '../common/FlotaAIOrb'
 import { useStore } from '../../store/useStore'
 import { useShallow } from 'zustand/react/shallow'
 import useAIStream from '../../hooks/useAIStream'
@@ -51,6 +52,29 @@ const QUICK_PROMPTS = [
   { id: 'next-step', label: '下一步建议', prompt: '基于当前笔记，给我 3 条具体可执行的下一步行动建议。' },
   { id: 'extract-todos', label: '提取待办', prompt: '请从当前笔记提取待办事项，并按优先级排序。' },
   { id: 'related', label: '关联内容', prompt: '找出和当前笔记最相关的笔记、待办和记忆，并简要说明关联原因。' }
+]
+
+const TASK_PLANNING_PROMPTS = [
+  {
+    id: 'plan-today',
+    label: '规划今天',
+    prompt: '请读取我今天和已经逾期的待办，结合重要性、紧急度与截止时间，帮我规划今天的执行顺序。先给出简洁方案，需要调整或新建待办时统一列出并等我确认。'
+  },
+  {
+    id: 'break-down-goal',
+    label: '拆解目标',
+    prompt: '我有一个目标需要拆解成可执行的待办。请先询问目标、截止时间和限制条件，再按阶段生成具体任务，并合理设置重要性、紧急度与截止时间。'
+  },
+  {
+    id: 'plan-week',
+    label: '安排本周',
+    prompt: '请查看我现有的未完成待办，为本周制定一份现实可执行的计划。识别冲突、逾期和优先级问题，给出调整建议，并在我确认后更新待办。'
+  },
+  {
+    id: 'clean-backlog',
+    label: '整理积压',
+    prompt: '请帮我整理积压的未完成待办：找出重复、长期逾期、描述模糊或优先级不合理的项目，给出保留、拆解、延期或删除建议，等我确认后再执行修改。'
+  }
 ]
 
 const parseToolResult = (result) => {
@@ -108,6 +132,8 @@ const PANEL_BOTTOM_OFFSET = 24
 const PANEL_RIGHT_OFFSET = 24
 const PANEL_ESTIMATED_HEIGHT = 520
 const PANEL_MARGIN = 12
+const PANEL_MIN_WIDTH = 340
+const PANEL_MIN_HEIGHT = 320
 
 const ACTION_LABELS = {
   create_note: '创建笔记',
@@ -122,10 +148,35 @@ const ACTION_LABELS = {
   write_long_document: '生成并保存长文档'
 }
 
-const getDefaultPosition = () => ({
-  x: Math.max(PANEL_MARGIN, window.innerWidth - PANEL_WIDTH - PANEL_RIGHT_OFFSET),
-  y: Math.max(PANEL_MARGIN, window.innerHeight - PANEL_ESTIMATED_HEIGHT - PANEL_BOTTOM_OFFSET)
+const getDefaultPosition = (size = { width: PANEL_WIDTH, height: PANEL_ESTIMATED_HEIGHT }) => ({
+  x: Math.max(PANEL_MARGIN, window.innerWidth - size.width - PANEL_RIGHT_OFFSET),
+  y: Math.max(PANEL_MARGIN, window.innerHeight - size.height - PANEL_BOTTOM_OFFSET)
 })
+
+const readStoredPanelSize = (key) => {
+  if (!key || typeof window === 'undefined') return { width: PANEL_WIDTH, height: PANEL_ESTIMATED_HEIGHT }
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(`${key}.size`) || 'null')
+    if (Number.isFinite(parsed?.width) && Number.isFinite(parsed?.height)) {
+      return {
+        width: Math.max(PANEL_MIN_WIDTH, parsed.width),
+        height: Math.max(PANEL_MIN_HEIGHT, parsed.height)
+      }
+    }
+  } catch (_) {
+    // ignore invalid stored size
+  }
+  return { width: PANEL_WIDTH, height: PANEL_ESTIMATED_HEIGHT }
+}
+
+const writeStoredPanelSize = (key, size) => {
+  if (!key || typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(`${key}.size`, JSON.stringify(size))
+  } catch (_) {
+    // ignore storage failures
+  }
+}
 
 const AICommandCenter = ({
   open,
@@ -136,6 +187,7 @@ const AICommandCenter = ({
   updateNoteOverride,
   loadNotesOverride,
   userAvatarOverride,
+  onTodoUpdated,
   positionPersistKey = 'flota.aiCommandCenter.position'
 }) => {
   const inputRef = useRef(null)
@@ -191,6 +243,9 @@ const AICommandCenter = ({
     () => aiConversations.find((conversation) => conversation.id === currentConversationId) || null,
     [aiConversations, currentConversationId]
   )
+  const isTaskPlanning = currentConversation?.mode === 'task-planning'
+    || currentConversation?.source === 'task-planning'
+  const quickPrompts = isTaskPlanning ? TASK_PLANNING_PROMPTS : QUICK_PROMPTS
 
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState(() => currentConversation?.messages || [])
@@ -229,6 +284,9 @@ const AICommandCenter = ({
   }, [])
   const [loading, setLoading] = useState(false)
   const [position, setPosition] = useState(null)
+  const [panelSize, setPanelSize] = useState(() => readStoredPanelSize(positionPersistKey))
+  const [resizing, setResizing] = useState(false)
+  const resizeStateRef = useRef(null)
   const [thinkingPhrase, setThinkingPhrase] = useState('Thinking… 思考中')
   const executingActionIds = useMemo(() => new Set(messages.flatMap(getMessagePendingActions)
     .filter(action => action.status === 'running').map(action => action.actionId)), [messages])
@@ -239,10 +297,69 @@ const AICommandCenter = ({
     position,
     setPosition,
     margin: PANEL_MARGIN,
-    estimatedWidth: PANEL_WIDTH,
-    estimatedHeight: PANEL_ESTIMATED_HEIGHT,
+    estimatedWidth: panelSize.width,
+    estimatedHeight: panelSize.height,
     persistKey: positionPersistKey
   })
+
+  const handleResizeStart = useCallback((event) => {
+    if (event.button !== 0) return
+    const rect = panelRef.current?.getBoundingClientRect()
+    if (!rect) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    resizeStateRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      width: rect.width,
+      height: rect.height,
+      left: rect.left,
+      top: rect.top
+    }
+    setResizing(true)
+  }, [])
+
+  useEffect(() => {
+    if (!resizing) return undefined
+    const handleMove = (event) => {
+      const start = resizeStateRef.current
+      if (!start) return
+      const maxWidth = Math.max(PANEL_MIN_WIDTH, window.innerWidth - start.left - PANEL_MARGIN)
+      const maxHeight = Math.max(PANEL_MIN_HEIGHT, window.innerHeight - start.top - PANEL_MARGIN)
+      setPanelSize({
+        width: Math.min(maxWidth, Math.max(PANEL_MIN_WIDTH, start.width + event.clientX - start.startX)),
+        height: Math.min(maxHeight, Math.max(PANEL_MIN_HEIGHT, start.height + event.clientY - start.startY))
+      })
+    }
+    const handleUp = () => {
+      resizeStateRef.current = null
+      setResizing(false)
+    }
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', handleUp)
+    window.addEventListener('pointercancel', handleUp)
+    return () => {
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleUp)
+      window.removeEventListener('pointercancel', handleUp)
+    }
+  }, [resizing])
+
+  useEffect(() => {
+    writeStoredPanelSize(positionPersistKey, panelSize)
+  }, [panelSize, positionPersistKey])
+
+  useEffect(() => {
+    const handleViewportResize = () => {
+      setPanelSize((current) => ({
+        width: Math.min(current.width, Math.max(PANEL_MIN_WIDTH, window.innerWidth - PANEL_MARGIN * 2)),
+        height: Math.min(current.height, Math.max(PANEL_MIN_HEIGHT, window.innerHeight - PANEL_MARGIN * 2))
+      }))
+    }
+    window.addEventListener('resize', handleViewportResize)
+    return () => window.removeEventListener('resize', handleViewportResize)
+  }, [])
 
   const currentNote = useMemo(
     () => notes.find(note => String(note.id) === String(selectedNoteId)),
@@ -314,10 +431,12 @@ const AICommandCenter = ({
 
   useEffect(() => {
     if (!open) return
-    setPosition(prev => prev || restorePosition(getDefaultPosition()))
+    setPosition(prev => prev || restorePosition(getDefaultPosition(panelSize)))
     const timer = window.setTimeout(() => inputRef.current?.focus(), 120)
     return () => window.clearTimeout(timer)
-  }, [open, restorePosition])
+  // 仅在打开时恢复一次；拖动缩放过程中不抢回输入框焦点。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -335,6 +454,7 @@ const AICommandCenter = ({
   const handleExecuteAction = usePendingActionExecution({
     conversationIdRef, messagesRef, setMessages,
     deps: { currentNote, notes, createNote, deleteNote, updateNote, loadNotes, setSelectedNoteId },
+    onTodoUpdated,
   })
 
   const handleNewChat = useCallback(() => {
@@ -515,7 +635,8 @@ const AICommandCenter = ({
   }
 
   const showQuickPrompts = messages.length === 0 && !loading && !streamContent
-  const resolvedPosition = position || getDefaultPosition()
+  const compactEmptyState = panelSize.height < 430
+  const resolvedPosition = position || getDefaultPosition(panelSize)
 
   return (
     <FloatingGlassSurface
@@ -524,11 +645,24 @@ const AICommandCenter = ({
       layer="aiPanel"
       ariaLabel="问 AI"
       position={resolvedPosition}
-      width={PANEL_WIDTH}
+      width={panelSize.width}
+      minWidth={PANEL_MIN_WIDTH}
       maxWidth={`calc(100vw - ${PANEL_RIGHT_OFFSET * 2}px)`}
-      maxHeight={`min(560px, calc(100vh - ${PANEL_BOTTOM_OFFSET * 2}px))`}
+      maxHeight={`calc(100vh - ${PANEL_BOTTOM_OFFSET * 2}px)`}
       portalContainer={portalContainer}
-      sx={{ display: 'flex', flexDirection: 'column' }}
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: panelSize.height,
+        minHeight: PANEL_MIN_HEIGHT,
+        transition: resizing ? 'none' : 'box-shadow 160ms ease, border-color 160ms ease',
+        animation: 'aiPanelEnter 180ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+        '@keyframes aiPanelEnter': {
+          from: { transform: 'translateY(6px) scale(0.985)' },
+          to: { transform: 'translateY(0) scale(1)' }
+        },
+        '@media (prefers-reduced-motion: reduce)': { animation: 'none' }
+      }}
     >
       <Box
         onMouseDown={handleDragStart}
@@ -545,7 +679,9 @@ const AICommandCenter = ({
         })}
       >
         <DragIcon sx={{ fontSize: 15, color: 'text.disabled', opacity: 0.55 }} />
-        <Typography sx={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>问 AI</Typography>
+        <Typography sx={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>
+          {isTaskPlanning ? 'AI 任务规划' : '问 AI'}
+        </Typography>
         {currentNote && (
           <Chip
             size="small"
@@ -568,6 +704,8 @@ const AICommandCenter = ({
         <Tooltip title="新建对话">
           <span>
             <IconButton
+              disableRipple={false}
+              centerRipple={false}
               size="small"
               onMouseDown={(event) => event.stopPropagation()}
               onClick={handleNewChat}
@@ -579,6 +717,10 @@ const AICommandCenter = ({
                 mr: 0.25,
                 borderRadius: 1,
                 color: 'text.secondary',
+                overflow: 'hidden',
+                '& .MuiTouchRipple-root': { inset: 0, borderRadius: 'inherit', overflow: 'hidden' },
+                '& .MuiTouchRipple-child': { borderRadius: '8px !important' },
+                transition: 'color 160ms ease, background-color 160ms ease',
                 '&:hover': {
                   color: 'text.primary',
                   bgcolor: alpha(theme.palette.text.primary, 0.06)
@@ -590,6 +732,8 @@ const AICommandCenter = ({
           </span>
         </Tooltip>
         <IconButton
+          disableRipple={false}
+          centerRipple={false}
           size="small"
           onMouseDown={(event) => event.stopPropagation()}
           onClick={onClose}
@@ -599,6 +743,10 @@ const AICommandCenter = ({
             height: 26,
             borderRadius: 1,
             color: 'text.secondary',
+            overflow: 'hidden',
+            '& .MuiTouchRipple-root': { inset: 0, borderRadius: 'inherit', overflow: 'hidden' },
+            '& .MuiTouchRipple-child': { borderRadius: '8px !important' },
+            transition: 'color 160ms ease, background-color 160ms ease',
             '&:hover': {
               color: 'text.primary',
               bgcolor: alpha(theme.palette.text.primary, 0.06)
@@ -624,14 +772,50 @@ const AICommandCenter = ({
         })}
       >
         {showQuickPrompts && (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-            <Typography variant="caption" color="text.secondary" sx={{ px: 0.25 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: compactEmptyState ? 0.6 : 0.85 }}>
+            <Box
+              aria-hidden
+              sx={{
+                position: 'relative',
+                width: '100%',
+                height: compactEmptyState ? 102 : 138,
+                flexShrink: 0,
+                overflow: 'visible'
+              }}
+            >
+              <FlotaAIOrb
+                sx={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  transform: `translate(-50%, -50%) scale(${compactEmptyState ? 0.5 : 0.66})`,
+                  transformOrigin: 'center'
+                }}
+              />
+            </Box>
+
+            <Box sx={{ textAlign: 'center', px: 1, mt: compactEmptyState ? -0.2 : -0.45 }}>
+              <Typography sx={{ fontSize: compactEmptyState ? 14 : 15, fontWeight: 650, lineHeight: 1.35 }}>
+                {isTaskPlanning ? 'AI 任务规划' : '你好！我是 FlotaAI'}
+              </Typography>
+              {!compactEmptyState && (
+                <Typography color="text.secondary" sx={{ mt: 0.25, fontSize: 11.5, lineHeight: 1.55 }}>
+                  {isTaskPlanning
+                    ? '从一个模板开始，或直接告诉我你想完成什么'
+                    : '管理笔记、查询待办、搜索记忆，或者聊聊天'}
+                </Typography>
+              )}
+            </Box>
+
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.35, lineHeight: 1.2 }}>
               快速开始
             </Typography>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-              {QUICK_PROMPTS.map((item) => (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 0.5, width: '100%' }}>
+              {quickPrompts.map((item) => (
                 <Chip
                   key={item.id}
+                  clickable
+                  disableRipple={false}
                   size="small"
                   label={item.label}
                   onClick={() => handleSend(item.prompt)}
@@ -642,7 +826,14 @@ const AICommandCenter = ({
                     bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.08 : 0.16),
                     color: 'text.primary',
                     boxShadow: `inset 0 0 0 1px ${alpha(theme.palette.common.white, theme.palette.mode === 'dark' ? 0.03 : 0.3)}`,
-                    '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.06) }
+                    overflow: 'hidden',
+                    '& .MuiTouchRipple-root': { inset: 0, borderRadius: 'inherit', overflow: 'hidden' },
+                    '& .MuiTouchRipple-child': { borderRadius: '8px !important' },
+                    transition: 'background-color 160ms ease, box-shadow 160ms ease',
+                    '&:hover': {
+                      bgcolor: alpha(theme.palette.primary.main, 0.07),
+                      boxShadow: `inset 0 0 0 1px ${alpha(theme.palette.primary.main, 0.13)}`
+                    }
                   })}
                 />
               ))}
@@ -707,7 +898,9 @@ const AICommandCenter = ({
           fullWidth
           multiline
           maxRows={4}
-          placeholder={currentNote ? `就「${truncateText(currentNote.title || '未命名', 14)}」问点什么…` : '问 AI 任何问题…'}
+          placeholder={isTaskPlanning
+            ? '告诉我你的目标、期限或当前困难…'
+            : currentNote ? `就「${truncateText(currentNote.title || '未命名', 14)}」问点什么…` : '问 AI 任何问题…'}
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={handleKeyDown}
@@ -730,6 +923,8 @@ const AICommandCenter = ({
           }}
         />
         <IconButton
+          disableRipple={false}
+          centerRipple={false}
           size="small"
           onClick={loading ? handleCancel : () => handleSend()}
           disabled={loading ? false : !input.trim()}
@@ -749,12 +944,48 @@ const AICommandCenter = ({
                 ? alpha(theme.palette.error.main, 0.2)
                 : (input.trim() ? theme.palette.primary.dark : 'transparent')
             },
-            transition: 'background-color 140ms ease, color 140ms ease'
+            overflow: 'hidden',
+            '& .MuiTouchRipple-root': { inset: 0, borderRadius: 'inherit', overflow: 'hidden' },
+            '& .MuiTouchRipple-child': { borderRadius: '8px !important' },
+            transition: 'background-color 160ms ease, color 160ms ease'
           })}
         >
           {loading ? <StopIcon sx={{ fontSize: 16 }} /> : <SendIcon sx={{ fontSize: 16 }} />}
         </IconButton>
       </Box>
+
+      <Box
+        role="separator"
+        aria-label="拖拽调整 AI 小窗大小"
+        aria-orientation="horizontal"
+        onPointerDown={handleResizeStart}
+        sx={(theme) => ({
+          position: 'absolute',
+          right: 0,
+          bottom: 0,
+          width: 20,
+          height: 20,
+          zIndex: 4,
+          cursor: 'nwse-resize',
+          touchAction: 'none',
+          opacity: resizing ? 0.72 : 0.22,
+          transition: 'opacity 140ms ease',
+          '&:hover': { opacity: 0.72 },
+          '&::before, &::after': {
+            content: '""',
+            position: 'absolute',
+            right: 4,
+            bottom: 6,
+            height: '1px',
+            borderRadius: '999px',
+            bgcolor: alpha(theme.palette.text.primary, 0.72),
+            transform: 'rotate(-45deg)',
+            transformOrigin: 'right center'
+          },
+          '&::before': { width: 9 },
+          '&::after': { width: 5, right: 4, bottom: 3 }
+        })}
+      />
     </FloatingGlassSurface>
   )
 }

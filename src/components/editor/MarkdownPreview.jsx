@@ -7,6 +7,7 @@ import { urlToWav } from '../../utils/audioCodec'
 import { useError } from '../common/ErrorProvider'
 import ImagePreviewModal, { canvasToPngBlob } from '../common/ImagePreviewModal'
 import { useStore } from '../../store/useStore'
+import { useLinkGraph } from '../../store/useLinkGraph'
 import '../../markdown/markdown.css'
 import 'highlight.js/styles/github.css'
 import logger from '../../utils/logger'
@@ -28,14 +29,14 @@ const MarkdownPreview = ({
   useFloatingTableScrollbar(previewRef, { selector: 'table' })
   const [previewImage, setPreviewImage] = useState(null)
   // 用一份按 lowercase title 索引的 set 来判断 wiki target 是否存在
-  const allNotes = useStore((state) => state.notes)
+  const titleById = useLinkGraph((state) => state.titleById)
   const noteTitleSet = useMemo(() => {
     const set = new Set()
-    allNotes.forEach((n) => {
-      if (n.title) set.add(n.title.toLowerCase())
+    titleById.forEach((title) => {
+      if (title) set.add(String(title).toLowerCase())
     })
     return set
-  }, [allNotes])
+  }, [titleById])
 
   // 创建 Markdown 渲染器实例（使用 useMemo 避免重复创建）
   const md = useMemo(() => {

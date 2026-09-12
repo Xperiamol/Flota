@@ -15,6 +15,7 @@ import {
   Close as CloseIcon
 } from '../common/AppIcons';
 import { FlotaTagIcon as LabelIcon } from '../common/FlotaIcons';
+import BatchExportButton from '../notes/BatchExportButton';
 
 /**
  * 通用多选工具栏组件
@@ -41,6 +42,7 @@ const MultiSelectToolbar = ({
   onSetTags,
   onClose,
   itemType = '项目',
+  exportNoteIds,
   customActions = []
 }) => {
   const isAllSelected = selectedCount === totalCount && totalCount > 0;
@@ -147,7 +149,7 @@ const MultiSelectToolbar = ({
            </Button>
           
           {/* 只有在有操作时显示分隔符 */}
-          {(onDelete || onSetTags || customActions.length > 0) && (
+          {(onDelete || onSetTags || exportNoteIds || customActions.length > 0) && (
             <Divider orientation="vertical" flexItem sx={{ mx: 0.25, borderColor: 'divider' }} />
           )}
           
@@ -175,6 +177,10 @@ const MultiSelectToolbar = ({
             >
               设置标签
             </Button>
+          )}
+
+          {exportNoteIds && (
+            <BatchExportButton ids={exportNoteIds} sx={actionButtonSx} />
           )}
           
           {/* 自定义操作按钮 - 始终显示（如果提供） */}

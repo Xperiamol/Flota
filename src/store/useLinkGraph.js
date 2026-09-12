@@ -121,8 +121,12 @@ export const useLinkGraph = create((set, get) => ({
     if (note.title) titleById.set(id, note.title)
     else titleById.delete(id)
 
-    // 仅在真正有变化的字段上发新引用，避免无关订阅 churn
-    const next = { titleById: new Map(titleById) }
+    // 仅在真正有变化的字段上发新引用，避免正文里的双链变化让所有
+    // 只关心标题集合的编辑器/预览组件重渲染。
+    const next = {}
+    if (titleChanged) {
+      next.titleById = new Map(titleById)
+    }
     if (targetsChanged) {
       next.outgoing = new Map(outgoing)
       next.incoming = new Map(incoming)

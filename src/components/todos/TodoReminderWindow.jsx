@@ -59,7 +59,7 @@ const TodoReminderWindow = ({ initialData = {} }) => {
   };
 
   return (
-    <Box sx={{ width: '100vw', height: '100vh', boxSizing: 'border-box', p: 1, bgcolor: 'transparent' }}>
+    <Box sx={{ width: '100vw', height: '100vh', boxSizing: 'border-box', bgcolor: 'transparent' }}>
       <Paper
         elevation={0}
         onDoubleClick={() => sendAction('open')}
@@ -84,9 +84,7 @@ const TodoReminderWindow = ({ initialData = {} }) => {
           backgroundImage: `linear-gradient(145deg, ${alpha(theme.palette.primary.main, 0.075)}, transparent 58%)`,
           backdropFilter: 'blur(24px) saturate(165%)',
           WebkitBackdropFilter: 'blur(24px) saturate(165%)',
-          boxShadow: theme.palette.mode === 'dark'
-            ? '0 14px 38px rgba(2,6,23,0.5), inset 0 1px 0 rgba(255,255,255,0.06)'
-            : '0 14px 38px rgba(15,23,42,0.2), inset 0 1px 0 rgba(255,255,255,0.8)'
+          boxShadow: 'none'
         })}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 22, gap: 0.75 }}>

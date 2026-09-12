@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Node, mergeAttributes } from '@tiptap/core'
 import { NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react'
 import { Alert, Box, Button, ButtonBase, CircularProgress, IconButton, Portal, Tooltip, Typography } from '@mui/material'
@@ -6,7 +6,6 @@ import { Brush, Check, ContentCopy, DeleteOutline, DragIndicator, Edit, ExpandLe
 import { useStore } from '../../../store/useStore'
 import { openNoteLink } from '../../../utils/linkUtils'
 import { floatingGlassSx } from '../../../utils/floatingGlassSx'
-import { getWhiteboardPreviewUrl } from '../../../utils/whiteboardPreview'
 
 const WhiteboardEditor = lazy(() => import('../WhiteboardEditor'))
 const MENU_WIDTH = 210
@@ -28,7 +27,6 @@ function EmbedView({ node, editor, getPos, selected }) {
   const [canvasMounted, setCanvasMounted] = useState(false)
   const canvasHostRef = useRef(null)
   const referenceUrl = `app://whiteboard/${encodeURIComponent(node.attrs.reference)}`
-  const preview = note ? getWhiteboardPreviewUrl(note) : ''
   const beginEditing = () => {
     setCanvasMounted(true)
     setEditing(true)
@@ -68,9 +66,16 @@ function EmbedView({ node, editor, getPos, selected }) {
       window.removeEventListener('keydown', closeOnEscape)
     }
   }, [menu])
-  useEffect(() => {
+  useLayoutEffect(() => {
     const host = canvasHostRef.current
     if (!host || canvasMounted) return undefined
+    // 当前可见（或即将进入视口）的嵌入画布在浏览器绘制前直接开始挂载，
+    // 避免先闪现静态预览图，再突然切换成可拖动画布。
+    const bounds = host.getBoundingClientRect()
+    if (bounds.bottom >= -500 && bounds.top <= window.innerHeight + 500) {
+      setCanvasMounted(true)
+      return undefined
+    }
     if (!window.IntersectionObserver) {
       setCanvasMounted(true)
       return undefined
@@ -108,7 +113,7 @@ function EmbedView({ node, editor, getPos, selected }) {
           }}>
           {canvasMounted ? <Suspense fallback={<Box sx={{ flex: 1, display: 'grid', placeContent: 'center', justifyItems: 'center', gap: 1.5 }}><CircularProgress size={24} /><Typography variant="body2" color="text.secondary">正在打开画布…</Typography></Box>}>
             <WhiteboardEditor noteId={note.id} viewOnly={!editing} />
-          </Suspense> : preview ? <Box component="img" src={preview} alt={note.title || '画布预览'} sx={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : null}
+          </Suspense> : <Box sx={{ flex: 1, bgcolor: 'background.default' }} />}
         </Box>}
     </Box>
     {menu && <Portal><Box data-editor-context-menu onMouseDown={(event) => event.stopPropagation()} onContextMenu={(event) => event.preventDefault()}

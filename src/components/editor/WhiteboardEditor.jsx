@@ -12,6 +12,7 @@ import {
   TextField,
   Typography,
   Tooltip,
+  IconButton,
 } from '@mui/material'
 import { Excalidraw, exportToSvg, convertToExcalidrawElements, THEME } from '@excalidraw/excalidraw'
 import NoteReferencePicker from './NoteReferencePicker'
@@ -158,6 +159,58 @@ const getPersistedAppState = (appState = {}) => ({
   zoom: appState.zoom,
 })
 
+const hasViewportChanged = (previous = {}, next = {}) => (
+  previous.scrollX !== next.scrollX
+  || previous.scrollY !== next.scrollY
+  || previous.zoom?.value !== next.zoom?.value
+)
+
+const hasCanvasSettingsChanged = (previous = {}, next = {}) => (
+  previous.viewBackgroundColor !== next.viewBackgroundColor
+  || previous.currentItemFontFamily !== next.currentItemFontFamily
+  || Boolean(previous.gridModeEnabled) !== Boolean(next.gridModeEnabled)
+  || previous.gridSize !== next.gridSize
+)
+
+// Excalidraw 对未修改元素保持对象/版本稳定。这里仅比较轻量元数据，避免在
+// pointermove/onChange 热路径中反复序列化整张画布（尤其是图片 dataURL）。
+const haveElementsChanged = (previous = [], next = []) => {
+  if (previous === next) return false
+  if (previous.length !== next.length) return true
+  for (let index = 0; index < next.length; index += 1) {
+    const before = previous[index]
+    const after = next[index]
+    if (before === after) continue
+    if (
+      before?.id !== after?.id
+      || before?.version !== after?.version
+      || before?.versionNonce !== after?.versionNonce
+      || Boolean(before?.isDeleted) !== Boolean(after?.isDeleted)
+    ) return true
+  }
+  return false
+}
+
+const haveFilesChanged = (previous = {}, next = {}) => {
+  if (previous === next) return false
+  const previousKeys = Object.keys(previous || {})
+  const nextKeys = Object.keys(next || {})
+  if (previousKeys.length !== nextKeys.length) return true
+  for (const key of nextKeys) {
+    const before = previous?.[key]
+    const after = next?.[key]
+    if (!before || !after) return true
+    if (
+      before !== after
+      && (before.id !== after.id
+        || before.dataURL !== after.dataURL
+        || before.mimeType !== after.mimeType
+        || before.created !== after.created)
+    ) return true
+  }
+  return false
+}
+
 /**
  * 画布编辑器组件
  * 直接使用 @excalidraw/excalidraw React 组件
@@ -301,8 +354,6 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
   const activeNoteIdRef = useRef(noteId)
   // 标记是否正在切换笔记，用于避免组件卸载时的重复保存
   const isSwitchingNoteRef = useRef(false)
-  // 记录最近一次成功保存/加载的场景数据，用于变更检测
-  const lastSavedSceneRef = useRef(null)
   // 标记当前是否正由系统应用远端数据，避免 onChange 误判
   const isApplyingRemoteDataRef = useRef(true)
   // 记录最近一次渲染的完整场景，用于在组件重挂载时仍能保存
@@ -310,24 +361,9 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
   const viewportOnlyChangeRef = useRef(false)
   const contentChangePendingRef = useRef(false)
   const lastViewportSaveScheduleRef = useRef(0)
+  const sceneRevisionRef = useRef(0)
   // 标记是否正在进行类型转换，用于避免卸载时自动保存覆盖转换结果
   const isTypeConvertingRef = useRef(false)
-
-  const serializeScene = useCallback((elements = [], appState = {}, files = {}) => {
-    const sanitizedAppState = getPersistedAppState(appState)
-
-    const sortedFileKeys = Object.keys(files || {}).sort()
-    const sanitizedFiles = {}
-    sortedFileKeys.forEach((key) => {
-      sanitizedFiles[key] = files[key]
-    })
-
-    return JSON.stringify({
-      elements,
-      appState: sanitizedAppState,
-      files: sanitizedFiles
-    })
-  }, [])
 
   const openMermaidDslEditor = useCallback((element = selectedMermaidImage) => {
     if (!element) return
@@ -395,12 +431,12 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     setInitialData(nextScene)
     setExcalidrawKey(`excalidraw-${noteId || 'unknown'}-${Date.now()}`)
     latestSceneRef.current = nextScene
-    lastSavedSceneRef.current = serializeScene(elements, persistedAppState, files)
     setHasUnsavedChanges(false)
     hasUnsavedChangesRef.current = false
     viewportOnlyChangeRef.current = false
     contentChangePendingRef.current = false
-  }, [noteId, serializeScene, updateNote])
+    sceneRevisionRef.current += 1
+  }, [noteId, updateNote])
 
   const regenerateMermaidImage = useCallback(async () => {
     if (!selectedMermaidImage || !dslDraft.trim()) {
@@ -773,7 +809,6 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
         setInitialData({ elements, appState, files })
       }
 
-      lastSavedSceneRef.current = serializeScene(elements, appState, files)
       latestSceneRef.current = {
         elements,
         appState,
@@ -781,6 +816,9 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
       }
       setHasUnsavedChanges(false)
       hasUnsavedChangesRef.current = false
+      viewportOnlyChangeRef.current = false
+      contentChangePendingRef.current = false
+      sceneRevisionRef.current += 1
     }
 
     isApplyingRemoteDataRef.current = true
@@ -862,7 +900,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     } finally {
       isApplyingRemoteDataRef.current = false
     }
-  }, [blankBoardData, serializeScene, setHasUnsavedChanges, setInitialData])
+  }, [blankBoardData, setHasUnsavedChanges, setInitialData])
 
   // 加载画布数据（仅在首次挂载时执行，后续切换通过 useEffect 处理）
   useEffect(() => {
@@ -899,11 +937,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
         // 如果笔记类型不是画布，使用空画布
         if (note.note_type !== 'whiteboard') {
           setInitialData(blankBoardData)
-          lastSavedSceneRef.current = serializeScene(
-            blankBoardData.elements,
-            blankBoardData.appState,
-            blankBoardData.files
-          )
+          latestSceneRef.current = blankBoardData
           setHasUnsavedChanges(false)
           hasUnsavedChangesRef.current = false
           activeNoteIdRef.current = null
@@ -915,11 +949,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
         // 笔记类型是画布，但内容为空
         if (!note.content) {
           setInitialData(blankBoardData)
-          lastSavedSceneRef.current = serializeScene(
-            blankBoardData.elements,
-            blankBoardData.appState,
-            blankBoardData.files
-          )
+          latestSceneRef.current = blankBoardData
           setHasUnsavedChanges(false)
           hasUnsavedChangesRef.current = false
           activeNoteIdRef.current = noteId
@@ -987,11 +1017,6 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
         }
 
         setInitialData(initialScene)
-        lastSavedSceneRef.current = serializeScene(
-          initialScene.elements,
-          initialScene.appState,
-          initialScene.files
-        )
         latestSceneRef.current = initialScene
         setHasUnsavedChanges(false)
         hasUnsavedChangesRef.current = false
@@ -1020,7 +1045,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     loadWhiteboardData()
     // 首次加载后设置 prevNoteIdRef
     prevNoteIdRef.current = noteId
-  }, [noteId, notes, blankBoardData, serializeScene, setHasUnsavedChanges])
+  }, [noteId, notes, blankBoardData, setHasUnsavedChanges])
 
   // 当noteId变化时，先保存旧笔记，再加载新笔记
   useEffect(() => {
@@ -1180,6 +1205,8 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
       return
     }
 
+    const savedRevision = sceneRevisionRef.current
+
     const currentNote = notes?.find(item => String(item.id) === String(currentNoteId))
     if (currentNote?.note_type !== 'whiteboard') {
       return
@@ -1193,9 +1220,10 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
           content: JSON.stringify({ ...stored, appState: persistedAppState }),
           note_type: 'whiteboard'
         })
-        lastSavedSceneRef.current = serializeScene(elements, persistedAppState, files)
-        viewportOnlyChangeRef.current = false
-        if (noteId === currentNoteId) {
+        if (sceneRevisionRef.current === savedRevision) {
+          viewportOnlyChangeRef.current = false
+        }
+        if (noteId === currentNoteId && sceneRevisionRef.current === savedRevision) {
           setHasUnsavedChanges(false)
           hasUnsavedChangesRef.current = false
         }
@@ -1235,15 +1263,13 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
         note_type: 'whiteboard'
       })
       
-      lastSavedSceneRef.current = serializeScene(elements, persistedAppState, files)
-      
       // 只有当当前组件的noteId与保存的noteId一致时，才更新状态
-      if (noteId === currentNoteId) {
+      if (noteId === currentNoteId && sceneRevisionRef.current === savedRevision) {
         setHasUnsavedChanges(false)
         hasUnsavedChangesRef.current = false
+        viewportOnlyChangeRef.current = false
+        contentChangePendingRef.current = false
       }
-      viewportOnlyChangeRef.current = false
-      contentChangePendingRef.current = false
 
       // 异步导出 PNG 预览图供移动端查看（不阻塞保存流程）
       // 使用 SVG→Canvas 方式保证清晰度，scale: 2 兼顾质量与文件大小
@@ -1293,7 +1319,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
       console.error('[WhiteboardEditor] 保存失败', error)
       setError('保存失败: ' + error.message)
     }
-  }, [excalidrawAPI, noteId, updateNote, serializeScene, notes])
+  }, [excalidrawAPI, noteId, updateNote, notes])
 
   // 保存开始日志
   const performSaveWithLog = useCallback(async () => {
@@ -1641,7 +1667,9 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
         ...(viewOnly ? {
           cursor: 'grab',
           '&:active': { cursor: 'grabbing' },
-          '& .App-menu, & .layer-ui__wrapper__top-right, & .selected-shape-actions': { display: 'none !important' },
+          // 嵌入只读画布只保留画布本体；Excalidraw 在较矮容器里会切到
+          // mobile bottom bar，即使里面仅剩菜单按钮也会占掉一整块高度。
+          '& .App-menu, & .App-bottom-bar, & .App-mobile-menu, & .layer-ui__wrapper__footer, & .layer-ui__wrapper__top-right, & .selected-shape-actions': { display: 'none !important' },
         } : {}),
         ...excalidrawSurfaceSx,
         ...(propertiesCollapsed ? { '& .excalidraw .App-menu__left, & .excalidraw .App-mobile-menu': { display: 'none !important' } } : {}),
@@ -1665,13 +1693,13 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
             if (isApplyingRemoteDataRef.current) return
 
             const persistedAppState = getPersistedAppState(appState)
+            const previousScene = latestSceneRef.current || {}
+            const previousAppState = previousScene.appState || {}
+            const viewportChanged = hasViewportChanged(previousAppState, persistedAppState)
             if (viewOnly) {
-              const previous = latestSceneRef.current.appState || {}
               latestSceneRef.current = { elements, appState: persistedAppState, files }
-              const viewportChanged = previous.scrollX !== persistedAppState.scrollX
-                || previous.scrollY !== persistedAppState.scrollY
-                || previous.zoom?.value !== persistedAppState.zoom?.value
               if (viewportChanged) {
+                sceneRevisionRef.current += 1
                 if (!contentChangePendingRef.current) viewportOnlyChangeRef.current = true
                 if (!hasUnsavedChangesRef.current) {
                   setHasUnsavedChanges(true)
@@ -1706,21 +1734,36 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
               return editableImage
             })
 
-            contentChangePendingRef.current = true
-            viewportOnlyChangeRef.current = false
+            const contentChanged = haveElementsChanged(previousScene.elements, elements)
+              || haveFilesChanged(previousScene.files, files)
+              || hasCanvasSettingsChanged(previousAppState, persistedAppState)
             latestSceneRef.current = {
               elements,
               appState: persistedAppState,
               files
             }
-            const serializedScene = serializeScene(elements, persistedAppState, files)
 
-            if (serializedScene !== lastSavedSceneRef.current) {
+            if (contentChanged) {
+              sceneRevisionRef.current += 1
+              contentChangePendingRef.current = true
+              viewportOnlyChangeRef.current = false
               if (!hasUnsavedChangesRef.current) {
                 setHasUnsavedChanges(true)
                 hasUnsavedChangesRef.current = true
               }
               debouncedSave()
+            } else if (viewportChanged) {
+              sceneRevisionRef.current += 1
+              if (!contentChangePendingRef.current) viewportOnlyChangeRef.current = true
+              if (!hasUnsavedChangesRef.current) {
+                setHasUnsavedChanges(true)
+                hasUnsavedChangesRef.current = true
+              }
+              const now = Date.now()
+              if (now - lastViewportSaveScheduleRef.current >= 250) {
+                lastViewportSaveScheduleRef.current = now
+                debouncedSave()
+              }
             }
           }}
           theme={isDark ? THEME.DARK : THEME.LIGHT}
@@ -1737,6 +1780,41 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
             },
           }}
         />
+        {viewOnly && (
+          <Tooltip title="适应内容" placement="top">
+            <IconButton
+              size="small"
+              aria-label="适应内容"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation()
+                fitWhiteboardContent()
+              }}
+              sx={{
+                position: 'absolute',
+                left: 12,
+                bottom: 12,
+                zIndex: 5,
+                width: 34,
+                height: 34,
+                borderRadius: '9px',
+                color: 'text.secondary',
+                bgcolor: isDark ? 'rgba(35, 35, 41, 0.88)' : 'rgba(255, 255, 255, 0.88)',
+                border: '1px solid',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(15, 23, 42, 0.10)',
+                backdropFilter: 'blur(10px)',
+                WebkitBackdropFilter: 'blur(10px)',
+                '&:hover': {
+                  color: 'primary.main',
+                  bgcolor: isDark ? 'rgba(45, 45, 53, 0.96)' : 'rgba(255, 255, 255, 0.98)',
+                },
+                '& .MuiSvgIcon-root': { fontSize: 18 },
+              }}
+            >
+              <CenterFocusStrong />
+            </IconButton>
+          </Tooltip>
+        )}
         {!viewOnly && controlSlots.toolbar && createPortal(
           <WhiteboardToolbar
             api={excalidrawAPI}

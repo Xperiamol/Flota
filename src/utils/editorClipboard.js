@@ -127,5 +127,45 @@ export const normalizePastedHtml = (html) => {
     if (!source) return
     element.outerHTML = mathMarkup(source, element.matches('.katex-display, math[display="block"]'), false)
   })
+  // Rich clipboard payloads often wrap Markdown source in styled spans.
+  // Parse whole formula-only blocks first, then inline text; leave code literal.
+  doc.querySelectorAll('p, div').forEach(element => {
+    if (!element.isConnected || element.closest('pre, code, [data-latex]') || element.querySelector('p, div, img, [data-latex]')) return
+    const source = element.innerHTML.replace(/<br\s*\/?\s*>/gi, '\n')
+    const holder = doc.createElement('div')
+    holder.innerHTML = source
+    const tokens = md.parse(holder.textContent.trim(), {})
+    if (tokens.length === 1 && tokens[0].type === 'flota_math_block') {
+      element.outerHTML = mathMarkup(tokens[0].content, true, false)
+    }
+  })
+  const walker = doc.createTreeWalker(doc.body, 4)
+  const texts = []
+  while (walker.nextNode()) texts.push(walker.currentNode)
+  for (const node of texts) {
+    if (node.parentElement?.closest('pre, code, math, [data-latex], .katex')) continue
+    const text = node.textContent
+    const fragment = doc.createDocumentFragment()
+    let offset = 0
+    for (let pos = 0; pos < text.length; pos++) {
+      if (text[pos] === '`') {
+        const ticks = text.slice(pos).match(/^`+/)[0]
+        const end = text.indexOf(ticks, pos + ticks.length)
+        if (end >= 0) { pos = end + ticks.length - 1; continue }
+      }
+      const match = readInlineMath(text, pos)
+      if (!match) continue
+      fragment.append(doc.createTextNode(text.slice(offset, pos)))
+      const holder = doc.createElement('span')
+      holder.innerHTML = mathMarkup(match.latex, false, false)
+      fragment.append(holder.firstChild)
+      offset = match.end
+      pos = offset - 1
+    }
+    if (offset) {
+      fragment.append(doc.createTextNode(text.slice(offset)))
+      node.replaceWith(fragment)
+    }
+  }
   return doc.body.innerHTML
 }

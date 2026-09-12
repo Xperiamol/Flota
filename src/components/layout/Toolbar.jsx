@@ -19,6 +19,7 @@ import {
   VisibilityOffRounded as VisibilityOffIcon
 } from '../common/AppIcons'
 import { FlotaCalendarIcon as Today } from '../common/FlotaIcons'
+import FlotaAIIcon from '../common/FlotaAIIcon'
 import { useStore } from '../../store/useStore'
 import DropdownMenu from '../common/DropdownMenu'
 import { executePluginCommand } from '../../api/pluginAPI'
@@ -53,7 +54,9 @@ const Toolbar = ({
   const {
     createNote,
     notes,
-    setSelectedNoteId
+    setSelectedNoteId,
+    aiNewChat,
+    setAiCommandCenterOpen
   } = useStore()
   const pluginCommands = useStore((state) => state.pluginCommands)
   const timelineFilter = useStore((state) => state.timelineFilter)
@@ -73,6 +76,11 @@ const Toolbar = ({
       Array.isArray(command.surfaces) && command.surfaces.includes('toolbar:todos')
     )
   }, [pluginCommands])
+
+  const handleOpenTaskPlanning = useCallback(() => {
+    aiNewChat({ title: '任务规划', mode: 'task-planning' })
+    setAiCommandCenterOpen(true)
+  }, [aiNewChat, setAiCommandCenterOpen])
 
   // 移除settingsAnchor状态，改用DropdownMenu组件
 
@@ -595,6 +603,19 @@ const Toolbar = ({
             : 'rgba(0,0,0,0.08)',
         }
       }}>
+        {currentView === 'todo' && (
+          <Tooltip title="使用 FlotaAI 规划和拆解待办" placement="bottom">
+            <IconButton
+              size="small"
+              color="primary"
+              onClick={handleOpenTaskPlanning}
+              aria-label="AI 任务规划"
+            >
+              <FlotaAIIcon sx={{ fontSize: 22 }} />
+            </IconButton>
+          </Tooltip>
+        )}
+
         {currentView === 'timeline' && (
           <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 0.75, mr: 0.75 }}>
             <Box sx={segmentedControlSx}>

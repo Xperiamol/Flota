@@ -237,7 +237,8 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
       }[quadrant]
       if (!target) return
       await updateTodo(item.id, { ...item, ...target })
-      loadTodos()
+      await loadTodos()
+      onTodoUpdated?.()
     }
   })
 

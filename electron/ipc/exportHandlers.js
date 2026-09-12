@@ -19,6 +19,7 @@ const FORMAT_META = {
   pdf: { ext: 'pdf', filterName: 'PDF' },
   png: { ext: 'png', filterName: 'PNG 图片' },
   bundle: { ext: 'zip', filterName: 'Flota 资料包' },
+  batch: { ext: 'zip', filterName: '笔记 ZIP' },
 }
 
 const writeHtmlToTemp = async (html) => {
@@ -205,7 +206,21 @@ const registerExportHandlers = () => {
       }
       const filePath = saveResult.filePath
 
-      if (format === 'md') {
+      if (format === 'batch') {
+        if (!Array.isArray(payload.documents) || !payload.documents.length) throw new Error('未选择笔记')
+        const zip = new AdmZip()
+        const used = new Set()
+        for (const doc of payload.documents) {
+          const ext = doc.note_type === 'whiteboard' ? 'excalidraw' : 'md'
+          const base = sanitizeFileName(doc.title)
+          let name = `${base}.${ext}`
+          let suffix = 2
+          while (used.has(name.toLowerCase())) name = `${base} (${suffix++}).${ext}`
+          used.add(name.toLowerCase())
+          zip.addFile(name, Buffer.from(String(doc.content || ''), 'utf8'))
+        }
+        await new Promise((resolve, reject) => zip.writeZip(filePath, (error) => error ? reject(error) : resolve()))
+      } else if (format === 'md') {
         await fs.promises.writeFile(filePath, markdown, 'utf8')
       } else if (format === 'html') {
         await fs.promises.writeFile(filePath, html, 'utf8')

@@ -7,6 +7,7 @@ import { createTransitionString, ANIMATIONS } from '../../utils/animationConfig'
 import { useStore } from '../../store/useStore';
 import { useTranslation } from '../../utils/i18n';
 import SyncStatusIndicator from '../sync/SyncStatusIndicator';
+import OpenNoteButton from '../notes/OpenNoteButton';
 
 const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false }) => {
   const theme = useTheme();
@@ -128,6 +129,7 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
           theme={theme}
           label={t(`toolbar.windowButtons.${isAlwaysOnTop ? 'unpin' : 'pin'}`)}
         />
+        {!isStandalone && <OpenNoteButton />}
         {isStandalone && (
           <Tooltip title={t('toolbar.minibarMode')} placement="bottom">
             <Box

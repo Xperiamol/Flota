@@ -39,6 +39,7 @@ import {
 } from '../common/AppIcons'
 import { FlotaPinIcon as PinIcon, FlotaNoteIcon as NoteIcon, FlotaWhiteboardIcon as WhiteboardIcon, FlotaTodoIcon as TodoIcon } from '../common/FlotaIcons'
 import { useStore } from '../../store/useStore'
+import { useShallow } from 'zustand/react/shallow'
 import { zhCN as dateFnsZhCN } from 'date-fns/locale/zh-CN'
 import { createTodo } from '../../api/todoAPI'
 import { useSearch } from '../../hooks/useSearch'
@@ -87,7 +88,21 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
     batchDeleteNotes,
     batchRestoreNotes,
     batchPermanentDeleteNotes
-  } = useStore()
+  } = useStore(useShallow((state) => ({
+    notes: state.notes,
+    selectedNoteId: state.selectedNoteId,
+    isLoading: state.isLoading,
+    setSelectedNoteId: state.setSelectedNoteId,
+    setSearchQuery: state.setSearchQuery,
+    loadNotes: state.loadNotes,
+    deleteNote: state.deleteNote,
+    createNote: state.createNote,
+    restoreNote: state.restoreNote,
+    togglePinNote: state.togglePinNote,
+    batchDeleteNotes: state.batchDeleteNotes,
+    batchRestoreNotes: state.batchRestoreNotes,
+    batchPermanentDeleteNotes: state.batchPermanentDeleteNotes,
+  })))
 
   const [anchorEl, setAnchorEl] = useState(null)
   const [selectedNote, setSelectedNote] = useState(null)
@@ -639,7 +654,17 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
   }
 
   return (
-    <Box sx={(theme) => ({
+    <Box data-note-file-drop="true" sx={(theme) => ({
+      position: 'relative',
+      '&[data-file-drag-over="true"]::after': {
+        content: '"松开文件，打开为新笔记"',
+        position: 'absolute', inset: 6, zIndex: 20, pointerEvents: 'none',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        border: '2px dashed', borderColor: theme.palette.primary.main,
+        borderRadius: '12px', color: theme.palette.primary.main,
+        backgroundColor: theme.palette.mode === 'dark' ? 'rgba(15,23,42,0.94)' : 'rgba(248,251,255,0.94)',
+        fontSize: 13, fontWeight: 600,
+      },
       flex: 1,
       display: 'flex',
       flexDirection: 'column',

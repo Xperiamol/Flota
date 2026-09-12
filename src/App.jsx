@@ -975,6 +975,7 @@ function App() {
               {multiSelectState.isActive && (
                 <MultiSelectToolbar
                   visible={multiSelectState.isActive}
+                  exportNoteIds={multiSelectState.itemType === '笔记' ? multiSelectState.selectedIds : undefined}
                   selectedCount={multiSelectState.selectedCount}
                   totalCount={multiSelectState.totalCount}
                   itemType={multiSelectState.itemType}
@@ -1349,6 +1350,7 @@ function App() {
             open={aiCommandCenterOpen}
             onClose={() => setAiCommandCenterOpen(false)}
             portalContainer={aiCommandCenterPortalContainer}
+            onTodoUpdated={handleTodoUpdated}
           />
         )}
 

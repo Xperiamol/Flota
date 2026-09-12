@@ -2421,23 +2421,21 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
 
   // 始终指向最新 editor，供粘贴/拖放等异步回调使用
   const editorRef = useRef(null)
+  const pendingMarkdownEditorRef = useRef(null)
+  const pendingMarkdownHandlerRef = useRef(null)
+  const markdownEmitTimerRef = useRef(null)
   const overlayContainerRef = useRef(null)
   useFloatingTableScrollbar(overlayContainerRef)
 
   // ── wiki link 支持 ───────────────────────────────────────────────────────
-  // 订阅 notes 用于判断 [[xxx]] target 是否存在；点击通过 onWikiLinkClick 转发给父组件
-  const allNotes = useStore((s) => s.notes)
-  // 用 titleById（仅在 title 实际变化时换引用）作为来源，避免 autosave 抖动
+  // 用 titleById（仅在标题实际变化时换引用）判断 [[xxx]] target 是否存在，
+  // 避免任意笔记自动保存都让当前富文本编辑器重新渲染。
   const titleById = useLinkGraph((s) => s.titleById)
   const noteTitleSet = useMemo(() => {
     const set = new Set()
     titleById.forEach((title) => { if (title) set.add(String(title).toLowerCase()) })
-    // 兜底：indexNote 还没跑过时也能拿到当前打开笔记的 title
-    if (set.size === 0) {
-      allNotes.forEach((n) => { if (n.title) set.add(n.title.toLowerCase()) })
-    }
     return set
-  }, [titleById, allNotes])
+  }, [titleById])
   const noteTitleSetRef = useRef(noteTitleSet)
   noteTitleSetRef.current = noteTitleSet
   const onWikiLinkClickRef = useRef(onWikiLinkClick)
@@ -2451,11 +2449,33 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
     // 从 titleById 取，仅在 title 实际增删改时换引用，避免 autosave 抖动重建
     const arr = []
     titleById.forEach((title) => { if (title) arr.push(String(title)) })
-    if (arr.length === 0) {
-      allNotes.forEach((n) => { if (n.title) arr.push(n.title) })
-    }
     return arr
-  }, [titleById, allNotes])
+  }, [titleById])
+
+  const emitPendingMarkdown = useCallback(() => {
+    if (markdownEmitTimerRef.current) {
+      clearTimeout(markdownEmitTimerRef.current)
+      markdownEmitTimerRef.current = null
+    }
+    const pendingEditor = pendingMarkdownEditorRef.current
+    const pendingHandler = pendingMarkdownHandlerRef.current
+    pendingMarkdownEditorRef.current = null
+    pendingMarkdownHandlerRef.current = null
+    if (!pendingEditor || pendingEditor.isDestroyed) return null
+
+    const markdown = postprocessMarkdown(pendingEditor.storage.markdown.getMarkdown())
+    lastExternalContentRef.current = markdown
+    pendingHandler?.(markdown)
+    return markdown
+  }, [])
+
+  const scheduleMarkdownChange = useCallback((ed) => {
+    pendingMarkdownEditorRef.current = ed
+    pendingMarkdownHandlerRef.current = onChangeRef.current
+    if (markdownEmitTimerRef.current) clearTimeout(markdownEmitTimerRef.current)
+    // 一次输入往往包含多笔 ProseMirror transaction；合并后只做一次全文 Markdown 序列化。
+    markdownEmitTimerRef.current = setTimeout(emitPendingMarkdown, 120)
+  }, [emitPendingMarkdown])
 
   // 始终指向最新 handleImageUpload，供 editorProps 闭包使用
   const handleImageUploadRef = useRef(null)
@@ -2602,11 +2622,9 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       // WikiLinkMark 装饰扫描产生的事务不算用户编辑，跳过以免把"上一篇笔记的初始内容"
       // 当成新笔记的内容回写造成串内容。
       if (transaction?.getMeta?.('wikiLinkRescan')) return
-      const markdown = postprocessMarkdown(ed.storage.markdown.getMarkdown())
-      lastExternalContentRef.current = markdown
       // 标记用户正在编辑，外部 content 变化时进入 dirty gate
       userEditingRef.current = true
-      onChangeRef.current(markdown)
+      scheduleMarkdownChange(ed)
     },
 
     editorProps: {
@@ -2770,6 +2788,11 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
   useEffect(() => {
     editorRef.current = editor
   }, [editor])
+
+  // 切换笔记/卸载前同步冲刷最后一小段输入，保证防抖不会造成漏存。
+  useLayoutEffect(() => () => {
+    emitPendingMarkdown()
+  }, [noteId, emitPendingMarkdown])
 
   // 通知外层 editor 实例已就绪/销毁（供工具栏等组件订阅，避免 ref 时序问题）
   useEffect(() => {
@@ -2972,7 +2995,17 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
   // ── 对外暴露接口 ─────────────────────────────────────────────────────────────
   useImperativeHandle(ref, () => ({
     getEditor: () => editor,
-    getMarkdown: () => postprocessMarkdown(editor?.storage?.markdown?.getMarkdown?.() ?? ''),
+    getMarkdown: () => {
+      if (markdownEmitTimerRef.current) {
+        clearTimeout(markdownEmitTimerRef.current)
+        markdownEmitTimerRef.current = null
+        pendingMarkdownEditorRef.current = null
+        pendingMarkdownHandlerRef.current = null
+      }
+      const markdown = postprocessMarkdown(editor?.storage?.markdown?.getMarkdown?.() ?? '')
+      lastExternalContentRef.current = markdown
+      return markdown
+    },
     focus: () => editor?.commands?.focus?.(),
     toggleBlockSelect: toggleBlockSelectMode,
     exitBlockSelect: exitBlockSelectMode,

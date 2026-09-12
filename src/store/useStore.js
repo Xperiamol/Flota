@@ -247,7 +247,10 @@ const useStore = create(
                         createdAt: Date.now(),
                         updatedAt: Date.now(),
                         noteId,
-                        source: noteId ? 'note' : 'general'
+                        source: options.mode === 'task-planning'
+                            ? 'task-planning'
+                            : noteId ? 'note' : 'general',
+                        mode: options.mode || null
                     }
                     set(state => ({
                         aiConversations: [newConv, ...state.aiConversations],

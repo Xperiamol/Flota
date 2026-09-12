@@ -325,7 +325,10 @@ const MarkdownToolbar = ({
   // Shared styles
   const btnSx = {
     width: 32, height: 32, borderRadius: '8px', color: 'text.secondary',
-    transition: 'all 0.2s ease',
+    overflow: 'hidden',
+    '& .MuiTouchRipple-root': { inset: 0, borderRadius: 'inherit', overflow: 'hidden' },
+    '& .MuiTouchRipple-child': { borderRadius: '8px !important' },
+    transition: 'background-color 160ms ease, color 160ms ease',
     '&:hover': { bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)', color: 'text.primary' },
     '& .MuiSvgIcon-root': { fontSize: 18 },
   }

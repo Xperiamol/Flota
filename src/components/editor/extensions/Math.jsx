@@ -1,8 +1,23 @@
 import { useState } from 'react'
 import { Node, InputRule, mergeAttributes } from '@tiptap/core'
 import { NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react'
-import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from '@mui/material'
+import { Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from '@mui/material'
 import mathPlugin, { readInlineMath, renderMath } from '../../../markdown/plugins/math.js'
+
+const unwrapFormula = (value) => {
+  const text = value.trim()
+  for (const [open, close] of [['$$', '$$'], ['\\[', '\\]'], ['\\(', '\\)'], ['$', '$']]) {
+    if (text.startsWith(open) && text.endsWith(close) && text.length > open.length + close.length) {
+      return text.slice(open.length, -close.length).trim()
+    }
+  }
+  return text
+}
+const templates = [
+  ['分数', '\\frac{a}{b}'], ['上下标', 'x_{i}^{2}'], ['根号', '\\sqrt{x}'],
+  ['求和', '\\sum_{i=1}^{n} i'], ['积分', '\\int_{a}^{b} f(x)\\,dx'],
+  ['矩阵', '\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}'],
+]
 
 const MathView = ({ node, updateAttributes, selected, editor }) => {
   const [open, setOpen] = useState(false)
@@ -15,14 +30,14 @@ const MathView = ({ node, updateAttributes, selected, editor }) => {
   }
   const save = () => {
     if (!draft.trim()) return
-    updateAttributes({ latex: draft.trim() })
+    updateAttributes({ latex: unwrapFormula(draft) })
     setOpen(false)
     editor.commands.focus()
   }
   return (
     <NodeViewWrapper as={display ? 'div' : 'span'} className={`${display ? 'math-block' : 'math-inline'} math-node${selected ? ' math-selected' : ''}`}>
       <span contentEditable={false} role="button" tabIndex={0} aria-label="编辑公式"
-        title="双击编辑公式" onDoubleClick={edit}
+        title="点击编辑公式" onClick={edit}
         onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); edit() } }}
         dangerouslySetInnerHTML={{ __html: renderMath(node.attrs.latex, display) }} />
       <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
@@ -30,9 +45,12 @@ const MathView = ({ node, updateAttributes, selected, editor }) => {
         <DialogContent>
           <TextField autoFocus fullWidth multiline minRows={display ? 4 : 2} label="LaTeX 公式"
             value={draft} onChange={event => setDraft(event.target.value)} sx={{ mt: 1 }}
-            helperText="直接输入公式内容，无需添加 $。Ctrl / ⌘ + Enter 保存。"
+            helperText="支持直接粘贴 $…$、$$…$$ 或 LaTeX。Ctrl / ⌘ + Enter 保存。"
             onKeyDown={event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); save() } }} />
-          <Box sx={{ mt: 2, p: 2, overflowX: 'auto' }} dangerouslySetInnerHTML={{ __html: renderMath(draft, display) }} />
+          <Box sx={{ mt: 1.5, display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+            {templates.map(([label, latex]) => <Chip key={label} label={label} size="small" onClick={() => setDraft(current => `${unwrapFormula(current)}${current.trim() ? ' ' : ''}${latex}`)} />)}
+          </Box>
+          <Box sx={{ mt: 2, p: 2, overflowX: 'auto' }} dangerouslySetInnerHTML={{ __html: renderMath(unwrapFormula(draft), display) }} />
         </DialogContent>
         <DialogActions><Button onClick={() => setOpen(false)}>取消</Button><Button onClick={save} disabled={!draft.trim()}>保存</Button></DialogActions>
       </Dialog>
@@ -55,9 +73,14 @@ const createMathNode = (display) => Node.create({
   addNodeView: () => ReactNodeViewRenderer(MathView),
   addStorage() {
     return { markdown: {
-      serialize(state, node) {
+      serialize(state, node, parent, index) {
         if (display) { state.write(`$$\n${node.attrs.latex}\n$$`); state.closeBlock(node) }
-        else state.write(`$${node.attrs.latex}$`)
+        else {
+          // `$a$$b$` is ambiguous after reopening. Keep adjacent formula nodes
+          // visually separate and serialize them as unambiguous Markdown.
+          if (index > 0 && parent?.child(index - 1)?.type === node.type) state.write(' ')
+          state.write(`$${node.attrs.latex}$`)
+        }
       },
       parse: { setup(md) { md.use(mathPlugin, { render: false }) } },
     } }

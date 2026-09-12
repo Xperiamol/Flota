@@ -87,6 +87,20 @@ $$
     equal(mathSources(), original)
     equal(document.querySelectorAll('.math-node math').length, 2)
   })
+  await test('连续插入的行内公式保存重开后保持稳定', async () => {
+    await mountNote('')
+    editor.commands.insertContent([
+      { type: 'inlineMath', attrs: { latex: 'a_1' } },
+      { type: 'inlineMath', attrs: { latex: 'b^2' } },
+      { type: 'inlineMath', attrs: { latex: 'E = mc^2' } },
+    ])
+    equal(mathSources(), ['a_1', 'b^2', 'E = mc^2'])
+    const stored = ref.current.getMarkdown()
+    assert(stored.includes('$a_1$ $b^2$ $E = mc^2$'), `ambiguous math: ${stored}`)
+    await mountNote(stored)
+    equal(mathSources(), ['a_1', 'b^2', 'E = mc^2'])
+    equal(ref.current.getMarkdown(), stored)
+  })
   await test('键盘输入行内公式支持转换及撤销', async () => {
     await mountNote('')
     editor.commands.insertContent({ type: 'text', text: '$x^2' })
@@ -180,7 +194,7 @@ $$
   })
   await test('公式弹窗可以编辑、取消及保存', async () => {
     await mountNote('$x^2$')
-    document.querySelector('.math-node [role="button"]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    document.querySelector('.math-node [role="button"]').click()
     await waitFor(() => document.querySelector('[role="dialog"] textarea'), 'math dialog')
     const field = document.querySelector('[role="dialog"] textarea')
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(field, '\\sqrt{x}')
@@ -267,6 +281,17 @@ window.checkWhiteboardToolbar = async () => {
     assert(menuSurface.backdropFilter.includes('blur'), 'menu does not use app glass surface')
     more.click()
     await waitFor(() => !document.querySelector('[role="menu"]'), 'create menu close')
+  })
+  await test('富文本 Markdown 公式自动转换且代码和金额保持原样', async () => {
+    const html = normalizePastedHtml('<p>公式 <span>$x^2$</span> 和 \\(y+1\\)</p><p>$$<br>\\frac{a}{b}<br>$$</p><pre><code>$literal$</code></pre><p>价格 $5 和 $10</p>')
+    await mountNote('')
+    editor.commands.insertContent(html)
+    equal(mathSources(), ['x^2', 'y+1', '\\frac{a}{b}'])
+    assert(editor.state.doc.textContent.includes('$literal$'), 'code changed')
+    assert(editor.state.doc.textContent.includes('价格 $5 和 $10'), 'currency changed')
+    const saved = ref.current.getMarkdown()
+    await mountNote(saved)
+    equal(mathSources(), ['x^2', 'y+1', '\\frac{a}{b}'])
   })
   return results
 }
