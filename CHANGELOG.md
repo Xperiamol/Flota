@@ -2,6 +2,12 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [3.9.2] - 2026-09-16
+
+### Changed / 更新内容
+- feat: improve AI editing and macOS window behavior
+
+
 ## [3.9.1] - 2026-09-12
 
 ### Changed / 更新内容
