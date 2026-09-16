@@ -123,11 +123,16 @@ class PendingActionStore {
       }
       case 'create_whiteboard': return `创建画布「${args.title || '未命名画布'}」`;
       case 'update_whiteboard': return `修改画布 #${args.target_note_id || '当前'}${args.action ? `（${args.action}）` : ''}`;
-      case 'create_todo': return `创建待办「${args.content || '未命名待办'}」${repeatLabel(args)}`;
+      case 'create_todo': {
+        const subtaskCount = Array.isArray(args.subtasks) ? args.subtasks.length : 0;
+        const parentLabel = args.parent_id != null ? `，作为待办 #${args.parent_id} 的子任务` : '';
+        return `创建待办「${args.content || '未命名待办'}」${repeatLabel(args)}${parentLabel}${subtaskCount ? `，含 ${subtaskCount} 个子任务` : ''}`;
+      }
       case 'create_todos': {
         const list = Array.isArray(args.todos) ? args.todos : [];
         const first = list[0]?.content || '';
-        return `批量创建 ${list.length} 条待办${first ? `：${first}…` : ''}`;
+        const subtaskCount = list.reduce((count, todo) => count + (Array.isArray(todo?.subtasks) ? todo.subtasks.length : 0), 0);
+        return `批量创建 ${list.length} 条待办${subtaskCount ? `，含 ${subtaskCount} 个子任务` : ''}${first ? `：${first}…` : ''}`;
       }
       case 'add_memory': return `保存记忆「${String(args.content || '').slice(0, 40)}」`;
       case 'update_memory': return `更新记忆 #${args.id}`;

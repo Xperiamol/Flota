@@ -226,7 +226,7 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'create_todo',
-      description: '为用户创建一个新的待办事项。',
+      description: '为用户创建一个新的待办事项，可通过 subtasks 在该主待办下创建多个子任务。',
       parameters: {
         type: 'object',
         properties: {
@@ -242,7 +242,24 @@ const TOOLS = [
           repeat_days: { type: 'string', description: '仅每周重复使用，逗号分隔的星期数字：1=周一，…，7=周日，例如“1,3,5”' },
           is_important: { type: 'boolean', description: '是否重要' },
           is_urgent: { type: 'boolean', description: '是否紧急' },
-          tags: { type: 'string', description: '标签，用逗号分隔' }
+          tags: { type: 'string', description: '标签，用逗号分隔' },
+          parent_id: { type: 'number', description: '已有父待办的 ID。需要给现有待办新增一个子任务时填写' },
+          subtasks: {
+            type: 'array',
+            description: '该待办下的子任务。用户要求拆成一个主任务及多个步骤时使用',
+            items: {
+              type: 'object',
+              properties: {
+                content: { type: 'string', description: '子任务内容' },
+                description: { type: 'string', description: '子任务说明（可选）' },
+                due_date: { type: 'string', description: '子任务截止日期（可选）' },
+                is_important: { type: 'boolean', description: '是否重要' },
+                is_urgent: { type: 'boolean', description: '是否紧急' },
+                tags: { type: 'string', description: '标签，用逗号分隔（可选）' }
+              },
+              required: ['content']
+            }
+          }
         },
         required: ['content']
       }
@@ -252,7 +269,7 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'create_todos',
-      description: '批量创建待办事项，用于把用户的模糊大目标（如"周末去武汉玩"、"准备下周述职"、"学习 React"）拆解为多条具体可执行的任务。调用前应先 search_memory 拉相关知识/偏好、search_todos 看未来一周已有事项以避免冲突；本工具一次提交 5-12 条任务，每条 content 必须是**具体可执行**的动作（实际景点/活动/步骤），不要"调研 X / 规划 Y / 确定 Z"这类空泛准备任务。所有 due_date 时间在 08:00-23:59 之间且不早于当前时间。',
+      description: '批量创建待办事项，用于把用户的模糊大目标（如"周末去武汉玩"、"准备下周述职"、"学习 React"）拆解为具体可执行的任务。需要层级时，每个主待办可包含 subtasks。调用前应先 search_memory 拉相关知识/偏好、search_todos 看未来一周已有事项以避免冲突；顶层任务通常提交 5-12 条，每条 content 必须是具体动作，不要"调研 X / 规划 Y / 确定 Z"这类空泛准备任务。所有 due_date 时间在 08:00-23:59 之间且不早于当前时间。',
       parameters: {
         type: 'object',
         properties: {
@@ -275,7 +292,24 @@ const TOOLS = [
                 repeat_days: { type: 'string', description: '仅每周重复使用：1=周一，…，7=周日，多个用逗号分隔' },
                 is_important: { type: 'boolean', description: '是否重要' },
                 is_urgent: { type: 'boolean', description: '是否紧急' },
-                tags: { type: 'string', description: '标签，用逗号分隔（可选）' }
+                tags: { type: 'string', description: '标签，用逗号分隔（可选）' },
+                parent_id: { type: 'number', description: '已有父待办 ID；用于批量给现有待办添加子任务（可选）' },
+                subtasks: {
+                  type: 'array',
+                  description: '该主待办下的子任务数组（可选）',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      content: { type: 'string', description: '子任务内容' },
+                      description: { type: 'string', description: '子任务说明（可选）' },
+                      due_date: { type: 'string', description: '子任务截止时间，YYYY-MM-DDTHH:MM:SS（可选）' },
+                      is_important: { type: 'boolean', description: '是否重要' },
+                      is_urgent: { type: 'boolean', description: '是否紧急' },
+                      tags: { type: 'string', description: '标签，用逗号分隔（可选）' }
+                    },
+                    required: ['content']
+                  }
+                }
               },
               required: ['content']
             }

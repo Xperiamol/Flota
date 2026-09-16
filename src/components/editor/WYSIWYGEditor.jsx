@@ -2392,7 +2392,7 @@ const EditorContextMenu = ({ editor, menu, noteId, containerRef, undoBaseline, b
  * - lastExternalContentRef：记录最近一次从父组件收到/向父组件发出的内容，防止无意义 setContent
  * - editorRef：始终指向当前 editor 实例，供异步回调（粘贴/拖放）使用
  */
-const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, onBlockSelectModeChange, onWikiLinkClick, placeholder = '开始输入...' }, ref) => {
+const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, onBlockSelectModeChange, onWikiLinkClick, onOpenAI, placeholder = '开始输入...' }, ref) => {
   // 用 ref 追踪最新 onChange，避免在 useEditor 回调中因闭包失效而用到旧 handler
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
@@ -3383,7 +3383,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
         sx={{ minHeight: '40vh', cursor: 'text' }}
         onClick={() => editor?.commands?.focus?.('end')}
       />
-      <AIAssistPanel editor={editor} />
+      <AIAssistPanel editor={editor} onOpenAI={onOpenAI} />
     </Box>
   )
 })

@@ -72,6 +72,24 @@ if (process.platform === 'win32') {
   app.setAppUserModelId('com.flota.app')
 }
 
+// macOS 必须始终以普通前台应用运行，否则 Dock 可能只保留固定图标，
+// 却不把当前进程标记为正在运行。窗口从托盘或快捷键恢复时也再次确认。
+if (process.platform === 'darwin') {
+  app.setActivationPolicy('regular')
+}
+
+async function ensureMacDockVisible() {
+  if (process.platform !== 'darwin') return
+
+  try {
+    if (app.isReady() && app.dock) {
+      await app.dock.show()
+    }
+  } catch (error) {
+    console.error('[Main] 恢复 macOS Dock 图标失败:', error)
+  }
+}
+
 // 注册自定义协议（必须在 app.whenReady 之前）
 protocol.registerSchemesAsPrivileged([
   {
@@ -220,6 +238,12 @@ function createWindow() {
     titleBarStyle: 'hidden', // 隐藏默认标题栏，使用自定义标题栏
     frame: false, // 完全隐藏窗口边框
     show: false // 先不显示窗口，等加载完成后再显示
+  })
+
+  // 所有显示路径（启动、托盘、全局快捷键、第二实例）最终都会触发 show。
+  // 在这里统一恢复 Dock 状态，避免某条路径遗漏。
+  mainWindow.on('show', () => {
+    void ensureMacDockVisible()
   })
 
   // 如果之前是最大化状态，恢复最大化
@@ -1291,9 +1315,12 @@ app.on('window-all-closed', () => {
 // before-quit 由文件末尾统一处理（含 tray 清理、窗口保存、DB 关闭）
 
 app.on('activate', () => {
-  // 在macOS上，当单击dock图标并且没有其他窗口打开时，
-  // 通常在应用中重新创建一个窗口
-  if (BrowserWindow.getAllWindows().length === 0) {
+  // macOS 点击 Dock 图标时恢复已隐藏的主窗口；窗口确实不存在才重建。
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+  } else if (BrowserWindow.getAllWindows().length === 0) {
     createWindow()
   }
 })

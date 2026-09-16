@@ -46,6 +46,7 @@ import {
 import { buildMessageMetadata, createUserMessage, createAssistantMessage } from '../../utils/aiCore/messageModel'
 import usePendingActionExecution from '../../hooks/usePendingActionExecution'
 import logger from '../../utils/logger'
+import { notifyAINoteIdsUpdated } from '../../utils/aiCore/noteRefresh'
 
 const QUICK_PROMPTS = [
   { id: 'summarize', label: '总结当前笔记', prompt: '请总结当前笔记，输出：核心要点、关键结论。' },
@@ -208,6 +209,8 @@ const AICommandCenter = ({
     aiEnsureNoteChat,
     aiSetActiveConv,
     aiUpdateConv,
+    aiCommandRequest,
+    aiClearCommandRequest,
     createNote,
     deleteNote,
     updateNote: storeUpdateNote,
@@ -224,6 +227,8 @@ const AICommandCenter = ({
     aiEnsureNoteChat: state.aiEnsureNoteChat,
     aiSetActiveConv: state.aiSetActiveConv,
     aiUpdateConv: state.aiUpdateConv,
+    aiCommandRequest: state.aiCommandRequest,
+    aiClearCommandRequest: state.aiClearCommandRequest,
     createNote: state.createNote,
     deleteNote: state.deleteNote,
     updateNote: state.updateNote,
@@ -518,6 +523,7 @@ const AICommandCenter = ({
     persistConversation(conversationId, nextMessages)
 
     let shouldReloadNotes = false
+    const editedNoteIds = new Set()
     const pendingActions = []
 
     try {
@@ -560,8 +566,12 @@ const AICommandCenter = ({
               label: parsed.label
             })
           }
-          if (['create_note', 'edit_note'].includes(chunk.name) && parsed?.success === true && !parsed?.requiresConfirmation) {
+          if (['create_note', 'edit_note', 'edit_notes'].includes(chunk.name) && parsed?.success === true && !parsed?.requiresConfirmation) {
             shouldReloadNotes = true
+            if (chunk.name === 'edit_note' && parsed.id != null) editedNoteIds.add(parsed.id)
+            if (chunk.name === 'edit_notes') {
+              parsed.results?.filter((item) => item?.success && item.id != null).forEach((item) => editedNoteIds.add(item.id))
+            }
           }
         },
         onChunkError: (chunk) => { if (isActiveView()) setStreamContent(prev => prev + `\n\n⚠️ ${chunk.content}`) }
@@ -600,6 +610,7 @@ const AICommandCenter = ({
       persistConversation(conversationId, finalMessages)
       if (shouldReloadNotes) {
         await loadNotes?.()
+        notifyAINoteIdsUpdated([...editedNoteIds])
       }
     } catch (error) {
       logger.warn('[AICommandCenter] chatStream failed', error)
@@ -622,6 +633,22 @@ const AICommandCenter = ({
       if (isActiveView()) window.setTimeout(() => inputRef.current?.focus(), 30)
     }
   }, [aiEnsureNoteChat, aiNewChat, aiSetActiveConv, clearActiveTool, currentConversationId, currentNote, handleExecuteAction, input, loadNotes, loading, noteScope, notes, persistConversation, runStream, selectedNoteId, showActiveTool])
+
+  useEffect(() => {
+    if (!open || !aiCommandRequest?.prompt) return
+    const { prompt, autoSend } = aiCommandRequest
+    if (loading) {
+      setInput(prompt)
+      return
+    }
+    aiClearCommandRequest?.()
+    if (autoSend) {
+      handleSend(prompt)
+    } else {
+      setInput(prompt)
+      window.setTimeout(() => inputRef.current?.focus(), 30)
+    }
+  }, [aiClearCommandRequest, aiCommandRequest, handleSend, loading, open])
 
   const handleKeyDown = (event) => {
     if (event.key === 'Escape') {
@@ -1111,7 +1138,17 @@ const BatchTodoActionCard = ({ action, theme, executing, onExecute }) => (
             {t.description}
           </Typography>
         )}
+        {Array.isArray(t.subtasks) && t.subtasks.length > 0 && (
+          <Box sx={{ mt: 0.3, pl: 0.25 }}>
+            {t.subtasks.map((subtask, index) => (
+              <Typography key={`${subtask.content}-${index}`} variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: 11, lineHeight: 1.4 }}>
+                • {subtask.content}
+              </Typography>
+            ))}
+          </Box>
+        )}
         <Box sx={{ display: 'flex', gap: 0.3, mt: 0.3, flexWrap: 'wrap' }}>
+          {t.parent_id != null && <Chip size="small" label={`父待办 #${t.parent_id}`} variant="outlined" sx={{ height: 16, fontSize: '0.65rem' }} />}
           {t.due_date && <Chip size="small" label={formatTodoDue(t.due_date)} sx={{ height: 16, fontSize: '0.65rem' }} />}
           {t.repeat_type && t.repeat_type !== 'none' && (
             <Chip
@@ -1194,6 +1231,15 @@ const SimpleActionCard = ({ action, theme, executing, onExecute }) => {
         <Typography variant="body2" sx={{ fontWeight: 650, lineHeight: 1.4, fontSize: 12.5, wordBreak: 'break-word' }}>
           {detail}
         </Typography>
+        {action.name === 'create_todo' && Array.isArray(action.args?.subtasks) && action.args.subtasks.length > 0 && (
+          <Box sx={{ mt: 0.4 }}>
+            {action.args.subtasks.map((subtask, index) => (
+              <Typography key={`${subtask.content}-${index}`} variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: 11 }}>
+                • {subtask.content}
+              </Typography>
+            ))}
+          </Box>
+        )}
       </Box>
       {!isDone && !isFailed && (
         <Button

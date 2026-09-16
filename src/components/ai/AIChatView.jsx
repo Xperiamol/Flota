@@ -450,7 +450,17 @@ const BatchTodoActionCard = ({ action, theme, executing, onExecute }) => {
                   {t.description}
                 </Typography>
               )}
+              {Array.isArray(t.subtasks) && t.subtasks.length > 0 && (
+                <Box sx={{ mt: 0.4, pl: 0.5 }}>
+                  {t.subtasks.map((subtask, index) => (
+                    <Typography key={`${subtask.content}-${index}`} variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.45 }}>
+                      • {subtask.content}
+                    </Typography>
+                  ))}
+                </Box>
+              )}
               <Box sx={{ display: 'flex', gap: 0.4, mt: 0.4, flexWrap: 'wrap' }}>
+                {t.parent_id != null && <Chip size="small" label={`父待办 #${t.parent_id}`} variant="outlined" sx={{ height: 18, fontSize: '0.68rem' }} />}
                 {t.due_date && <Chip size="small" label={formatDue(t.due_date)} sx={{ height: 18, fontSize: '0.68rem' }} />}
                 {formatRepeat(t) && <Chip size="small" label={formatRepeat(t)} color="primary" variant="outlined" sx={{ height: 18, fontSize: '0.68rem' }} />}
                 {t.is_important && <Chip size="small" label="重要" color="error" sx={{ height: 18, fontSize: '0.68rem' }} />}
@@ -534,6 +544,15 @@ const SimpleActionCard = ({ action, theme, executing, onExecute }) => {
           >
             {detail}
           </Typography>
+          {action.name === 'create_todo' && Array.isArray(action.args?.subtasks) && action.args.subtasks.length > 0 && (
+            <Box sx={{ mt: 0.5 }}>
+              {action.args.subtasks.map((subtask, index) => (
+                <Typography key={`${subtask.content}-${index}`} variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  • {subtask.content}
+                </Typography>
+              ))}
+            </Box>
+          )}
         </Box>
         {!isDone && !isFailed && (
           <Button
@@ -1386,7 +1405,7 @@ export default function AIChatView({ onTodoUpdated }) {
   }, [loading, cancel])
 
   useEffect(() => {
-    if (!aiCommandRequest?.prompt) return
+    if (currentView !== 'ai' || !aiCommandRequest?.prompt) return
     const { prompt, autoSend } = aiCommandRequest
     if (loading) {
       setInput(prompt)
@@ -1399,7 +1418,7 @@ export default function AIChatView({ onTodoUpdated }) {
       setInput(prompt)
       inputRef.current?.focus()
     }
-  }, [aiCommandRequest, aiClearCommandRequest, handleSend, loading])
+  }, [aiCommandRequest, aiClearCommandRequest, currentView, handleSend, loading])
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {

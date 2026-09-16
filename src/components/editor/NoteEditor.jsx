@@ -149,6 +149,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     aiCommandCenterOpen: state.aiCommandCenterOpen,
     setAiCommandCenterEnabled: state.setAiCommandCenterEnabled,
     setAiCommandCenterOpen: state.setAiCommandCenterOpen,
+    aiDispatchCommand: state.aiDispatchCommand,
     noteNavigatorOpen: state.noteNavigatorOpen,
     setNoteNavigatorOpen: state.setNoteNavigatorOpen,
     initializeSettings: state.initializeSettings,
@@ -161,6 +162,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     aiCommandCenterOpen,
     setAiCommandCenterEnabled,
     setAiCommandCenterOpen,
+    aiDispatchCommand,
     noteNavigatorOpen,
     setNoteNavigatorOpen,
     initializeSettings: initializeMainSettings,
@@ -201,6 +203,17 @@ const NoteEditor = ({ onCollapseSidebar }) => {
   const [fullscreenToolbarExpanded, setFullscreenToolbarExpanded] = useState(false)
   const [minibarToolbarExpanded, setMinibarToolbarExpanded] = useState(false)
   const [standaloneAICommandCenterOpen, setStandaloneAICommandCenterOpen] = useState(false)
+
+  const handleOpenAIFromSelection = useCallback((prompt, options = {}) => {
+    if (!prompt?.trim()) return
+    if (isStandaloneMode) {
+      setStandaloneAICommandCenterOpen(true)
+    } else {
+      setAiCommandCenterEnabled(true)
+      setAiCommandCenterOpen(true)
+    }
+    aiDispatchCommand(prompt, options)
+  }, [aiDispatchCommand, isStandaloneMode, setAiCommandCenterEnabled, setAiCommandCenterOpen])
   const [standaloneNoteNavigatorOpen, setStandaloneNoteNavigatorOpen] = useState(false)
   const [relatedAnchorEl, setRelatedAnchorEl] = useState(null)
   const [tagAnchorEl, setTagAnchorEl] = useState(null)
@@ -626,6 +639,40 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedNoteId]) // 只依赖 selectedNoteId，不依赖 currentNote，防止同步更新覆盖编辑中的内容
+
+  // AI 在主进程直接写入数据库。列表刷新后只对明确被 AI 修改的当前笔记应用新快照，
+  // 避免依赖 currentNote 的普通同步更新覆盖用户正在输入的内容。
+  useEffect(() => {
+    const handleAINoteUpdate = (event) => {
+      const noteIds = Array.isArray(event.detail?.noteIds) ? event.detail.noteIds.map(String) : []
+      const activeId = selectedNoteIdRef.current
+      if (activeId == null || !noteIds.includes(String(activeId))) return
+
+      const freshNote = useStore.getState().notes.find((note) => String(note.id) === String(activeId))
+      if (!freshNote) return
+      cancelSave()
+      const nextTitle = freshNote.title || ''
+      const nextContent = freshNote.content || ''
+      const nextTags = Array.isArray(freshNote.tags) ? freshNote.tags.join(', ') : (freshNote.tags || '')
+      const nextNoteType = freshNote.note_type || 'markdown'
+      setTitle(nextTitle)
+      setContent(nextContent)
+      setTags(nextTags)
+      setNoteType(nextNoteType)
+      setLastSaved(freshNote.updated_at || freshNote.created_at || null)
+      setHasUnsavedChanges(false)
+      hasUnsavedChangesRef.current = false
+      setShowSaveError(false)
+      prevStateRef.current = {
+        title: nextTitle,
+        content: nextContent,
+        tags: nextTags,
+        noteType: nextNoteType
+      }
+    }
+    window.addEventListener('ai-notes-updated', handleAINoteUpdate)
+    return () => window.removeEventListener('ai-notes-updated', handleAINoteUpdate)
+  }, [cancelSave])
 
   // 暴露保存函数供窗口关闭时调用
   useEffect(() => {
@@ -2815,6 +2862,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
                     onEditorReady={setWysiwygEditor}
                     onBlockSelectModeChange={setBlockSelectActive}
                     onWikiLinkClick={handleWikiLinkClick}
+                    onOpenAI={handleOpenAIFromSelection}
                     onChange={(newContent) => {
                       setContent(newContent)
                       setHasUnsavedChanges(true)
@@ -2932,7 +2980,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
 
             {/* 源码模式浮动面板 */}
             {editorMode === 'markdown' && (viewMode === 'edit' || viewMode === 'split') && (
-              <AIAssistPanel textareaRef={contentRef} onInsert={handleMarkdownInsert} />
+              <AIAssistPanel textareaRef={contentRef} onInsert={handleMarkdownInsert} onOpenAI={handleOpenAIFromSelection} />
             )}
 
           </Box>

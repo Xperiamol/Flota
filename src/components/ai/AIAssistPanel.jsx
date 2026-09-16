@@ -1,17 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Box, IconButton, TextField, CircularProgress, Tooltip, alpha } from '@mui/material'
-import { ContentCopy as ContentCopyIcon } from '../common/AppIcons'
+import { Box, IconButton, Tooltip, alpha } from '@mui/material'
 import { Close as CloseIcon } from '../common/AppIcons'
-import { SwapHoriz as SwapHorizIcon } from '../common/AppIcons'
-import { Add as AddIcon } from '../common/AppIcons'
 import { DragIndicator as DragIndicatorIcon } from '../common/AppIcons'
 import FloatingGlassSurface from '../common/FloatingGlassSurface'
-import FlotaAIIcon from '../common/FlotaAIIcon'
 import { useStore } from '../../store/useStore'
-import useAIStream from '../../hooks/useAIStream'
 import useDraggableFloatingPanel from '../../hooks/useDraggableFloatingPanel'
 import { ALL_TOOLBAR_ITEMS, DEFAULT_FLOATING_ORDER, execWYSIWYGCommand } from '../editor/MarkdownToolbar'
-import { buildContext, CONTEXT_PROFILES } from '../../utils/aiCore/contextBuilder'
 import { hideAIAssistSelection, showAIAssistSelection } from '../editor/extensions/AIAssistSelection'
 
 const PANEL_MARGIN = 8
@@ -19,33 +13,23 @@ const PANEL_ESTIMATED_WIDTH = 280
 const PANEL_ESTIMATED_HEIGHT = 52
 
 /**
- * 浮动面板 — 右键选中文字后浮现，提供改写/摘要/翻译/续写/自由提问 + 自定义格式工具
+ * 浮动面板 — 右键选中文字后显示在上下文菜单上方，操作统一转入 AI 小窗
  * 支持两种模式：
  *   1. WYSIWYG 模式：传入 editor (TipTap)
  *   2. 源码模式：传入 textareaRef + onInsert
  */
-const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
+const AIAssistPanel = ({ editor, textareaRef, onInsert, onOpenAI }) => {
   const aiPanelMode = useStore((s) => s.aiPanelMode) || 'selection'
   const floatingPanelItems = useStore((s) => s.floatingPanelItems) || DEFAULT_FLOATING_ORDER
-  const notes = useStore((s) => s.notes)
-  const selectedNoteId = useStore((s) => s.selectedNoteId)
   const [visible, setVisible] = useState(false)
   const [selectedText, setSelectedText] = useState('')
   const [position, setPosition] = useState({ x: 0, y: 0 })
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState('')
-  const [error, setError] = useState('')
-  const [showCustom, setShowCustom] = useState(false)
-  const [customPrompt, setCustomPrompt] = useState('')
-  const [activeAction, setActiveAction] = useState(null)
   const panelRef = useRef(null)
   const lastSelRef = useRef('')
   const mouseDownRef = useRef(false)
   const selRangeRef = useRef({ start: 0, end: 0 })
   const isTextareaMode = !editor && !!textareaRef
-  // 兼容旧设置值 selection；其产品语义已迁移为“右键选中文本”。
   const isContextSelectionMode = aiPanelMode === 'selection' || aiPanelMode === 'contextmenu'
-  const { runStream } = useAIStream()
   const { dragging, handleDragStart, clampPosition } = useDraggableFloatingPanel({
     panelRef,
     position,
@@ -66,24 +50,28 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
     }
   }, [editor, isTextareaMode])
 
-  const restoreEditorSelection = useCallback(() => {
-    if (!editor || isTextareaMode) return false
-    const { from, to } = selRangeRef.current || {}
-    if (!Number.isFinite(from) || !Number.isFinite(to) || from === to) return false
-    editor.chain().focus().setTextSelection({ from, to }).run()
-    return true
-  }, [editor, isTextareaMode])
-
   const getSelectionText = useCallback(() => (
     lastSelRef.current || selectedText
   ), [selectedText])
 
-  const resetPanelOutput = useCallback(() => {
-    setResult('')
-    setError('')
-    setShowCustom(false)
-    setActiveAction(null)
-  }, [])
+  const alignWithContextMenu = useCallback(() => {
+    // 编辑器菜单会根据剩余空间自动翻到鼠标上方，因此必须等菜单完成布局后，
+    // 再依据它的真实矩形定位 AI 栏，不能只依据右键坐标猜测。
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const menu = document.querySelector('[data-editor-context-menu]')
+        const panel = panelRef.current
+        if (!menu || !panel) return
+        const menuRect = menu.getBoundingClientRect()
+        const panelRect = panel.getBoundingClientRect()
+        const gap = 8
+        const aboveY = menuRect.top - panelRect.height - gap
+        const belowY = menuRect.bottom + gap
+        const y = aboveY >= PANEL_MARGIN ? aboveY : belowY
+        setPosition(clampPosition(menuRect.left, y))
+      })
+    })
+  }, [clampPosition])
 
   const updatePosition = useCallback((mouseEvent) => {
     const positionNearPoint = (x, y) => {
@@ -163,29 +151,28 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
     }
     if (!dom) return
 
-    const onMouseDown = () => { mouseDownRef.current = true }
+    const onMouseDown = (e) => {
+      mouseDownRef.current = true
+      // 右键交给编辑器上下文菜单，避免 AI 浮层遮住菜单。
+      if (e.button === 2 && aiPanelMode !== 'always') setVisible(false)
+    }
 
     const onMouseUp = (e) => {
       mouseDownRef.current = false
       if (aiPanelMode === 'disabled') return
       if (panelRef.current?.contains(e.target)) return
-      if (isContextSelectionMode) {
-        // 先收起旧面板；随后触发的 contextmenu 会在选区有效时重新打开。
-        setVisible(false)
-        return
-      }
+      if (e.button !== 0 || isContextSelectionMode) return
       // 缓存当前 mouseup 的位置，setTimeout 内 e 仍可用，但显式拷贝更稳
       const mouseSnapshot = { clientX: e.clientX, clientY: e.clientY }
       setTimeout(() => {
         const { from, to } = editor.state.selection
         const text = editor.state.doc.textBetween(from, to, ' ')
-        if (text.trim().length > 1 && aiPanelMode === 'always') {
+        if (text.trim().length > 1) {
           selRangeRef.current = { from, to }
           lastSelRef.current = text
           setSelectedText(text)
           updatePosition(mouseSnapshot)
           setVisible(true)
-          resetPanelOutput()
         } else if (aiPanelMode === 'always') {
           setSelectedText('')
           updatePosition(mouseSnapshot)
@@ -195,21 +182,18 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
     }
 
     const onContextMenu = (e) => {
-      mouseDownRef.current = false
       if (!isContextSelectionMode || panelRef.current?.contains(e.target)) return
       const { from, to } = editor.state.selection
       const text = editor.state.doc.textBetween(from, to, ' ')
       if (text.trim().length <= 1) return
 
-      // 有文本选区时由 AI bar 接管右键；空选区仍交给编辑器原有右键菜单。
-      e.preventDefault()
-      e.stopPropagation()
+      // 不阻止事件传播：编辑器原有右键菜单仍会正常打开。
       selRangeRef.current = { from, to }
       lastSelRef.current = text
       setSelectedText(text)
       updatePosition({ clientX: e.clientX, clientY: e.clientY })
       setVisible(true)
-      resetPanelOutput()
+      alignWithContextMenu()
     }
 
     dom.addEventListener('mousedown', onMouseDown)
@@ -220,7 +204,7 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
       document.removeEventListener('mouseup', onMouseUp)
       dom.removeEventListener('contextmenu', onContextMenu)
     }
-  }, [editor, updatePosition, aiPanelMode, isContextSelectionMode, resetPanelOutput])
+  }, [editor, updatePosition, aiPanelMode, isContextSelectionMode, alignWithContextMenu])
 
   useEffect(() => {
     if (!editor) return
@@ -229,14 +213,14 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
       if (panelRef.current?.contains(document.activeElement)) return
       const { from, to } = editor.state.selection
       const text = editor.state.doc.textBetween(from, to, ' ')
-      if (aiPanelMode !== 'always' && !result && !loading) {
+      if (aiPanelMode !== 'always' && !mouseDownRef.current) {
         setVisible(false)
         if (text.trim().length <= 1) lastSelRef.current = ''
       }
     }
     editor.on('selectionUpdate', onSelectionUpdate)
     return () => editor.off('selectionUpdate', onSelectionUpdate)
-  }, [editor, result, loading, aiPanelMode])
+  }, [editor, aiPanelMode])
 
   useEffect(() => {
     if (!editor || aiPanelMode !== 'always') return
@@ -260,21 +244,17 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
     const onMouseUp = (e) => {
       if (aiPanelMode === 'disabled') return
       if (panelRef.current?.contains(e.target)) return
-      if (isContextSelectionMode) {
-        setVisible(false)
-        return
-      }
+      if (e.button !== 0 || isContextSelectionMode) return
       setTimeout(() => {
         const start = textarea.selectionStart
         const end = textarea.selectionEnd
         const text = textarea.value.substring(start, end)
-        if (text.trim().length > 1 && aiPanelMode === 'always') {
+        if (text.trim().length > 1) {
           selRangeRef.current = { start, end }
           lastSelRef.current = text
           setSelectedText(text)
           updatePosition(e)
           setVisible(true)
-          resetPanelOutput()
         }
       }, 50)
     }
@@ -285,14 +265,11 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
       const end = textarea.selectionEnd
       const text = textarea.value.substring(start, end)
       if (text.trim().length <= 1) return
-      e.preventDefault()
-      e.stopPropagation()
       selRangeRef.current = { start, end }
       lastSelRef.current = text
       setSelectedText(text)
       updatePosition({ clientX: e.clientX, clientY: e.clientY })
       setVisible(true)
-      resetPanelOutput()
     }
 
     textarea.addEventListener('mouseup', onMouseUp)
@@ -301,7 +278,7 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
       textarea.removeEventListener('mouseup', onMouseUp)
       textarea.removeEventListener('contextmenu', onContextMenu)
     }
-  }, [isTextareaMode, textareaRef, aiPanelMode, isContextSelectionMode, resetPanelOutput, updatePosition])
+  }, [isTextareaMode, textareaRef, aiPanelMode, isContextSelectionMode, updatePosition])
 
   useEffect(() => {
     if (!editor) return undefined
@@ -315,11 +292,6 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
 
   const dismiss = useCallback(() => {
     setVisible(false)
-    setResult('')
-    setError('')
-    setLoading(false)
-    setShowCustom(false)
-    setActiveAction(null)
     lastSelRef.current = ''
   }, [])
 
@@ -332,104 +304,13 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [dismiss, visible])
 
-  const runAction = useCallback(async (prompt, actionId) => {
+  const openAICommand = useCallback((prompt, { autoSend = true } = {}) => {
     saveEditorSelection()
     const text = getSelectionText()
     if (!text.trim()) return
-    setLoading(true)
-    setError('')
-    setResult('')
-    setActiveAction(actionId)
-    try {
-      const messages = [
-        { role: 'system', content: '你是一个专业的写作助手。直接输出结果，不要包含额外的解释或前缀。' },
-        { role: 'user', content: prompt + text },
-      ]
-      const contextPackage = await buildContext({
-        notes,
-        selectedNoteId,
-        query: text,
-        contextEnabled: CONTEXT_PROFILES.selection_panel,
-      })
-      const { result: res, content } = await runStream({
-        messages,
-        contextPackage,
-        requestPrefix: 'assist',
-        options: {
-          scene: 'selection_panel',
-          memoryQuery: text,
-          requireConfirmation: true,
-          disableTools: true,
-        },
-        onContent: setResult
-      })
-      const finalContent = content || res?.fullContent || res?.data?.content
-      if (res?.success && finalContent) {
-        setResult(finalContent)
-      } else if (!finalContent) {
-        setError(res?.error || '调用失败')
-      }
-    } catch (e) {
-      setError(e.message || '未知错误')
-    } finally {
-      setLoading(false)
-    }
-  }, [getSelectionText, notes, runStream, saveEditorSelection, selectedNoteId])
-
-  const handleCustomSubmit = useCallback(() => {
-    if (!customPrompt.trim()) return
-    runAction(customPrompt.trim() + '\n\n', 'custom')
-  }, [customPrompt, runAction])
-
-  const replaceSelection = useCallback(() => {
-    if (!result) return
-    if (isTextareaMode) {
-      const textarea = textareaRef.current?.querySelector?.('textarea') || textareaRef.current
-      if (textarea) {
-        const { start, end } = selRangeRef.current
-        textarea.focus()
-        textarea.setSelectionRange(start, end)
-        document.execCommand('insertText', false, result)
-      }
-      dismiss()
-      return
-    }
-    if (!editor) return
-    restoreEditorSelection()
-    const { from, to } = selRangeRef.current
-    editor.chain().focus().deleteRange({ from, to }).insertContentAt(from, result).run()
+    onOpenAI?.(`${prompt}${text}`, { autoSend })
     dismiss()
-  }, [editor, result, dismiss, isTextareaMode, restoreEditorSelection, textareaRef])
-
-  const insertAfter = useCallback(() => {
-    if (!result) return
-    if (isTextareaMode) {
-      const textarea = textareaRef.current?.querySelector?.('textarea') || textareaRef.current
-      if (textarea) {
-        const { end } = selRangeRef.current
-        textarea.focus()
-        textarea.setSelectionRange(end, end)
-        document.execCommand('insertText', false, '\n\n' + result)
-      }
-      dismiss()
-      return
-    }
-    if (!editor) return
-    restoreEditorSelection()
-    const { to } = selRangeRef.current
-    editor.chain().focus().insertContentAt(to, '\n\n' + result).run()
-    dismiss()
-  }, [editor, result, dismiss, isTextareaMode, restoreEditorSelection, textareaRef])
-
-  const copyResult = useCallback(() => {
-    if (result) navigator.clipboard?.writeText(result)
-  }, [result])
-
-  const continueWithResult = useCallback(() => {
-    if (!result) return
-    setCustomPrompt(`基于上面的结果继续优化：\n\n${result}\n\n`)
-    setShowCustom(true)
-  }, [result])
+  }, [dismiss, getSelectionText, onOpenAI, saveEditorSelection])
 
   if (!visible) return null
 
@@ -442,8 +323,8 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
       position={position}
       minWidth={240}
       maxWidth={420}
-      onClickAway={() => { if (!loading && aiPanelMode !== 'always') dismiss() }}
-      clickAwayDisabled={loading || aiPanelMode === 'always'}
+      onClickAway={() => { if (aiPanelMode !== 'always') dismiss() }}
+      clickAwayDisabled={aiPanelMode === 'always'}
       sx={{ overflow: 'hidden' }}
     >
       <Box sx={(theme) => ({
@@ -452,9 +333,7 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
         gap: 0.5,
         px: 0.5,
         py: 0.5,
-        boxShadow: (result || error || loading || showCustom)
-          ? `inset 0 -1px 0 ${alpha(theme.palette.common.white, theme.palette.mode === 'dark' ? 0.035 : 0.28)}`
-          : 'none',
+        boxShadow: 'none',
         bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.05 : 0.08)
       })}>
         <Box
@@ -478,8 +357,11 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
           const Icon = def.icon
           const handleClick = () => {
             if (def.aiAction) {
-              if (def.aiAction.isChat) { setShowCustom(v => !v); return }
-              runAction(def.aiAction.prompt, id)
+              if (def.aiAction.isChat) {
+                openAICommand('请围绕以下选中文本与我继续对话：\n\n', { autoSend: false })
+                return
+              }
+              openAICommand(def.aiAction.prompt, { autoSend: true })
               return
             }
             if (isTextareaMode && onInsert && def.inline) {
@@ -493,8 +375,6 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
               <IconButton
                 size="small"
                 onClick={handleClick}
-                disabled={def.aiAction && !def.aiAction.isChat ? loading : false}
-                color={def.aiAction?.isChat ? (showCustom ? 'primary' : 'default') : (activeAction === id ? 'primary' : 'default')}
                 sx={(theme) => ({
                   p: '5px',
                   borderRadius: 1,
@@ -512,93 +392,6 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert }) => {
         </IconButton>
       </Box>
 
-      {showCustom && (
-        <Box
-          onMouseDown={(event) => {
-            event.stopPropagation()
-            saveEditorSelection()
-          }}
-          onClick={(event) => event.stopPropagation()}
-          sx={{ px: 1.25, py: 0.9, display: 'flex', gap: 1 }}
-        >
-          <TextField
-            size="small"
-            fullWidth
-            variant="outlined"
-            placeholder="输入你的指令…"
-            aria-label="AI指令输入"
-            value={customPrompt}
-            onChange={e => setCustomPrompt(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleCustomSubmit() } }}
-            disabled={loading}
-            sx={{
-              '& .MuiOutlinedInput-notchedOutline': { borderColor: 'transparent' },
-              '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'transparent' },
-              '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: 'transparent' }
-            }}
-          />
-        </Box>
-      )}
-
-      {loading && !result && (
-        <Box sx={{ px: 2, py: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
-          <CircularProgress size={16} />
-          <Box sx={{ fontSize: 13, color: 'text.secondary' }}>AI 思考中…</Box>
-        </Box>
-      )}
-
-      {error && <Box sx={{ px: 2, py: 1, fontSize: 12, color: 'error.main' }}>{error}</Box>}
-
-      {result && (
-        <Box>
-          <Box sx={{
-            px: 2,
-            py: 1.5,
-            fontSize: 13,
-            lineHeight: 1.7,
-            maxHeight: 240,
-            overflow: 'auto',
-            whiteSpace: 'pre-wrap',
-            color: 'text.primary'
-          }}>
-            {result}
-          </Box>
-          <Box sx={(theme) => ({
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: 0.5,
-            px: 1,
-            py: 0.5,
-            boxShadow: `inset 0 1px 0 ${alpha(theme.palette.common.white, theme.palette.mode === 'dark' ? 0.035 : 0.28)}`
-          })}>
-            <Tooltip title="替换选中" arrow>
-              <IconButton size="small" onClick={replaceSelection} disabled={loading} color="primary" sx={{ p: '4px', borderRadius: 1 }}>
-                <SwapHorizIcon sx={{ fontSize: 18 }} />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="插入到后面" arrow>
-              <IconButton size="small" onClick={insertAfter} disabled={loading} sx={{ p: '4px', borderRadius: 1 }}>
-                <AddIcon sx={{ fontSize: 18 }} />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="复制" arrow>
-              <IconButton size="small" onClick={copyResult} disabled={loading} sx={{ p: '4px', borderRadius: 1 }}>
-                <ContentCopyIcon sx={{ fontSize: 18 }} />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="继续追问/优化" arrow>
-              <IconButton size="small" onClick={continueWithResult} disabled={loading} sx={{ p: '4px', borderRadius: 1 }}>
-                <FlotaAIIcon sx={{ fontSize: 20 }} />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="关闭" arrow>
-              <IconButton size="small" onClick={dismiss} sx={{ p: '4px', borderRadius: 1 }}>
-                <CloseIcon sx={{ fontSize: 16 }} />
-              </IconButton>
-            </Tooltip>
-          </Box>
-        </Box>
-      )}
     </FloatingGlassSurface>
   )
 }
