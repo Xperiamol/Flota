@@ -135,6 +135,9 @@ const { getInstance: getSyncIPCHandler } = require('./ipc/SyncIPCHandler')
 const { getInstance: getNetworkService } = require('./services/NetworkService')
 const { getInstance: getOfflineSyncQueue } = require('./services/OfflineSyncQueue')
 const { getInstance: getLogger } = require('./services/LoggerService')
+const { ExternalFileService, extractFilesFromArgv } = require('./services/ExternalFileService')
+const { registerExternalFileHandlers } = require('./ipc/externalFileHandlers')
+const { installAppMenu } = require('./utils/appMenu')
 
 
 // 保持对窗口对象的全局引用，如果不这样做，当JavaScript对象被垃圾回收时，窗口将自动关闭
@@ -146,6 +149,30 @@ let tray = null
 let pluginManager
 const activeAIStreams = new Map()
 let cspConfigured = false
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return false
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+  return true
+}
+
+// 外部文件（双击 .md / .excalidraw、拖到 Dock、「打开方式」）
+const externalFileService = new ExternalFileService()
+externalFileService.attach((filePath) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return false
+  mainWindow.webContents.send('external-file:opened', filePath)
+  showMainWindow()
+  return true
+})
+
+// macOS 通过 open-file 事件传入文件；必须在 ready 之前注册，才能接住冷启动时的文件
+app.on('open-file', (event, filePath) => {
+  event.preventDefault()
+  externalFileService.open(filePath)
+  showMainWindow()
+})
 
 function setupContentSecurityPolicy() {
   if (cspConfigured) return
@@ -704,6 +731,12 @@ async function initializeServices() {
         services.aiService, services.noteDAO, services.todoDAO, services.mem0Service,
         services.webSearchService
       )
+      // AI 工具直接写库，不经过 NoteService 事件；这里补发通知，让打开中的笔记立即刷新
+      services.aiChatService.setNotesChangedListener((notes) => {
+        BrowserWindow.getAllWindows().forEach((win) => {
+          if (win && !win.isDestroyed()) win.webContents.send('ai:notes-changed', notes)
+        })
+      })
       services.aiChatService.setCurrentNoteGetter(async () => {
         // 通过 IPC 向渲染进程请求当前笔记ID，再从DAO获取
         try {
@@ -1026,6 +1059,8 @@ if (!gotTheLock) {
   // 当第二个实例尝试启动时，聚焦到第一个实例的窗口
   app.on('second-instance', (event, commandLine, workingDirectory) => {
     console.log('检测到第二个实例启动，聚焦到主窗口')
+    // Windows / Linux：应用已运行时双击文件，文件路径在第二个实例的命令行里
+    extractFilesFromArgv(commandLine).forEach((filePath) => externalFileService.open(filePath))
     // 如果主窗口存在，显示并聚焦
     if (mainWindow) {
       if (mainWindow.isMinimized()) {
@@ -1207,6 +1242,10 @@ if (!gotTheLock) {
 
     createWindow()
     createTray()
+    installAppMenu({ getMainWindow: () => mainWindow, isDev })
+
+    // Windows / Linux 冷启动时双击文件，路径在 argv 里
+    extractFilesFromArgv(process.argv).forEach((filePath) => externalFileService.open(filePath))
 
     // 设置 MCP 相关 IPC 处理器（在窗口创建后）
     setupMCPHandlers(services.mcpDownloader, mainWindow)
@@ -1400,6 +1439,7 @@ registerShortcutHandlers(() => services.shortcutService)
 registerMediaHandlers(services)
 registerAttachmentsHandlers(services)
 registerWhiteboardHandlers()
+registerExternalFileHandlers({ externalFileService, getMainWindow: () => mainWindow })
 
 // 应用退出时清理资源
 let isQuittingApp = false;

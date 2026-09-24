@@ -326,6 +326,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     executePendingAction: inv('ai:execute-pending-action'),
     consumePendingAction: inv('ai:consume-pending-action'),
     onChatChunk: listen('ai:chat-chunk'),
+    onNotesChanged: listen('ai:notes-changed'),
   },
 
   // STT (Speech-to-Text) 相关 API
@@ -343,6 +344,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // 通用附件 API（按 SHA-1 内容去重存到 attachments/）
+  // 外部文件（系统双击 / 打开方式 / 打开文件…）：只读查看，可导入为笔记
+  externalFiles: {
+    consumePending: inv('external-file:consume-pending'),
+    read: inv('external-file:read'),
+    showOpenDialog: inv('external-file:show-open-dialog'),
+    reveal: inv('external-file:reveal'),
+    onOpened: listen('external-file:opened'),
+  },
+
+  // macOS 菜单栏命令
+  appMenu: {
+    onCommand: listen('app-menu:command'),
+  },
+
   attachments: {
     saveFromPath: inv('attachments:save-from-path'),
     saveFromBuffer: inv('attachments:save-from-buffer'),

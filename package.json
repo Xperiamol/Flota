@@ -112,6 +112,24 @@
   },
   "build": {
     "appId": "com.flota.app",
+    "fileAssociations": [
+      {
+        "ext": ["md", "markdown"],
+        "name": "Markdown Document",
+        "description": "Markdown 文档",
+        "mimeType": "text/markdown",
+        "role": "Viewer",
+        "rank": "Alternate"
+      },
+      {
+        "ext": "excalidraw",
+        "name": "Excalidraw Drawing",
+        "description": "Excalidraw 白板",
+        "mimeType": "application/vnd.excalidraw+json",
+        "role": "Viewer",
+        "rank": "Alternate"
+      }
+    ],
     "productName": "Flota",
     "directories": {
       "output": "dist-electron"
