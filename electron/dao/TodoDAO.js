@@ -3,6 +3,21 @@ const TimeZoneUtils = require('../utils/timeZoneUtils');
 const ChangeLogDAO = require('./ChangeLogDAO');
 const crypto = require('crypto');
 
+// due_date 有两种存法：纯日期 "YYYY-MM-DD"（全天待办，has_time=0）与 UTC ISO 时间戳（定时待办）。
+// 两者混在一起做字符串比较会出错：例如今天的全天待办 '2026-09-25' < '2026-09-25T02:00Z'，
+// 会被当成"已逾期"。这里按格式分别比较：纯日期对本地日期，时间戳对 UTC 时刻。
+const localDateKey = (date = new Date()) => (
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+);
+const localDayRangeUTC = (dateKey) => {
+  const [y, m, d] = String(dateKey).split('-').map(Number);
+  return [new Date(y, m - 1, d, 0, 0, 0, 0).toISOString(), new Date(y, m - 1, d, 23, 59, 59, 999).toISOString()];
+};
+// 逾期：全天待办要过完当天才算；参数 [todayKey, nowUTC]
+const OVERDUE_SQL = '((length(due_date) = 10 AND due_date < ?) OR (length(due_date) > 10 AND due_date < ?))';
+// 某天到期；参数 [dayKey, dayStartUTC, dayEndUTC]
+const DUE_ON_DAY_SQL = '((length(due_date) = 10 AND due_date = ?) OR (length(due_date) > 10 AND due_date >= ? AND due_date <= ?))';
+
 class TodoDAO {
   constructor() {
     this.dbManager = getInstance();
@@ -616,19 +631,18 @@ class TodoDAO {
    */
   findByDate(dateString) {
     const db = this.getDB();
-    const dateStart = `${dateString} 00:00:00`;
-    const dateEnd = `${dateString} 23:59:59`;
+    const [dateStart, dateEnd] = localDayRangeUTC(dateString);
     
     const stmt = db.prepare(`
       SELECT * FROM todos 
       WHERE is_deleted = 0 
         AND is_completed = 0 
         AND (parent_todo_id IS NULL OR parent_todo_id NOT LIKE '%-%-%-%-%')
-        AND due_date >= ? AND due_date <= ?
+        AND ${DUE_ON_DAY_SQL}
       ORDER BY due_date ASC
     `);
     
-    return stmt.all(dateStart, dateEnd);
+    return stmt.all(dateString, dateStart, dateEnd);
   }
 
   /**
@@ -644,11 +658,11 @@ class TodoDAO {
       WHERE is_deleted = 0 
         AND is_completed = 0 
         AND (parent_todo_id IS NULL OR parent_todo_id NOT LIKE '%-%-%-%-%')
-        AND due_date >= ? AND due_date <= ?
+        AND ${DUE_ON_DAY_SQL}
       ORDER BY due_date ASC
     `);
     
-    return stmt.all(todayStart, todayEnd);
+    return stmt.all(localDateKey(), todayStart, todayEnd);
   }
 
   /**
@@ -663,11 +677,11 @@ class TodoDAO {
       WHERE is_deleted = 0 
         AND is_completed = 0 
         AND (parent_todo_id IS NULL OR parent_todo_id NOT LIKE '%-%-%-%-%')
-        AND due_date < ?
+        AND ${OVERDUE_SQL}
       ORDER BY due_date ASC
     `);
     
-    return stmt.all(nowUTC);
+    return stmt.all(localDateKey(), nowUTC);
   }
 
   /**
@@ -687,11 +701,11 @@ class TodoDAO {
     const pendingStmt = db.prepare(`SELECT COUNT(*) as count FROM todos WHERE ${mainTodoWhere} AND is_completed = 0`);
     const overdueStmt = db.prepare(`
       SELECT COUNT(*) as count FROM todos 
-      WHERE ${mainTodoWhere} AND is_completed = 0 AND due_date < ?
+      WHERE ${mainTodoWhere} AND is_completed = 0 AND ${OVERDUE_SQL}
     `);
     const dueTodayStmt = db.prepare(`
       SELECT COUNT(*) as count FROM todos 
-      WHERE ${mainTodoWhere} AND is_completed = 0 AND due_date >= ? AND due_date <= ?
+      WHERE ${mainTodoWhere} AND is_completed = 0 AND ${DUE_ON_DAY_SQL}
     `);
     const todayCompletedStmt = db.prepare(`
       SELECT COUNT(*) as count FROM todos
@@ -732,7 +746,12 @@ class TodoDAO {
       WHERE ${mainTodoWhere} AND is_completed = 1 
       AND due_date IS NOT NULL 
       AND completed_at IS NOT NULL 
-      AND completed_at <= due_date
+      -- completed_at 是 CURRENT_TIMESTAMP（'YYYY-MM-DD HH:MM:SS'，UTC），due_date 是纯日期或 ISO 时间戳，
+      -- 直接做字符串比较会把"同一天晚于截止时刻"算成按时，把全天待办当天完成算成逾期
+      AND (
+        (length(due_date) = 10 AND date(completed_at, 'localtime') <= due_date)
+        OR (length(due_date) > 10 AND datetime(completed_at) <= datetime(due_date))
+      )
     `);
     
     // 调试：获取有截止日期的已完成待办总数
@@ -744,8 +763,8 @@ class TodoDAO {
     const completed = completedStmt.get().count;
     const completedOnTime = completedOnTimeStmt.get().count;
     const completedWithDueDate = completedWithDueDateStmt.get().count;
-    const overdue = overdueStmt.get(nowUTC).count;
-    const dueToday = dueTodayStmt.get(todayStart, todayEnd).count;
+    const overdue = overdueStmt.get(todayKey, nowUTC).count;
+    const dueToday = dueTodayStmt.get(todayKey, todayStart, todayEnd).count;
     const todayCompleted = todayCompletedStmt.get(todayStart, todayEnd).count
       + todayRecurringCompletedStmt.get(`%${todayKey}%`).count;
     const todayWorkload = todayCompleted + dueToday + overdue;

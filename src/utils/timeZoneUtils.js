@@ -2,7 +2,22 @@
  * 前端时区处理工具类
  * 与后端TimeZoneUtils配合，处理前端的时区转换
  */
+// 全天待办以纯日期 "YYYY-MM-DD" 存储（后端 has_time=0）。它不是 UTC 时间戳：
+// new Date('2026-09-27') 会按 UTC 零点解析，在东八区变成 08:00，在西半球还会错到前一天。
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const isDateOnly = (value) => typeof value === 'string' && DATE_ONLY_RE.test(value.trim());
+const parseLocalDateOnly = (value) => {
+  const [y, m, d] = value.trim().split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+// 统一的解析入口：纯日期按本地日期，其余按时间戳
+const toDate = (value) => (isDateOnly(value) ? parseLocalDateOnly(value) : new Date(value));
+
 class TimeZoneUtils {
+  static isDateOnly(value) {
+    return isDateOnly(value);
+  }
+
   /**
    * 将本地日期时间转换为UTC ISO字符串（发送给后端）
    * @param {string} dateString - 日期字符串，格式如 '2024-01-15'
@@ -12,8 +27,10 @@ class TimeZoneUtils {
   static toUTC(dateString, timeString = '') {
     if (!dateString) return null;
     
+    // 没填时间 = 全天待办：保持纯日期，不能转成"零点"时间戳（否则后端会把它判为定时待办）
+    if (!timeString && isDateOnly(dateString)) return dateString.trim();
+
     try {
-      // 如果没有时间，默认为 00:00:00
       const time = timeString || '00:00';
       const localDateTime = `${dateString}T${time}:00`;
       
@@ -41,6 +58,7 @@ class TimeZoneUtils {
    */
   static fromUTC(utcISOString) {
     if (!utcISOString) return { date: '', time: '' };
+    if (isDateOnly(utcISOString)) return { date: utcISOString.trim(), time: '' };
     
     try {
       const utcDate = new Date(utcISOString);
@@ -77,8 +95,14 @@ class TimeZoneUtils {
     if (!utcISOString) return false;
     
     try {
-      const dueDate = new Date(utcISOString);
       const now = new Date();
+      if (isDateOnly(utcISOString)) {
+        // 全天待办当天之内都不算逾期
+        const endOfDay = parseLocalDateOnly(utcISOString);
+        endOfDay.setDate(endOfDay.getDate() + 1);
+        return endOfDay <= now;
+      }
+      const dueDate = new Date(utcISOString);
       return dueDate < now;
     } catch (error) {
       console.error('检查是否过期时出错:', error, utcISOString);
@@ -95,7 +119,7 @@ class TimeZoneUtils {
     if (!utcISOString) return false;
     
     try {
-      const date = new Date(utcISOString);
+      const date = toDate(utcISOString);
       const now = new Date();
       
       return date.getFullYear() === now.getFullYear() &&
@@ -117,14 +141,12 @@ class TimeZoneUtils {
     if (!utcISOString) return '';
     
     try {
-      const date = new Date(utcISOString);
+      const date = toDate(utcISOString);
       const now = new Date();
       
-      const {
-        showTime = true,
-        showDate = true,
-        shortFormat = false
-      } = options;
+      const { shortFormat = false } = options;
+      // 全天待办没有时刻可显示
+      const showTime = (options.showTime ?? true) && !isDateOnly(utcISOString);
       
       // 检查是否是今天
       if (this.isToday(utcISOString)) {
@@ -216,6 +238,7 @@ class TimeZoneUtils {
   static hasTime(utcISOString) {
     if (!utcISOString) return false;
     
+    if (isDateOnly(utcISOString)) return false;
     try {
       const date = new Date(utcISOString);
       return date.getHours() !== 0 || date.getMinutes() !== 0 || date.getSeconds() !== 0;

@@ -84,10 +84,17 @@ const getPriorityLabel = (todo) => {
 /**
  * 格式化时间显示
  */
-const formatTime = (dateString) => {
+const formatTime = (dateString, hasTime) => {
   if (!dateString) return '';
+  // 全天待办（"YYYY-MM-DD"，has_time=0）没有具体时间：new Date() 会按 UTC 零点解析，
+  // 在东八区显示成 08:00，所以只给真正带时间的待办显示时刻
+  const timed = hasTime !== undefined && hasTime !== null
+    ? Boolean(Number(hasTime))
+    : /T\d{2}:\d{2}|\s\d{2}:\d{2}/.test(String(dateString));
+  if (!timed) return '';
   try {
     const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) return '';
     return format(date, 'HH:mm', { locale: zhCN });
   } catch (error) {
     return '';
@@ -128,7 +135,7 @@ const TodoItem = ({
 
   // 优先级信息
   const priority = getPriorityLabel(todo);
-  const dueTime = formatTime(todo.due_date);
+  const dueTime = formatTime(todo.due_date, todo.has_time);
 
   // 根据变体调整样式
   const getItemStyles = () => {

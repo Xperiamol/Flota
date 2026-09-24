@@ -2,6 +2,14 @@
  * 时区处理工具类
  * 统一处理时间转换、比较和格式化，解决时区相关问题
  */
+// 全天待办以纯日期 "YYYY-MM-DD" 存储，不是 UTC 时间戳：需按本地日期理解，且没有时刻可显示
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const isDateOnly = (value) => typeof value === 'string' && DATE_ONLY_RE.test(value.trim());
+const parseLocalDateOnly = (value) => {
+  const [y, m, d] = value.trim().split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
 class TimeZoneUtils {
   /**
    * 将本地时间字符串转换为UTC ISO字符串（用于数据库存储）
@@ -137,6 +145,12 @@ class TimeZoneUtils {
    */
   static isOverdue(utcISOString) {
     if (!utcISOString) return false;
+    if (isDateOnly(utcISOString)) {
+      // 全天待办要过完当天才算逾期
+      const endOfDay = parseLocalDateOnly(utcISOString);
+      endOfDay.setDate(endOfDay.getDate() + 1);
+      return endOfDay <= new Date();
+    }
     return this.compareUTC(utcISOString, this.nowUTC()) < 0;
   }
 
@@ -149,7 +163,7 @@ class TimeZoneUtils {
     if (!utcISOString) return false;
     
     try {
-      const date = new Date(utcISOString);
+      const date = isDateOnly(utcISOString) ? parseLocalDateOnly(utcISOString) : new Date(utcISOString);
       const now = new Date();
       
       return date.getFullYear() === now.getFullYear() &&
@@ -186,15 +200,15 @@ class TimeZoneUtils {
     if (!utcISOString) return '';
     
     try {
-      const date = new Date(utcISOString);
+      const allDay = isDateOnly(utcISOString);
+      const date = allDay ? parseLocalDateOnly(utcISOString) : new Date(utcISOString);
       const now = new Date();
+      // 全天待办只显示日期，不显示时刻
+      const withTime = (label) => (allDay ? label : `${label} ${date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`);
       
       // 检查是否是今天
       if (this.isToday(utcISOString)) {
-        return `今天 ${date.toLocaleTimeString('zh-CN', { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        })}`;
+        return withTime('今天');
       }
       
       // 检查是否是明天
@@ -203,10 +217,7 @@ class TimeZoneUtils {
       if (date.getFullYear() === tomorrow.getFullYear() &&
           date.getMonth() === tomorrow.getMonth() &&
           date.getDate() === tomorrow.getDate()) {
-        return `明天 ${date.toLocaleTimeString('zh-CN', { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        })}`;
+        return withTime('明天');
       }
       
       // 检查是否是昨天
@@ -215,13 +226,11 @@ class TimeZoneUtils {
       if (date.getFullYear() === yesterday.getFullYear() &&
           date.getMonth() === yesterday.getMonth() &&
           date.getDate() === yesterday.getDate()) {
-        return `昨天 ${date.toLocaleTimeString('zh-CN', { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        })}`;
+        return withTime('昨天');
       }
       
       // 其他日期
+      if (allDay) return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
       return date.toLocaleString('zh-CN', {
         month: '2-digit',
         day: '2-digit',
