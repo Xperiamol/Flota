@@ -5,6 +5,7 @@ import { useTheme } from '@mui/material/styles';
 import { PushPinOutlined as PushPinOutlinedIcon } from '../common/AppIcons';
 import { createTransitionString, ANIMATIONS } from '../../utils/animationConfig';
 import { useStore } from '../../store/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useTranslation } from '../../utils/i18n';
 import SyncStatusIndicator from '../sync/SyncStatusIndicator';
 import OpenNoteButton from '../notes/OpenNoteButton';
@@ -12,7 +13,10 @@ import OpenNoteButton from '../notes/OpenNoteButton';
 const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const { currentView, titleBarStyle } = useStore();
+  const { currentView, titleBarStyle } = useStore(useShallow((state) => ({
+    currentView: state.currentView,
+    titleBarStyle: state.titleBarStyle,
+  })));
   const isMac = titleBarStyle === 'mac';
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
 

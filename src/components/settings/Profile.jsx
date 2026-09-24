@@ -11,8 +11,11 @@ import {
   Alert,
   Stack,
   Zoom,
-  Tooltip
+  Tooltip,
+  alpha,
+  useTheme
 } from '@mui/material';
+import { useShallow } from 'zustand/react/shallow';
 import {
   Person as PersonIcon,
   Notes as NotesIcon,
@@ -67,7 +70,7 @@ const formatLocalDateKey = (date) => (
 );
 
 const getHeatmapColors = (isDark) => [
-  isDark ? '#1a1a1a' : '#ebedf0',
+  isDark ? 'rgba(148, 163, 184, 0.14)' : '#ebedf0',
   isDark ? '#0e4429' : '#9be9a8',
   isDark ? '#006d32' : '#40c463',
   isDark ? '#26a641' : '#30a14e',
@@ -102,7 +105,19 @@ const DashboardCardHeader = ({ title, icon: Icon, color = 'text.primary', mb = 2
 const Profile = () => {
   const { t } = useTranslation();
   const { showError } = useError();
-  const { notes, userAvatar, theme, primaryColor, setCurrentView, setSettingsTabValue, setTodoNavigationRequest, userName, christmasMode } = useStore();
+  const { notes, userAvatar, primaryColor, setCurrentView, setSettingsTabValue, setTodoNavigationRequest, userName, christmasMode } = useStore(useShallow((state) => ({
+    notes: state.notes,
+    userAvatar: state.userAvatar,
+    primaryColor: state.primaryColor,
+    setCurrentView: state.setCurrentView,
+    setSettingsTabValue: state.setSettingsTabValue,
+    setTodoNavigationRequest: state.setTodoNavigationRequest,
+    userName: state.userName,
+    christmasMode: state.christmasMode,
+  })));
+  // 用 MUI 实际生效的配色：store 里的 theme 可能是 'system'，直接比较 'dark' 会在系统深色下误判为浅色
+  const muiTheme = useTheme();
+  const isDark = muiTheme.palette.mode === 'dark';
   const [todoStats, setTodoStats] = useState(null);
   const [activityCounts, setActivityCounts] = useState(null);
   const [installedPlugins, setInstalledPlugins] = useState([]);
@@ -233,14 +248,14 @@ const Profile = () => {
     transition: `${PROFILE_TRANSITION}, transform 180ms ${PROFILE_EASING}`,
     '&:hover': {
       transform: 'translateY(-2px)',
-      boxShadow: theme === 'dark'
+      boxShadow: isDark
         ? '0 18px 36px rgba(0,0,0,0.28)'
         : '0 18px 36px rgba(15,23,42,0.12)',
     },
     '&:active': {
       transform: 'translateY(0)',
     }
-  }), [profileCardSx, theme]);
+  }), [profileCardSx, isDark]);
 
   // 计算笔记活动热力图数据（过去90天）
   // 优先使用后端变更日志的真实活动次数（精确到每天的编辑频次）；
@@ -320,7 +335,7 @@ const Profile = () => {
     }
     return chunks;
   }, [heatmapData]);
-  const heatmapColors = useMemo(() => getHeatmapColors(theme === 'dark'), [theme]);
+  const heatmapColors = useMemo(() => getHeatmapColors(isDark), [isDark]);
 
   if (loading) {
     return (
@@ -372,14 +387,14 @@ const Profile = () => {
                 top: -60,
                 left: '50%',
                 transform: 'translateX(-50%)',
-                bgcolor: theme === 'dark' ? '#2d2d2d' : '#fff',
-                color: theme === 'dark' ? '#fff' : '#000',
+                bgcolor: isDark ? '#2d2d2d' : '#fff',
+                color: isDark ? '#fff' : '#000',
                 px: 2,
                 py: 1,
                 borderRadius: 2,
                 boxShadow: 3,
                 whiteSpace: 'nowrap',
-                border: `1px solid ${theme === 'dark' ? '#444' : '#e0e0e0'}`,
+                border: `1px solid ${isDark ? '#444' : '#e0e0e0'}`,
                 '&::after': {
                   content: '""',
                   position: 'absolute',
@@ -390,7 +405,7 @@ const Profile = () => {
                   height: 0,
                   borderLeft: '8px solid transparent',
                   borderRight: '8px solid transparent',
-                  borderTop: `8px solid ${theme === 'dark' ? '#2d2d2d' : '#fff'}`
+                  borderTop: `8px solid ${isDark ? '#2d2d2d' : '#fff'}`
                 }
               }}
             >
@@ -471,7 +486,7 @@ const Profile = () => {
                 sx={{
                   height: 7,
                   borderRadius: 999,
-                  bgcolor: 'grey.200',
+                  bgcolor: alpha(muiTheme.palette.text.primary, isDark ? 0.12 : 0.08),
                   '& .MuiLinearProgress-bar': {
                     bgcolor: 'info.main',
                     borderRadius: 999,
@@ -494,9 +509,11 @@ const Profile = () => {
             <Chip
               label={todoStatsDisplay.dueToday > 0 ? '点击查看今日筛选' : '点击查看今日列表'}
               size="small"
-              color={todoStatsDisplay.dueToday > 0 ? 'info' : 'success'}
-              variant={todoStatsDisplay.dueToday > 0 ? 'filled' : 'outlined'}
-              sx={{ width: '100%' }}
+              // 次要入口：用浅色底 + 彩色文字，避免满宽实心色条成为全页最抢眼的元素
+              sx={(t) => {
+                const c = t.palette[todoStatsDisplay.dueToday > 0 ? 'info' : 'success'].main
+                return { width: '100%', height: 28, fontWeight: 600, color: c, bgcolor: alpha(c, isDark ? 0.16 : 0.1), border: 'none', cursor: 'pointer' }
+              }}
             />
           </CardContent>
         </Card>
@@ -513,9 +530,11 @@ const Profile = () => {
             <Chip
               label={todoStatsDisplay.overdue > 0 ? '点击查看逾期筛选' : '点击查看逾期列表'}
               size="small"
-              color={todoStatsDisplay.overdue > 0 ? 'error' : 'success'}
-              variant={todoStatsDisplay.overdue > 0 ? 'filled' : 'outlined'}
-              sx={{ width: '100%' }}
+              // 次要入口：用浅色底 + 彩色文字，避免满宽实心色条成为全页最抢眼的元素
+              sx={(t) => {
+                const c = t.palette[todoStatsDisplay.overdue > 0 ? 'error' : 'success'].main
+                return { width: '100%', height: 28, fontWeight: 600, color: c, bgcolor: alpha(c, isDark ? 0.16 : 0.1), border: 'none', cursor: 'pointer' }
+              }}
             />
           </CardContent>
         </Card>
@@ -606,8 +625,8 @@ const Profile = () => {
                             transition: PROFILE_TRANSITION,
                             '&:hover': {
                               filter: 'brightness(1.12)',
-                              borderColor: theme === 'dark' ? 'rgba(255,255,255,0.28)' : 'rgba(15,23,42,0.18)',
-                              boxShadow: theme === 'dark'
+                              borderColor: isDark ? 'rgba(255,255,255,0.28)' : 'rgba(15,23,42,0.18)',
+                              boxShadow: isDark
                                 ? '0 0 0 2px rgba(255,255,255,0.06)'
                                 : '0 0 0 2px rgba(15,23,42,0.05)'
                             }
@@ -657,7 +676,7 @@ const Profile = () => {
                         fontWeight: index < 3 ? 600 : 500,
                         transition: PROFILE_TRANSITION,
                         '&:hover': {
-                          boxShadow: theme === 'dark'
+                          boxShadow: isDark
                             ? '0 6px 18px rgba(0,0,0,0.22)'
                             : '0 6px 18px rgba(15,23,42,0.10)'
                         }

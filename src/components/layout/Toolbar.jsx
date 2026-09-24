@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react'
+import { useMemo, useState, useCallback, useRef, useLayoutEffect } from 'react'
 import {
   Box,
   Toolbar as MuiToolbar,
@@ -21,6 +21,7 @@ import {
 import { FlotaCalendarIcon as Today } from '../common/FlotaIcons'
 import FlotaAIIcon from '../common/FlotaAIIcon'
 import { useStore } from '../../store/useStore'
+import { useShallow } from 'zustand/react/shallow'
 import DropdownMenu from '../common/DropdownMenu'
 import { executePluginCommand } from '../../api/pluginAPI'
 import { getPluginCommandIcon } from '../../utils/pluginCommandUtils.jsx'
@@ -53,11 +54,17 @@ const Toolbar = ({
 }) => {
   const {
     createNote,
-    notes,
     setSelectedNoteId,
     aiNewChat,
     setAiCommandCenterOpen
-  } = useStore()
+  } = useStore(useShallow((state) => ({
+    createNote: state.createNote,
+    setSelectedNoteId: state.setSelectedNoteId,
+    aiNewChat: state.aiNewChat,
+    setAiCommandCenterOpen: state.setAiCommandCenterOpen,
+  })))
+  // 只订阅"已删除数量"：订阅整个 notes 会让工具栏在每次编辑自动保存时都重渲染
+  const deletedNotesCount = useStore((state) => state.notes.filter((note) => note.is_deleted).length)
   const pluginCommands = useStore((state) => state.pluginCommands)
   const timelineFilter = useStore((state) => state.timelineFilter)
   const setTimelineFilter = useStore((state) => state.setTimelineFilter)
@@ -84,7 +91,6 @@ const Toolbar = ({
 
   // 移除settingsAnchor状态，改用DropdownMenu组件
 
-  const deletedNotesCount = useMemo(() => notes.filter(note => note.is_deleted).length, [notes])
 
   const handleCreateNote = useCallback(async () => {
     try {
@@ -343,9 +349,10 @@ const Toolbar = ({
           showSidebarToggle: true
         };
       default:
+        // 插件视图（如知识图谱）没有自己的"新建"语义，这里新建的是笔记，文案要说清楚
         return {
           title: 'Flota',
-          createButtonText: t('common.new'),
+          createButtonText: t('common.newNote'),
           createAction: handleCreateNote,
           showDeletedButton: false,
           showSidebarToggle: true
@@ -355,8 +362,48 @@ const Toolbar = ({
       handleCreateNote, handleCreateTodo, handleCreateEvent, handleQuickInput,
       onTodoViewModeChange, onTodoShowCompletedChange, onCalendarShowCompletedChange, onCalendarViewModeChange, t]);
 
+  // 中间的视图切换（四象限 / 专注 / 日历模式）要居中在整个工具栏上，而不是左右两组之间的剩余空间：
+  // 左右两侧宽度不同时 mx:auto 会让它偏向一边。放得下时绝对居中，放不下（窗口太窄）时回到正常排布。
+  const toolbarRef = useRef(null)
+  const leftGroupRef = useRef(null)
+  const centerGroupRef = useRef(null)
+  const [centerPinned, setCenterPinned] = useState(false)
+  const hasCenterGroup = Boolean(viewConfig.customButtons?.some((button) =>
+    (button.type === 'calendarViewMode' && button.position === 'right') ||
+    (button.type === 'viewToggle' && button.position === 'center')
+  ))
+
+  useLayoutEffect(() => {
+    const toolbar = toolbarRef.current
+    if (!toolbar || !hasCenterGroup || typeof ResizeObserver === 'undefined') {
+      setCenterPinned(false)
+      return undefined
+    }
+    const GAP = 12
+    const measure = () => {
+      const center = centerGroupRef.current
+      const left = leftGroupRef.current
+      if (!center || !left) return
+      const style = window.getComputedStyle(toolbar)
+      const innerWidth = toolbar.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+      const rightWidth = [...toolbar.querySelectorAll(':scope > [data-toolbar-right]')]
+        .reduce((sum, el) => sum + el.offsetWidth + GAP, 0)
+      const side = (innerWidth - center.offsetWidth) / 2
+      const fits = side >= left.offsetWidth + GAP && side >= rightWidth
+      setCenterPinned((prev) => (prev === fits ? prev : fits))
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(toolbar)
+    if (leftGroupRef.current) observer.observe(leftGroupRef.current)
+    if (centerGroupRef.current) observer.observe(centerGroupRef.current)
+    toolbar.querySelectorAll(':scope > [data-toolbar-right]').forEach((el) => observer.observe(el))
+    return () => observer.disconnect()
+  }, [hasCenterGroup, currentView, todoViewMode, calendarViewMode])
+
   return (
     <MuiToolbar
+      ref={toolbarRef}
       disableGutters
       sx={(theme) => ({
         borderBottom: 1,
@@ -370,12 +417,13 @@ const Toolbar = ({
         gap: 1,
         flexWrap: 'wrap',
         flexShrink: 0,
+        position: 'relative',
         '& .MuiButton-root': { whiteSpace: 'nowrap' },
         '& .MuiIconButton-root': { minWidth: 32, minHeight: 32 },
       })}
     >
       {/* 左侧按钮组 */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+      <Box ref={leftGroupRef} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
         {viewConfig.showSidebarToggle && (
           <Tooltip title={sidebarOpen ? '收起侧栏' : '展开侧栏'}>
             <IconButton
@@ -508,7 +556,24 @@ const Toolbar = ({
 
       {/* 居中区域 - 日历视图模式选择器和待办视图切换 */}
       {viewConfig.customButtons && (
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mx: 'auto' }}>
+        <Box
+          ref={centerGroupRef}
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 1,
+            mx: 'auto',
+            ...(centerPinned && {
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              mx: 0,
+              zIndex: 1
+            })
+          }}
+        >
           {viewConfig.customButtons
             .filter(button =>
               (button.type === 'calendarViewMode' && button.position === 'right') ||
@@ -573,7 +638,7 @@ const Toolbar = ({
 
       {/* 右侧区域 - 日历导航按钮 */}
       {currentView === 'calendar' && viewConfig.customButtons && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 'auto' }}>
+        <Box data-toolbar-right sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 'auto' }}>
           {viewConfig.customButtons
             .filter(button => button.type === 'calendarNavigation')
             .map((button, index) => <CalendarNavButtons key={index} button={button} />)}
@@ -583,7 +648,7 @@ const Toolbar = ({
       {/* 动态标题已移除 */}
 
       {/* 右侧按钮组 */}
-      <Box sx={{
+      <Box data-toolbar-right sx={{
         display: 'flex',
         alignItems: 'center',
         gap: 0.5,

@@ -111,7 +111,7 @@ const FocusModeView = ({
   const [showFocusBackground, setShowFocusBackground] = useState(false); // 控制专注背景色
 
   // 获取系统主题色
-  const { primaryColor } = useStore();
+  const primaryColor = useStore((state) => state.primaryColor);
 
   const focusStartRef = useRef(null);
   const accumulatedFocusSecondsRef = useRef(0);

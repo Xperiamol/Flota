@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import {
   Box,
   Chip,
-  IconButton,
   InputBase,
   ListItemButton,
   ListItemIcon,
@@ -15,14 +14,18 @@ import {
   Search as SearchIcon,
   NoteAdd as NoteAddIcon,
   Info as InfoIcon,
-  Dashboard as DashboardIcon
+  Dashboard as DashboardIcon,
+  FolderOpenRounded as OpenFileIcon
 } from '../common/AppIcons'
+import { showOpenExternalFileDialog } from '../../utils/externalFiles'
 import { FlotaPluginIcon as ExtensionIcon, FlotaTodoIcon as TodoIcon, FlotaSettingsIcon as SettingsIcon, FlotaCalendarIcon as CalendarIcon } from '../common/FlotaIcons'
 import { useStore } from '../../store/useStore'
+import { useShallow } from 'zustand/react/shallow'
 import { executePluginCommand } from '../../api/pluginAPI'
 import { getPluginCommandIcon } from '../../utils/pluginCommandUtils.jsx'
 import FloatingGlassSurface from '../common/FloatingGlassSurface'
 import shortcutManager from '../../utils/ShortcutManager'
+import PanelIconButton from '../common/PanelIconButton'
 
 const PALETTE_TOP_OFFSET = 84
 const IS_MAC =
@@ -60,7 +63,11 @@ const CommandPalette = ({ open, onClose }) => {
   const inputRef = useRef(null)
   const listRef = useRef(null)
   
-  const { pluginCommands, setCurrentView, createNote } = useStore()
+  const { pluginCommands, setCurrentView, createNote } = useStore(useShallow((state) => ({
+    pluginCommands: state.pluginCommands,
+    setCurrentView: state.setCurrentView,
+    createNote: state.createNote,
+  })))
 
   // 内置命令
   const builtInCommands = useMemo(() => [
@@ -104,7 +111,7 @@ const CommandPalette = ({ open, onClose }) => {
       category: '视图',
       icon: <TodoIcon />,
       action: () => {
-        setCurrentView('todos')
+        setCurrentView('todo')
         onClose()
       }
     },
@@ -117,6 +124,17 @@ const CommandPalette = ({ open, onClose }) => {
       action: () => {
         setCurrentView('calendar')
         onClose()
+      }
+    },
+    {
+      id: 'open-external-file',
+      title: '打开文件…',
+      description: '只读打开 Markdown / 纯文本 / Excalidraw 文件，可导入为笔记',
+      category: '文件',
+      icon: <OpenFileIcon />,
+      action: () => {
+        onClose()
+        showOpenExternalFileDialog()
       }
     },
     {
@@ -357,23 +375,9 @@ const CommandPalette = ({ open, onClose }) => {
             borderColor: 'transparent'
           })}
         />
-        <IconButton
-          size="small"
-          onClick={onClose}
-          aria-label="关闭命令面板"
-          sx={(theme) => ({
-            width: 26,
-            height: 26,
-            borderRadius: 1,
-            color: 'text.secondary',
-            '&:hover': {
-              color: 'text.primary',
-              bgcolor: alpha(theme.palette.text.primary, 0.06)
-            }
-          })}
-        >
-          <CloseIcon sx={{ fontSize: 16 }} />
-        </IconButton>
+        <PanelIconButton title="关闭命令面板" onClick={onClose}>
+          <CloseIcon />
+        </PanelIconButton>
       </Box>
 
       <Box sx={{ px: 1.5, py: 1.15 }}>

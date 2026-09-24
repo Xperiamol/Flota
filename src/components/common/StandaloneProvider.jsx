@@ -15,7 +15,7 @@ export const useStandaloneContext = () => {
 
 export const StandaloneProvider = ({ children, windowType, windowData }) => {
   const store = useStandaloneStore()
-  const { defaultMinibarMode } = useStore()
+  const defaultMinibarMode = useStore((state) => state.defaultMinibarMode)
   const [isLoading, setIsLoading] = React.useState(true)
   
   // 初始化窗口配置

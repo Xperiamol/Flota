@@ -49,6 +49,7 @@ import {
     Autorenew as AutorenewIcon
 } from '../common/AppIcons';
 import { useStore } from '../../store/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import ShortcutInput from '../common/ShortcutInput';
 import CloudSyncSettings from '../sync/CloudSyncSettings';
 import AISettings from '../ai/AISettings';
@@ -560,7 +561,41 @@ const Settings = () => {
     const { showError } = useError();
     const muiTheme = useTheme();
     const isDark = muiTheme.palette.mode === 'dark';
-    const { theme, setTheme, primaryColor, setPrimaryColor, setUserAvatar, setUserName, titleBarStyle, setTitleBarStyle, editorMode, setEditorMode, language, setLanguage, setDefaultMinibarMode, maskOpacity, setMaskOpacity, christmasMode, setChristmasMode, aiPanelMode, setAiPanelMode, toolbarOrder, setToolbarOrder, floatingPanelItems, setFloatingPanelItems, contextMenuItems, setContextMenuItems, backgroundPattern, setBackgroundPattern, patternOpacity, setPatternOpacity, wallpaperPath, setWallpaperPath, whiteboardStyle, setWhiteboardStyle } = useStore();
+    const { theme, setTheme, primaryColor, setPrimaryColor, setUserAvatar, setUserName, titleBarStyle, setTitleBarStyle, editorMode, setEditorMode, language, setLanguage, setDefaultMinibarMode, maskOpacity, setMaskOpacity, christmasMode, setChristmasMode, aiPanelMode, setAiPanelMode, toolbarOrder, setToolbarOrder, floatingPanelItems, setFloatingPanelItems, contextMenuItems, setContextMenuItems, backgroundPattern, setBackgroundPattern, patternOpacity, setPatternOpacity, wallpaperPath, setWallpaperPath, whiteboardStyle, setWhiteboardStyle } = useStore(useShallow((state) => ({
+        theme: state.theme,
+        setTheme: state.setTheme,
+        primaryColor: state.primaryColor,
+        setPrimaryColor: state.setPrimaryColor,
+        setUserAvatar: state.setUserAvatar,
+        setUserName: state.setUserName,
+        titleBarStyle: state.titleBarStyle,
+        setTitleBarStyle: state.setTitleBarStyle,
+        editorMode: state.editorMode,
+        setEditorMode: state.setEditorMode,
+        language: state.language,
+        setLanguage: state.setLanguage,
+        setDefaultMinibarMode: state.setDefaultMinibarMode,
+        maskOpacity: state.maskOpacity,
+        setMaskOpacity: state.setMaskOpacity,
+        christmasMode: state.christmasMode,
+        setChristmasMode: state.setChristmasMode,
+        aiPanelMode: state.aiPanelMode,
+        setAiPanelMode: state.setAiPanelMode,
+        toolbarOrder: state.toolbarOrder,
+        setToolbarOrder: state.setToolbarOrder,
+        floatingPanelItems: state.floatingPanelItems,
+        setFloatingPanelItems: state.setFloatingPanelItems,
+        contextMenuItems: state.contextMenuItems,
+        setContextMenuItems: state.setContextMenuItems,
+        backgroundPattern: state.backgroundPattern,
+        setBackgroundPattern: state.setBackgroundPattern,
+        patternOpacity: state.patternOpacity,
+        setPatternOpacity: state.setPatternOpacity,
+        wallpaperPath: state.wallpaperPath,
+        setWallpaperPath: state.setWallpaperPath,
+        whiteboardStyle: state.whiteboardStyle,
+        setWhiteboardStyle: state.setWhiteboardStyle,
+    })));
     const settingsTabValue = useStore((state) => state.settingsTabValue);
     const appVersion = useStore((state) => state.appVersion);
     const updateInfo = useStore((state) => state.appUpdateInfo);

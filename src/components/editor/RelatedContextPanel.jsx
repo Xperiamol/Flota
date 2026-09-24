@@ -21,6 +21,7 @@ import {
   NoteAlt as NoteIcon
 } from '../common/AppIcons'
 import { useStore } from '../../store/useStore'
+import { useShallow } from 'zustand/react/shallow'
 import { getRelatedNotes, getTodoTemporalStatus, isTodoCompleted, normalizeMemories, truncateText } from '../../utils/aiContextUtils'
 import { toListResult } from '../../utils/todoDisplayUtils'
 
@@ -53,7 +54,12 @@ const RelatedContextPanel = ({
   onSelectNote,
   onOpenTodo,
 }) => {
-  const store = useStore()
+  const store = useStore(useShallow((state) => ({
+    notes: state.notes,
+    selectedNoteId: state.selectedNoteId,
+    setSelectedNoteId: state.setSelectedNoteId,
+    setCurrentView: state.setCurrentView,
+  })))
   const notes = notesProp || store.notes || []
   const selectedNoteId = selectedNoteIdProp ?? store.selectedNoteId
   const setSelectedNoteId = onSelectNote || store.setSelectedNoteId

@@ -19,6 +19,7 @@ import {
 } from '../common/FlotaIcons';
 import { alpha, useTheme } from '@mui/material/styles';
 import { useStore } from '../../store/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { usePluginViewsBySurface } from '../../store/usePluginViews';
 import { useSidebarOrder } from '../../store/useSidebarOrder';
 import logger from '../../utils/logger';
@@ -176,7 +177,13 @@ const CHRISTMAS_GREETINGS = [
 const Sidebar = () => {
   const { t } = useTranslation();
   const theme = useTheme();
-  const { currentView, setCurrentView, userAvatar, userName, christmasMode } = useStore();
+  const { currentView, setCurrentView, userAvatar, userName, christmasMode } = useStore(useShallow((state) => ({
+    currentView: state.currentView,
+    setCurrentView: state.setCurrentView,
+    userAvatar: state.userAvatar,
+    userName: state.userName,
+    christmasMode: state.christmasMode,
+  })));
   const pluginViews = usePluginViewsBySurface('main:view');
   const savedOrder = useSidebarOrder((s) => s.order);
   const reorderSidebar = useSidebarOrder((s) => s.reorder);
