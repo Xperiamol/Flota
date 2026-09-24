@@ -2,6 +2,23 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [3.10.0] - 2026-09-24
+
+### Changed / 更新内容
+- fix(mcp): missing dialog import crashed install-complete/error handlers
+- fix(plugin): knowledge graph dimming, auto-fit, and small-graph labels
+- fix(whiteboard): keep Mermaid diagrams vector instead of rasterizing
+- fix(ui): dark-mode contrast, filter panel, buttons, and bookmarks
+- perf: stop several always-mounted components subscribing to the whole store
+- fix: strip full markdown syntax from note-list and timeline preview text
+- fix: replace native alert/confirm/prompt with in-app dialogs
+- feat(timeline): paste or drop images and files into the composer
+- feat: open external files read-only, add a native macOS app menu
+- feat(ai): dynamic action cards, live note refresh, fix AI silently disabling
+- feat(calendar): drag todos onto a date to reschedule, with a live hint
+- fix(todo): correct all-day todo handling across timezone conversion and queries
+
+
 ## [3.9.2] - 2026-09-16
 
 ### Changed / 更新内容
