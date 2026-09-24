@@ -10,7 +10,18 @@ const DatabaseManager = require('../../dao/DatabaseManager');
 const RepeatUtils = require('../../utils/repeatUtils');
 const hashUtils = require('./utils/hash');
 
+// AI / 联网搜索的“连接配置”与本机 API Key 成对使用，必须留在本机：
+// 否则一台没配置 AI 的设备（新装、移动端）写入的默认 ai_enabled=false 时间戳更新，
+// 会经同步把其他设备的 AI 功能“莫名其妙”关掉，或把 provider/model 换成与本机密钥不匹配的值。
 const DEVICE_LOCAL_SETTING_KEYS = new Set([
+  'ai_enabled',
+  'ai_provider',
+  'ai_api_url',
+  'ai_model',
+  'ai_vision_enabled',
+  'web_search_enabled',
+  'web_search_provider',
+  'web_search_api_url',
   'ai_api_key',
   'web_search_api_key',
   'stt_volc_token',

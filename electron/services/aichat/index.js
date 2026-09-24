@@ -17,6 +17,9 @@ const { getInstance: getLogger } = require('../LoggerService');
 const LongDocumentPipeline = require('../longtask/longDocumentPipeline');
 
 const { WRITE_TOOL_NAMES, DEFAULT_CHAT_MAX_TOKENS, MAX_CONTEXT_TOKENS } = require('./constants');
+
+// 会改动笔记内容 / 标题 / 标签的工具（白板由渲染层执行器自行保存并刷新）
+const NOTE_WRITE_TOOLS = new Set(['create_note', 'edit_note', 'edit_notes', 'write_long_document']);
 const { isEnabledSetting, safeJsonParse, trimMessagesToBudget } = require('./utils');
 const { dispatchTool } = require('./tools/dispatcher');
 const { getSystemPrompt, buildContextSection } = require('./systemPrompt');
@@ -126,10 +129,38 @@ class AIChatService {
     if (options.requireConfirmation !== false && WRITE_TOOL_NAMES.has(name)) {
       return JSON.stringify(await this._pendingActions.create(name, args, options.actionContext || null));
     }
-    return dispatchTool(name, args, {
+    const result = await dispatchTool(name, args, {
       onChunk: typeof options.onChunk === 'function' ? options.onChunk : null,
       abortSignal: options.abortSignal
     }, this._toolServices());
+    this._notifyNotesChanged(name, args, result);
+    return result;
+  }
+
+  // 由 main.js 注入：AI 工具直接写库（不经 NoteService），需要主动通知渲染层刷新已打开的笔记
+  setNotesChangedListener(fn) {
+    this._notesChangedListener = typeof fn === 'function' ? fn : null;
+  }
+
+  _notifyNotesChanged(name, args, rawResult) {
+    if (!this._notesChangedListener || !NOTE_WRITE_TOOLS.has(name)) return;
+    try {
+      const parsed = safeJsonParse(rawResult);
+      if (!parsed || parsed.error || parsed.success === false || parsed.cancelled) return;
+      let ids = [];
+      if (name === 'edit_note') ids = [args?.id];
+      else if (name === 'create_note') ids = [parsed.id];
+      else if (name === 'write_long_document') ids = [parsed.note_id];
+      else if (name === 'edit_notes') {
+        ids = (parsed.results || []).filter((item) => item?.success).map((item) => item.id);
+      }
+      const notes = [...new Set(ids.filter((id) => id != null).map(String))]
+        .map((id) => this.noteDAO?.findById?.(id))
+        .filter(Boolean);
+      if (notes.length) this._notesChangedListener(notes, name);
+    } catch (error) {
+      this.logger?.warn?.('AIChatService', 'notify notes changed failed', { name, error: error.message });
+    }
   }
 
   // 内存条目丢失（应用重启 / 超过 TTL）时，用确认卡持久化的快照重建动作，

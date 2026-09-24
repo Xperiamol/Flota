@@ -32,7 +32,9 @@ import {
   getLatestConfirmableAction,
   getMessagePendingActions,
   isExplicitPendingActionConfirmation,
+  supersedeStalePendingActions,
 } from '../../utils/aiCore/pendingActions'
+import PendingActionCard from './PendingActionCard'
 import { buildMessageMetadata, createUserMessage, createAssistantMessage, extractPendingActions } from '../../utils/aiCore/messageModel'
 import usePendingActionExecution from '../../hooks/usePendingActionExecution'
 import useAIStream from '../../hooks/useAIStream'
@@ -289,6 +291,8 @@ const formatToolLabel = (tc) => {
   if (tc.action?.status === 'done') return `${def?.done || fallback} ✓`
   if (tc.action?.status === 'failed') return `${def?.done || fallback} · 失败`
   if (tc.action?.status === 'running') return `${def?.running || fallback}…`
+  if (tc.action?.status === 'dismissed') return `${def?.done || fallback} · 已忽略`
+  if (tc.action?.status === 'superseded') return `${def?.done || fallback} · 已替代`
   if (tc.action) return `${def?.done || fallback} · 待确认`
   if (tc.done) return `${def?.done || fallback} ✓`
   return `${def?.running || fallback}…`
@@ -344,365 +348,9 @@ const slimStepsForPersist = (steps) => {
   })
 }
 
-// ─── 批量待办预览卡（create_todos 待确认时使用） ───
-
-const BatchTodoActionCard = ({ action, theme, executing, onExecute }) => {
-  const initialTodos = Array.isArray(action.args?.todos) ? action.args.todos : []
-  // 维护本地副本：每条带 _key/_selected，便于勾选/删除
-  const [localTodos, setLocalTodos] = useState(() =>
-    initialTodos.map((t, i) => ({ ...t, _key: `${i}-${t.content || ''}`, _selected: true }))
-  )
-  if (action.status === 'done' || action.status === 'failed') {
-    return <SimpleActionCard action={action} theme={theme} executing={executing} onExecute={onExecute} />
-  }
-  const intro = action.args?.intro || ''
-  const selectedCount = localTodos.filter((t) => t._selected).length
-
-  const toggle = (key) => {
-    setLocalTodos((prev) => prev.map((t) => t._key === key ? { ...t, _selected: !t._selected } : t))
-  }
-  const remove = (key) => {
-    setLocalTodos((prev) => prev.filter((t) => t._key !== key))
-  }
-  const submit = () => {
-    const final = localTodos
-      .filter((t) => t._selected)
-      .map(({ _key, _selected, ...rest }) => rest)
-    if (final.length === 0) return
-    onExecute?.(action, { todos: final })
-  }
-
-  const formatDue = (s) => {
-    if (!s) return ''
-    const d = new Date(s)
-    if (isNaN(d.getTime())) return s
-    const m = d.getMonth() + 1
-    const day = d.getDate()
-    const hh = String(d.getHours()).padStart(2, '0')
-    const mm = String(d.getMinutes()).padStart(2, '0')
-    return `${m}/${day} ${hh}:${mm}`
-  }
-
-  const formatRepeat = (todo) => {
-    const interval = Number(todo.repeat_interval) > 1 ? Number(todo.repeat_interval) : 1
-    const prefix = interval > 1 ? `每${interval}` : '每'
-    if (todo.repeat_type === 'daily') return `${prefix}天`
-    if (todo.repeat_type === 'weekly') return `${prefix}周`
-    if (todo.repeat_type === 'monthly') return `${prefix}月`
-    if (todo.repeat_type === 'yearly') return `${prefix}年`
-    return ''
-  }
-
-  return (
-    <Paper
-      elevation={0}
-      sx={{
-        mt: 0.75,
-        px: 1.25,
-        py: 1,
-        maxWidth: 480,
-        borderRadius: '14px',
-        border: '1px solid',
-        borderColor: alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.28 : 0.26),
-        bgcolor: theme.palette.mode === 'dark'
-          ? alpha(theme.palette.warning.dark, 0.12)
-          : alpha(theme.palette.warning.light, 0.14),
-        boxShadow: `0 10px 28px ${alpha(theme.palette.warning.main, 0.08)}`,
-        backdropFilter: 'blur(10px)',
-      }}
-    >
-      <Typography variant="caption" sx={{ display: 'block', color: 'warning.main', fontWeight: 800, letterSpacing: 0.1, mb: 0.5 }}>
-        AI 为你规划了 {localTodos.length} 条待办
-      </Typography>
-      {intro && (
-        <Typography variant="body2" sx={{ color: 'text.secondary', mb: 0.75, lineHeight: 1.5 }}>
-          {intro}
-        </Typography>
-      )}
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, maxHeight: 280, overflowY: 'auto', pr: 0.5 }}>
-        {localTodos.map((t) => (
-          <Box
-            key={t._key}
-            sx={{
-              display: 'flex', alignItems: 'flex-start', gap: 0.75,
-              px: 0.75, py: 0.6,
-              borderRadius: '10px',
-              bgcolor: t._selected
-                ? alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.1 : 0.08)
-                : alpha(theme.palette.action.disabledBackground, 0.4),
-              opacity: t._selected ? 1 : 0.55,
-              transition: 'background-color 120ms, opacity 120ms',
-            }}
-          >
-            <Box
-              component="input"
-              type="checkbox"
-              checked={t._selected}
-              onChange={() => toggle(t._key)}
-              sx={{ mt: 0.4, cursor: 'pointer', accentColor: theme.palette.warning.main }}
-            />
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.4, wordBreak: 'break-word' }}>
-                {t.content}
-              </Typography>
-              {t.description && (
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25, lineHeight: 1.4 }}>
-                  {t.description}
-                </Typography>
-              )}
-              {Array.isArray(t.subtasks) && t.subtasks.length > 0 && (
-                <Box sx={{ mt: 0.4, pl: 0.5 }}>
-                  {t.subtasks.map((subtask, index) => (
-                    <Typography key={`${subtask.content}-${index}`} variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.45 }}>
-                      • {subtask.content}
-                    </Typography>
-                  ))}
-                </Box>
-              )}
-              <Box sx={{ display: 'flex', gap: 0.4, mt: 0.4, flexWrap: 'wrap' }}>
-                {t.parent_id != null && <Chip size="small" label={`父待办 #${t.parent_id}`} variant="outlined" sx={{ height: 18, fontSize: '0.68rem' }} />}
-                {t.due_date && <Chip size="small" label={formatDue(t.due_date)} sx={{ height: 18, fontSize: '0.68rem' }} />}
-                {formatRepeat(t) && <Chip size="small" label={formatRepeat(t)} color="primary" variant="outlined" sx={{ height: 18, fontSize: '0.68rem' }} />}
-                {t.is_important && <Chip size="small" label="重要" color="error" sx={{ height: 18, fontSize: '0.68rem' }} />}
-                {t.is_urgent && <Chip size="small" label="紧急" color="warning" sx={{ height: 18, fontSize: '0.68rem' }} />}
-              </Box>
-            </Box>
-            <IconButton size="small" onClick={() => remove(t._key)} sx={{ p: 0.25 }} aria-label="删除该条">
-              <CloseIcon sx={{ fontSize: 14 }} />
-            </IconButton>
-          </Box>
-        ))}
-      </Box>
-      <Box sx={{ display: 'flex', gap: 1, mt: 1, justifyContent: 'flex-end' }}>
-        <Button
-          size="small"
-          variant="contained"
-          color="warning"
-          disabled={executing || selectedCount === 0}
-          onClick={submit}
-          sx={{
-            minWidth: 96, height: 30, px: 1.4,
-            borderRadius: '999px', textTransform: 'none', fontWeight: 800,
-            boxShadow: `0 8px 18px ${alpha(theme.palette.warning.main, 0.18)}`,
-          }}
-        >
-          {executing ? '添加中…' : `添加 ${selectedCount} 条`}
-        </Button>
-      </Box>
-    </Paper>
-  )
-}
-
-const SimpleActionCard = ({ action, theme, executing, onExecute }) => {
-  const status = action.status || (executing ? 'running' : 'pending')
-  const isDone = status === 'done'
-  const isFailed = status === 'failed'
-  const paletteKey = isDone ? 'success' : isFailed ? 'error' : 'warning'
-  const title = isDone ? '已完成' : isFailed ? '执行失败' : executing ? '执行中' : '待你确认'
-  const detail = action.resultMessage || action.summary || action.label
-
-  return (
-    <Paper
-      elevation={0}
-      sx={{
-        mt: 0.75,
-        px: 1.25,
-        py: 1,
-        maxWidth: 420,
-        borderRadius: '14px',
-        border: '1px solid',
-        borderColor: alpha(theme.palette[paletteKey].main, theme.palette.mode === 'dark' ? 0.28 : 0.26),
-        bgcolor: theme.palette.mode === 'dark'
-          ? alpha(theme.palette[paletteKey].dark, 0.12)
-          : alpha(theme.palette[paletteKey].light, 0.14),
-        boxShadow: `0 10px 28px ${alpha(theme.palette[paletteKey].main, 0.08)}`,
-        backdropFilter: 'blur(10px)',
-      }}
-    >
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
-        <Box sx={{ minWidth: 0, flex: 1 }}>
-          <Typography
-            variant="caption"
-            sx={{
-              display: 'block',
-              color: `${paletteKey}.main`,
-              fontWeight: 800,
-              letterSpacing: 0.1,
-              mb: 0.25,
-            }}
-          >
-            {title}
-          </Typography>
-          <Typography
-            variant="body2"
-            sx={{
-              color: 'text.primary',
-              fontWeight: 650,
-              lineHeight: 1.45,
-              wordBreak: 'break-word',
-            }}
-          >
-            {detail}
-          </Typography>
-          {action.name === 'create_todo' && Array.isArray(action.args?.subtasks) && action.args.subtasks.length > 0 && (
-            <Box sx={{ mt: 0.5 }}>
-              {action.args.subtasks.map((subtask, index) => (
-                <Typography key={`${subtask.content}-${index}`} variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                  • {subtask.content}
-                </Typography>
-              ))}
-            </Box>
-          )}
-        </Box>
-        {!isDone && !isFailed && (
-          <Button
-            size="small"
-            variant="contained"
-            color="warning"
-            disabled={executing}
-            onClick={() => onExecute?.(action)}
-            sx={{
-              flexShrink: 0,
-              minWidth: 84,
-              height: 30,
-              px: 1.4,
-              borderRadius: '999px',
-              textTransform: 'none',
-              fontWeight: 800,
-              boxShadow: `0 8px 18px ${alpha(theme.palette.warning.main, 0.18)}`,
-            }}
-          >
-            {executing ? '执行中…' : '确认'}
-          </Button>
-        )}
-      </Box>
-      {action.memoryReview?.summary && !isDone && !isFailed && (
-        <Box sx={{ mt: 0.75, pt: 0.75, borderTop: `1px solid ${alpha(theme.palette.warning.main, 0.16)}` }}>
-          <Typography variant="caption" color={action.memoryReview.level === 'warning' ? 'warning.main' : 'text.secondary'} sx={{ display: 'block' }}>
-            {action.memoryReview.summary}
-          </Typography>
-          {action.memoryReview.candidates?.slice(0, 2).map(candidate => (
-            <Typography key={candidate.id || candidate.content} variant="caption" color="text.secondary" sx={{ display: 'block', pl: 1, mt: 0.25 }}>
-              相似记忆：{candidate.content}
-            </Typography>
-          ))}
-        </Box>
-      )}
-    </Paper>
-  )
-}
-
-// ─── 批量编辑笔记预览卡（edit_notes 待确认时使用） ───
-
-const BatchEditNotesActionCard = ({ action, theme, executing, onExecute }) => {
-  const initialEdits = Array.isArray(action.args?.edits) ? action.args.edits : []
-  const [localEdits, setLocalEdits] = useState(() =>
-    initialEdits.map((e, i) => ({ ...e, _key: `${i}-${e.id}`, _selected: true }))
-  )
-  const status = action.status || (executing ? 'running' : 'pending')
-  const isDone = status === 'done'
-  const isFailed = status === 'failed'
-  const selectedCount = localEdits.filter((e) => e._selected).length
-
-  const toggle = (key) => {
-    setLocalEdits((prev) => prev.map((e) => e._key === key ? { ...e, _selected: !e._selected } : e))
-  }
-  const submit = () => {
-    const final = localEdits
-      .filter((e) => e._selected)
-      .map(({ _key, _selected, ...rest }) => rest)
-    if (final.length === 0) return
-    onExecute?.(action, { edits: final })
-  }
-
-  if (isDone || isFailed) {
-    return <SimpleActionCard action={action} theme={theme} executing={executing} onExecute={onExecute} />
-  }
-
-  return (
-    <Paper
-      elevation={0}
-      sx={{
-        mt: 0.75,
-        px: 1.25,
-        py: 1,
-        maxWidth: 480,
-        borderRadius: '14px',
-        border: '1px solid',
-        borderColor: alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.28 : 0.26),
-        bgcolor: theme.palette.mode === 'dark'
-          ? alpha(theme.palette.warning.dark, 0.12)
-          : alpha(theme.palette.warning.light, 0.14),
-        boxShadow: `0 10px 28px ${alpha(theme.palette.warning.main, 0.08)}`,
-        backdropFilter: 'blur(10px)',
-      }}
-    >
-      <Typography variant="caption" sx={{ display: 'block', color: 'warning.main', fontWeight: 800, letterSpacing: 0.1, mb: 0.5 }}>
-        AI 想批量整理 {localEdits.length} 条笔记
-      </Typography>
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, maxHeight: 280, overflowY: 'auto', pr: 0.5 }}>
-        {localEdits.map((e) => (
-          <Box
-            key={e._key}
-            sx={{
-              display: 'flex', alignItems: 'flex-start', gap: 0.75,
-              px: 0.75, py: 0.6,
-              borderRadius: '10px',
-              bgcolor: e._selected
-                ? alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.1 : 0.08)
-                : alpha(theme.palette.action.disabledBackground, 0.4),
-              opacity: e._selected ? 1 : 0.55,
-              transition: 'background-color 120ms, opacity 120ms',
-            }}
-          >
-            <Box
-              component="input"
-              type="checkbox"
-              checked={e._selected}
-              onChange={() => toggle(e._key)}
-              sx={{ mt: 0.4, cursor: 'pointer', accentColor: theme.palette.warning.main }}
-            />
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
-                #{e.id}
-              </Typography>
-              {e.title !== undefined && (
-                <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.4, wordBreak: 'break-word' }}>
-                  标题 → {e.title || '（清空）'}
-                </Typography>
-              )}
-              <Box sx={{ display: 'flex', gap: 0.4, mt: 0.4, flexWrap: 'wrap', alignItems: 'center' }}>
-                {e.tags !== undefined && String(e.tags).split(/[,，]/).map((t) => t.trim()).filter(Boolean).map((t, i) => (
-                  <Chip key={`${t}-${i}`} size="small" label={t} sx={{ height: 18, fontSize: '0.68rem' }} />
-                ))}
-              </Box>
-            </Box>
-          </Box>
-        ))}
-      </Box>
-      <Box sx={{ display: 'flex', gap: 1, mt: 1, justifyContent: 'flex-end' }}>
-        <Button
-          size="small"
-          variant="contained"
-          color="warning"
-          disabled={executing || selectedCount === 0}
-          onClick={submit}
-          sx={{
-            minWidth: 96, height: 30, px: 1.4,
-            borderRadius: '999px', textTransform: 'none', fontWeight: 800,
-            boxShadow: `0 8px 18px ${alpha(theme.palette.warning.main, 0.18)}`,
-          }}
-        >
-          {executing ? '应用中…' : `应用 ${selectedCount} 条`}
-        </Button>
-      </Box>
-    </Paper>
-  )
-}
-
 // ─── 聊天消息组件 ───
 
-const ChatMessage = React.memo(({ msg, theme, userAvatar, onExecuteAction, executingActionIds, onSaveAsNote, onAskFollowUp, onOpenSource }) => {
+const ChatMessage = React.memo(({ msg, theme, userAvatar, onExecuteAction, onDismissAction, executingActionIds, onSaveAsNote, onAskFollowUp, onOpenSource }) => {
   const isUser = msg.role === 'user'
   // 兼容多模态 content：array 时拆出 text + image_url
   const isArrayContent = Array.isArray(msg.content)
@@ -761,28 +409,12 @@ const ChatMessage = React.memo(({ msg, theme, userAvatar, onExecuteAction, execu
           {/* 待确认动作卡（统一读取 msg.actions 与历史 toolCalls[].action） */}
           {getMessagePendingActions(msg).map((action) => (
             <Box key={action.actionId} sx={{ mb: 0.75 }}>
-              {action.name === 'create_todos' ? (
-                <BatchTodoActionCard
-                  action={action}
-                  theme={theme}
-                  executing={executingActionIds.has(action.actionId)}
-                  onExecute={onExecuteAction}
-                />
-              ) : action.name === 'edit_notes' ? (
-                <BatchEditNotesActionCard
-                  action={action}
-                  theme={theme}
-                  executing={executingActionIds.has(action.actionId)}
-                  onExecute={onExecuteAction}
-                />
-              ) : (
-                <SimpleActionCard
-                  action={action}
-                  theme={theme}
-                  executing={executingActionIds.has(action.actionId)}
-                  onExecute={onExecuteAction}
-                />
-              )}
+              <PendingActionCard
+                action={action}
+                executing={executingActionIds.has(action.actionId)}
+                onExecute={onExecuteAction}
+                onDismiss={onDismissAction}
+              />
             </Box>
           ))}
 
@@ -1128,7 +760,7 @@ export default function AIChatView({ onTodoUpdated }) {
     return nextMessages
   }, [aiUpdateConv])
 
-  const handleExecuteAction = usePendingActionExecution({
+  const { execute: handleExecuteAction, dismiss: handleDismissAction } = usePendingActionExecution({
     conversationIdRef, messagesRef, setMessages, onTodoUpdated,
     deps: { currentNote, notes, createNote, deleteNote, updateNote, loadNotes, setSelectedNoteId },
   })
@@ -1334,7 +966,7 @@ export default function AIChatView({ onTodoUpdated }) {
       clearStreamDraft(currentId)
       const latestMessages = readLatestMessages()
       if (!latestMessages) return
-      const finalMessages = [...latestMessages, createAssistantMessage({
+      const finalMessages = supersedeStalePendingActions([...latestMessages, createAssistantMessage({
         content: assistantContent,
         toolCalls: currentToolCalls,
         actions: pendingActions,
@@ -1347,7 +979,7 @@ export default function AIChatView({ onTodoUpdated }) {
           source: selectedNoteId == null ? 'general' : 'note',
           requestId,
         }),
-      })]
+      })])
       if (isActiveView()) {
         messagesRef.current = finalMessages
         setMessages(finalMessages)
@@ -1619,6 +1251,7 @@ export default function AIChatView({ onTodoUpdated }) {
               theme={theme}
               userAvatar={userAvatar}
               onExecuteAction={handleExecuteAction}
+              onDismissAction={handleDismissAction}
               executingActionIds={executingActionIds}
               onSaveAsNote={handleSaveAsNote}
               onAskFollowUp={handleAskFollowUp}
@@ -1685,26 +1318,9 @@ export default function AIChatView({ onTodoUpdated }) {
                     color={tc.action?.status === 'done' ? 'success' : tc.action?.status === 'failed' ? 'error' : tc.action ? 'warning' : tc.done ? 'success' : 'default'}
                     sx={{ mr: 0.5, height: 24, fontSize: '0.75rem' }}
                   />
-                  {tc.action && tc.action.name === 'create_todos' && (
-                    <BatchTodoActionCard
+                  {tc.action && (
+                    <PendingActionCard
                       action={tc.action}
-                      theme={theme}
-                      executing={executingActionIds.has(tc.action.actionId)}
-                      onExecute={handleExecuteAction}
-                    />
-                  )}
-                  {tc.action && tc.action.name === 'edit_notes' && (
-                    <BatchEditNotesActionCard
-                      action={tc.action}
-                      theme={theme}
-                      executing={executingActionIds.has(tc.action.actionId)}
-                      onExecute={handleExecuteAction}
-                    />
-                  )}
-                  {tc.action && tc.action.name !== 'create_todos' && tc.action.name !== 'edit_notes' && (
-                    <SimpleActionCard
-                      action={tc.action}
-                      theme={theme}
                       executing={executingActionIds.has(tc.action.actionId)}
                       onExecute={handleExecuteAction}
                     />

@@ -78,12 +78,17 @@ export const getLatestConfirmableAction = (messages) => {
   return (!action.status || action.status === 'pending') ? action : null
 }
 
+// 卡片状态：pending → running → done / failed；pending 也可能被用户忽略（dismissed）
+// 或被 AI 后续给出的新方案替代（superseded）。failed 允许重试。
+export const RETRYABLE_ACTION_STATUSES = new Set(['pending', 'failed'])
+const canExecute = (action) => !action.status || RETRYABLE_ACTION_STATUSES.has(action.status)
+
 // read/write 必须绑定发起会话；每次写入前读取最新消息，保留执行期间的新消息。
 export const executeConversationAction = async ({ actionId, read, write, execute }) => {
   const messages = read()
   const action = messages?.flatMap(getMessagePendingActions).find(item => item.actionId === actionId)
-  if (!action || (action.status && action.status !== 'pending')) return null
-  write(messages.map(msg => patchMessagePendingAction(msg, actionId, { status: 'running' })))
+  if (!action || !canExecute(action)) return null
+  write(messages.map(msg => patchMessagePendingAction(msg, actionId, { status: 'running', error: undefined })))
 
   let result
   try {
@@ -93,14 +98,48 @@ export const executeConversationAction = async ({ actionId, read, write, execute
   }
   const latest = read()
   if (!latest) return result // 执行期间会话已删除。
-  const { success, message, error } = result
+  const { success, message, error, resultNoteId } = result
   write([
     ...latest.map(msg => patchMessagePendingAction(msg, actionId, {
       status: success ? 'done' : 'failed', resultMessage: message, error,
+      ...(resultNoteId != null ? { resultNoteId } : {}),
     })),
     { role: 'assistant', content: message },
   ])
   return result
+}
+
+// 用户主动忽略一张待确认卡片。只作用于 pending，不影响已执行的卡片。
+export const dismissConversationAction = ({ actionId, read, write }) => {
+  const messages = read()
+  const action = messages?.flatMap(getMessagePendingActions).find(item => item.actionId === actionId)
+  if (!action || (action.status && action.status !== 'pending')) return false
+  write(messages.map(msg => patchMessagePendingAction(msg, actionId, { status: 'dismissed' })))
+  return true
+}
+
+// AI 给出新的待确认方案时，之前仍在等待的卡片视为被替代，避免同屏出现多个可点的“确认”。
+// 仅当最后一条 assistant 消息带有 pending 卡片时生效；返回新数组（无变化则原样返回）。
+export const supersedeStalePendingActions = (messages) => {
+  if (!Array.isArray(messages) || messages.length < 2) return messages
+  const lastIndex = messages.length - 1
+  const last = messages[lastIndex]
+  if (last?.role !== 'assistant') return messages
+  const hasFreshPending = getMessagePendingActions(last).some(a => !a.status || a.status === 'pending')
+  if (!hasFreshPending) return messages
+
+  let changed = false
+  const next = messages.map((msg, index) => {
+    if (index === lastIndex) return msg
+    let patched = msg
+    for (const action of getMessagePendingActions(msg)) {
+      if (action.status && action.status !== 'pending') continue
+      patched = patchMessagePendingAction(patched, action.actionId, { status: 'superseded' })
+    }
+    if (patched !== msg) changed = true
+    return patched
+  })
+  return changed ? next : messages
 }
 
 export default getMessagePendingActions

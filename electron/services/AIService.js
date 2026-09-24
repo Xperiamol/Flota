@@ -181,13 +181,12 @@ class AIService extends EventEmitter {
       const autoTitleSetting = this.settingDAO.get('ai_auto_title_enabled');
       const autoTagsSetting = this.settingDAO.get('ai_auto_tags_enabled');
 
+      // 解密失败（钥匙串暂不可用、应用更新后签名变化等）只在本次返回空值，绝不回写清空：
+      // 以前这里会把密钥永久删掉，表现为 AI 功能“莫名其妙失效”。用户重新填写即可覆盖。
       const apiKey = apiKeySetting ? decryptValue(apiKeySetting.value) : '';
       const webSearchApiKey = webSearchApiKeySetting ? decryptValue(webSearchApiKeySetting.value) : '';
       if (apiKeySetting && isEncryptedValue(apiKeySetting.value) && !apiKey) {
-        this.settingDAO.set('ai_api_key', '', 'string', 'AI API密钥');
-      }
-      if (webSearchApiKeySetting && isEncryptedValue(webSearchApiKeySetting.value) && !webSearchApiKey) {
-        this.settingDAO.set('web_search_api_key', '', 'string', '联网搜索 API 密钥');
+        this.logger.warn('AI', 'API key could not be decrypted on this device; keeping stored value');
       }
 
       const config = {
@@ -227,17 +226,19 @@ class AIService extends EventEmitter {
    */
   async saveConfig(config) {
     try {
+      if (!config || typeof config !== 'object') throw new Error('配置无效');
       const { enabled, provider, apiKey, apiUrl, model, temperature, limitMaxTokens, maxTokens } = config;
 
+      // 只写入调用方明确给出的字段：部分更新不能把 enabled / apiKey 等覆盖成空值
       // 使用 SettingDAO.set() 方法，让DAO自己处理类型转换
-      this.settingDAO.set('ai_enabled', enabled, 'boolean', 'AI功能开关');
-      this.settingDAO.set('ai_provider', provider, 'string', 'AI服务提供商');
-      this.settingDAO.set('ai_api_key', encryptValue(apiKey), 'string', 'AI API密钥');
-      this.settingDAO.set('ai_api_url', apiUrl || '', 'string', '自定义API地址');
-      this.settingDAO.set('ai_model', model, 'string', 'AI模型');
-      this.settingDAO.set('ai_temperature', temperature, 'number', '温度参数');
-      this.settingDAO.set('ai_limit_max_tokens', isEnabledSetting(limitMaxTokens), 'boolean', '是否限制最大输出token数');
-      this.settingDAO.set('ai_max_tokens', maxTokens, 'number', '最大token数');
+      if (enabled !== undefined) this.settingDAO.set('ai_enabled', isEnabledSetting(enabled), 'boolean', 'AI功能开关');
+      if (provider !== undefined) this.settingDAO.set('ai_provider', provider, 'string', 'AI服务提供商');
+      if (apiKey !== undefined) this.settingDAO.set('ai_api_key', encryptValue(apiKey), 'string', 'AI API密钥');
+      if (apiUrl !== undefined) this.settingDAO.set('ai_api_url', apiUrl || '', 'string', '自定义API地址');
+      if (model !== undefined) this.settingDAO.set('ai_model', model, 'string', 'AI模型');
+      if (temperature !== undefined) this.settingDAO.set('ai_temperature', temperature, 'number', '温度参数');
+      if (limitMaxTokens !== undefined) this.settingDAO.set('ai_limit_max_tokens', isEnabledSetting(limitMaxTokens), 'boolean', '是否限制最大输出token数');
+      if (maxTokens !== undefined) this.settingDAO.set('ai_max_tokens', maxTokens, 'number', '最大token数');
       if (config.visionEnabled !== undefined) {
         this.settingDAO.set('ai_vision_enabled', isEnabledSetting(config.visionEnabled), 'boolean', '是否启用图片理解（多模态）');
       }

@@ -2,12 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Avatar,
   Box,
-  Button,
   Chip,
   IconButton,
   Paper,
   TextField,
-  Tooltip,
   Typography,
   alpha
 } from '@mui/material'
@@ -42,11 +40,14 @@ import {
   getLatestConfirmableAction,
   getMessagePendingActions,
   isExplicitPendingActionConfirmation,
+  supersedeStalePendingActions,
 } from '../../utils/aiCore/pendingActions'
+import PendingActionCard from './PendingActionCard'
 import { buildMessageMetadata, createUserMessage, createAssistantMessage } from '../../utils/aiCore/messageModel'
 import usePendingActionExecution from '../../hooks/usePendingActionExecution'
 import logger from '../../utils/logger'
 import { notifyAINoteIdsUpdated } from '../../utils/aiCore/noteRefresh'
+import PanelIconButton from '../common/PanelIconButton'
 
 const QUICK_PROMPTS = [
   { id: 'summarize', label: '总结当前笔记', prompt: '请总结当前笔记，输出：核心要点、关键结论。' },
@@ -135,19 +136,6 @@ const PANEL_ESTIMATED_HEIGHT = 520
 const PANEL_MARGIN = 12
 const PANEL_MIN_WIDTH = 340
 const PANEL_MIN_HEIGHT = 320
-
-const ACTION_LABELS = {
-  create_note: '创建笔记',
-  edit_note: '编辑笔记',
-  edit_notes: '批量编辑笔记',
-  create_whiteboard: '创建画布',
-  update_whiteboard: '修改画布',
-  create_todo: '创建待办',
-  create_todos: '批量创建待办',
-  add_memory: '保存记忆',
-  update_memory: '更新记忆',
-  write_long_document: '生成并保存长文档'
-}
 
 const getDefaultPosition = (size = { width: PANEL_WIDTH, height: PANEL_ESTIMATED_HEIGHT }) => ({
   x: Math.max(PANEL_MARGIN, window.innerWidth - size.width - PANEL_RIGHT_OFFSET),
@@ -456,7 +444,7 @@ const AICommandCenter = ({
     if (loading) cancel()
   }, [cancel, loading])
 
-  const handleExecuteAction = usePendingActionExecution({
+  const { execute: handleExecuteAction, dismiss: handleDismissAction } = usePendingActionExecution({
     conversationIdRef, messagesRef, setMessages,
     deps: { currentNote, notes, createNote, deleteNote, updateNote, loadNotes, setSelectedNoteId },
     onTodoUpdated,
@@ -592,7 +580,7 @@ const AICommandCenter = ({
 
       const latestMessages = readLatestMessages()
       if (!latestMessages) return
-      const finalMessages = [...latestMessages, createAssistantMessage({
+      const finalMessages = supersedeStalePendingActions([...latestMessages, createAssistantMessage({
         content: assistantContent,
         stopped: stoppedByUser,
         actions: pendingActions,
@@ -601,7 +589,7 @@ const AICommandCenter = ({
           ...noteScope,
           requestId,
         }),
-      })]
+      })])
       if (isActiveView()) {
         messagesRef.current = finalMessages
         setMessages(finalMessages)
@@ -728,60 +716,12 @@ const AICommandCenter = ({
           />
         )}
         <Box sx={{ flex: 1 }} />
-        <Tooltip title="新建对话">
-          <span>
-            <IconButton
-              disableRipple={false}
-              centerRipple={false}
-              size="small"
-              onMouseDown={(event) => event.stopPropagation()}
-              onClick={handleNewChat}
-              disabled={loading}
-              aria-label="新建对话"
-              sx={(theme) => ({
-                width: 26,
-                height: 26,
-                mr: 0.25,
-                borderRadius: 1,
-                color: 'text.secondary',
-                overflow: 'hidden',
-                '& .MuiTouchRipple-root': { inset: 0, borderRadius: 'inherit', overflow: 'hidden' },
-                '& .MuiTouchRipple-child': { borderRadius: '8px !important' },
-                transition: 'color 160ms ease, background-color 160ms ease',
-                '&:hover': {
-                  color: 'text.primary',
-                  bgcolor: alpha(theme.palette.text.primary, 0.06)
-                }
-              })}
-            >
-              <AddIcon sx={{ fontSize: 16 }} />
-            </IconButton>
-          </span>
-        </Tooltip>
-        <IconButton
-          disableRipple={false}
-          centerRipple={false}
-          size="small"
-          onMouseDown={(event) => event.stopPropagation()}
-          onClick={onClose}
-          aria-label="关闭"
-          sx={(theme) => ({
-            width: 26,
-            height: 26,
-            borderRadius: 1,
-            color: 'text.secondary',
-            overflow: 'hidden',
-            '& .MuiTouchRipple-root': { inset: 0, borderRadius: 'inherit', overflow: 'hidden' },
-            '& .MuiTouchRipple-child': { borderRadius: '8px !important' },
-            transition: 'color 160ms ease, background-color 160ms ease',
-            '&:hover': {
-              color: 'text.primary',
-              bgcolor: alpha(theme.palette.text.primary, 0.06)
-            }
-          })}
-        >
-          <CloseIcon sx={{ fontSize: 16 }} />
-        </IconButton>
+        <PanelIconButton title="新建对话" onClick={handleNewChat} disabled={loading} sx={{ mr: 0.25 }}>
+          <AddIcon />
+        </PanelIconButton>
+        <PanelIconButton title="关闭" onClick={onClose}>
+          <CloseIcon />
+        </PanelIconButton>
       </Box>
 
       <Box
@@ -875,6 +815,7 @@ const AICommandCenter = ({
             userAvatar={resolvedUserAvatar}
             executingActionIds={executingActionIds}
             onExecuteAction={handleExecuteAction}
+            onDismissAction={handleDismissAction}
           />
         ))}
 
@@ -1017,248 +958,7 @@ const AICommandCenter = ({
   )
 }
 
-const formatTodoDue = (s) => {
-  if (!s) return ''
-  const d = new Date(s)
-  if (isNaN(d.getTime())) return s
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
-
-const batchCardPaperSx = (theme) => ({
-  mt: 0.75,
-  px: 1.1,
-  py: 0.85,
-  borderRadius: '12px',
-  border: '1px solid',
-  borderColor: alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.28 : 0.26),
-  bgcolor: theme.palette.mode === 'dark'
-    ? alpha(theme.palette.warning.dark, 0.12)
-    : alpha(theme.palette.warning.light, 0.16),
-})
-
-const batchRowSx = (theme, selected) => ({
-  display: 'flex', alignItems: 'flex-start', gap: 0.6,
-  px: 0.6, py: 0.45, borderRadius: '8px',
-  bgcolor: selected
-    ? alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.1 : 0.08)
-    : alpha(theme.palette.action.disabledBackground, 0.4),
-  opacity: selected ? 1 : 0.55,
-})
-
-// 批量确认卡通用外壳：勾选列表 + 提交按钮；行内容/字段名/文案由调用方注入。
-const BatchActionCard = ({
-  action, theme, executing, onExecute,
-  itemsKey, makeKey, title, intro = '',
-  removable = false,
-  submitLabel, submittingLabel, renderItem
-}) => {
-  const initial = Array.isArray(action.args?.[itemsKey]) ? action.args[itemsKey] : []
-  const [items, setItems] = useState(() =>
-    initial.map((it, i) => ({ ...it, _key: makeKey(it, i), _selected: true }))
-  )
-  const status = action.status || (executing ? 'running' : 'pending')
-  if (status === 'done' || status === 'failed') {
-    return <SimpleActionCard action={action} theme={theme} executing={executing} onExecute={onExecute} />
-  }
-  const selectedCount = items.filter((it) => it._selected).length
-  const toggle = (key) => setItems((p) => p.map((it) => it._key === key ? { ...it, _selected: !it._selected } : it))
-  const remove = (key) => setItems((p) => p.filter((it) => it._key !== key))
-  const submit = () => {
-    const final = items.filter((it) => it._selected).map(({ _key, _selected, ...rest }) => rest)
-    if (final.length === 0) return
-    onExecute?.(action, { [itemsKey]: final })
-  }
-  return (
-    <Paper elevation={0} sx={batchCardPaperSx(theme)}>
-      <Typography variant="caption" sx={{ display: 'block', color: 'warning.main', fontWeight: 800, mb: 0.5 }}>
-        {title(items.length)}
-      </Typography>
-      {intro && (
-        <Typography variant="body2" sx={{ color: 'text.secondary', mb: 0.5, lineHeight: 1.45, fontSize: 12 }}>
-          {intro}
-        </Typography>
-      )}
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.4, maxHeight: 220, overflowY: 'auto', pr: 0.5 }}>
-        {items.map((it) => (
-          <Box key={it._key} sx={batchRowSx(theme, it._selected)}>
-            <Box
-              component="input"
-              type="checkbox"
-              checked={it._selected}
-              onChange={() => toggle(it._key)}
-              sx={{ mt: 0.35, cursor: 'pointer', accentColor: theme.palette.warning.main }}
-            />
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              {renderItem(it)}
-            </Box>
-            {removable && (
-              <IconButton size="small" onClick={() => remove(it._key)} sx={{ p: 0.25 }}>
-                <CloseIcon sx={{ fontSize: 14 }} />
-              </IconButton>
-            )}
-          </Box>
-        ))}
-      </Box>
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 0.75 }}>
-        <Button
-          size="small"
-          variant="contained"
-          color="warning"
-          onClick={submit}
-          disabled={executing || selectedCount === 0}
-          sx={{ minWidth: 88, height: 28, borderRadius: '999px', textTransform: 'none', fontWeight: 700 }}
-        >
-          {executing ? submittingLabel : submitLabel(selectedCount)}
-        </Button>
-      </Box>
-    </Paper>
-  )
-}
-
-const BatchTodoActionCard = ({ action, theme, executing, onExecute }) => (
-  <BatchActionCard
-    action={action}
-    theme={theme}
-    executing={executing}
-    onExecute={onExecute}
-    itemsKey="todos"
-    makeKey={(t, i) => `${i}-${t.content || ''}`}
-    title={(n) => `AI 为你规划了 ${n} 条待办`}
-    intro={action.args?.intro || ''}
-    removable
-    submitLabel={(n) => `添加 ${n} 条`}
-    submittingLabel="添加中…"
-    renderItem={(t) => (
-      <>
-        <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.35, fontSize: 12.5, wordBreak: 'break-word' }}>
-          {t.content}
-        </Typography>
-        {t.description && (
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.2, lineHeight: 1.35, fontSize: 11 }}>
-            {t.description}
-          </Typography>
-        )}
-        {Array.isArray(t.subtasks) && t.subtasks.length > 0 && (
-          <Box sx={{ mt: 0.3, pl: 0.25 }}>
-            {t.subtasks.map((subtask, index) => (
-              <Typography key={`${subtask.content}-${index}`} variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: 11, lineHeight: 1.4 }}>
-                • {subtask.content}
-              </Typography>
-            ))}
-          </Box>
-        )}
-        <Box sx={{ display: 'flex', gap: 0.3, mt: 0.3, flexWrap: 'wrap' }}>
-          {t.parent_id != null && <Chip size="small" label={`父待办 #${t.parent_id}`} variant="outlined" sx={{ height: 16, fontSize: '0.65rem' }} />}
-          {t.due_date && <Chip size="small" label={formatTodoDue(t.due_date)} sx={{ height: 16, fontSize: '0.65rem' }} />}
-          {t.repeat_type && t.repeat_type !== 'none' && (
-            <Chip
-              size="small"
-              label={`${Number(t.repeat_interval) > 1 ? `每${Number(t.repeat_interval)}` : '每'}${t.repeat_type === 'daily' ? '天' : t.repeat_type === 'weekly' ? '周' : t.repeat_type === 'monthly' ? '月' : '年'}`}
-              color="primary"
-              variant="outlined"
-              sx={{ height: 16, fontSize: '0.65rem' }}
-            />
-          )}
-          {t.is_important && <Chip size="small" label="重要" color="error" sx={{ height: 16, fontSize: '0.65rem' }} />}
-          {t.is_urgent && <Chip size="small" label="紧急" color="warning" sx={{ height: 16, fontSize: '0.65rem' }} />}
-        </Box>
-      </>
-    )}
-  />
-)
-
-const BatchEditNotesActionCard = ({ action, theme, executing, onExecute }) => (
-  <BatchActionCard
-    action={action}
-    theme={theme}
-    executing={executing}
-    onExecute={onExecute}
-    itemsKey="edits"
-    makeKey={(e, i) => `${i}-${e.id}`}
-    title={(n) => `AI 想批量整理 ${n} 条笔记`}
-    submitLabel={(n) => `应用 ${n} 条`}
-    submittingLabel="应用中…"
-    renderItem={(e) => (
-      <>
-        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, fontSize: 11 }}>
-          #{e.id}
-        </Typography>
-        {e.title !== undefined && (
-          <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.35, fontSize: 12.5, wordBreak: 'break-word' }}>
-            标题 → {e.title || '（清空）'}
-          </Typography>
-        )}
-        <Box sx={{ display: 'flex', gap: 0.3, mt: 0.3, flexWrap: 'wrap', alignItems: 'center' }}>
-          {e.tags !== undefined && String(e.tags).split(/[,，]/).map((t) => t.trim()).filter(Boolean).map((t, i) => (
-            <Chip key={`${t}-${i}`} size="small" label={t} sx={{ height: 16, fontSize: '0.65rem' }} />
-          ))}
-        </Box>
-      </>
-    )}
-  />
-)
-
-const SimpleActionCard = ({ action, theme, executing, onExecute }) => {
-  const status = action.status || (executing ? 'running' : 'pending')
-  const isDone = status === 'done'
-  const isFailed = status === 'failed'
-  const paletteKey = isDone ? 'success' : isFailed ? 'error' : 'warning'
-  const title = isDone ? '已完成' : isFailed ? '执行失败' : executing ? '执行中' : '待你确认'
-  const detail = action.resultMessage || action.summary || action.label || ACTION_LABELS[action.name] || action.name
-
-  return (
-    <Paper
-      elevation={0}
-      sx={{
-        mt: 0.75,
-        px: 1.1,
-        py: 0.75,
-        borderRadius: '12px',
-        border: '1px solid',
-        borderColor: alpha(theme.palette[paletteKey].main, theme.palette.mode === 'dark' ? 0.28 : 0.26),
-        bgcolor: theme.palette.mode === 'dark'
-          ? alpha(theme.palette[paletteKey].dark, 0.12)
-          : alpha(theme.palette[paletteKey].light, 0.16),
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 0.75
-      }}
-    >
-      <Box sx={{ flex: 1, minWidth: 0 }}>
-        <Typography variant="caption" sx={{ display: 'block', color: `${paletteKey}.main`, fontWeight: 800, mb: 0.25 }}>
-          {title}
-        </Typography>
-        <Typography variant="body2" sx={{ fontWeight: 650, lineHeight: 1.4, fontSize: 12.5, wordBreak: 'break-word' }}>
-          {detail}
-        </Typography>
-        {action.name === 'create_todo' && Array.isArray(action.args?.subtasks) && action.args.subtasks.length > 0 && (
-          <Box sx={{ mt: 0.4 }}>
-            {action.args.subtasks.map((subtask, index) => (
-              <Typography key={`${subtask.content}-${index}`} variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: 11 }}>
-                • {subtask.content}
-              </Typography>
-            ))}
-          </Box>
-        )}
-      </Box>
-      {!isDone && !isFailed && (
-        <Button
-          size="small"
-          variant="contained"
-          color="warning"
-          onClick={() => onExecute?.(action)}
-          disabled={executing}
-          sx={{ flexShrink: 0, minWidth: 72, height: 26, borderRadius: '999px', textTransform: 'none', fontWeight: 700 }}
-        >
-          {executing ? '执行中…' : '确认'}
-        </Button>
-      )}
-    </Paper>
-  )
-}
-
-const ChatBubble = ({ msg, userAvatar, executingActionIds, onExecuteAction }) => {
-  const theme = useTheme()
+const ChatBubble = ({ msg, userAvatar, executingActionIds, onExecuteAction, onDismissAction }) => {
   const isUser = msg.role === 'user'
   return (
     <Box sx={{
@@ -1320,31 +1020,14 @@ const ChatBubble = ({ msg, userAvatar, executingActionIds, onExecuteAction }) =>
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{text}</ReactMarkdown>
               {/* 待确认动作卡（统一读取 msg.actions 与历史 toolCalls[].action） */}
               {getMessagePendingActions(msg).map((action) => (
-                action.name === 'create_todos' ? (
-                  <BatchTodoActionCard
-                    key={action.actionId}
-                    action={action}
-                    theme={theme}
-                    executing={executingActionIds.has(action.actionId)}
-                    onExecute={onExecuteAction}
-                  />
-                ) : action.name === 'edit_notes' ? (
-                  <BatchEditNotesActionCard
-                    key={action.actionId}
-                    action={action}
-                    theme={theme}
-                    executing={executingActionIds.has(action.actionId)}
-                    onExecute={onExecuteAction}
-                  />
-                ) : (
-                  <SimpleActionCard
-                    key={action.actionId}
-                    action={action}
-                    theme={theme}
-                    executing={executingActionIds.has(action.actionId)}
-                    onExecute={onExecuteAction}
-                  />
-                )
+                <PendingActionCard
+                  key={action.actionId}
+                  action={action}
+                  compact
+                  executing={executingActionIds.has(action.actionId)}
+                  onExecute={onExecuteAction}
+                  onDismiss={onDismissAction}
+                />
               ))}
             </Box>
           )

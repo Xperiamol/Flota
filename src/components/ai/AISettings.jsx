@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from '../../utils/i18n';
 import {
   Box,
@@ -54,6 +54,11 @@ const AISettings = ({ showSnackbar }) => {
   const [testing, setTesting] = useState(false);
   const [testingWebSearch, setTestingWebSearch] = useState(false);
   const [saving, setSaving] = useState(false);
+  // 配置加载完成前不允许保存：否则初始默认值（enabled=false、空密钥）会覆盖真实配置，
+  // 表现为 AI 功能“莫名其妙被关闭”
+  const loadedRef = useRef(false);
+  // 只有用户改过的密钥才回写，避免把本机暂时无法解密（显示为空）的密钥覆盖掉
+  const dirtySecretsRef = useRef(new Set());
 
   useEffect(() => {
     loadConfig();
@@ -67,6 +72,7 @@ const AISettings = ({ showSnackbar }) => {
         if (result?.success && result.data) {
           setConfig(result.data);
           updateSelectedProvider(result.data.provider);
+          loadedRef.current = true;
         }
       }
     } catch (error) {
@@ -97,6 +103,7 @@ const AISettings = ({ showSnackbar }) => {
   };
 
   const handleConfigChange = async (field, value) => {
+    if (field === 'apiKey' || field === 'webSearchApiKey') dirtySecretsRef.current.add(field);
     const newConfig = {
       ...config,
       [field]: value
@@ -115,9 +122,13 @@ const AISettings = ({ showSnackbar }) => {
   };
 
   const saveConfigToBackend = async (configToSave) => {
+    if (!loadedRef.current) return;
+    const payload = { ...configToSave };
+    if (!dirtySecretsRef.current.has('apiKey')) delete payload.apiKey;
+    if (!dirtySecretsRef.current.has('webSearchApiKey')) delete payload.webSearchApiKey;
     setSaving(true);
     try {
-      const result = await window.electronAPI.ai.saveConfig(configToSave);
+      const result = await window.electronAPI.ai.saveConfig(payload);
       if (!result?.success) {
         if (showSnackbar) showSnackbar(result.error || t('ai.saveFailed'), 'error');
       } else {

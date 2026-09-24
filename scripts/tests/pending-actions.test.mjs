@@ -4,7 +4,10 @@ import test from 'node:test'
 
 // 前端为 Vite ESM、仓库默认 CommonJS；用原文件测试纯逻辑，无需引入测试框架。
 const source = await readFile(new URL('../../src/utils/aiCore/pendingActions.js', import.meta.url), 'utf8')
-const { executeConversationAction, getLatestConfirmableAction, isExplicitPendingActionConfirmation } =
+const {
+  dismissConversationAction, executeConversationAction, getLatestConfirmableAction,
+  isExplicitPendingActionConfirmation, supersedeStalePendingActions,
+} =
   await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
 
 const action = { actionId: 'draw-1', name: 'create_whiteboard', args: { prompt: '画图' } }
@@ -83,4 +86,47 @@ test('文字确认只接受紧邻的唯一普通卡片，不越过新话题或�
   assert.equal(getLatestConfirmableAction([{ role: 'assistant', toolCalls: [{ action }] }]).actionId, action.actionId)
   assert.equal(isExplicitPendingActionConfirmation('可以！'), true)
   assert.equal(isExplicitPendingActionConfirmation('可以，但改成蓝色'), false)
+})
+
+test('失败后可重试，成功后记录结果笔记 id', async () => {
+  let messages = initial()
+  const request = { actionId: action.actionId, read: () => messages, write: next => { messages = next } }
+  await executeConversationAction({ ...request, execute: async () => ({ success: false, error: '网络错误', message: '操作失败：网络错误' }) })
+  assert.equal(messages[0].actions[0].status, 'failed')
+  await executeConversationAction({ ...request, execute: async () => ({ success: true, message: '已创建', resultNoteId: 42 }) })
+  assert.equal(messages[0].actions[0].status, 'done')
+  assert.equal(messages[0].actions[0].resultNoteId, 42)
+  assert.equal(messages[0].actions[0].error, undefined)
+})
+
+test('忽略只作用于待确认卡片，忽略后不能再执行或文字确认', async () => {
+  let messages = initial()
+  const request = { actionId: action.actionId, read: () => messages, write: next => { messages = next } }
+  assert.equal(dismissConversationAction(request), true)
+  assert.equal(messages[0].actions[0].status, 'dismissed')
+  assert.equal(dismissConversationAction(request), false)
+  assert.equal(getLatestConfirmableAction(messages), null)
+  let calls = 0
+  assert.equal(await executeConversationAction({ ...request, execute: async () => { calls += 1 } }), null)
+  assert.equal(calls, 0)
+})
+
+test('AI 给出新方案时旧的待确认卡片被替代，已完成的不受影响', () => {
+  const done = { ...action, actionId: 'old-done', status: 'done' }
+  const stale = { ...action, actionId: 'old-pending' }
+  const fresh = { ...action, actionId: 'new-pending' }
+  const messages = [
+    { role: 'assistant', actions: [done] },
+    { role: 'assistant', toolCalls: [{ action: stale }], actions: [stale] },
+    { role: 'user', content: '改一下' },
+    { role: 'assistant', actions: [fresh] },
+  ]
+  const next = supersedeStalePendingActions(messages)
+  assert.equal(next[0].actions[0].status, 'done')
+  assert.equal(next[1].actions[0].status, 'superseded')
+  assert.equal(next[1].toolCalls[0].action.status, 'superseded')
+  assert.equal(next[3].actions[0].status, undefined)
+  // 最新一条没有新卡片时不做任何改动
+  const plain = [...messages.slice(0, 3), { role: 'assistant', content: '好的' }]
+  assert.equal(supersedeStalePendingActions(plain), plain)
 })

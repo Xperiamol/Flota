@@ -7,6 +7,7 @@ import { useStore } from '../../store/useStore'
 import useDraggableFloatingPanel from '../../hooks/useDraggableFloatingPanel'
 import { ALL_TOOLBAR_ITEMS, DEFAULT_FLOATING_ORDER, execWYSIWYGCommand } from '../editor/MarkdownToolbar'
 import { hideAIAssistSelection, showAIAssistSelection } from '../editor/extensions/AIAssistSelection'
+import PanelIconButton from '../common/PanelIconButton'
 
 const PANEL_MARGIN = 8
 const PANEL_ESTIMATED_WIDTH = 280
@@ -387,9 +388,9 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert, onOpenAI }) => {
           )
         })}
         <Box sx={{ flex: 1 }} />
-        <IconButton size="small" onClick={dismiss} sx={{ p: '3px', opacity: 0.5, borderRadius: 1 }} aria-label="关闭">
-          <CloseIcon sx={{ fontSize: 16 }} />
-        </IconButton>
+        <PanelIconButton title="关闭" onClick={dismiss}>
+          <CloseIcon />
+        </PanelIconButton>
       </Box>
 
     </FloatingGlassSurface>

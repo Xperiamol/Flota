@@ -19,6 +19,14 @@ const WHITEBOARD_ACTIONS = new Set(['create_whiteboard', 'update_whiteboard'])
 // 白板执行器已在保存后刷新笔记。
 const NOTE_REFRESH_ACTIONS = new Set(['create_note', 'edit_note', 'edit_notes'])
 const TODO_REFRESH_ACTIONS = new Set(['create_todo', 'create_todos'])
+// 单篇笔记类动作：完成后卡片可以直接“查看”结果
+const SINGLE_NOTE_ACTIONS = new Set(['create_note', 'edit_note', 'create_whiteboard', 'update_whiteboard'])
+
+const pickResultNoteId = (name, result) => {
+  if (!SINGLE_NOTE_ACTIONS.has(name)) return null
+  const id = result?.noteId ?? result?.result?.id ?? result?.result?.noteId ?? null
+  return id == null ? null : id
+}
 
 // 白板动作走后端 gate：先 claim（consume = 单次 + TTL 校验），拿不到就直接失败，
 // 避免重复执行或动作过期后执行。以 store 里的 args/context 快照为准。
@@ -66,7 +74,7 @@ const executeWhiteboardAction = async (action, overrides, deps) => {
  * @param {object} params.action  待确认动作（需含 actionId/name）
  * @param {object|null} params.overrides  执行时覆盖参数（如 create_todos 勾选后的 todos）
  * @param {object} params.deps  执行所需能力：currentNote/notes/createNote/deleteNote/updateNote/loadNotes/setSelectedNoteId
- * @returns {Promise<{success:boolean, message:string, error?:string, finalAction:object, reloadNotes:boolean, reloadTodos:boolean}>}
+ * @returns {Promise<{success:boolean, message:string, error?:string, finalAction:object, resultNoteId?:any, reloadNotes:boolean, reloadTodos:boolean}>}
  */
 export const runPendingAction = async ({ action, overrides = null, deps = {} }) => {
   // validate pending
@@ -90,6 +98,7 @@ export const runPendingAction = async ({ action, overrides = null, deps = {} }) 
       message,
       error: success ? undefined : (result?.error || '未知错误'),
       finalAction,
+      resultNoteId: success ? pickResultNoteId(finalAction.name, result) : null,
       reloadNotes: success && NOTE_REFRESH_ACTIONS.has(finalAction.name),
       reloadTodos: success && TODO_REFRESH_ACTIONS.has(finalAction.name),
     }

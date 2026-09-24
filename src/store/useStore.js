@@ -745,6 +745,25 @@ const useStore = create(
                 setSelectedNoteId: (id) => set({ selectedNoteId: id }),
 
                 // 局部更新笔记列表中的单个笔记（不重新排序）
+                // 主进程推送的笔记快照（如 AI 工具直接写库）：已在列表中则合并，否则插到最前
+                upsertNotesFromMain: (incomingNotes = []) => {
+                    const list = (Array.isArray(incomingNotes) ? incomingNotes : [])
+                        .filter((note) => note && note.id != null && !note.is_deleted)
+                        .map((note) => ({ ...note, tags: normalizeTags(note.tags) }))
+                    if (list.length === 0) return
+                    set((state) => {
+                        const byId = new Map(list.map((note) => [String(note.id), note]))
+                        const merged = state.notes.map((note) => {
+                            const fresh = byId.get(String(note.id))
+                            if (!fresh) return note
+                            byId.delete(String(note.id))
+                            return { ...note, ...fresh }
+                        })
+                        return { notes: [...byId.values(), ...merged] }
+                    })
+                    try { list.forEach((note) => useLinkGraph.getState().indexNote(note)) } catch {}
+                },
+
                 updateNoteInList: (updatedNote) => {
                     set((state) => ({
                         notes: state.notes.map(note =>
