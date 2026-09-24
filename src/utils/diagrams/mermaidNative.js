@@ -9,7 +9,7 @@
  *   architecture-beta / block-beta / gantt / pie / timeline / mindmap / quadrantChart / xychart-beta 等
  *
  * 本模块对 Tier 3 路径做了两件关键事：
- *   1) SVG → 高分辨率 PNG，避免 Excalidraw `normalizeSVG` 严格校验失败 + 解决低清糊化
+ *   1) 优先保留为矢量 SVG（任意缩放都清晰）；SVG 不合法时才回退为高分辨率 PNG
  *   2) 给每个 image 元素附 customData = { tier:3, kind:'mermaid-image', mermaidSource }，
  *      以后可双击编辑 DSL 重新生成
  */
@@ -19,10 +19,13 @@ import logger from '../logger'
 
 const SVG_MIME = 'image/svg+xml'
 
-// 高分辨率渲染倍率：Retina 屏取 DPR，封顶 4，避免极端机型生成超大图导致内存爆炸
-const computeRenderScale = () => {
+// PNG 回退时的渲染倍率：尽量高（放大查看仍清晰），但限制总像素，避免超大图导致内存爆炸
+const MAX_RASTER_PIXELS = 36_000_000
+const computeRenderScale = (logicalW = 1200, logicalH = 800) => {
   const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1
-  return Math.min(4, Math.max(2, Math.round(dpr * 1.5)))
+  const preferred = Math.min(6, Math.max(3, dpr * 3))
+  const areaCap = Math.sqrt(MAX_RASTER_PIXELS / Math.max(1, logicalW * logicalH))
+  return Math.max(1, Math.min(preferred, areaCap))
 }
 
 const offsetElements = (elements, offsetX, offsetY) => elements.map((el) => {
@@ -54,6 +57,33 @@ const sanitizeSvgText = (svgText = '') => String(svgText)
   .replace(/<br>/gi, '<br/>')
   .replace(/<hr>/gi, '<hr/>')
   .replace(/&nbsp;/gi, '&#160;')
+
+/**
+ * 把 Mermaid 输出的 SVG 规范成 Excalidraw 可直接使用的矢量图：
+ * 校验 XML 合法、补 xmlns、写入明确的数值宽高与 viewBox。失败返回 null（调用方回退 PNG）。
+ */
+const normalizeMermaidSvg = (svgText, width, height) => {
+  if (typeof DOMParser === 'undefined' || typeof XMLSerializer === 'undefined') return null
+  try {
+    const doc = new DOMParser().parseFromString(sanitizeSvgText(svgText), SVG_MIME)
+    const root = doc.documentElement
+    if (doc.querySelector('parsererror') || root?.localName?.toLowerCase() !== 'svg') return null
+    root.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+    const viewBox = String(root.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number)
+    const hasViewBox = viewBox.length === 4 && viewBox.every(Number.isFinite) && viewBox[2] > 0 && viewBox[3] > 0
+    const w = Number(width) > 0 ? Number(width) : (hasViewBox ? viewBox[2] : 0)
+    const h = Number(height) > 0 ? Number(height) : (hasViewBox ? viewBox[3] : 0)
+    if (!(w > 0 && h > 0)) return null
+    if (!hasViewBox) root.setAttribute('viewBox', `0 0 ${w} ${h}`)
+    root.setAttribute('width', String(w))
+    root.setAttribute('height', String(h))
+    // Mermaid 会写 max-width:100% 之类的样式，脱离页面容器后会导致尺寸异常
+    root.style?.removeProperty?.('max-width')
+    return new XMLSerializer().serializeToString(root)
+  } catch {
+    return null
+  }
+}
 
 const splitTopLevel = (text, separator = ',') => {
   const out = []
@@ -265,15 +295,22 @@ const flattenSubgraphFlowchart = (code = '') => {
  * 但因为像素密度更高，缩放后依然清晰。
  */
 const svgDataURLToPng = ({ dataURL, width = 1200, height = 800 }) => new Promise((resolve, reject) => {
-  const svgText = sanitizeSvgText(decodeDataURL(dataURL))
+  const logicalW = Math.max(1, Math.ceil(width || 1200))
+  const logicalH = Math.max(1, Math.ceil(height || 800))
+  const scale = computeRenderScale(logicalW, logicalH)
+  const pixelW = Math.round(logicalW * scale)
+  const pixelH = Math.round(logicalH * scale)
+  // 让 SVG 按目标像素尺寸光栅化，而不是先按小尺寸渲染再被拉伸
+  const rawSvg = decodeDataURL(dataURL)
+  const svgText = normalizeMermaidSvg(rawSvg, logicalW, logicalH)
+    ?.replace(/(<svg\b[^>]*?)\swidth="[^"]*"/, `$1 width="${pixelW}"`)
+    .replace(/(<svg\b[^>]*?)\sheight="[^"]*"/, `$1 height="${pixelH}"`)
+    || sanitizeSvgText(rawSvg)
   const img = new Image()
   img.onload = () => {
-    const logicalW = Math.max(1, Math.ceil(width || img.naturalWidth || 1200))
-    const logicalH = Math.max(1, Math.ceil(height || img.naturalHeight || 800))
-    const scale = computeRenderScale()
     const canvas = document.createElement('canvas')
-    canvas.width = logicalW * scale
-    canvas.height = logicalH * scale
+    canvas.width = pixelW
+    canvas.height = pixelH
     const ctx = canvas.getContext('2d')
     if (!ctx) {
       reject(new Error('无法创建 Canvas 上下文'))
@@ -297,9 +334,9 @@ const svgDataURLToPng = ({ dataURL, width = 1200, height = 800 }) => new Promise
 })
 
 const createFallbackPng = ({ width = 1200, height = 800, message = 'Mermaid image render failed' } = {}) => {
-  const scale = computeRenderScale()
   const logicalW = Math.max(1, Math.ceil(width || 1200))
   const logicalH = Math.max(1, Math.ceil(height || 800))
+  const scale = Math.min(2, computeRenderScale(logicalW, logicalH))
   const canvas = document.createElement('canvas')
   canvas.width = logicalW * scale
   canvas.height = logicalH * scale
@@ -336,6 +373,13 @@ const normalizeMermaidFiles = async (files = {}, elements = []) => {
     if (base.mimeType !== SVG_MIME) return [id, base]
 
     const imageElement = elementByFileId.get(base.id)
+    const displayW = imageElement?.width || base.width
+    const displayH = imageElement?.height || base.height
+    // 首选：保留矢量 SVG，Excalidraw 按当前缩放实时绘制，放大不糊、文件也更小
+    const vectorSvg = normalizeMermaidSvg(decodeDataURL(base.dataURL), displayW, displayH)
+    if (vectorSvg) {
+      return [id, { ...base, mimeType: SVG_MIME, dataURL: encodeSvgDataURL(vectorSvg) }]
+    }
     try {
       const png = await svgDataURLToPng({
         dataURL: base.dataURL,
