@@ -25,6 +25,7 @@ import { WikiLinkSuggestion } from './extensions/WikiLinkSuggestion'
 import { InlineMath, BlockMath, MathAwareText } from './extensions/Math'
 import { WhiteboardEmbed } from './extensions/WhiteboardEmbed'
 import { getClipboardLink, normalizePastedHtml, pasteEditorText } from '../../utils/editorClipboard'
+import { notifyError, promptInput } from '../../utils/notify'
 import { normalizeLinkUrl, markdownLinkDestination, openNoteLink } from '../../utils/linkUtils'
 import { transformOutsideMath } from '../../markdown/plugins/math'
 import LinkEditorDialog, { requestLinkEditor } from './LinkEditorDialog'
@@ -538,10 +539,10 @@ const AttachmentCard = ({ src, alt, selected, onContextMenu }) => {
     try {
       const result = await window.electronAPI?.attachments?.open?.(src)
       if (result && result.success === false) {
-        try { window.alert(`打开附件失败：${result.error || '未知原因'}`) } catch {}
+        notifyError(`打开附件失败：${result.error || '未知原因'}`)
       }
     } catch (err) {
-      try { window.alert(`打开附件失败：${err?.message || err}`) } catch {}
+      notifyError(`打开附件失败：${err?.message || err}`)
     }
   }
   return (
@@ -1786,8 +1787,14 @@ const SLASH_COMMANDS = [
   { id: 'callout-warning', title: '警告 Callout', hint: '强调风险', keywords: 'callout warning danger', run: (editor) => insertCalloutBlock(editor, 'warning') },
   { id: 'hr', title: '分割线', hint: '分隔内容', keywords: 'divider hr line', run: (editor) => editor.chain().focus().setHorizontalRule().run() },
   { id: 'image', title: '图片链接', hint: '插入图片 URL', keywords: 'image img picture', run: (editor) => {
-    const url = window.prompt('输入图片地址')
-    return url ? editor.chain().focus().setImage({ src: url.trim() }).run() : false
+    // Electron 不支持 window.prompt（直接返回 null），这里用应用内输入框
+    const insertAt = editor.state.selection.from
+    promptInput({ title: '插入图片链接', placeholder: 'https://example.com/image.png', confirmText: '插入' })
+      .then((url) => {
+        if (!url || editor.isDestroyed) return
+        editor.chain().focus().setTextSelection(Math.min(insertAt, editor.state.doc.content.size)).setImage({ src: url }).run()
+      })
+    return true
   } },
 ]
 
@@ -2274,13 +2281,35 @@ const EditorContextMenu = ({ editor, menu, noteId, containerRef, undoBaseline, b
   // 书签锚点：优先取选中文字，否则取光标所在块的文本；跳转时按此片段在正文里重新定位
   const addBookmarkHere = () => run(async () => {
     if (noteId == null) return
-    const { $from } = editor.state.selection
-    // 顶层位置（图片/表格等 atom 节点旁）$from.parent 是 doc，textContent 会是整篇正文，不能当锚点
-    const blockText = $from.depth > 0 ? $from.parent.textContent : ''
-    const anchorText = (selectedText || blockText || '')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 80)
+    const { selection, doc } = editor.state
+    const { $from, from, to } = selection
+    const clean = (text) => String(text || '').replace(/\s+/g, ' ').trim()
+
+    // 选中的是图片 / 附件等整块节点：用资源地址做锚点（节点视图带 data-bookmark-key）
+    const node = selection.node
+    const nodeKey = node?.attrs?.src
+    if (nodeKey) {
+      const label = clean(node.attrs.alt) || String(nodeKey).split(/[\\/]/).pop()
+      addBookmark(noteId, { label, anchorText: nodeKey })
+      return
+    }
+
+    // 选区跨多个段落时只取第一段，否则拼接后的文本在任何单个段落里都匹配不到，书签点了没反应
+    const firstSelectedLine = String(selectedText || '').split('\n').map(clean).find(Boolean) || ''
+    // 顶层位置（图片/表格等 atom 节点旁）$from.parent 是 doc，textContent 会是整篇正文，不能当锚点；
+    // 此时退回到选区内第一个有文字的段落
+    let blockText = $from.depth > 0 ? clean($from.parent.textContent) : ''
+    if (!blockText) {
+      doc.nodesBetween(from, Math.max(to, Math.min(doc.content.size, from + 1)), (child) => {
+        if (blockText) return false
+        if (child.isTextblock && clean(child.textContent)) {
+          blockText = clean(child.textContent)
+          return false
+        }
+        return true
+      })
+    }
+    const anchorText = (firstSelectedLine || blockText).slice(0, 80)
     if (anchorText) addBookmark(noteId, { label: anchorText, anchorText })
   })
   const showEdit = ['undo', 'redo', 'cut', 'copy', 'paste', 'pastePlain', 'selectAll'].some(isEnabled)
@@ -2518,7 +2547,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       if (!result?.success || !result.data?.relativePath) {
         const msg = result?.error || '未知原因'
         console.warn('[WYSIWYGEditor] 附件保存失败:', msg)
-        try { window.alert(`附件保存失败：${msg}`) } catch {}
+        notifyError(`附件保存失败：${msg}`)
         return
       }
       const { relativePath, displayName } = result.data
@@ -2766,7 +2795,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
           event.stopPropagation()
           window.electronAPI?.attachments?.open?.(cleaned).then((r) => {
             if (r && r.success === false) {
-              try { window.alert(`打开失败：${r.error || '未知原因'}`) } catch {}
+              notifyError(`打开失败：${r.error || '未知原因'}`)
             }
           }).catch(() => {})
           return true
@@ -3042,11 +3071,13 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
           wordBreak: 'break-word',
 
           // ── 标题 ──────────────────────────────────────────────────────────────
-          '& h1': { fontSize: '2rem', fontWeight: 700, lineHeight: 1.3, marginTop: '1.25rem', marginBottom: '0.5rem' },
-          '& h2': { fontSize: '1.5rem', fontWeight: 600, lineHeight: 1.3, marginTop: '1rem', marginBottom: '0.4rem' },
-          '& h3': { fontSize: '1.25rem', fontWeight: 600, lineHeight: 1.3, marginTop: '0.8rem', marginBottom: '0.3rem' },
-          '& h4': { fontSize: '1.1rem', fontWeight: 600, lineHeight: 1.4 },
-          '& h5, & h6': { fontSize: '1rem', fontWeight: 600, lineHeight: 1.4 },
+          // 标题上方留白明显大于下方，让标题"归属"于后面的内容，章节层次更清楚
+          '& h1': { fontSize: '2rem', fontWeight: 700, lineHeight: 1.3, marginTop: '1.6rem', marginBottom: '0.6rem' },
+          '& h2': { fontSize: '1.5rem', fontWeight: 650, lineHeight: 1.35, marginTop: '1.5rem', marginBottom: '0.45rem' },
+          '& h3': { fontSize: '1.25rem', fontWeight: 600, lineHeight: 1.4, marginTop: '1.2rem', marginBottom: '0.35rem' },
+          '& h4': { fontSize: '1.1rem', fontWeight: 600, lineHeight: 1.4, marginTop: '1rem', marginBottom: '0.3rem' },
+          '& h5, & h6': { fontSize: '1rem', fontWeight: 600, lineHeight: 1.4, marginTop: '0.9rem', marginBottom: '0.25rem' },
+          '& > :first-child': { marginTop: 0 },
 
           // ── 段落/行内 ─────────────────────────────────────────────────────────
           '& p': { lineHeight: 1.7, margin: '0.25rem 0' },
@@ -3121,11 +3152,14 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
           },
 
           // ── 代码块 ────────────────────────────────────────────────────────────
+          // 浅色模式下编辑区底色本身接近 #f1f5f9，代码块需要自带描边和更深一点的底色才能看出边界
           '& pre': {
             backgroundColor: (theme) =>
-              theme.palette.mode === 'dark' ? 'rgba(30,41,59,0.8)' : 'rgba(241,245,249,0.9)',
+              theme.palette.mode === 'dark' ? 'rgba(30,41,59,0.8)' : 'rgba(15,23,42,0.045)',
+            boxShadow: (theme) =>
+              `inset 0 0 0 1px ${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.08)'}`,
             padding: '1rem',
-            borderRadius: '6px',
+            borderRadius: '10px',
             overflow: 'auto',
             margin: '0.5rem 0',
             '& code': {

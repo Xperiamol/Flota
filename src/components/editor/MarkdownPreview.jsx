@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Box, Typography } from '@mui/material'
 import { getImageResolver } from '../../utils/ImageProtocolResolver'
+import { notifyError } from '../../utils/notify'
 import { createMarkdownRenderer, prepareMarkdownForDisplay } from '../../markdown/index.js'
 import { sanitizeMarkdownHtml } from '../../markdown/sanitizeHtml.js'
 import { urlToWav } from '../../utils/audioCodec'
@@ -154,6 +155,9 @@ const MarkdownPreview = ({
       return lines.slice(startIdx, endIdx).join('\n')
     }
 
+    // 只在渲染嵌入时按需读取笔记列表，避免订阅整个 notes 导致每次编辑都重渲染预览
+    const allNotes = useStore.getState().notes || []
+
     embeds.forEach((host) => {
       try {
         const target = host.getAttribute('data-embed-target') || ''
@@ -207,7 +211,7 @@ const MarkdownPreview = ({
     })
 
     return undefined
-  }, [renderedHTML, allNotes, md])
+  }, [renderedHTML, md])
 
   // 处理点击事件（Wiki 链接、标签和外部链接）
   useEffect(() => {
@@ -252,7 +256,7 @@ const MarkdownPreview = ({
           e.preventDefault()
           window.electronAPI?.attachments?.open?.(cleaned).then((r) => {
             if (r && r.success === false) {
-              try { window.alert(`打开失败：${r.error || '未知原因'}`) } catch {}
+              notifyError(`打开失败：${r.error || '未知原因'}`)
             }
           }).catch(() => {})
           return
@@ -336,10 +340,10 @@ const MarkdownPreview = ({
               try {
                 const result = await window.electronAPI?.attachments?.open?.(originalSrc)
                 if (result && result.success === false) {
-                  try { window.alert(`打开附件失败：${result.error || '未知原因'}`) } catch {}
+                  notifyError(`打开附件失败：${result.error || '未知原因'}`)
                 }
               } catch (err) {
-                try { window.alert(`打开附件失败：${err?.message || err}`) } catch {}
+                notifyError(`打开附件失败：${err?.message || err}`)
               }
             }
             if (img.parentNode) img.parentNode.replaceChild(card, img)

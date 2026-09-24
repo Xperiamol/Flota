@@ -44,6 +44,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useStandaloneContext } from '../common/StandaloneProvider'
 import { zhCN } from 'date-fns/locale/zh-CN'
 import { parseTags, formatTags } from '../../utils/tagUtils'
+import { notifyError } from '../../utils/notify'
 import shortcutManager from '../../utils/ShortcutManager'
 import TagInput from '../common/TagInput'
 import useAIAutoAnnotate from '../../hooks/useAIAutoAnnotate'
@@ -73,6 +74,7 @@ import { insertIntoTextarea, placeCursorAfterInsert } from '../../utils/textarea
 import { useRecentNotes } from '../../store/useRecentNotes'
 import { exportNoteAs } from '../../utils/noteExport'
 import { editorScrollbarSx, segmentedButtonSx, segmentedControlSx } from '../../styles/commonStyles'
+import PanelIconButton from '../common/PanelIconButton'
 
 const WYSIWYGEditor = lazy(() => import('./WYSIWYGEditor'))
 const WhiteboardEditor = lazy(() => import('./WhiteboardEditor'))
@@ -1780,7 +1782,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
             // 用图片语法插入：渲染端检测到 attachments/ + 非图片扩展名 → 附件卡片
             insertText += `![${displayName || file.name}](${relativePath})\n`
           } else if (result?.error) {
-            try { window.alert(`附件 ${file.name} 保存失败：${result.error}`) } catch {}
+            notifyError(`附件 ${file.name} 保存失败：${result.error}`)
           }
         }
       }
@@ -2148,6 +2150,13 @@ const NoteEditor = ({ onCollapseSidebar }) => {
             : `rgba(240, 244, 248, ${opacity})`,
           backdropFilter: opacity > 0 ? 'blur(8px)' : 'none',
           WebkitBackdropFilter: opacity > 0 ? 'blur(8px)' : 'none',
+          // 元素全屏时浏览器把它放到顶层、背后是默认纯黑的 ::backdrop，半透明底色会透出黑色，
+          // 浅色模式下整屏发暗。全屏时改用与主题一致的不透明底色。
+          '&:fullscreen, &::backdrop': {
+            backgroundColor: theme.palette.mode === 'dark' ? '#0f172a' : '#f0f4f8',
+            backdropFilter: 'none',
+            WebkitBackdropFilter: 'none',
+          },
         }
       }}
     >
@@ -2656,17 +2665,17 @@ const NoteEditor = ({ onCollapseSidebar }) => {
               <Typography sx={{ fontSize: 12, color: 'error.main', flex: 1, minWidth: 0 }} noWrap>
                 AI 整理失败：{st.error}
               </Typography>
-              <IconButton
-                size="small"
+              <PanelIconButton
+                size="sm"
+                title="关闭"
                 onClick={() => setAiAnnotateState((prev) => {
                   const next = { ...prev }
                   delete next[String(selectedNoteId)]
                   return next
                 })}
-                sx={{ p: 0.25 }}
               >
-                <CloseIcon sx={{ fontSize: 14 }} />
-              </IconButton>
+                <CloseIcon />
+              </PanelIconButton>
             </Box>
           )
         }
@@ -2725,9 +2734,9 @@ const NoteEditor = ({ onCollapseSidebar }) => {
               })}
               variant="outlined"
             />
-            <IconButton size="small" onClick={dismiss} sx={{ p: 0.25 }}>
-              <CloseIcon sx={{ fontSize: 14 }} />
-            </IconButton>
+            <PanelIconButton size="sm" title="关闭" onClick={dismiss}>
+              <CloseIcon />
+            </PanelIconButton>
           </Box>
         )
       })()}
@@ -3032,11 +3041,9 @@ const NoteEditor = ({ onCollapseSidebar }) => {
                 管理标签
               </Typography>
             </Box>
-            <Tooltip title="关闭标签">
-              <IconButton size="small" onClick={() => setTagAnchorEl(null)} sx={{ borderRadius: '8px', p: 0.55 }}>
-                <CloseIcon sx={{ fontSize: 16 }} />
-              </IconButton>
-            </Tooltip>
+            <PanelIconButton title="关闭标签" onClick={() => setTagAnchorEl(null)}>
+              <CloseIcon />
+            </PanelIconButton>
           </Box>
 
           <TagInput
@@ -3088,11 +3095,9 @@ const NoteEditor = ({ onCollapseSidebar }) => {
                 {currentNote?.title || '未命名'}
               </Typography>
             </Box>
-            <Tooltip title="关闭详情">
-              <IconButton size="small" onClick={handleCloseRelatedContext} sx={{ borderRadius: '8px', p: 0.55 }}>
-                <CloseIcon sx={{ fontSize: 16 }} />
-              </IconButton>
-            </Tooltip>
+            <PanelIconButton title="关闭详情" onClick={handleCloseRelatedContext}>
+              <CloseIcon />
+            </PanelIconButton>
           </Box>
 
           <Box

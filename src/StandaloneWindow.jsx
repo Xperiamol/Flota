@@ -381,8 +381,8 @@ function StandaloneWindow() {
   }
 
   return (
-    <ErrorProvider>
-      <ThemeProvider theme={appTheme}>
+    <ThemeProvider theme={appTheme}>
+      <ErrorProvider>
         <CssBaseline />
         <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
           {/* 使用主应用的TitleBar组件 */}
@@ -450,8 +450,8 @@ function StandaloneWindow() {
           </StandaloneProvider>
         )}
       </Box>
-    </ThemeProvider>
     </ErrorProvider>
+    </ThemeProvider>
   )
 }
 

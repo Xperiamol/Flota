@@ -69,6 +69,9 @@ import { injectUIBridge } from './utils/pluginUIBridge'
 import themeManager from './utils/pluginThemeManager'
 import { PluginNotificationListener } from './utils/PluginNotificationListener'
 import shortcutManager from './utils/ShortcutManager'
+import { showOpenExternalFileDialog } from './utils/externalFiles'
+import { notifyAINoteIdsUpdated } from './utils/aiCore/noteRefresh'
+import ExternalFileViewer from './components/common/ExternalFileViewer'
 
 function App() {
   const { theme, primaryColor, notes, loadNotes, currentView, initializeSettings, setCurrentView, createNote, batchDeleteNotes, batchDeleteTodos, batchCompleteTodos, batchRestoreNotes, batchPermanentDeleteNotes, getAllTags, batchSetTags, selectedNoteId, setSelectedNoteId, updateNoteInList, aiDeleteConvs, aiCommandCenterEnabled, aiCommandCenterOpen, setAiCommandCenterOpen, noteNavigatorOpen, setNoteNavigatorOpen, maskOpacity, christmasMode, backgroundPattern, patternOpacity, wallpaperPath } = useStore(useShallow((state) => ({
@@ -318,6 +321,16 @@ function App() {
       setNewTodo(initialTodoState);
     }
   }, [initialTodoData]);
+
+  // AI 工具在主进程直接改了笔记：更新列表，并让正在打开的笔记立即显示新内容（无需重新进入笔记）
+  useEffect(() => {
+    const unsubscribe = window.electronAPI?.ai?.onNotesChanged?.((changedNotes) => {
+      if (!Array.isArray(changedNotes) || changedNotes.length === 0) return
+      useStore.getState().upsertNotesFromMain?.(changedNotes)
+      notifyAINoteIdsUpdated(changedNotes.map((note) => note.id))
+    })
+    return () => unsubscribe?.()
+  }, [])
 
   // 监听来自独立窗口的笔记更新（实现同步）
   useEffect(() => {
@@ -732,6 +745,59 @@ function App() {
     }
   }, [createNote])
 
+  // macOS 菜单栏命令（electron/utils/appMenu.js）
+  useEffect(() => {
+    const unsubscribe = window.electronAPI?.appMenu?.onCommand?.(async ({ command, payload } = {}) => {
+      const state = useStore.getState()
+      try {
+        switch (command) {
+          case 'new-note':
+          case 'quick-input':
+            await state.createNote()
+            state.setCurrentView('notes')
+            break
+          case 'new-whiteboard':
+            await state.createNote({ note_type: 'whiteboard' })
+            state.setCurrentView('notes')
+            break
+          case 'new-todo':
+            state.setCurrentView('todo')
+            setShowTodoCreateForm(true)
+            break
+          case 'open-settings':
+            state.setCurrentView('settings')
+            break
+          case 'open-file':
+            await showOpenExternalFileDialog()
+            break
+          case 'check-updates':
+            await state.checkForUpdates?.({ silent: false })
+            break
+          case 'view':
+            if (payload) state.setCurrentView(payload)
+            break
+          case 'command-palette':
+            setCommandPaletteOpen(true)
+            break
+          case 'ai-panel':
+            if (state.aiCommandCenterEnabled) state.setAiCommandCenterOpen(!state.aiCommandCenterOpen)
+            break
+          case 'note-navigator':
+            state.setNoteNavigatorOpen(!state.noteNavigatorOpen)
+            break
+          case 'toggle-sidebar':
+            setSidebarOpen((open) => !open)
+            break
+          default:
+            break
+        }
+      } catch (error) {
+        console.error('[App] 菜单命令执行失败:', command, error)
+      }
+    })
+    return () => unsubscribe?.()
+  }, [])
+
   useEffect(() => {
     const unsubscribe = subscribePluginUiRequests((payload) => {
       if (!payload?.noteId) return
@@ -917,9 +983,10 @@ function App() {
   }, [isMobile])
 
   return (
+    // ErrorProvider 放在 ThemeProvider 里面：它渲染的确认框 / 输入框需要拿到应用主题（深色模式、主色）
+    <ThemeProvider theme={appTheme}>
     <ErrorProvider>
       <PluginNotificationListener />
-      <ThemeProvider theme={appTheme}>
         <CssBaseline />
         <DragAnimationProvider>
         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -1345,6 +1412,8 @@ function App() {
           onClose={() => setCommandPaletteOpen(false)}
         />
 
+        <ExternalFileViewer />
+
         {aiCommandCenterEnabled && (
           <AICommandCenter
             open={aiCommandCenterOpen}
@@ -1367,8 +1436,8 @@ function App() {
           {christmasMode && <ChristmasDecorations />}
         </Suspense>
       </DragAnimationProvider>
-    </ThemeProvider>
     </ErrorProvider>
+    </ThemeProvider>
   )
 }
 
