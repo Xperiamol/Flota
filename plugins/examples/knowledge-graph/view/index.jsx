@@ -13,6 +13,7 @@ const RestartAltIcon = MaterialIcons.RestartAlt
 const ZoomInIcon = MaterialIcons.ZoomIn
 const ZoomOutIcon = MaterialIcons.ZoomOut
 const CenterFocusStrongIcon = MaterialIcons.CenterFocusStrong
+const FitScreenIcon = MaterialIcons.FitScreen || MaterialIcons.ZoomOutMap
 const SearchIcon = MaterialIcons.Search
 const HubIcon = MaterialIcons.Hub
 const CategoryIcon = MaterialIcons.Category
@@ -29,6 +30,7 @@ const DRAG_FOLLOW = 0.42
 const DRAG_RELAX_FRAMES = 120
 const MIN_SCALE = 0.18
 const MAX_SCALE = 6
+const SMALL_GRAPH_LABEL_ALL = 30
 const NODE_BASE_R = 4
 const NODE_DEG_R = 1.6
 const NODE_MAX_R = 22
@@ -300,6 +302,8 @@ const GraphView = () => {
   const [hideOrphans, setHideOrphans] = useState(false)
   const [showGhosts, setShowGhosts] = useState(true)
   const [labelDensity, setLabelDensity] = useState(2)
+  const userMovedViewRef = useRef(false)
+  const fitToContentRef = useRef(null)
   const [focusMode, setFocusMode] = useState('all')
 
   const fullGraph = useMemo(() => buildGraph(notes), [notes])
@@ -369,6 +373,7 @@ const GraphView = () => {
     if (size.w === 0 || size.h === 0) return
     positionsRef.current = initialLayout(graph.nodes.length, size.w, size.h)
     framesRef.current = 0
+    userMovedViewRef.current = false
     setTransform({ tx: 0, ty: 0, s: 1 })
     cancelAnimationFrame(rafRef.current)
     cancelAnimationFrame(dragRafRef.current)
@@ -379,6 +384,9 @@ const GraphView = () => {
       force((x) => (x + 1) % 1000)
       if (framesRef.current < MAX_FRAMES) {
         rafRef.current = requestAnimationFrame(tick)
+      } else if (!userMovedViewRef.current) {
+        // 布局稳定后把所有节点框进画面；用户已经手动缩放 / 平移过就不打扰
+        fitToContentRef.current?.()
       }
     }
     rafRef.current = requestAnimationFrame(tick)
@@ -410,6 +418,9 @@ const GraphView = () => {
   }, [graph, search])
 
   const focusIdx = dragIdx >= 0 ? dragIdx : hoverIdx >= 0 ? hoverIdx : pinIdx >= 0 ? pinIdx : selectedIdx
+  // 仅由"当前打开的笔记"带来的被动焦点：不应把整张图压暗。
+  // 这篇笔记没有任何链接时完全不弱化，有链接时也只做轻度弱化；悬停 / 拖拽 / 钉住才强聚焦。
+  const isPassiveFocus = focusIdx >= 0 && focusIdx === selectedIdx && dragIdx < 0 && hoverIdx < 0 && pinIdx < 0
   const focusNeighbors = useMemo(() => {
     if (focusIdx < 0) return null
     const set = new Set([focusIdx])
@@ -452,6 +463,7 @@ const GraphView = () => {
     if (nextS === cur.s) return
     const worldX = (mx - cur.tx) / cur.s
     const worldY = (my - cur.ty) / cur.s
+    userMovedViewRef.current = true
     setTransform({ tx: mx - worldX * nextS, ty: my - worldY * nextS, s: nextS })
   }, [])
 
@@ -531,6 +543,7 @@ const GraphView = () => {
       const dy = e.clientY - drag.startY
       if (Math.abs(dx) + Math.abs(dy) > 2) drag.didMove = true
       if (drag.mode === 'pan') {
+        if (drag.didMove) userMovedViewRef.current = true
         setTransform((t) => ({ ...t, tx: drag.origTx + dx, ty: drag.origTy + dy }))
       } else if (drag.mode === 'node') {
         const s = transformRef.current.s || 1
@@ -597,6 +610,26 @@ const GraphView = () => {
     setTransform({ tx: size.w / 2 - pos.x * s, ty: size.h / 2 - pos.y * s, s })
   }, [size])
 
+  // 把所有节点框进画面（四周留出标签和控制面板的空间），缩放不超过 1.6 倍，避免节点很少时被放得过大
+  const fitToContent = useCallback(() => {
+    const pts = positionsRef.current.filter(Boolean)
+    if (pts.length === 0 || size.w === 0 || size.h === 0) return
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    pts.forEach((p) => {
+      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x)
+      minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y)
+    })
+    const padX = 140
+    const padY = 110
+    const w = Math.max(1, maxX - minX)
+    const h = Math.max(1, maxY - minY)
+    const s = Math.max(MIN_SCALE, Math.min(1.6, (size.w - padX * 2) / w, (size.h - padY * 2) / h))
+    const cx = (minX + maxX) / 2
+    const cy = (minY + maxY) / 2
+    setTransform({ tx: size.w / 2 - cx * s, ty: size.h / 2 - cy * s, s })
+  }, [size])
+  fitToContentRef.current = fitToContent
+
   const firstMatchIdx = useMemo(() => {
     if (matchedSet.size === 0) return -1
     return Array.from(matchedSet)[0]
@@ -636,22 +669,28 @@ const GraphView = () => {
     if (idx === hoverIdx) return true
     if (labelDensity === 0) return false
     if (labelDensity === 3) return true
+    // 节点不多时不会拥挤：默认档位下连孤立笔记也显示名字，避免满屏无名小点
+    if (labelDensity === 2 && graph.nodes.length <= SMALL_GRAPH_LABEL_ALL) return true
     if (labelDensity === 2) return graph.degree[idx] >= 1
     return graph.degree[idx] >= 3
   }
 
+  const passiveHasLinks = isPassiveFocus && (graph.adj[focusIdx]?.size || 0) > 0
+  const focusDim = isPassiveFocus ? 0.5 : dimAlpha
   const getNodeAlpha = (idx) => {
     if (matchedSet.size > 0) return matchedSet.has(idx) ? 1 : dimAlpha
-    if (focusIdx >= 0) return focusNeighbors?.has(idx) ? 1 : dimAlpha
+    if (isPassiveFocus && !passiveHasLinks) return 1
+    if (focusIdx >= 0) return focusNeighbors?.has(idx) ? 1 : focusDim
     return 1
   }
   const getEdgeAlpha = (a, b) => {
     if (matchedSet.size > 0) {
       return matchedSet.has(a) && matchedSet.has(b) ? 0.9 : dimAlpha * 0.6
     }
+    if (isPassiveFocus && !passiveHasLinks) return 0.55
     if (focusIdx >= 0) {
       const inSel = focusNeighbors?.has(a) && focusNeighbors?.has(b) && (a === focusIdx || b === focusIdx)
-      return inSel ? 1 : dimAlpha * 0.6
+      return inSel ? 1 : focusDim * 0.6
     }
     return 0.55
   }
@@ -757,6 +796,11 @@ const GraphView = () => {
             </IconButton>
           </span>
         </Tooltip>
+        <Tooltip title="适配画面">
+          <IconButton size="small" onClick={() => { userMovedViewRef.current = false; fitToContent() }} sx={iconButtonSx} aria-label="适配画面">
+            <FitScreenIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
         <Tooltip title="重新布局">
           <IconButton size="small" onClick={restart} sx={iconButtonSx}>
             <RestartAltIcon fontSize="small" />
@@ -821,7 +865,9 @@ const GraphView = () => {
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.25 }}>
             <Typography variant="caption" sx={{ color: 'text.secondary' }}>标签密度</Typography>
             <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: 11 }}>
-              {['仅 hover', '度数 ≥ 3', '度数 ≥ 1', '全部'][labelDensity]}
+              {labelDensity === 2 && graph.nodes.length <= SMALL_GRAPH_LABEL_ALL
+                ? '全部（节点较少）'
+                : ['仅 hover', '度数 ≥ 3', '度数 ≥ 1', '全部'][labelDensity]}
             </Typography>
           </Box>
           <Slider

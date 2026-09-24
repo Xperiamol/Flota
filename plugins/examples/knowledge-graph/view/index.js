@@ -9,6 +9,7 @@ const RestartAltIcon = MaterialIcons.RestartAlt;
 const ZoomInIcon = MaterialIcons.ZoomIn;
 const ZoomOutIcon = MaterialIcons.ZoomOut;
 const CenterFocusStrongIcon = MaterialIcons.CenterFocusStrong;
+const FitScreenIcon = MaterialIcons.FitScreen || MaterialIcons.ZoomOutMap;
 const SearchIcon = MaterialIcons.Search;
 const HubIcon = MaterialIcons.Hub;
 const CategoryIcon = MaterialIcons.Category;
@@ -24,6 +25,7 @@ const DRAG_FOLLOW = 0.42;
 const DRAG_RELAX_FRAMES = 120;
 const MIN_SCALE = 0.18;
 const MAX_SCALE = 6;
+const SMALL_GRAPH_LABEL_ALL = 30;
 const NODE_BASE_R = 4;
 const NODE_DEG_R = 1.6;
 const NODE_MAX_R = 22;
@@ -267,6 +269,8 @@ const GraphView = () => {
   const [hideOrphans, setHideOrphans] = useState(false);
   const [showGhosts, setShowGhosts] = useState(true);
   const [labelDensity, setLabelDensity] = useState(2);
+  const userMovedViewRef = useRef(false);
+  const fitToContentRef = useRef(null);
   const [focusMode, setFocusMode] = useState("all");
   const fullGraph = useMemo(() => buildGraph(notes), [notes]);
   const graph = useMemo(() => {
@@ -337,6 +341,7 @@ const GraphView = () => {
     if (size.w === 0 || size.h === 0) return;
     positionsRef.current = initialLayout(graph.nodes.length, size.w, size.h);
     framesRef.current = 0;
+    userMovedViewRef.current = false;
     setTransform({ tx: 0, ty: 0, s: 1 });
     cancelAnimationFrame(rafRef.current);
     cancelAnimationFrame(dragRafRef.current);
@@ -347,6 +352,8 @@ const GraphView = () => {
       force((x) => (x + 1) % 1e3);
       if (framesRef.current < MAX_FRAMES) {
         rafRef.current = requestAnimationFrame(tick);
+      } else if (!userMovedViewRef.current) {
+        fitToContentRef.current?.();
       }
     };
     rafRef.current = requestAnimationFrame(tick);
@@ -373,6 +380,7 @@ const GraphView = () => {
     return set;
   }, [graph, search]);
   const focusIdx = dragIdx >= 0 ? dragIdx : hoverIdx >= 0 ? hoverIdx : pinIdx >= 0 ? pinIdx : selectedIdx;
+  const isPassiveFocus = focusIdx >= 0 && focusIdx === selectedIdx && dragIdx < 0 && hoverIdx < 0 && pinIdx < 0;
   const focusNeighbors = useMemo(() => {
     if (focusIdx < 0) return null;
     const set = /* @__PURE__ */ new Set([focusIdx]);
@@ -414,6 +422,7 @@ const GraphView = () => {
     if (nextS === cur.s) return;
     const worldX = (mx - cur.tx) / cur.s;
     const worldY = (my - cur.ty) / cur.s;
+    userMovedViewRef.current = true;
     setTransform({ tx: mx - worldX * nextS, ty: my - worldY * nextS, s: nextS });
   }, []);
   useEffect(() => {
@@ -489,6 +498,7 @@ const GraphView = () => {
       const dy = e.clientY - drag.startY;
       if (Math.abs(dx) + Math.abs(dy) > 2) drag.didMove = true;
       if (drag.mode === "pan") {
+        if (drag.didMove) userMovedViewRef.current = true;
         setTransform((t) => ({ ...t, tx: drag.origTx + dx, ty: drag.origTy + dy }));
       } else if (drag.mode === "node") {
         const s = transformRef.current.s || 1;
@@ -552,6 +562,26 @@ const GraphView = () => {
     const s = transformRef.current.s;
     setTransform({ tx: size.w / 2 - pos.x * s, ty: size.h / 2 - pos.y * s, s });
   }, [size]);
+  const fitToContent = useCallback(() => {
+    const pts = positionsRef.current.filter(Boolean);
+    if (pts.length === 0 || size.w === 0 || size.h === 0) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    pts.forEach((p) => {
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y);
+      maxY = Math.max(maxY, p.y);
+    });
+    const padX = 140;
+    const padY = 110;
+    const w = Math.max(1, maxX - minX);
+    const h = Math.max(1, maxY - minY);
+    const s = Math.max(MIN_SCALE, Math.min(1.6, (size.w - padX * 2) / w, (size.h - padY * 2) / h));
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    setTransform({ tx: size.w / 2 - cx * s, ty: size.h / 2 - cy * s, s });
+  }, [size]);
+  fitToContentRef.current = fitToContent;
   const firstMatchIdx = useMemo(() => {
     if (matchedSet.size === 0) return -1;
     return Array.from(matchedSet)[0];
@@ -588,21 +618,26 @@ const GraphView = () => {
     if (idx === hoverIdx) return true;
     if (labelDensity === 0) return false;
     if (labelDensity === 3) return true;
+    if (labelDensity === 2 && graph.nodes.length <= SMALL_GRAPH_LABEL_ALL) return true;
     if (labelDensity === 2) return graph.degree[idx] >= 1;
     return graph.degree[idx] >= 3;
   };
+  const passiveHasLinks = isPassiveFocus && (graph.adj[focusIdx]?.size || 0) > 0;
+  const focusDim = isPassiveFocus ? 0.5 : dimAlpha;
   const getNodeAlpha = (idx) => {
     if (matchedSet.size > 0) return matchedSet.has(idx) ? 1 : dimAlpha;
-    if (focusIdx >= 0) return focusNeighbors?.has(idx) ? 1 : dimAlpha;
+    if (isPassiveFocus && !passiveHasLinks) return 1;
+    if (focusIdx >= 0) return focusNeighbors?.has(idx) ? 1 : focusDim;
     return 1;
   };
   const getEdgeAlpha = (a, b) => {
     if (matchedSet.size > 0) {
       return matchedSet.has(a) && matchedSet.has(b) ? 0.9 : dimAlpha * 0.6;
     }
+    if (isPassiveFocus && !passiveHasLinks) return 0.55;
     if (focusIdx >= 0) {
       const inSel = focusNeighbors?.has(a) && focusNeighbors?.has(b) && (a === focusIdx || b === focusIdx);
-      return inSel ? 1 : dimAlpha * 0.6;
+      return inSel ? 1 : focusDim * 0.6;
     }
     return 0.55;
   };
@@ -676,7 +711,10 @@ const GraphView = () => {
         }
       }
     }
-  ), /* @__PURE__ */ React.createElement(Tooltip, { title: "\u653E\u5927" }, /* @__PURE__ */ React.createElement(IconButton, { size: "small", onClick: () => zoomBy(1.2), sx: iconButtonSx }, /* @__PURE__ */ React.createElement(ZoomInIcon, { fontSize: "small" }))), /* @__PURE__ */ React.createElement(Tooltip, { title: "\u7F29\u5C0F" }, /* @__PURE__ */ React.createElement(IconButton, { size: "small", onClick: () => zoomBy(1 / 1.2), sx: iconButtonSx }, /* @__PURE__ */ React.createElement(ZoomOutIcon, { fontSize: "small" }))), /* @__PURE__ */ React.createElement(Tooltip, { title: selectedIdx >= 0 ? "\u5C45\u4E2D\u5F53\u524D\u7B14\u8BB0" : "\u5F53\u524D\u672A\u9009\u4E2D\u7B14\u8BB0" }, /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement(IconButton, { size: "small", onClick: () => centerOn(selectedIdx), disabled: selectedIdx < 0, sx: iconButtonSx }, /* @__PURE__ */ React.createElement(CenterFocusStrongIcon, { fontSize: "small" })))), /* @__PURE__ */ React.createElement(Tooltip, { title: "\u91CD\u65B0\u5E03\u5C40" }, /* @__PURE__ */ React.createElement(IconButton, { size: "small", onClick: restart, sx: iconButtonSx }, /* @__PURE__ */ React.createElement(RestartAltIcon, { fontSize: "small" })))), /* @__PURE__ */ React.createElement(
+  ), /* @__PURE__ */ React.createElement(Tooltip, { title: "\u653E\u5927" }, /* @__PURE__ */ React.createElement(IconButton, { size: "small", onClick: () => zoomBy(1.2), sx: iconButtonSx }, /* @__PURE__ */ React.createElement(ZoomInIcon, { fontSize: "small" }))), /* @__PURE__ */ React.createElement(Tooltip, { title: "\u7F29\u5C0F" }, /* @__PURE__ */ React.createElement(IconButton, { size: "small", onClick: () => zoomBy(1 / 1.2), sx: iconButtonSx }, /* @__PURE__ */ React.createElement(ZoomOutIcon, { fontSize: "small" }))), /* @__PURE__ */ React.createElement(Tooltip, { title: selectedIdx >= 0 ? "\u5C45\u4E2D\u5F53\u524D\u7B14\u8BB0" : "\u5F53\u524D\u672A\u9009\u4E2D\u7B14\u8BB0" }, /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement(IconButton, { size: "small", onClick: () => centerOn(selectedIdx), disabled: selectedIdx < 0, sx: iconButtonSx }, /* @__PURE__ */ React.createElement(CenterFocusStrongIcon, { fontSize: "small" })))), /* @__PURE__ */ React.createElement(Tooltip, { title: "\u9002\u914D\u753B\u9762" }, /* @__PURE__ */ React.createElement(IconButton, { size: "small", onClick: () => {
+    userMovedViewRef.current = false;
+    fitToContent();
+  }, sx: iconButtonSx, "aria-label": "\u9002\u914D\u753B\u9762" }, /* @__PURE__ */ React.createElement(FitScreenIcon, { fontSize: "small" }))), /* @__PURE__ */ React.createElement(Tooltip, { title: "\u91CD\u65B0\u5E03\u5C40" }, /* @__PURE__ */ React.createElement(IconButton, { size: "small", onClick: restart, sx: iconButtonSx }, /* @__PURE__ */ React.createElement(RestartAltIcon, { fontSize: "small" })))), /* @__PURE__ */ React.createElement(
     Box,
     {
       sx: {
@@ -726,7 +764,7 @@ const GraphView = () => {
       },
       showGhosts ? "\u663E\u793A" : "\u9690\u85CF"
     )),
-    /* @__PURE__ */ React.createElement(Box, null, /* @__PURE__ */ React.createElement(Box, { sx: { display: "flex", alignItems: "center", justifyContent: "space-between", mb: 0.25 } }, /* @__PURE__ */ React.createElement(Typography, { variant: "caption", sx: { color: "text.secondary" } }, "\u6807\u7B7E\u5BC6\u5EA6"), /* @__PURE__ */ React.createElement(Typography, { variant: "caption", sx: { color: "text.disabled", fontSize: 11 } }, ["\u4EC5 hover", "\u5EA6\u6570 \u2265 3", "\u5EA6\u6570 \u2265 1", "\u5168\u90E8"][labelDensity])), /* @__PURE__ */ React.createElement(
+    /* @__PURE__ */ React.createElement(Box, null, /* @__PURE__ */ React.createElement(Box, { sx: { display: "flex", alignItems: "center", justifyContent: "space-between", mb: 0.25 } }, /* @__PURE__ */ React.createElement(Typography, { variant: "caption", sx: { color: "text.secondary" } }, "\u6807\u7B7E\u5BC6\u5EA6"), /* @__PURE__ */ React.createElement(Typography, { variant: "caption", sx: { color: "text.disabled", fontSize: 11 } }, labelDensity === 2 && graph.nodes.length <= SMALL_GRAPH_LABEL_ALL ? "\u5168\u90E8\uFF08\u8282\u70B9\u8F83\u5C11\uFF09" : ["\u4EC5 hover", "\u5EA6\u6570 \u2265 3", "\u5EA6\u6570 \u2265 1", "\u5168\u90E8"][labelDensity])), /* @__PURE__ */ React.createElement(
       Slider,
       {
         size: "small",

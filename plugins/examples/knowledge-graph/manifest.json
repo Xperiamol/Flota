@@ -1,7 +1,7 @@
 {
 	"id": "knowledge-graph",
 	"name": "Knowledge Graph (Built-in)",
-	"version": "1.1.0",
+	"version": "1.2.0",
 	"description": "以力导向图展示笔记之间的双向链接关系，支持搜索、聚焦、缩放、孤立点过滤等交互。启用后，主侧栏会出现「图谱」入口。",
 	"author": {
 		"name": "Flota 团队",
