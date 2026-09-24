@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Box,
-  IconButton,
   TextField,
-  Tooltip,
   Typography,
   alpha
 } from '@mui/material'
@@ -23,6 +21,7 @@ import {
 import FloatingGlassSurface from '../common/FloatingGlassSurface'
 import useDraggableFloatingPanel from '../../hooks/useDraggableFloatingPanel'
 import { useBookmarks } from '../../store/useBookmarks'
+import PanelIconButton from '../common/PanelIconButton'
 
 const PANEL_WIDTH = 360
 const PANEL_BOTTOM_OFFSET = 24
@@ -44,6 +43,21 @@ const getDefaultPosition = () => ({
 })
 
 const normalize = (s) => String(s || '').replace(/\s+/g, ' ').trim()
+
+// 书签锚点只取选区里第一段非空文本：跨段落的选区整体拼起来后，在任何单个段落里都找不到，
+// 会导致书签点了没反应。
+export const pickAnchorFromText = (text) => {
+  const firstLine = String(text || '').split('\n').map(normalize).find(Boolean) || ''
+  return firstLine.slice(0, ANCHOR_SNIPPET_LEN)
+}
+
+// 在一段文本里查找锚点：先精确匹配，再用前缀兜底（锚点被截断 / 原文后来被编辑过）
+const matchesAnchor = (text, wanted) => {
+  if (!text || !wanted) return false
+  if (text === wanted || text.includes(wanted)) return true
+  const prefix = wanted.slice(0, 24)
+  return prefix.length >= 6 && text.includes(prefix)
+}
 
 // 从 markdown 文本提取一级到六级标题作为大纲
 const extractHeadings = (markdown) => {
@@ -402,11 +416,29 @@ const NoteNavigator = ({
     return best ? best.slice(0, ANCHOR_SNIPPET_LEN) : null
   }, [getContainer, findScrollEl])
 
+  // 用户在正文里选中了文字时，优先用选中的文字作为书签。
+  // 在按钮 mousedown 时就取，避免点击过程中选区被清掉。
+  const selectionAnchorRef = useRef(null)
+  const captureSelectionAnchor = useCallback(() => {
+    const root = getContainer()
+    if (!root) return null
+    const ta = root.querySelector('textarea')
+    if (ta && ta.offsetParent !== null) {
+      if (ta.selectionStart === ta.selectionEnd) return null
+      return pickAnchorFromText(ta.value.slice(ta.selectionStart, ta.selectionEnd)) || null
+    }
+    const content = root.querySelector('.ProseMirror, .markdown-preview')
+    const sel = window.getSelection?.()
+    if (!content || !sel || sel.isCollapsed || !content.contains(sel.anchorNode)) return null
+    return pickAnchorFromText(sel.toString()) || null
+  }, [getContainer])
+
   const handleAddBookmark = useCallback(() => {
-    const anchorText = captureAnchor()
+    const anchorText = selectionAnchorRef.current || captureSelectionAnchor() || captureAnchor()
+    selectionAnchorRef.current = null
     if (!anchorText) return
     addBookmark(noteId, { label: anchorText, anchorText })
-  }, [captureAnchor, addBookmark, noteId])
+  }, [captureAnchor, captureSelectionAnchor, addBookmark, noteId])
 
   const jumpToBookmark = useCallback((anchorText) => {
     const root = getContainer()
@@ -416,10 +448,17 @@ const NoteNavigator = ({
     const ta = root.querySelector('textarea')
     if (ta && ta.offsetParent !== null) {
       const value = ta.value || ''
-      const idx = value.indexOf(anchorText)
+      let idx = value.indexOf(anchorText)
+      let matchLength = anchorText.length
+      if (idx < 0) {
+        // 锚点里的空白已被归一化：按“任意空白”重新匹配
+        const escaped = wanted.slice(0, 60).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+')
+        const match = escaped ? new RegExp(escaped).exec(value) : null
+        if (match) { idx = match.index; matchLength = match[0].length }
+      }
       if (idx >= 0) {
         ta.focus()
-        ta.setSelectionRange(idx, idx + anchorText.length)
+        ta.setSelectionRange(idx, idx + matchLength)
         const before = value.slice(0, idx)
         const totalLines = (value.match(/\n/g) || []).length + 1
         const lineNo = (before.match(/\n/g) || []).length
@@ -440,7 +479,7 @@ const NoteNavigator = ({
       if (target) break
       const txt = normalize(el.textContent)
       if (!txt) continue
-      if (txt === wanted || txt.startsWith(wanted) || txt.includes(wanted)) { target = el; break }
+      if (matchesAnchor(txt, wanted)) { target = el; break }
     }
     if (target) {
       try { target.scrollIntoView({ behavior: 'smooth', block: 'start' }) } catch { target.scrollIntoView() }
@@ -488,26 +527,9 @@ const NoteNavigator = ({
         <NavIcon sx={{ fontSize: 16, color: 'primary.main' }} />
         <Typography sx={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>笔记导航/书签</Typography>
         <Box sx={{ flex: 1 }} />
-        <Tooltip title="关闭">
-          <IconButton
-            size="small"
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={onClose}
-            aria-label="关闭"
-            sx={(theme) => ({
-              width: 26,
-              height: 26,
-              borderRadius: 1,
-              color: 'text.secondary',
-              '&:hover': {
-                color: 'text.primary',
-                bgcolor: alpha(theme.palette.text.primary, 0.06)
-              }
-            })}
-          >
-            <CloseIcon sx={{ fontSize: 16 }} />
-          </IconButton>
-        </Tooltip>
+        <PanelIconButton title="关闭" onClick={onClose}>
+          <CloseIcon />
+        </PanelIconButton>
       </Box>
 
       <Box sx={{ px: 1.25, pt: 1, pb: 0.75 }}>
@@ -601,16 +623,12 @@ const NoteNavigator = ({
                 正文内容（{activeContentIdx + 1}/{contentMatches.length}）
               </Typography>
               <Box sx={{ flex: 1 }} />
-              <Tooltip title="上一个 (Shift+Enter)">
-                <IconButton size="small" onClick={() => goToContentMatch(activeContentIdx - 1)} sx={{ width: 22, height: 22 }}>
-                  <PrevIcon sx={{ fontSize: 15 }} />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="下一个 (Enter)">
-                <IconButton size="small" onClick={() => goToContentMatch(activeContentIdx + 1)} sx={{ width: 22, height: 22 }}>
-                  <NextIcon sx={{ fontSize: 15 }} />
-                </IconButton>
-              </Tooltip>
+              <PanelIconButton size="sm" title="上一个 (Shift+Enter)" onClick={() => goToContentMatch(activeContentIdx - 1)}>
+                <PrevIcon />
+              </PanelIconButton>
+              <PanelIconButton size="sm" title="下一个 (Enter)" onClick={() => goToContentMatch(activeContentIdx + 1)}>
+                <NextIcon />
+              </PanelIconButton>
             </Box>
             {contentMatches.map((sn, i) => (
               <Box
@@ -653,11 +671,14 @@ const NoteNavigator = ({
               </Typography>
               <Box sx={{ flex: 1 }} />
               {!hasKeyword && (
-                <Tooltip title="标记当前位置">
-                  <IconButton size="small" onClick={handleAddBookmark} sx={{ width: 22, height: 22 }}>
-                    <AddIcon sx={{ fontSize: 15 }} />
-                  </IconButton>
-                </Tooltip>
+                <PanelIconButton
+                  size="sm"
+                  title="标记当前位置（有选中文字时标记选中处）"
+                  onMouseDown={() => { selectionAnchorRef.current = captureSelectionAnchor() }}
+                  onClick={handleAddBookmark}
+                >
+                  <AddIcon />
+                </PanelIconButton>
               )}
             </Box>
             {filteredBookmarks.length === 0 ? (
@@ -697,16 +718,16 @@ const NoteNavigator = ({
                   }}>
                     {bm.label}
                   </Typography>
-                  <Tooltip title="删除书签">
-                    <IconButton
-                      className="bm-del"
-                      size="small"
-                      onClick={(e) => { e.stopPropagation(); removeBookmark(noteId, bm.id) }}
-                      sx={{ width: 20, height: 20, opacity: 0, flexShrink: 0 }}
-                    >
-                      <DeleteIcon sx={{ fontSize: 14 }} />
-                    </IconButton>
-                  </Tooltip>
+                  <PanelIconButton
+                    size="sm"
+                    tone="danger"
+                    title="删除书签"
+                    className="bm-del"
+                    onClick={(e) => { e.stopPropagation(); removeBookmark(noteId, bm.id) }}
+                    sx={{ opacity: 0 }}
+                  >
+                    <DeleteIcon />
+                  </PanelIconButton>
                 </Box>
               ))
             )}

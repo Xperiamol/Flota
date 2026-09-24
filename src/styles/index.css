@@ -144,3 +144,15 @@ textarea,
 [contenteditable="true"] {
   font-family: 'OPPOSans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
 }
+/* 对话框 / 弹层容器只是焦点陷阱的落点（tabindex=-1），不是可交互控件：
+   键盘打开时浏览器会给整块容器画一圈系统强调色的焦点环，这里去掉；
+   容器内的输入框、按钮仍保留各自的焦点样式。 */
+.MuiDialog-container:focus,
+.MuiDialog-container:focus-visible,
+.MuiDialog-paper:focus,
+.MuiDialog-paper:focus-visible,
+.MuiPopover-paper:focus-visible,
+.MuiMenu-paper:focus-visible,
+[role="presentation"] > [tabindex="-1"]:focus-visible {
+  outline: none;
+}

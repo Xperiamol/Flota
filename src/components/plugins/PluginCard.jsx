@@ -54,20 +54,6 @@ const PluginCard = ({
       })}
       onClick={() => onSelect(plugin.id)}
     >
-      <Box sx={{ position: 'absolute', top: 12, right: 12, zIndex: 1 }}>
-        {isInstalled ? (
-          <Chip
-            size="small"
-            color={isEnabled ? 'success' : 'default'}
-            icon={isEnabled ? <CheckCircleOutline fontSize="small" /> : <PowerSettingsNewRounded fontSize="small" />}
-            label={isEnabled ? '已启用' : '已禁用'}
-            sx={{ fontWeight: 500, '& .MuiChip-icon': { fontSize: '0.9rem' } }}
-          />
-        ) : (
-          <Chip size="small" color="primary" variant="outlined" label="未安装" sx={{ fontWeight: 500 }} />
-        )}
-      </Box>
-
       <CardContent sx={{ pb: 1.5, flex: 1, display: 'flex', flexDirection: 'column', pt: 2 }}>
         <Stack direction="row" spacing={2} alignItems="flex-start" sx={{ mb: 2 }}>
           <Avatar
@@ -83,9 +69,10 @@ const PluginCard = ({
           >
             {!plugin.icon && ((plugin.name || '').trim().slice(0, 2).toUpperCase() || 'P')}
           </Avatar>
-          <Box sx={{ flexGrow: 1, minWidth: 0, pr: 8 }}>
+          <Box sx={{ flexGrow: 1, minWidth: 0 }}>
             <Typography variant="h6" component="div"
-              sx={{ lineHeight: 1.3, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              title={plugin.manifest?.name || plugin.name || '未知插件'}
+              sx={{ fontSize: '1.05rem', lineHeight: 1.35, fontWeight: 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {plugin.manifest?.name || plugin.name || '未知插件'}
             </Typography>
             <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mt: 0.5, flexWrap: 'wrap', gap: 0.5 }}>
@@ -97,6 +84,18 @@ const PluginCard = ({
               </Typography>
               {plugin.author?.name && (
                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>by {plugin.author.name}</Typography>
+              )}
+              {/* 状态标签放在元信息行，不再绝对定位压住标题 */}
+              {isInstalled ? (
+                <Chip
+                  size="small"
+                  color={isEnabled ? 'success' : 'default'}
+                  icon={isEnabled ? <CheckCircleOutline fontSize="small" /> : <PowerSettingsNewRounded fontSize="small" />}
+                  label={isEnabled ? '已启用' : '已禁用'}
+                  sx={{ height: 20, fontSize: 11, fontWeight: 600, '& .MuiChip-icon': { fontSize: '0.8rem' } }}
+                />
+              ) : (
+                <Chip size="small" color="primary" variant="outlined" label="未安装" sx={{ height: 20, fontSize: 11, fontWeight: 600 }} />
               )}
             </Stack>
           </Box>

@@ -5,7 +5,7 @@ import {
   CircularProgress,
   Typography,
 } from '@mui/material';
-import { alpha, useTheme } from '@mui/material/styles';
+import { alpha, lighten, useTheme } from '@mui/material/styles';
 import { Refresh as RefreshIcon } from './AppIcons';
 
 const clampPercent = (value) => {
@@ -40,10 +40,12 @@ const UsageWaveCard = ({
   const borderColor = theme.palette.mode === 'dark'
     ? alpha(resolvedAccentColor, 0.18)
     : alpha('#ffffff', 0.92);
-  const textColor = textOnWater ? '#ffffff' : resolvedAccentColor;
+  const isDark = theme.palette.mode === 'dark';
+  // 深色底上主色偏暗，提亮一档；白色光晕在深色底上会糊成一团，深色模式改用深色投影
+  const textColor = textOnWater ? '#ffffff' : (isDark ? lighten(resolvedAccentColor, 0.28) : resolvedAccentColor);
   const textShadow = textOnWater
     ? '0 2px 10px rgba(0, 0, 0, 0.2)'
-    : '0 2px 10px rgba(255, 255, 255, 0.8)';
+    : (isDark ? '0 1px 6px rgba(0, 0, 0, 0.35)' : '0 2px 10px rgba(255, 255, 255, 0.8)');
   const circleSize = compact ? 124 : 240;
   const borderWidth = compact ? 5 : 8;
   const percentFontSize = compact ? '1.85rem' : '3.5rem';

@@ -16,23 +16,26 @@ export const rowActionRevealSx = {
       zIndex: 1,
       transition: 'opacity 150ms ease',
     },
-    '& > svg': { position: 'relative' },
-    '&::before': {
+    // 底衬跟随主题：浅色模式微白、深色模式微黑，只是给纯高斯模糊加一点点色，
+    // 不做成实心圆底——底下的内容仍应透出来，只是被模糊 + 轻微调色
+    '&::before': (theme) => ({
       content: '""',
       position: 'absolute',
       inset: -12,
       zIndex: 0,
       opacity: 0,
       borderRadius: '50%',
-      backgroundColor: 'action.hover',
+      backgroundColor: theme.palette.mode === 'dark' ? 'rgba(0, 0, 0, 0.28)' : 'rgba(255, 255, 255, 0.5)',
       backdropFilter: 'blur(9px)',
       WebkitBackdropFilter: 'blur(9px)',
-      maskImage: 'radial-gradient(circle, #000 30%, transparent 90%)',
+      maskImage: 'radial-gradient(circle, #000 34%, transparent 90%)',
       pointerEvents: 'none',
-    },
+    }),
+    '& > svg': { position: 'relative' },
     '&:hover': { color: 'primary.main', backgroundColor: 'transparent' },
   },
-  '&:hover .row-inline-action, &:focus-within .row-inline-action, &[data-menu-open="true"] .row-inline-action': {
+  // 只在鼠标悬停 / 键盘聚焦时显示；鼠标点击留下的焦点不应让按钮一直挂着
+  '&:hover .row-inline-action, &:has(.row-inline-action:focus-visible) .row-inline-action, &[data-menu-open="true"] .row-inline-action': {
     pointerEvents: 'auto',
     '& > svg, & > .MuiCircularProgress-root, &::before': { opacity: 1 },
   },

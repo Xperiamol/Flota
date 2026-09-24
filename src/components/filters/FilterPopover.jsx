@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Box, Typography, IconButton, Chip, Button, alpha } from '@mui/material';
+import { Box, Typography, Chip, Button, alpha } from '@mui/material';
 import {
   Close as CloseIcon,
   FilterList as FilterIcon,
@@ -7,6 +7,7 @@ import {
 } from '../common/AppIcons';
 import FloatingGlassSurface from '../common/FloatingGlassSurface';
 import useDraggableFloatingPanel from '../../hooks/useDraggableFloatingPanel';
+import PanelIconButton from '../common/PanelIconButton';
 
 const PANEL_WIDTH = 320;
 const PANEL_GAP = 8;
@@ -153,21 +154,9 @@ const FilterPopover = ({
             清空
           </Button>
         )}
-        <IconButton
-          size="small"
-          onClick={onClose}
-          onMouseDown={(event) => event.stopPropagation()}
-          aria-label="关闭"
-          sx={(theme) => ({
-            width: 24,
-            height: 24,
-            borderRadius: 1,
-            color: 'text.secondary',
-            '&:hover': { color: 'text.primary', bgcolor: alpha(theme.palette.text.primary, 0.06) }
-          })}
-        >
-          <CloseIcon sx={{ fontSize: 14 }} />
-        </IconButton>
+        <PanelIconButton title="关闭" onClick={onClose}>
+          <CloseIcon />
+        </PanelIconButton>
       </Box>
 
       <Box
