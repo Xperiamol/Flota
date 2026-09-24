@@ -43,6 +43,9 @@ import { useStore } from '../../store/useStore'
 import { createTodo, deleteTodo, fetchTodos, toggleTodoComplete, updateTodo } from '../../api/todoAPI'
 import ImagePreviewModal, { canvasToPngBlob } from '../common/ImagePreviewModal'
 import { getImageResolver } from '../../utils/ImageProtocolResolver'
+import { stripMarkdownBlocks, stripMarkdownToPreviewText } from '../../utils/markdownTextUtils'
+import { confirmAction, notifyError } from '../../utils/notify'
+import { imageAPI } from '../../api/imageAPI'
 import { getLocalPathFromFileUrl } from '../../utils/fileUrl'
 import { toListResult } from '../../utils/todoDisplayUtils'
 import { getWhiteboardPreviewUrl } from '../../utils/whiteboardPreview'
@@ -159,28 +162,21 @@ const isLocalFileLink = (src) => {
     || /^(?:attachments|audio)\//.test(src)
 }
 
-const stripMarkdown = (content = '') => String(content)
-  .replace(/!\[[^\]]*]\((audio\/[^)]+|app:\/\/audio\/[^)]+|[^)]+\.(?:m4a|mp3|wav|ogg|aac|opus|flac|webm))\)/gi, '[语音]')
-  // 附件图片语法 ![name](attachments/...) → 附件占位（保留名称）
-  .replace(/!\[([^\]]*)]\(([^)]+)\)/g, (full, label, url) => {
-    if (isAttachmentFileRef(String(url || ''))) return `[附件] ${label || ''}`.trim()
-    return ''
-  })
-  .replace(/\[([^\]]+)]\(([^)]+)\)/g, (_, label, url) => {
-    const target = String(url || '')
-    // 本机 file://、应用内 attachments/、app:// 协议附件 → 全部当作附件占位（兼容老链接语法）
-    if (isLocalFileLink(target)) return `[附件] ${label}`
-    return target
-  })
-  // 先吃掉完整 HTML 标签（必须在去掉 `>` 前完成）；编辑器富文本会以 <table>/<p> 等形式存为内容
-  .replace(/<\/?[a-zA-Z][^>]*>/g, ' ')
-  // 兜底：去除任何残留的孤立标签碎片，例如缺右尖括号的 `<table style="..."` 之类
-  .replace(/<\/?[a-zA-Z][^<\n]*?(?=<|$)/g, ' ')
-  .replace(/&nbsp;/g, ' ')
-  .replace(/&(?:amp|lt|gt|quot|#39);/g, ' ')
-  .replace(/[#>*_`~]/g, '')
-  .replace(/\s+/g, ' ')
-  .trim()
+// 时间轴只额外处理「附件 / 语音」这类媒体占位，其余 Markdown 统一交给共享的预览文本清洗
+const stripMarkdown = (content = '') => stripMarkdownToPreviewText(
+  stripMarkdownBlocks(content)
+    .replace(/!\[[^\]]*]\((audio\/[^)]+|app:\/\/audio\/[^)]+|[^)]+\.(?:m4a|mp3|wav|ogg|aac|opus|flac|webm))\)/gi, '[语音]')
+    // 附件图片语法 ![name](attachments/...) → 附件占位（保留名称）；普通图片不进正文预览
+    .replace(/!\[([^\]]*)]\(([^)]+)\)/g, (full, label, url) => {
+      if (isAttachmentFileRef(String(url || ''))) return `[附件] ${label || ''}`.trim()
+      return ''
+    })
+    .replace(/\[([^\]]+)]\(([^)]+)\)/g, (_, label, url) => {
+      // 本机 file://、应用内 attachments/、app:// 协议附件 → 全部当作附件占位（兼容老链接语法）
+      if (isLocalFileLink(String(url || ''))) return `[附件] ${label}`
+      return label
+    })
+)
 
 const truncateText = (text = '', max = 220) => (
   text.length > max ? `${text.slice(0, max)}...` : text
@@ -495,7 +491,21 @@ const getDroppedFilePath = (file) => {
   }
 }
 
-const getFileUrl = (filePath) => filePath.startsWith('file://') ? filePath : `file://${filePath}`
+const isImageFile = (file) => Boolean(
+  file && (String(file.type || '').startsWith('image/') || IMAGE_EXT.test(file.name || ''))
+)
+
+// 从剪贴板中取出文件（截图、Finder 复制的文件等）
+const getClipboardFiles = (clipboardData) => {
+  if (!clipboardData) return []
+  const files = Array.from(clipboardData.files || [])
+  if (files.length) return files
+  return Array.from(clipboardData.items || [])
+    .filter((item) => item.kind === 'file')
+    .map((item) => item.getAsFile())
+    .filter(Boolean)
+}
+
 
 const normalizeTodoInput = (content) => {
   const text = content.trim()
@@ -518,6 +528,8 @@ const TimelineView = ({ onTodoUpdated }) => {
   const [draft, setDraft] = useState('')
   const [attachments, setAttachments] = useState([])
   const [submitting, setSubmitting] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
   const [composerFocused, setComposerFocused] = useState(false)
   const [contextMenu, setContextMenu] = useState(null)
   const [editingTodo, setEditingTodo] = useState(null)
@@ -812,11 +824,9 @@ const TimelineView = ({ onTodoUpdated }) => {
   const handleDeleteTimelineItem = useCallback(async (item) => {
     if (!item) return
     const itemLabel = item.title || (item.body ? truncateText(item.body, 18) : '此记录')
-    const confirmed = window.confirm(
-      item.type === 'todo'
-        ? `删除待办“${itemLabel}”？`
-        : `删除记录“${itemLabel}”？`
-    )
+    const confirmed = await confirmAction(item.type === 'todo'
+      ? { title: '删除待办', message: `确定删除待办“${itemLabel}”？`, confirmText: '删除', danger: true }
+      : { title: '删除记录', message: `确定删除“${itemLabel}”？删除后可在回收站恢复。`, confirmText: '删除', danger: true })
     if (!confirmed) return
     try {
       if (item.type === 'todo') {
@@ -828,6 +838,7 @@ const TimelineView = ({ onTodoUpdated }) => {
       }
     } catch (error) {
       console.error('删除时间轴记录失败:', error)
+      notifyError(`删除失败：${error?.message || '未知原因'}`)
     }
   }, [deleteNote, onTodoUpdated, refreshTodos])
 
@@ -868,7 +879,7 @@ const TimelineView = ({ onTodoUpdated }) => {
     const body = draft.trim()
     const attachmentText = attachments.map(attachmentToMarkdown).filter(Boolean).join('\n')
     const content = [body, attachmentText].filter(Boolean).join('\n\n').trim()
-    if (!content || submitting) return
+    if (!content || submitting || importing) return
     const todoContent = attachments.length === 0 ? normalizeTodoInput(content) : null
     setSubmitting(true)
     try {
@@ -884,7 +895,7 @@ const TimelineView = ({ onTodoUpdated }) => {
         })
       }
       setDraft('')
-      setAttachments([])
+      clearAttachments()
     } catch (error) {
       console.error('创建时间轴记录失败:', error)
     } finally {
@@ -897,7 +908,18 @@ const TimelineView = ({ onTodoUpdated }) => {
   }
 
   const removeAttachment = (id) => {
-    setAttachments((prev) => prev.filter((item) => item.id !== id))
+    setAttachments((prev) => {
+      const target = prev.find((item) => item.id === id)
+      if (target?.ownsPreview) URL.revokeObjectURL(target.previewUrl)
+      return prev.filter((item) => item.id !== id)
+    })
+  }
+
+  const clearAttachments = () => {
+    setAttachments((prev) => {
+      prev.forEach((item) => { if (item.ownsPreview) URL.revokeObjectURL(item.previewUrl) })
+      return []
+    })
   }
 
   const handleWhiteboardPreviewError = useCallback((previewUrl) => {
@@ -932,27 +954,109 @@ const TimelineView = ({ onTodoUpdated }) => {
       // 导入失败：明确告知用户，不再静默降级为 file://（避免变成不能云同步的本机链接）
       const errMsg = result?.error || '未知原因'
       console.warn('导入附件失败:', errMsg)
-      try { window.alert(`附件导入失败：${errMsg}`) } catch {}
+      notifyError(`附件导入失败：${errMsg}`)
       return null
     } catch (error) {
       console.error('导入附件异常:', error)
-      try { window.alert(`附件导入失败：${error.message}`) } catch {}
+      notifyError(`附件导入失败：${error.message}`)
       return null
     }
   }, [])
 
+  // 统一的文件导入：图片走图片目录并带缩略图，其他文件走附件目录
+  const importFiles = useCallback(async (files = []) => {
+    if (!files.length) return
+    setImporting(true)
+    try {
+      for (const [index, file] of files.entries()) {
+        const filePath = getDroppedFilePath(file)
+        if (isImageFile(file)) {
+          try {
+            const fileName = file.name && file.name !== 'image.png'
+              ? file.name
+              : `clipboard_${Date.now()}_${index + 1}.png`
+            const imagePath = filePath
+              ? await imageAPI.saveFromPath(filePath, fileName)
+              : await imageAPI.saveFromBuffer(new Uint8Array(await file.arrayBuffer()), fileName)
+            addAttachment({
+              type: 'image',
+              name: fileName,
+              path: imagePath,
+              markdown: `![${fileName}](${imagePath})`,
+              previewUrl: URL.createObjectURL(file),
+              ownsPreview: true
+            })
+          } catch (error) {
+            console.error('导入图片失败:', error)
+            notifyError(`图片导入失败：${error.message}`)
+          }
+          continue
+        }
+
+        let imported = null
+        if (filePath) {
+          imported = await importLocalFileAsAttachment(filePath, file.name)
+        } else {
+          // 无本地路径（如从网页复制的文件），直接按内容保存
+          try {
+            const result = await window.electronAPI?.attachments?.saveFromBuffer?.(
+              new Uint8Array(await file.arrayBuffer()),
+              file.name || '附件'
+            )
+            if (result?.success && result.data?.relativePath) {
+              imported = {
+                name: result.data.displayName || file.name || '附件',
+                path: result.data.relativePath,
+                url: `app://${result.data.relativePath}`
+              }
+            } else {
+              throw new Error(result?.error || '未知原因')
+            }
+          } catch (error) {
+            console.error('导入附件失败:', error)
+            notifyError(`附件导入失败：${error.message}`)
+          }
+        }
+        if (imported) addAttachment({ type: 'file', ...imported })
+      }
+    } finally {
+      setImporting(false)
+    }
+  }, [importLocalFileAsAttachment])
+
   const handleAttachFile = async () => {
     try {
       const result = await window.electronAPI?.system?.showOpenDialog?.({
-        properties: ['openFile']
+        properties: ['openFile', 'multiSelections']
       })
-      if (result?.canceled || !result?.filePaths?.[0]) return
+      if (result?.canceled || !result?.filePaths?.length) return
 
-      const filePath = result.filePaths[0]
-      const fileName = filePath.split(/[\\/]/).pop() || '附件'
-      const imported = await importLocalFileAsAttachment(filePath, fileName)
-      if (imported) {
-        addAttachment({ type: 'file', ...imported })
+      setImporting(true)
+      try {
+        for (const filePath of result.filePaths) {
+          const fileName = filePath.split(/[\\/]/).pop() || '附件'
+          if (IMAGE_EXT.test(fileName)) {
+            try {
+              const imagePath = await imageAPI.saveFromPath(filePath, fileName)
+              // CSP 不允许 file://，缩略图走应用内图片解析
+              const previewUrl = await getImageResolver().resolve(imagePath).catch(() => null)
+              addAttachment({
+                type: 'image',
+                name: fileName,
+                path: imagePath,
+                markdown: `![${fileName}](${imagePath})`,
+                previewUrl: previewUrl || undefined
+              })
+              continue
+            } catch (error) {
+              console.warn('按图片导入失败，改为附件:', error)
+            }
+          }
+          const imported = await importLocalFileAsAttachment(filePath, fileName)
+          if (imported) addAttachment({ type: 'file', ...imported })
+        }
+      } finally {
+        setImporting(false)
       }
     } catch (error) {
       console.error('选择时间轴附件失败:', error)
@@ -962,16 +1066,16 @@ const TimelineView = ({ onTodoUpdated }) => {
   const handleDropFiles = async (event) => {
     event.preventDefault()
     event.stopPropagation()
+    setDragActive(false)
+    await importFiles(Array.from(event.dataTransfer?.files || []))
+  }
 
-    const droppedFiles = Array.from(event.dataTransfer?.files || [])
-    for (const file of droppedFiles) {
-      const filePath = getDroppedFilePath(file)
-      if (!filePath) continue
-      const imported = await importLocalFileAsAttachment(filePath, file.name)
-      if (imported) {
-        addAttachment({ type: 'file', ...imported })
-      }
-    }
+  const handleComposerPaste = (event) => {
+    const files = getClipboardFiles(event.clipboardData)
+    if (!files.length) return
+    // 有文件时拦截默认粘贴（否则会把文件名当文本粘进来）
+    event.preventDefault()
+    importFiles(files)
   }
 
   const openTimelineFile = async (event, fileUrl) => {
@@ -986,7 +1090,7 @@ const TimelineView = ({ onTodoUpdated }) => {
         const cleaned = fileUrl.replace(/^app:\/\//, '')
         const result = await window.electronAPI?.attachments?.open?.(cleaned)
         if (result && result.success === false) {
-          window.alert(`打开失败：${result.error || '未知原因'}`)
+          notifyError(`打开失败：${result.error || '未知原因'}`)
         }
       } else {
         await window.electronAPI?.system?.openExternal?.(fileUrl)
@@ -1012,6 +1116,13 @@ const TimelineView = ({ onTodoUpdated }) => {
             }
             color={item.type === 'audio' ? 'success' : item.type === 'file' ? 'default' : 'primary'}
             variant="outlined"
+            icon={
+              item.type === 'image' && item.previewUrl
+                ? <Box component="img" src={item.previewUrl} alt="" sx={{ width: 22, height: 22, borderRadius: '6px', objectFit: 'cover', ml: '4px !important' }} />
+                : item.type === 'image' ? <Image fontSize="small" />
+                : item.type === 'audio' ? <KeyboardVoice fontSize="small" />
+                : <AttachFile fontSize="small" />
+            }
             onDelete={() => removeAttachment(item.id)}
             deleteIcon={<Close fontSize="small" />}
             sx={{
@@ -1086,7 +1197,7 @@ const TimelineView = ({ onTodoUpdated }) => {
     }
   }
 
-  const canSubmit = Boolean(draft.trim() || attachments.length > 0) && !submitting
+  const canSubmit = Boolean(draft.trim() || attachments.length > 0) && !submitting && !importing
 
   const renderAudioPlayers = (audios = [], sx = {}) => {
     if (!audios.length) return null
@@ -1460,7 +1571,9 @@ const TimelineView = ({ onTodoUpdated }) => {
             py: 1,
             gap: 1,
             ...glassPanel,
-            borderColor: composerFocused
+            borderColor: dragActive
+              ? theme.palette.primary.main
+              : composerFocused
               ? theme.palette.mode === 'dark'
                 ? alpha(theme.palette.primary.light, 0.28)
                 : alpha(theme.palette.primary.main, 0.18)
@@ -1475,6 +1588,10 @@ const TimelineView = ({ onTodoUpdated }) => {
           onDragOver={(event) => {
             event.preventDefault()
             event.dataTransfer.dropEffect = 'copy'
+            if (!dragActive) setDragActive(true)
+          }}
+          onDragLeave={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) setDragActive(false)
           }}
           onDrop={handleDropFiles}
         >
@@ -1547,13 +1664,14 @@ const TimelineView = ({ onTodoUpdated }) => {
               onChange={(event) => setDraft(event.target.value)}
               onFocus={() => setComposerFocused(true)}
               onBlur={() => setComposerFocused(false)}
+              onPaste={handleComposerPaste}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault()
                   handleSubmit()
                 }
               }}
-              placeholder="记点什么..."
+              placeholder={dragActive ? '松开以添加文件' : importing ? '正在添加附件…' : '记点什么…（可粘贴或拖入图片、文件）'}
               sx={{
                 flex: 1,
                 minWidth: 0,
