@@ -145,6 +145,9 @@ class DragManager {
     }
   }
 
+  // 同时命中"四象限格子"与"日历日期格"两类落点，二者共用同一套高亮属性。
+  // 后者让列表里的待办（如「我的一天」面板）可以直接拖到日历上改期，
+  // 不必和日历格子本身的原生 HTML5 拖拽（日历内部互拖）走同一套实现。
   updateQuadrantFeedback(event) {
     this.pendingQuadrantPoint = { x: event.clientX, y: event.clientY };
     if (this.quadrantFrame) return;
@@ -152,12 +155,20 @@ class DragManager {
       this.quadrantFrame = null;
       const point = this.pendingQuadrantPoint;
       const next = this.dragState.draggedItemType === 'todo' && point
-        ? document.elementFromPoint(point.x, point.y)?.closest?.('[data-todo-quadrant]') || null
+        ? document.elementFromPoint(point.x, point.y)?.closest?.('[data-todo-quadrant], [data-calendar-day]') || null
         : null;
       if (next === this.activeQuadrantElement) return;
       this.activeQuadrantElement?.removeAttribute('data-global-drag-over');
       next?.setAttribute('data-global-drag-over', 'true');
       this.activeQuadrantElement = next;
+
+      // 悬停目标变化时通知外部（拖拽提示气泡据此动态更新文案，而不是全程显示同一句话）
+      if (this.callbacks.onHoverTargetChange) {
+        this.callbacks.onHoverTargetChange(next ? {
+          quadrant: next.dataset?.todoQuadrant || null,
+          calendarDay: next.dataset?.calendarDay || null,
+        } : null);
+      }
     });
   }
 
@@ -169,11 +180,12 @@ class DragManager {
     const wasDragging = this.dragState.isDragging;
     const draggedItem = this.dragState.draggedItem;
     const draggedItemType = this.dragState.draggedItemType;
-    const quadrant = document.elementFromPoint(event.clientX, event.clientY)
-      ?.closest?.('[data-todo-quadrant]')?.dataset?.todoQuadrant || null;
+    const dropTarget = document.elementFromPoint(event.clientX, event.clientY);
+    const quadrant = dropTarget?.closest?.('[data-todo-quadrant]')?.dataset?.todoQuadrant || null;
+    const calendarDay = dropTarget?.closest?.('[data-calendar-day]')?.dataset?.calendarDay || null;
 
-    // 检查是否在窗口边界释放
-    const shouldCreateWindow = wasDragging && this.isNearWindowBoundary(event);
+    // 检查是否在窗口边界释放（落在日历日期格上时优先按"改期"处理，不弹出独立窗口）
+    const shouldCreateWindow = wasDragging && !calendarDay && this.isNearWindowBoundary(event);
 
     // 清理拖拽状态
     this.cleanup();
@@ -185,7 +197,8 @@ class DragManager {
         itemType: draggedItemType,
         endPosition: { x: event.clientX, y: event.clientY },
         shouldCreateWindow,
-        quadrant
+        quadrant,
+        calendarDay
       });
     }
 
@@ -295,11 +308,15 @@ class DragManager {
       clearTimeout(this.boundaryCheckThrottle);
       this.boundaryCheckThrottle = null;
     }
+    const hadHoverTarget = Boolean(this.activeQuadrantElement);
     this.activeQuadrantElement?.removeAttribute('data-global-drag-over');
     this.activeQuadrantElement = null;
     if (this.quadrantFrame) cancelAnimationFrame(this.quadrantFrame);
     this.quadrantFrame = null;
     this.pendingQuadrantPoint = null;
+    if (hadHoverTarget && this.callbacks.onHoverTargetChange) {
+      this.callbacks.onHoverTargetChange(null);
+    }
 
     // 重置状态
     this.dragState.isDragging = false;

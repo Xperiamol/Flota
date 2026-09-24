@@ -157,6 +157,7 @@ const MyDayPanel = ({
           onTodoUpdated={onTodoUpdated}
           onMultiSelectChange={onMultiSelectChange}
           onMultiSelectRefChange={onMultiSelectRefChange}
+          dragSourceDate={targetDate}
         />
       </Box>
     </Box>

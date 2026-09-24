@@ -51,6 +51,7 @@ import InlineSubtaskList, { SubtaskExpandButton } from './InlineSubtaskList';
 import { rowActionRevealSx } from '../../styles/commonStyles';
 import zhCN from '../../locales/zh-CN';
 import { t } from '../../utils/i18n';
+import { useError } from '../common/ErrorProvider';
 
 const {
   filters: { placeholder }
@@ -86,6 +87,7 @@ import {
   comparePriority
 } from '../../utils/priorityUtils';
 import { useDragAnimation } from '../../hooks/useDragAnimation';
+import { buildDateMovePatch } from '../../hooks/useTodoDrag';
 import {
   fetchTodosByPriority,
   fetchTodosByDueDate,
@@ -133,7 +135,8 @@ const playChristmasBell = () => {
   createOsc(1567.98, 0.15);
 };
 
-const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSelectRefChange, refreshTrigger, sortBy, onSortByChange, externalTodos, isExternalData = false, onTodoUpdated }) => {
+const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSelectRefChange, refreshTrigger, sortBy, onSortByChange, externalTodos, isExternalData = false, onTodoUpdated, dragSourceDate = null }) => {
+  const { showError, showSuccess } = useError();
   const christmasMode = useStore((state) => state.christmasMode);
   const setCurrentView = useStore((state) => state.setCurrentView);
   const setTodoNavigationRequest = useStore((state) => state.setTodoNavigationRequest);
@@ -227,8 +230,24 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
     setCurrentView('todo')
     setTodoNavigationRequest({ viewMode: 'focus', filterBy: 'all', showCompleted: false, todoId: todo.id, autoStart: true })
   }, {
-    onDragEnd: async ({ item, quadrant }) => {
-      if (!item?.id || !quadrant) return
+    onDragEnd: async ({ item, quadrant, calendarDay }) => {
+      if (!item?.id) return
+      // 拖到日历日期格：只改期（沿用日历视图内部拖拽同一套平移逻辑），不识别为象限拖拽
+      if (calendarDay) {
+        const patch = buildDateMovePatch(item, calendarDay, dragSourceDate || item.due_date)
+        if (!patch) return
+        try {
+          await updateTodo(item.id, patch)
+          await loadTodos()
+          onTodoUpdated?.()
+          const [y, m, d] = calendarDay.split('-')
+          showSuccess?.(`已移到 ${Number(m)} 月 ${Number(d)} 日`)
+        } catch (error) {
+          showError(error, '移动待办失败')
+        }
+        return
+      }
+      if (!quadrant) return
       const target = {
         urgent_important: { is_important: true, is_urgent: true, priority: 'urgent' },
         not_urgent_important: { is_important: true, is_urgent: false, priority: 'important' },

@@ -27,7 +27,8 @@ import { useTheme } from '@mui/material/styles';
 import { ANIMATIONS, createAnimationString, createTransitionString, GREEN_SWEEP_KEYFRAMES } from '../../utils/animationConfig';
 import { fetchTodos, toggleTodoComplete } from '../../api/todoAPI';
 import { useStore } from '../../store/useStore';
-import useTodoDrag from '../../hooks/useTodoDrag';
+import useTodoDrag, { formatDateOnly } from '../../hooks/useTodoDrag';
+import { parseISO } from 'date-fns';
 import MarkdownPreview from '../editor/MarkdownPreview';
 import { Excalidraw } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
@@ -135,7 +136,7 @@ const WhiteboardPreview = ({ content, theme }) => {
 
 const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, onSelectedDateChange, refreshToken = 0, showCompleted = false, onTodoUpdated, viewMode = 'todos' }) => {
   const { t } = useTranslation();
-  const { showError } = useError();
+  const { showError, showSuccess } = useError();
   const theme = useTheme();
   const notes = useStore((state) => state.notes);
   const setSelectedNoteId = useStore((state) => state.setSelectedNoteId);
@@ -187,7 +188,8 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
 
     const dayTodos = todos.filter(todo => {
       if (!todo.due_date) return false;
-      const todoDate = new Date(todo.due_date);
+      // parseISO 把 "YYYY-MM-DD" 当本地日期；new Date() 会按 UTC 解析，西半球会错一天
+      const todoDate = parseISO(String(todo.due_date));
       return todoDate.toDateString() === dateStr;
     });
 
@@ -213,13 +215,17 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
     handleDragOver,
     handleDragLeave,
     handleDropDate,
-    isDragOver
-  } = useTodoDrag(() => {
+    isDragOver,
+    draggedTodo
+  } = useTodoDrag(({ targetDate } = {}) => {
     loadData();
     if (onTodoUpdated) {
       onTodoUpdated();
     }
-  });
+    if (targetDate) {
+      showSuccess?.(`已移到 ${targetDate.getMonth() + 1} 月 ${targetDate.getDate()} 日`);
+    }
+  }, (error) => showError(error, '移动待办失败'));
 
   // 获取当月的所有Todo
   const loadTodos = async () => {
@@ -554,6 +560,9 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
               return (
                 <Box
                   key={index}
+                  // 供跨组件拖拽命中：左侧「我的一天」等待办列表用鼠标坐标拖拽（DragManager），
+                  // 不是这里的原生 HTML5 dragover/drop，需要靠这个属性让 DragManager 认出日期格
+                  data-calendar-day={formatDateOnly(dayInfo.date)}
                   onDragOver={(e) => handleDragOver(e, dayInfo.date)}
                   onDragLeave={handleDragLeave}
                   onDrop={(e) => handleDropDate(e, dayInfo.date)}
@@ -567,8 +576,13 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                     minWidth: 0, // 确保可以收缩
                     ...(isDragOver(dayInfo.date) && {
                       backgroundColor: theme.palette.primary.light + '30',
-                      transition: 'background-color 0.2s ease'
-                    })
+                      boxShadow: `inset 0 0 0 2px ${theme.palette.primary.main}`,
+                      transition: 'background-color 0.2s ease, box-shadow 0.2s ease'
+                    }),
+                    '&[data-global-drag-over="true"]': {
+                      backgroundColor: theme.palette.primary.light + '30',
+                      boxShadow: `inset 0 0 0 2px ${theme.palette.primary.main}`
+                    }
                   }}
                 >
                   <Box
@@ -702,10 +716,10 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                       {/* 待办视图 */}
                       {viewMode === 'todos' && itemsToDisplay.map((todo) => (
                         <Fade key={todo.id} in timeout={200}>
-                          <Tooltip title={todo.content} placement="top">
+                          <Tooltip title={draggedTodo ? '' : todo.content} placement="top">
                             <Box
                               draggable
-                              onDragStart={(e) => handleDragStart(e, todo)}
+                              onDragStart={(e) => handleDragStart(e, todo, dayInfo.date)}
                               onDragEnd={handleDragEnd}
                               sx={{
                                 display: 'flex',
@@ -714,7 +728,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                                 borderRadius: 1,
                                 backgroundColor: `${getTodoPriorityColor(todo)}15`,
                                 border: `1px solid ${getTodoPriorityColor(todo)}30`,
-                                cursor: 'pointer',
+                                cursor: 'grab',
                                 position: 'relative',
                                 overflow: 'hidden',
                                 transition: createTransitionString(ANIMATIONS.listItem),
@@ -723,6 +737,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                                   backgroundColor: `${getTodoPriorityColor(todo)}40`, // 颜色变暗
                                 },
                                 '&:active': {
+                                  cursor: 'grabbing',
                                   backgroundColor: `${getTodoPriorityColor(todo)}50`, // 点击时更暗
                                 },
                                 ...(celebratingTodos.has(todo.id) && {

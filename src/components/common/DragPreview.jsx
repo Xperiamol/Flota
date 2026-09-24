@@ -43,16 +43,32 @@ const iconBounce = keyframes`
  * 显示拖拽过程中的视觉反馈和动画效果
  * 采用毛玻璃风格，与应用整体设计语言一致
  */
-const DragPreview = ({ 
-  isDragging, 
-  draggedItem, 
-  draggedItemType, 
-  currentPosition, 
+// 四象限文案，与待办页四象限视图（TodoView）的标题保持一致
+const QUADRANT_DROP_LABELS = {
+  urgent_important: '重要且紧急',
+  not_urgent_important: '重要不紧急',
+  urgent_not_important: '紧急不重要',
+  not_urgent_not_important: '不紧急不重要',
+};
+
+// data-calendar-day 是 "YYYY-MM-DD"（本地日期），这里只做展示，不需要处理时区
+const formatCalendarDayLabel = (isoDate) => {
+  // match() 返回 [完整匹配, 年, 月, 日]，前面漏跳了一位导致"年"被当成"月"显示
+  const [, , month, day] = String(isoDate || '').match(/^(\d{4})-(\d{2})-(\d{2})$/) || [];
+  return month && day ? `${Number(month)}月${Number(day)}日` : '';
+};
+
+const DragPreview = ({
+  isDragging,
+  draggedItem,
+  draggedItemType,
+  currentPosition,
   isNearBoundary,
   boundaryPosition,
+  hoverTarget,
   previewRef
 }) => {
-  const { primaryColor } = useStore();
+  const primaryColor = useStore((state) => state.primaryColor);
   const muiTheme = useTheme();
   const isDarkMode = muiTheme.palette.mode === 'dark';
   const [showPreview, setShowPreview] = useState(false);
@@ -330,21 +346,37 @@ const DragPreview = ({
             transition: 'all 0.3s ease'
           }}
         >
-          <Typography 
-            variant="caption" 
-            sx={{ 
-              fontWeight: isNearBoundary ? 600 : 500,
-              fontSize: '0.7rem',
-              color: isNearBoundary ? primaryColor : 'text.secondary',
-              letterSpacing: '0.02em',
-              textTransform: 'uppercase',
-              transition: 'color 0.3s ease, font-weight 0.3s ease'
-            }}
-          >
-            {draggedItemType === 'todo'
-              ? (isNearBoundary ? '释放并开始专注' : '拖到象限调整优先级')
-              : (isNearBoundary ? '释放创建独立窗口' : '拖动到屏幕边缘创建独立窗口')}
-          </Typography>
+          {(() => {
+            // 提示文案要跟着鼠标当前悬停的落点动态变化，不能全程显示同一句话：
+            // 待办拖拽时依次判断"边缘专注" > "悬停在象限上" > "悬停在日历日期格上" > 默认引导语
+            let text
+            if (draggedItemType === 'todo') {
+              if (isNearBoundary) text = '释放并开始专注'
+              else if (hoverTarget?.quadrant) text = `释放设为${QUADRANT_DROP_LABELS[hoverTarget.quadrant] || ''}`
+              else if (hoverTarget?.calendarDay) {
+                const dayLabel = formatCalendarDayLabel(hoverTarget.calendarDay)
+                text = dayLabel ? `释放移到 ${dayLabel}` : '释放以更改日期'
+              } else text = '拖到象限调整优先级'
+            } else {
+              text = isNearBoundary ? '释放创建独立窗口' : '拖动到屏幕边缘创建独立窗口'
+            }
+            const isActiveTarget = isNearBoundary || Boolean(hoverTarget?.quadrant) || Boolean(hoverTarget?.calendarDay)
+            return (
+              <Typography
+                variant="caption"
+                sx={{
+                  fontWeight: isActiveTarget ? 600 : 500,
+                  fontSize: '0.7rem',
+                  color: isActiveTarget ? primaryColor : 'text.secondary',
+                  letterSpacing: '0.02em',
+                  textTransform: 'uppercase',
+                  transition: 'color 0.3s ease, font-weight 0.3s ease'
+                }}
+              >
+                {text}
+              </Typography>
+            )
+          })()}
         </Box>
       </div>
 

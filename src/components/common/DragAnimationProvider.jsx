@@ -15,7 +15,9 @@ export const DragAnimationProvider = ({ children }) => {
     draggedItemType: null,
     currentPosition: { x: 0, y: 0 },
     isNearBoundary: false,
-    boundaryPosition: null
+    boundaryPosition: null,
+    // 当前悬停命中的落点（象限 / 日历日期格），驱动提示文案动态切换
+    hoverTarget: null
   });
 
   // 使用 ref 来存储动画帧 ID
@@ -80,13 +82,22 @@ export const DragAnimationProvider = ({ children }) => {
             draggedItem: null,
             draggedItemType: null,
             isNearBoundary: false,
-            boundaryPosition: null
+            boundaryPosition: null,
+            hoverTarget: null
           }));
         }, 100);
 
         // 调用原始回调
         if (originalCallbacks.onDragEnd) {
           originalCallbacks.onDragEnd(dragData);
+        }
+      },
+      onHoverTargetChange: (hoverTarget) => {
+        setDragState(prev => (prev.hoverTarget === hoverTarget ? prev : { ...prev, hoverTarget }));
+
+        // 调用原始回调
+        if (originalCallbacks.onHoverTargetChange) {
+          originalCallbacks.onHoverTargetChange(hoverTarget);
         }
       },
       onBoundaryCheck: (boundaryData) => {
@@ -177,6 +188,7 @@ export const DragAnimationProvider = ({ children }) => {
         currentPosition={dragState.currentPosition}
         isNearBoundary={dragState.isNearBoundary}
         boundaryPosition={dragState.boundaryPosition}
+        hoverTarget={dragState.hoverTarget}
         previewRef={previewElementRef}
       />
     </DragAnimationContext.Provider>
