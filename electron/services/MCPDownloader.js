@@ -1,4 +1,4 @@
-const { app } = require('electron');
+const { app, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const https = require('https');
