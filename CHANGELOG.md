@@ -2,6 +2,11 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [4.0.1] - 2026-09-25
+
+### Fixed / 修复
+- fix(build): correct Electron file association extensions so Linux AppImage packaging succeeds
+
 ## [4.0.0] - 2026-09-25
 
 ### Changed / 更新内容
