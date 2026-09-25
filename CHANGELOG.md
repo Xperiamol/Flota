@@ -2,6 +2,14 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [4.0.0] - 2026-09-25
+
+### Changed / 更新内容
+- feat(ui): home page with cards, floating-island layout, liquid glass and a quieter visual style
+- feat(widgets): widget runtime, widget store, AI-generated widgets, note embeds and sync
+- feat(clipper): Chrome web clipper extension that saves pages into Flota
+
+
 ## [3.10.0] - 2026-09-24
 
 ### Changed / 更新内容
