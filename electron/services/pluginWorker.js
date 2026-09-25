@@ -125,6 +125,8 @@ const runtime = {
 			description: definition.description || '',
 			group: definition.group || null,
 			icon: definition.icon || null,
+			// 内部命令（如接收剪藏）：可被宿主调用，但不出现在命令面板
+			hidden: Boolean(definition.hidden),
 			surfaces: surfaces
 				.map((surface) => (typeof surface === 'string' ? surface.trim() : ''))
 				.filter(Boolean)
@@ -162,6 +164,10 @@ const runtime = {
 	},
 	network: {
 		fetch: (url, options) => callHost('network', 'fetch', { url, options })
+	},
+	clips: {
+		save: (clip, options) => callHost('clips', 'save', { clip, options }),
+		clipUrl: (url, options) => callHost('clips', 'clipUrl', { url, options })
 	},
 	clipboard: {
 		readText: () => callHost('clipboard', 'readText'),
@@ -238,6 +244,7 @@ const sdkFacade = Object.freeze({
 	todos: runtime.todos,
 	tags: runtime.tags,
 	network: runtime.network,
+	clips: runtime.clips,
 	clipboard: runtime.clipboard,
 	filesystem: runtime.filesystem,
 	search: runtime.search,

@@ -195,6 +195,7 @@ class StorageAdapter {
           is_deleted: noteData.is_deleted || 0,
           deleted_at: noteData.deleted_at,
           updated_at: this.toSQLiteDateTime(noteData.updated_at),
+          ...(noteData.meta !== undefined ? { meta: noteData.meta } : {}),
         },
         { skipChangeLog }
       );
@@ -211,6 +212,7 @@ class StorageAdapter {
           is_pinned: noteData.is_pinned,
           created_at: this.toSQLiteDateTime(noteData.created_at),
           updated_at: this.toSQLiteDateTime(noteData.updated_at),
+          ...(noteData.meta ? { meta: noteData.meta } : {}),
         },
         { skipChangeLog }
       );
@@ -522,6 +524,7 @@ class StorageAdapter {
       is_favorite: row.is_favorite || 0,
       is_deleted: row.is_deleted || 0,
       deleted_at: row.deleted_at ? this.parseTimestamp(row.deleted_at) : null,
+      meta: row.meta || null,
     };
   }
 

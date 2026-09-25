@@ -3,6 +3,13 @@ const TagService = require('../services/TagService');
 const ChangeLogDAO = require('./ChangeLogDAO');
 const crypto = require('crypto');
 
+// meta 以 JSON 文本存储；传对象自动序列化，传 null 清空
+const serializeMeta = (meta) => {
+  if (meta === null) return null;
+  if (typeof meta === 'string') return meta;
+  try { return JSON.stringify(meta); } catch { return null; }
+};
+
 class NoteDAO {
   constructor() {
     this.dbManager = getInstance();
@@ -63,6 +70,10 @@ class NoteDAO {
     // 更新标签使用次数
     if (tags) {
       this.tagService.updateTagsUsage(tags);
+    }
+
+    if (noteData.meta !== undefined && noteData.meta !== null) {
+      db.prepare('UPDATE notes SET meta = ? WHERE id = ?').run(serializeMeta(noteData.meta), result.lastInsertRowid);
     }
     
     const note = this.findById(result.lastInsertRowid) || this.findByIdIncludeDeleted(result.lastInsertRowid);
@@ -163,6 +174,11 @@ class NoteDAO {
     if (note_type !== undefined) {
       updates.push('note_type = ?');
       values.push(note_type);
+    }
+
+    if (noteData.meta !== undefined) {
+      updates.push('meta = ?');
+      values.push(serializeMeta(noteData.meta));
     }
 
     if (is_pinned !== undefined) {

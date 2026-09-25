@@ -82,6 +82,42 @@ runtime.registerCommand(
 )
 
 runtime.unregisterCommand('plugin.command')
+
+// 内部命令：只供宿主调用（如处理外部消息），不出现在命令面板
+runtime.registerCommand({ id: 'plugin.internal', title: '内部命令', hidden: true }, handler)
+```
+
+### 接收外部消息（ingress）
+
+浏览器扩展、脚本等外部来源通过本机的本地接收服务（`http://127.0.0.1:47831`，需配对令牌）发送 `POST /v1/<kind>`。
+插件声明 `ingress:receive` 权限，并在 manifest 中把某类消息绑定到一个命令，宿主会把请求体交给该命令：
+
+```json
+{
+  "permissions": { "ingress:receive": true },
+  "capabilities": {
+    "ingress": [{ "kind": "clip", "command": "my-plugin.receive" }]
+  }
+}
+```
+
+```javascript
+registerCommand({ id: 'my-plugin.receive', title: '接收', hidden: true }, async ({ payload, context }) => {
+  // payload：请求体；context.client：发送方（已配对设备的名称与 id）
+  // 返回的对象会作为 HTTP 响应；返回 { error } 时响应 400
+  return { ok: true }
+})
+```
+
+同一类消息只由一个已启用的插件处理。内置的「网页剪藏」插件处理 `clip`。
+
+### 剪藏 API（需要 `notes:write`）
+
+```javascript
+// 保存一条剪藏：kind 为 article / selection / bookmark；图片会下载到本地，同一链接自动去重
+await runtime.clips.save({ kind: 'article', url, title, siteName, markdown, target: { category, tags } }, { aiSummary: true })
+// 由 Flota 抓取网页并解析正文后保存
+await runtime.clips.clipUrl('https://example.com/post', { kind: 'bookmark' })
 ```
 
 ### 笔记 API
@@ -316,6 +352,7 @@ runtime.permissions.list()
 | `filesystem:read` / `filesystem:write` | 文件系统 |
 | `mem0:read` | 读取知识记忆 |
 | `mem0:write` | 写入/删除知识记忆 |
+| `ingress:receive` | 接收本地接收服务转发的外部消息（见“接收外部消息”） |
 
 ---
 

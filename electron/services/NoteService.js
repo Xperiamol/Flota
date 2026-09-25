@@ -35,7 +35,8 @@ class NoteService extends EventEmitter {
         content: safeNoteData.content,
         tags: tagsString,
         category: safeNoteData.category,
-        note_type: safeNoteData.note_type
+        note_type: safeNoteData.note_type,
+        ...(noteData?.meta ? { meta: noteData.meta } : {})
       };
 
       const note = this.noteDAO.create(notePayload);

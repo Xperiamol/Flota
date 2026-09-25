@@ -1139,6 +1139,66 @@ class WindowManager extends EventEmitter {
   }
 
   /**
+   * 创建组件小窗：置顶的无边框小窗口，以 medium 尺寸运行组件的一个实例（桌面小组件）
+   * @param {string} instanceId 实例 id
+   */
+  async createWidgetWindow(instanceId, options = {}) {
+    if (!instanceId || typeof instanceId !== 'string') throw new Error('缺少实例 id');
+    if (!this.widgetWindows) this.widgetWindows = new Map();
+    const existing = this.widgetWindows.get(instanceId);
+    if (existing && !existing.isDestroyed()) {
+      existing.show();
+      existing.focus();
+      return { reused: true };
+    }
+    if (isDev && !(await this.checkViteServer())) {
+      throw new Error('Vite开发服务器不可用，请确保npm run dev正在运行');
+    }
+
+    const width = Number(options.width) || 380;
+    const height = Number(options.height) || 520;
+    const widgetWindow = new BrowserWindow({
+      width,
+      height,
+      minWidth: 240,
+      minHeight: 160,
+      show: false,
+      frame: false,
+      alwaysOnTop: options.alwaysOnTop !== false,
+      skipTaskbar: false,
+      resizable: true,
+      maximizable: false,
+      icon: this.getAppIcon(),
+      titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, '../preload.js'),
+        webSecurity: true,
+      },
+    });
+    widgetWindow.webContents.setWindowOpenHandler(({ url }) => {
+      if (url.startsWith('http://') || url.startsWith('https://')) shell.openExternal(url);
+      return { action: 'deny' };
+    });
+    const windowId = `widget-${instanceId}-${Date.now()}`;
+    this.windows.set(windowId, widgetWindow);
+    this.widgetWindows.set(instanceId, widgetWindow);
+    widgetWindow.once('ready-to-show', () => widgetWindow.show());
+    widgetWindow.on('closed', () => {
+      this.windows.delete(windowId);
+      if (this.widgetWindows.get(instanceId) === widgetWindow) this.widgetWindows.delete(instanceId);
+    });
+
+    if (isDev) {
+      await widgetWindow.loadURL(`http://localhost:5174/standalone.html?type=widget&instanceId=${encodeURIComponent(instanceId)}`);
+    } else {
+      await widgetWindow.loadFile(path.join(__dirname, '../../dist/standalone.html'), { query: { type: 'widget', instanceId } });
+    }
+    return { windowId };
+  }
+
+  /**
    * 创建独立Todo窗口
    */
   async createTodoWindow(todoData) {

@@ -55,6 +55,8 @@ const ALLOWED_PERMISSIONS = new Set([
 	'network:request',
 	'filesystem:read',
 	'filesystem:write',
+	// 本地接收通道（浏览器扩展等外部来源）
+	'ingress:receive',
 	// 剪贴板
 	'clipboard:read',
 	'clipboard:write',
@@ -563,7 +565,8 @@ class PluginManager extends EventEmitter {
 	}
 
 	async listAvailablePlugins() {
-		const registry = await this.readRegistryFile()
+		// type 为 widget 的条目是组件（在“插件 / 组件”商店的组件栏展示），不是插件
+		const registry = (await this.readRegistryFile()).filter((item) => item?.type !== 'widget')
 
 		const plugins = await Promise.all(registry.map(async (item) => {
 			const installed = this.installedPlugins.get(item.id)
@@ -848,7 +851,7 @@ class PluginManager extends EventEmitter {
 			throw new Error('插件仓库条目缺少 source 字段')
 		}
 
-		if (entry.source.type === 'directory') {
+		if (entry.source.type === 'directory' || entry.source.type === 'file') {
 			const relativePath = entry.source.path
 			if (!relativePath) {
 				throw new Error('插件仓库条目缺少 source.path')
@@ -1245,6 +1248,20 @@ class PluginManager extends EventEmitter {
 		try {
 			let result
 			switch (scope) {
+				case 'clips': {
+					// 剪藏：解析、图片本地化、去重、创建笔记由核心 ClipService 完成
+					this.assertPermission(pluginId, 'notes:write')
+					const clipService = this.services.clipService
+					if (!clipService) throw new Error('剪藏服务不可用')
+					if (action === 'save') {
+						result = await clipService.saveClip(payload?.clip || {}, { ...(payload?.options || {}), source: payload?.options?.source || pluginId })
+					} else if (action === 'clipUrl') {
+						result = await clipService.clipUrl(payload?.url, { ...(payload?.options || {}), source: payload?.options?.source || pluginId })
+					} else {
+						throw new Error(`未知的剪藏 RPC 动作: ${action}`)
+					}
+					break
+				}
 				case 'notes': {
 					if (action === 'list') {
 						this.assertPermission(pluginId, 'notes:read')
@@ -2174,7 +2191,25 @@ class PluginManager extends EventEmitter {
 		}
 	}
 
-	async executeCommand(pluginId, commandId, payload) {
+	/**
+	 * 找到处理某类外部消息的插件：插件需启用、已授权 ingress:receive，
+	 * 并在 manifest.capabilities.ingress 中声明 { kind, command }。
+	 * @returns {((payload: any, context: object) => Promise<any>) | null}
+	 */
+	resolveIngressHandler(kind) {
+		for (const [pluginId, record] of this.installedPlugins) {
+			const state = this.getPluginStateSnapshot(pluginId)
+			if (!state?.enabled || !this.pluginWorkers.has(pluginId)) continue
+			if (!state.permissions?.['ingress:receive']) continue
+			const declared = Array.isArray(record?.manifest?.capabilities?.ingress) ? record.manifest.capabilities.ingress : []
+			const entry = declared.find((item) => item && item.kind === kind && typeof item.command === 'string')
+			if (!entry) continue
+			return (payload, context) => this.executeCommand(pluginId, entry.command, { payload, context }, { timeoutMs: 180000 })
+		}
+		return null
+	}
+
+	async executeCommand(pluginId, commandId, payload, options = {}) {
 		if (!this.pluginWorkers.has(pluginId)) {
 			throw new Error('插件未运行或已禁用')
 		}
@@ -2188,8 +2223,8 @@ class PluginManager extends EventEmitter {
 
 			// 根据命令类型动态设置超时时间
 			// AI 相关命令需要更长的超时时间
-			let timeoutDuration = 15000 // 默认 15 秒
-			if (commandId && (
+			let timeoutDuration = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 15000 // 默认 15 秒
+			if (!options.timeoutMs && commandId && (
 				commandId.includes('ai') || 
 				commandId.includes('generate') || 
 				commandId.includes('chat')

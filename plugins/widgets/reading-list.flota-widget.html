@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<script type="application/flota-widget">
+{
+  "name": "阅读清单",
+  "description": "从浏览器剪藏的文章自动出现在这里，按待读、在读、读完管理阅读进度。",
+  "help": "用 Flota 浏览器扩展剪藏的文章会自动出现在这里。\n\n- 点“开始读 / 读完了”切换状态，点标题打开对应笔记。\n- 在组件主页打开时，可以给读完的文章评分。\n- 不同实例的阅读进度互相独立，比如「工作」「兴趣」两份清单。",
+  "icon": "book",
+  "sizes": [
+    "compact",
+    "medium",
+    "full"
+  ],
+  "libs": [
+    "preact"
+  ],
+  "data": {
+    "progress": {
+      "noteId": "text",
+      "status": "text",
+      "rating": "number",
+      "finishedAt": "date"
+    }
+  },
+  "permissions": [
+    "notes:read"
+  ]
+}
+</script>
+<style>
+  body { padding: 12px 14px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  .tab { padding: 4px 12px; border-radius: 999px; border: 1px solid var(--fl-border); cursor: pointer; background: transparent; }
+  .tab.active { background: var(--fl-primary); border-color: var(--fl-primary); color: var(--fl-primary-contrast); }
+  .item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--fl-border); }
+  .item:last-child { border-bottom: 0; }
+  .title { font-weight: 600; cursor: pointer; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .title:hover { color: var(--fl-primary); }
+  .actions { display: flex; gap: 4px; flex-shrink: 0; }
+  .stars { color: var(--fl-warning); cursor: pointer; letter-spacing: 1px; user-select: none; }
+  .stats { display: flex; gap: 18px; }
+  .stats b { display: block; font-size: 24px; color: var(--fl-primary); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+  const { html, render, useState, useEffect, useMemo } = htmPreact;
+  const progress = flota.data.collection('progress');
+  const STATUS = [
+    { id: 'todo', label: '待读' },
+    { id: 'reading', label: '在读' },
+    { id: 'done', label: '读完' },
+  ];
+  const formatDate = (ms) => (ms ? new Date(ms).toLocaleDateString() : '');
+
+  function useReading() {
+    const [notes, setNotes] = useState(null);
+    const [records, setRecords] = useState([]);
+    useEffect(() => {
+      const loadNotes = () => flota.notes.list({ source: 'clip', limit: 200 }).then(setNotes).catch((error) => {
+        setNotes([]);
+        flota.ui.toast(error.message, { type: 'error' });
+      });
+      const loadProgress = () => progress.query().then(setRecords);
+      loadNotes();
+      loadProgress();
+      const timer = setInterval(loadNotes, 60000);
+      const off = progress.subscribe(loadProgress);
+      return () => { clearInterval(timer); off(); };
+    }, []);
+    const byNote = useMemo(() => new Map(records.map((record) => [record.noteId, record])), [records]);
+    const items = (notes || []).map((note) => ({ note, record: byNote.get(note.syncId) || null, status: byNote.get(note.syncId)?.status || 'todo' }));
+    return { loading: notes === null, items };
+  }
+
+  async function setStatus(item, status) {
+    const patch = { status, finishedAt: status === 'done' ? Date.now() : null };
+    if (item.record) await progress.update(item.record._id, patch);
+    else await progress.insert({ noteId: item.note.syncId, ...patch });
+  }
+
+  async function setRating(item, rating) {
+    if (item.record) await progress.update(item.record._id, { rating });
+    else await progress.insert({ noteId: item.note.syncId, status: 'todo', rating });
+  }
+
+  function Stars({ item }) {
+    const rating = item.record?.rating || 0;
+    return html`<span class="stars" title="评分">${[1, 2, 3, 4, 5].map((n) => html`<span onClick=${() => setRating(item, n === rating ? 0 : n)}>${n <= rating ? '★' : '☆'}</span>`)}</span>`;
+  }
+
+  function Item({ item, full }) {
+    const next = item.status === 'todo' ? 'reading' : item.status === 'reading' ? 'done' : 'todo';
+    const nextLabel = { reading: '开始读', done: '读完了', todo: '重读' }[next];
+    return html`<div class="item">
+      <div class="fl-grow">
+        <div class="title" onClick=${() => flota.ui.openNote(item.note.syncId)}>${item.note.title}</div>
+        <div class="fl-small fl-muted">${item.note.source?.site || ''} · 剪藏于 ${formatDate(item.note.source?.clippedAt)}</div>
+        ${full && item.status === 'done' ? html`<div style="margin-top:4px"><${Stars} item=${item} /></div>` : null}
+      </div>
+      <div class="actions">
+        <button class="fl-btn" onClick=${() => setStatus(item, next)}>${nextLabel}</button>
+      </div>
+    </div>`;
+  }
+
+  function App() {
+    const { loading, items } = useReading();
+    const [tab, setTab] = useState('todo');
+    useEffect(() => { flota.state.get('tab').then((value) => value && setTab(value)); }, []);
+    const chooseTab = (id) => { setTab(id); flota.state.set('tab', id); };
+    if (loading) return html`<div class="fl-empty">加载中…</div>`;
+    const counts = Object.fromEntries(STATUS.map((s) => [s.id, items.filter((item) => item.status === s.id).length]));
+
+    if (flota.env.size === 'compact') {
+      return html`<div class="stats">${STATUS.map((s) => html`<div><b>${counts[s.id]}</b><span class="fl-small fl-muted">${s.label}</span></div>`)}</div>`;
+    }
+    if (!items.length) {
+      return html`<div class="fl-empty">还没有剪藏的文章<br /><span class="fl-small">用 Flota 浏览器扩展剪藏网页后，会自动出现在这里</span></div>`;
+    }
+    const full = flota.env.size === 'full';
+    const visible = items.filter((item) => item.status === tab).slice(0, full ? 500 : 8);
+    return html`<div>
+      <div class="tabs">${STATUS.map((s) => html`<button class=${`tab ${tab === s.id ? 'active' : ''}`} onClick=${() => chooseTab(s.id)}>${s.label} ${counts[s.id]}</button>`)}</div>
+      ${visible.length ? visible.map((item) => html`<${Item} key=${item.note.syncId} item=${item} full=${full} />`) : html`<div class="fl-empty">这里空空的</div>`}
+    </div>`;
+  }
+
+  render(html`<${App} />`, document.getElementById('app'));
+</script>
+</body>
+</html>

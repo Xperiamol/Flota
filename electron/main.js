@@ -123,6 +123,11 @@ const PluginManager = require('./services/PluginManager')
 const AIService = require('./services/AIService')
 const AIChatService = require('./services/aichat')
 const WebSearchService = require('./services/websearch')
+const WidgetService = require('./services/widgets/WidgetService')
+const WidgetGenerator = require('./services/widgets/WidgetGenerator')
+const ClipService = require('./services/clipper/ClipService')
+const IngressService = require('./services/clipper/IngressService')
+const widgetRuntime = require('./services/widgets/runtime')
 const MCPDownloader = require('./services/MCPDownloader')
 const { setupMCPHandlers } = require('./ipc/mcpHandlers')
 const STTService = require('./services/STTService')
@@ -202,6 +207,11 @@ function setupContentSecurityPolicy() {
     // Vite/react 会注入 inline script 作为 preamble；如果我们强行覆盖 CSP，会导致
     // “@vitejs/plugin-react can't detect preamble” 以及 inline script 被拦截。
     if (isDev && typeof details.url === 'string' && details.url.startsWith('http://localhost:5174')) {
+      callback({ responseHeaders: details.responseHeaders })
+      return
+    }
+    // 组件文档自带更严格的 CSP（见 widgets/runtime.js），且需要被主窗口以 iframe 嵌入
+    if (typeof details.url === 'string' && (details.url.startsWith('app://widget/') || details.url.startsWith('app://widget-runtime/'))) {
       callback({ responseHeaders: details.responseHeaders })
       return
     }
@@ -703,6 +713,78 @@ async function initializeServices() {
     services.aiService = new AIService(settingDAO)
     services.sttService = new STTService(settingDAO)
     services.webSearchService = new WebSearchService(services.aiService)
+    services.widgetService = new WidgetService({
+      noteService: services.noteService,
+      todoService: services.todoService,
+      aiService: services.aiService,
+      getStoreDir: () => (app.isPackaged
+        ? path.join(process.resourcesPath, 'plugins', 'widgets')
+        : path.join(__dirname, '..', 'plugins', 'widgets')),
+      broadcast: (channel, data) => {
+        BrowserWindow.getAllWindows().forEach((win) => {
+          if (win && !win.isDestroyed()) win.webContents.send(channel, data)
+        })
+      }
+    })
+    services.clipService = new ClipService({
+      getDefaults: () => require('./ipc/clipperHandlers').readClipperSettings(settingDAO),
+      noteService: services.noteService,
+      imageService: services.imageService,
+      todoService: services.todoService,
+      getChatService: () => services.aiChatService,
+      aiService: services.aiService,
+      broadcast: (channel, data) => {
+        BrowserWindow.getAllWindows().forEach((win) => {
+          if (win && !win.isDestroyed()) win.webContents.send(channel, data)
+        })
+      }
+    })
+    services.clipSettingDAO = settingDAO
+    let httpMcpServer = null
+    services.ingressService = new IngressService({
+      version: app.getVersion(),
+      // 应用内 HTTP MCP：与 stdio 版共用工具定义，额外提供剪藏与组件工具
+      createMcpServer: () => {
+        if (!httpMcpServer) {
+          const MCPServer = require('./services/MCPServer')
+          httpMcpServer = new MCPServer({
+            noteService: services.noteService,
+            todoService: services.todoService,
+            tagService: services.tagService,
+            aiService: services.aiService,
+            mem0Service: services.mem0Service,
+            clipService: services.clipService,
+            widgetService: services.widgetService
+          })
+        }
+        return httpMcpServer.createServer()
+      },
+      // 外部消息交给声明了 ingress 能力的插件处理（剪藏由“网页剪藏”插件接管）
+      resolveHandler: (kind) => {
+        const handler = pluginManager?.resolveIngressHandler?.(kind)
+        if (!handler) return null
+        return async (payload, context) => {
+          const result = await handler(payload, context)
+          if (result && result.error) throw Object.assign(new Error(result.error), { status: 400, code: 'HANDLER_ERROR' })
+          return result
+        }
+      },
+      getTargets: () => {
+        const db = dbManager.getDatabase()
+        const { CLIPPER_SETTING_KEYS } = require('./ipc/clipperHandlers')
+        const defaultCategory = settingDAO.get(CLIPPER_SETTING_KEYS.defaultCategory.key)?.value || CLIPPER_SETTING_KEYS.defaultCategory.fallback
+        return {
+          defaultCategory,
+          categories: db.prepare('SELECT name FROM categories ORDER BY sort_order, id').all().map((row) => row.name),
+          tags: db.prepare('SELECT name FROM tags ORDER BY usage_count DESC LIMIT 50').all().map((row) => row.name)
+        }
+      }
+    })
+    services.widgetGenerator = new WidgetGenerator({
+      getChatService: () => services.aiChatService,
+      aiService: services.aiService,
+      widgetService: services.widgetService
+    })
     // AI Chat 助手服务（需在 mem0Service 初始化后设置）
     services.aiChatService = null // 延迟到后面初始化
     
@@ -731,6 +813,7 @@ async function initializeServices() {
         services.aiService, services.noteDAO, services.todoDAO, services.mem0Service,
         services.webSearchService
       )
+      services.aiChatService.setWidgetService(services.widgetService)
       // AI 工具直接写库，不经过 NoteService 事件；这里补发通知，让打开中的笔记立即刷新
       services.aiChatService.setNotesChangedListener((notes) => {
         BrowserWindow.getAllWindows().forEach((win) => {
@@ -920,6 +1003,8 @@ async function initializeServices() {
         console.log('[Main] 开始异步初始化插件...')
         await pluginManager.initialize()
         console.log('[Main] 插件初始化完成')
+        // 插件就绪后再开放本地接收通道（处理方由插件提供）
+        services.ingressService?.start().catch((error) => console.error('[Main] 本地接收服务启动失败:', error))
       } catch (error) {
         console.error('[Main] 插件初始化失败:', error)
       }
@@ -1093,6 +1178,31 @@ if (!gotTheLock) {
         const normalized = path.normalize(relativePath)
         if (normalized.startsWith('..') || path.isAbsolute(normalized)) {
           return new Response('Forbidden', { status: 403 })
+        }
+
+        // 组件运行时资源：app://widget-runtime/<sdk.js|base.css|lib/x.js>
+        if (normalized.startsWith('widget-runtime/')) {
+          const asset = widgetRuntime.readRuntimeAsset(normalized.slice('widget-runtime/'.length).split(path.sep).join('/'))
+          if (!asset) return new Response('Not found', { status: 404 })
+          return new Response(asset.body, {
+            headers: { 'Content-Type': asset.type, 'Cache-Control': 'no-cache', 'Access-Control-Allow-Origin': '*' }
+          })
+        }
+
+        // 组件文档：app://widget/<widgetId>/index.html?size=&theme=...
+        if (normalized.startsWith('widget/') || normalized.startsWith('widget' + path.sep)) {
+          const widgetId = decodeURIComponent(normalized.slice('widget/'.length).split(/[\\/]/)[0] || '')
+          const code = services.widgetService?.getCodeForRuntime(widgetId)
+          if (!code) return new Response('Widget not found', { status: 404 })
+          const searchParams = new URL(url).searchParams
+          const html = widgetRuntime.buildWidgetDocument(code, searchParams)
+          return new Response(html, {
+            headers: {
+              'Content-Type': 'text/html; charset=utf-8',
+              'Content-Security-Policy': widgetRuntime.WIDGET_CSP,
+              'Cache-Control': 'no-store'
+            }
+          })
         }
 
         console.log('[Protocol] 处理 app:// 请求:', relativePath)
@@ -1386,6 +1496,8 @@ const { registerSettingHandlers } = require('./ipc/settingHandlers')
 const { registerDataIOHandlers } = require('./ipc/dataIOHandlers')
 const { registerTagHandlers } = require('./ipc/tagHandlers')
 const { registerSttHandlers } = require('./ipc/sttHandlers')
+const { registerWidgetHandlers } = require('./ipc/widgetHandlers')
+const { registerClipperHandlers } = require('./ipc/clipperHandlers')
 
 // 插件商店相关
 const ensurePluginManager = () => {
@@ -1421,6 +1533,13 @@ registerAIHandlers(services, activeAIStreams)
 
 // STT 相关 IPC
 registerSttHandlers(services)
+registerWidgetHandlers(() => services.widgetService, () => services.widgetGenerator, () => pluginManager)
+registerClipperHandlers({
+  getIngress: () => services.ingressService,
+  getClipService: () => services.clipService,
+  getPluginManager: () => pluginManager,
+  getSettingDAO: () => services.clipSettingDAO
+})
 
 // Mem0 记忆管理相关 IPC 处理
 registerMem0Handlers(services)
@@ -1455,6 +1574,7 @@ app.on('before-quit', async (event) => {
 
       // 0. 清理托盘 + 触发记忆迁移
       if (tray) { tray.destroy(); tray = null; }
+      services.ingressService?.stop()
       if (services.migrationService) {
         services.migrationService.triggerMigrationOnQuit().catch(err => {
           console.error('[App] 退出前迁移失败:', err);

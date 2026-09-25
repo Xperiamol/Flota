@@ -1,0 +1,121 @@
+/* Flota Widget 基础样式：主题变量 + 一组轻量组件类，AI 生成的组件直接使用即可与 Flota 风格一致 */
+:root {
+  --fl-primary: #1976d2;
+  --fl-primary-soft: rgba(25, 118, 210, 0.1);
+  --fl-primary-contrast: #ffffff;
+  --fl-bg: transparent;
+  --fl-surface: #ffffff;
+  --fl-surface-2: #f5f7fa;
+  --fl-text: #1e293b;
+  --fl-text-2: #64748b;
+  --fl-border: rgba(15, 23, 42, 0.1);
+  --fl-hover: rgba(15, 23, 42, 0.05);
+  --fl-danger: #ef4444;
+  --fl-success: #16a34a;
+  --fl-warning: #f59e0b;
+  --fl-radius: 12px;
+  --fl-radius-sm: 8px;
+  --fl-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 4px 14px rgba(15, 23, 42, 0.06);
+  --fl-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Helvetica Neue", Arial, sans-serif;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --fl-primary-contrast: #ffffff;
+  --fl-surface: #1e293b;
+  --fl-surface-2: #172033;
+  --fl-text: #f1f5f9;
+  --fl-text-2: #94a3b8;
+  --fl-border: rgba(148, 163, 184, 0.18);
+  --fl-hover: rgba(148, 163, 184, 0.1);
+  --fl-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 18px rgba(0, 0, 0, 0.25);
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--fl-bg);
+  color: var(--fl-text);
+  font-family: var(--fl-font);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+:root[data-size="full"] body { min-height: 100vh; }
+
+button, input, select, textarea { font: inherit; color: inherit; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--fl-border); border-radius: 8px; }
+
+.fl-card {
+  background: var(--fl-surface);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius);
+  box-shadow: var(--fl-shadow);
+  padding: 14px 16px;
+}
+
+.fl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-sm);
+  background: var(--fl-surface);
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+  user-select: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.fl-btn:hover { background: var(--fl-hover); }
+.fl-btn:disabled { opacity: 0.5; cursor: default; }
+.fl-btn-primary { background: var(--fl-primary); border-color: var(--fl-primary); color: var(--fl-primary-contrast); }
+.fl-btn-primary:hover { background: var(--fl-primary); filter: brightness(1.06); }
+.fl-btn-ghost { border-color: transparent; background: transparent; }
+.fl-btn-danger { color: var(--fl-danger); }
+
+.fl-input, .fl-select, .fl-textarea {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-sm);
+  background: var(--fl-surface);
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.fl-textarea { min-height: 80px; resize: vertical; }
+.fl-input:focus, .fl-select:focus, .fl-textarea:focus {
+  border-color: var(--fl-primary);
+  box-shadow: 0 0 0 3px var(--fl-primary-soft);
+}
+
+.fl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--fl-primary-soft);
+  color: var(--fl-primary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.fl-row { display: flex; align-items: center; gap: 8px; }
+.fl-col { display: flex; flex-direction: column; gap: 8px; }
+.fl-grow { flex: 1; min-width: 0; }
+.fl-muted { color: var(--fl-text-2); }
+.fl-small { font-size: 12px; }
+.fl-title { font-size: 16px; font-weight: 650; margin: 0; }
+.fl-divider { height: 1px; background: var(--fl-border); border: 0; margin: 10px 0; }
+.fl-empty { padding: 24px 12px; text-align: center; color: var(--fl-text-2); }

@@ -137,6 +137,7 @@ class DatabaseManager {
       // 创建表结构
       dbLog('开始创建表结构...');
       await this.createTables();
+      this.ensureWidgetSchema();
       dbLog('表结构创建完成');
     
       // 执行数据库迁移
@@ -611,6 +612,92 @@ class DatabaseManager {
   /**
    * 执行数据库迁移
    */
+  /**
+   * 组件相关表：组件（小应用本身）→ 实例（数据归属）→ 记录。
+   * 放在建表之后单独执行，便于兼容早期开发版的表结构（records 按 widget_id 存储、组件存成 note_type='widget' 的笔记）。
+   */
+  ensureWidgetSchema() {
+    const db = this.db;
+    db.exec(`CREATE TABLE IF NOT EXISTS widgets (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL DEFAULT '',
+      code TEXT NOT NULL DEFAULT '',
+      source TEXT DEFAULT 'ai',
+      store_id TEXT,
+      pinned INTEGER DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      is_deleted INTEGER DEFAULT 0,
+      deleted_at INTEGER
+    )`);
+    db.exec(`CREATE TABLE IF NOT EXISTS widget_instances (
+      id TEXT PRIMARY KEY,
+      widget_id TEXT NOT NULL,
+      name TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      is_deleted INTEGER DEFAULT 0,
+      deleted_at INTEGER
+    )`);
+    db.exec(`CREATE TABLE IF NOT EXISTS widget_records (
+      id TEXT NOT NULL,
+      instance_id TEXT NOT NULL,
+      collection TEXT NOT NULL,
+      fields TEXT NOT NULL DEFAULT '{}',
+      sort_key TEXT DEFAULT '',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      is_deleted INTEGER DEFAULT 0,
+      PRIMARY KEY (instance_id, id)
+    )`);
+    // 版本历史仅本地保存，不参与同步
+    db.exec(`CREATE TABLE IF NOT EXISTS widget_versions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      widget_id TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      code TEXT NOT NULL,
+      note TEXT DEFAULT '',
+      created_at INTEGER NOT NULL
+    )`);
+
+    // 早期开发版：记录按 widget_id 归属，改名为 instance_id（迁移出的默认实例 id 与原组件 id 相同）
+    const recordColumns = db.prepare('PRAGMA table_info(widget_records)').all().map((col) => col.name);
+    if (recordColumns.includes('widget_id') && !recordColumns.includes('instance_id')) {
+      db.exec('DROP INDEX IF EXISTS idx_widget_records_widget');
+      db.exec('ALTER TABLE widget_records RENAME COLUMN widget_id TO instance_id');
+    }
+
+    // 早期开发版：组件存成 note_type='widget' 的笔记，迁移为“组件 + 一个默认实例”
+    const legacy = db.prepare("SELECT * FROM notes WHERE note_type = 'widget'").all();
+    if (legacy.length) {
+      const toMs = (value) => {
+        const time = value ? new Date(String(value).replace(' ', 'T') + (String(value).includes('Z') ? '' : 'Z')).getTime() : NaN;
+        return Number.isFinite(time) ? time : Date.now();
+      };
+      const insertWidget = db.prepare(`INSERT OR IGNORE INTO widgets (id, name, code, source, pinned, created_at, updated_at, is_deleted, deleted_at)
+        VALUES (?, ?, ?, 'ai', 1, ?, ?, ?, ?)`);
+      const insertInstance = db.prepare(`INSERT OR IGNORE INTO widget_instances (id, widget_id, name, created_at, updated_at, is_deleted, deleted_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`);
+      const removeNote = db.prepare('DELETE FROM notes WHERE id = ?');
+      db.transaction(() => {
+        for (const note of legacy) {
+          const id = note.sync_id || String(note.id);
+          const created = toMs(note.created_at);
+          const updated = toMs(note.updated_at);
+          const deletedAt = note.is_deleted ? toMs(note.deleted_at || note.updated_at) : null;
+          insertWidget.run(id, note.title || '', note.content || '', created, updated, note.is_deleted ? 1 : 0, deletedAt);
+          insertInstance.run(id, id, note.title || '默认', created, updated, note.is_deleted ? 1 : 0, deletedAt);
+          removeNote.run(note.id);
+        }
+      })();
+      dbLog(`已迁移 ${legacy.length} 个旧版组件`);
+    }
+
+    db.exec('CREATE INDEX IF NOT EXISTS idx_widget_records_instance ON widget_records(instance_id, collection, is_deleted)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_widget_instances_widget ON widget_instances(widget_id, is_deleted)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_widget_versions_widget ON widget_versions(widget_id, version DESC)');
+  }
+
   async runMigrations() {
     try {
       // 迁移1：检查todos表是否有tags字段，如果没有则添加
@@ -736,6 +823,12 @@ class DatabaseManager {
       
       if (titleAdded) {
         this.rebuildNotesFts('notes title column added');
+      }
+
+      // ===== 笔记元数据（剪藏来源等，JSON）(2026-09) =====
+      if (!notesColumnNames.includes('meta')) {
+        this.db.exec("ALTER TABLE notes ADD COLUMN meta TEXT DEFAULT NULL");
+        console.log('✅ meta字段添加完成');
       }
       
       // ===== 笔记类型系统 (2025-11-11) =====

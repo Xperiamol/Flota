@@ -76,6 +76,10 @@ class V3SyncService extends EventEmitter {
 
     // 加载配置
     this.loadConfig();
+    if (this.shouldPersistMigratedConfig) {
+      this.shouldPersistMigratedConfig = false;
+      try { this.saveConfig(); } catch (error) { console.warn('[V3SyncService] 保存迁移后的配置失败:', error.message); }
+    }
   }
 
   /**
@@ -217,7 +221,7 @@ class V3SyncService extends EventEmitter {
       rootPath: config.rootPath || '/Flota/',
       enableDebugLog: config.enableDebugLog || false,
       syncIPCHandler: this.syncIPCHandler,
-      syncCategories: config.syncCategories || ['notes', 'images', 'attachments', 'settings', 'todos'],
+      syncCategories: config.syncCategories || ['notes', 'images', 'attachments', 'settings', 'todos', 'widgets'],
     });
   }
 
@@ -663,6 +667,13 @@ class V3SyncService extends EventEmitter {
           }
         }
 
+        // 组件是新增的同步类别：老配置默认开启一次，之后尊重用户的开关
+        if (Array.isArray(this.config.syncCategories) && !this.config.widgetsCategoryInitialized) {
+          if (!this.config.syncCategories.includes('widgets')) this.config.syncCategories.push('widgets');
+          this.config.widgetsCategoryInitialized = true;
+          this.shouldPersistMigratedConfig = true;
+        }
+
         // 恢复上次同步时间
         if (typeof this.config.lastSyncTime === 'number') {
           this.lastSyncTime = this.config.lastSyncTime;
@@ -717,7 +728,7 @@ class V3SyncService extends EventEmitter {
       rootPath: '/Flota/',
       enableDebugLog: false,
       credentials: null,
-      syncCategories: ['notes', 'images', 'attachments', 'settings', 'todos'], // 默认同步所有类别
+      syncCategories: ['notes', 'images', 'attachments', 'settings', 'todos', 'widgets'], // 默认同步所有类别
     };
   }
 

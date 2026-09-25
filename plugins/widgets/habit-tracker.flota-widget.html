@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<script type="application/flota-widget">
+{
+  "name": "习惯打卡",
+  "description": "每天为习惯打卡，查看连续天数和最近 12 周的完成热力图。",
+  "help": "每天为习惯打卡，培养长期坚持。\n\n- 点圆圈完成今天的打卡，再点一次取消。\n- 在组件主页打开时，可以添加、删除习惯，并查看最近 12 周的热力图。\n- 放到首页时，显示今天已完成的习惯数。",
+  "icon": "habit",
+  "sizes": [
+    "compact",
+    "medium",
+    "full"
+  ],
+  "libs": [
+    "preact"
+  ],
+  "data": {
+    "habits": {
+      "name": "text",
+      "color": "text"
+    },
+    "checks": {
+      "habitId": "ref:habits",
+      "date": "date"
+    }
+  },
+  "permissions": []
+}
+</script>
+<style>
+  body { padding: 12px 14px; }
+  .habit { padding: 10px 0; border-bottom: 1px solid var(--fl-border); }
+  .habit:last-child { border-bottom: 0; }
+  .head { display: flex; align-items: center; gap: 10px; }
+  .check { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--c); background: transparent; color: #fff; cursor: pointer; flex-shrink: 0; font-size: 15px; display: grid; place-items: center; transition: background-color 150ms; }
+  .check.done { background: var(--c); }
+  .name { font-weight: 600; }
+  .streak { color: var(--fl-text-2); font-size: 12px; }
+  .week { display: flex; gap: 4px; margin: 8px 0 0 40px; }
+  .dot { width: 14px; height: 14px; border-radius: 4px; background: var(--fl-surface-2); border: 1px solid var(--fl-border); }
+  .grid { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 11px); gap: 3px; margin: 10px 0 0 40px; }
+  .cell { width: 11px; height: 11px; border-radius: 3px; background: var(--fl-surface-2); }
+  .del { opacity: 0; border: 0; background: none; cursor: pointer; color: var(--fl-text-2); margin-left: auto; }
+  .habit:hover .del { opacity: 1; }
+  .add { display: flex; gap: 8px; margin-top: 12px; }
+  .summary { display: flex; align-items: baseline; gap: 6px; }
+  .summary b { font-size: 30px; color: var(--fl-primary); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+  const { html, render, useState, useEffect, useMemo } = htmPreact;
+  const habits = flota.data.collection('habits');
+  const checks = flota.data.collection('checks');
+  const COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
+
+  const dayKey = (date) => {
+    const d = new Date(date);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const addDays = (date, n) => { const d = new Date(date); d.setDate(d.getDate() + n); return d; };
+  const today = () => dayKey(new Date());
+
+  function useHabitData() {
+    const [data, setData] = useState(null);
+    useEffect(() => {
+      const load = () => Promise.all([habits.query({ orderBy: '_createdAt' }), checks.query()]).then(([h, c]) => setData({ habits: h, checks: c }));
+      load();
+      const off1 = habits.subscribe(load);
+      const off2 = checks.subscribe(load);
+      // 跨过午夜时刷新“今天”
+      const timer = setInterval(load, 5 * 60 * 1000);
+      return () => { off1(); off2(); clearInterval(timer); };
+    }, []);
+    return data;
+  }
+
+  function streakOf(dates) {
+    let streak = 0;
+    let cursor = new Date();
+    if (!dates.has(dayKey(cursor))) cursor = addDays(cursor, -1);
+    while (dates.has(dayKey(cursor))) { streak++; cursor = addDays(cursor, -1); }
+    return streak;
+  }
+
+  function Habit({ habit, checkList, size }) {
+    const dates = useMemo(() => new Set(checkList.map((c) => c.date)), [checkList]);
+    const doneToday = dates.has(today());
+    const streak = streakOf(dates);
+    const toggle = async () => {
+      const existing = checkList.find((c) => c.date === today());
+      if (existing) await checks.remove(existing._id);
+      else await checks.insert({ habitId: habit._id, date: today() });
+    };
+    const remove = async () => {
+      if (!(await flota.ui.confirm(`删除习惯「${habit.name}」和它的全部打卡记录？`))) return;
+      await Promise.all(checkList.map((c) => checks.remove(c._id)));
+      await habits.remove(habit._id);
+    };
+    const color = habit.color || COLORS[0];
+    const last7 = Array.from({ length: 7 }, (_, i) => dayKey(addDays(new Date(), i - 6)));
+    // 12 周热力图：从 83 天前那一周的周一开始
+    const start = addDays(new Date(), -83);
+    start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+    start.setHours(0, 0, 0, 0);
+    const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+    const days = Math.round((midnight - start) / 86400000) + 1;
+    const heat = Array.from({ length: days }, (_, i) => dayKey(addDays(start, i)));
+    return html`<div class="habit" style=${`--c:${color}`}>
+      <div class="head">
+        <button class=${`check ${doneToday ? 'done' : ''}`} onClick=${toggle} title=${doneToday ? '取消今天的打卡' : '今天打卡'}>${doneToday ? '✓' : ''}</button>
+        <div class="fl-grow">
+          <div class="name">${habit.name}</div>
+          <div class="streak">${streak ? `连续 ${streak} 天` : '今天开始吧'} · 累计 ${dates.size} 天</div>
+        </div>
+        ${size === 'full' ? html`<button class="del" onClick=${remove} title="删除">✕</button>` : null}
+      </div>
+      ${size === 'full'
+        ? html`<div class="grid">${heat.map((d) => html`<div class="cell" title=${d} style=${dates.has(d) ? `background:${color}` : ''}></div>`)}</div>`
+        : html`<div class="week">${last7.map((d) => html`<div class="dot" title=${d} style=${dates.has(d) ? `background:${color};border-color:${color}` : ''}></div>`)}</div>`}
+    </div>`;
+  }
+
+  function AddHabit({ count }) {
+    const [name, setName] = useState('');
+    const add = async () => {
+      if (!name.trim()) return;
+      await habits.insert({ name: name.trim(), color: COLORS[count % COLORS.length] });
+      setName('');
+    };
+    return html`<div class="add">
+      <input class="fl-input" placeholder="新习惯，比如：跑步 30 分钟" value=${name} onInput=${(e) => setName(e.target.value)} onKeyDown=${(e) => e.key === 'Enter' && add()} />
+      <button class="fl-btn fl-btn-primary" onClick=${add}>添加</button>
+    </div>`;
+  }
+
+  function App() {
+    const data = useHabitData();
+    if (!data) return null;
+    const size = flota.env.size;
+    const byHabit = (id) => data.checks.filter((c) => c.habitId === id);
+    const doneCount = data.habits.filter((h) => byHabit(h._id).some((c) => c.date === today())).length;
+    if (size === 'compact') {
+      return html`<div class="summary"><b>${doneCount}</b><span class="fl-muted">/ ${data.habits.length} 个习惯今天已完成</span></div>`;
+    }
+    return html`<div>
+      ${data.habits.length ? data.habits.map((habit) => html`<${Habit} key=${habit._id} habit=${habit} checkList=${byHabit(habit._id)} size=${size} />`)
+        : html`<div class="fl-empty">还没有习惯，添加一个开始打卡吧</div>`}
+      ${size === 'full' || !data.habits.length ? html`<${AddHabit} count=${data.habits.length} />` : null}
+    </div>`;
+  }
+
+  render(html`<${App} />`, document.getElementById('app'));
+</script>
+</body>
+</html>

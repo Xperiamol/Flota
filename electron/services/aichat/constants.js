@@ -2,7 +2,7 @@
  * AI Chat 通用常量。
  */
 
-const WRITE_TOOL_NAMES = new Set(['create_note', 'edit_note', 'edit_notes', 'create_whiteboard', 'update_whiteboard', 'create_todo', 'create_todos', 'add_memory', 'update_memory', 'write_long_document']);
+const WRITE_TOOL_NAMES = new Set(['create_note', 'edit_note', 'edit_notes', 'create_whiteboard', 'update_whiteboard', 'create_todo', 'create_todos', 'add_memory', 'update_memory', 'write_long_document', 'create_widget', 'update_widget', 'create_widget_instance', 'add_widget_records']);
 
 const ACTION_LABELS = {
   create_note: '创建笔记',
@@ -14,7 +14,11 @@ const ACTION_LABELS = {
   create_todos: '批量创建待办',
   add_memory: '保存记忆',
   update_memory: '更新记忆',
-  write_long_document: '生成并保存长文档'
+  write_long_document: '生成并保存长文档',
+  create_widget: '生成组件',
+  update_widget: '修改组件',
+  create_widget_instance: '新建组件实例',
+  add_widget_records: '写入组件数据'
 };
 
 const DEFAULT_CHAT_MAX_TOKENS = 320000;

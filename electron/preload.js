@@ -205,6 +205,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 独立窗口创建API（顶层方法）
   createNoteWindow: inv('window:create-note-window'),
+  createWidgetWindow: inv('window:create-widget-window'),
   isNoteOpenInWindow: inv('window:is-note-open'),
   createTodoWindow: inv('window:create-todo-window'),
 
@@ -310,6 +311,51 @@ contextBridge.exposeInMainWorld('electronAPI', {
     deleteImages: inv('whiteboard:delete-images'),
     getStorageStats: inv('whiteboard:get-storage-stats'),
     savePreview: (syncId, pngBase64) => ipcRenderer.invoke('whiteboard:save-preview', { syncId, pngBase64 }),
+  },
+
+  // 组件（AI 生成的小应用）：组件 → 实例 → 放置位置
+  widgets: {
+    list: inv('widget:list'),
+    get: inv('widget:get'),
+    setPinned: inv('widget:set-pinned'),
+    delete: inv('widget:delete'),
+    versions: inv('widget:versions'),
+    rollback: inv('widget:rollback'),
+    approve: inv('widget:approve'),
+    aiUsage: inv('widget:ai-usage'),
+    instances: inv('widget:instances'),
+    allInstances: inv('widget:all-instances'),
+    getInstance: inv('widget:instance-get'),
+    createInstance: inv('widget:instance-create'),
+    renameInstance: inv('widget:instance-rename'),
+    deleteInstance: inv('widget:instance-delete'),
+    restoreInstance: inv('widget:instance-restore'),
+    dataOverview: inv('widget:data-overview'),
+    rpc: inv('widget:rpc'),
+    generate: inv('widget:generate'),
+    cancelGenerate: inv('widget:generate-cancel'),
+    saveDraft: inv('widget:save-draft'),
+    discardDraft: inv('widget:draft-discard'),
+    importFile: inv('widget:import-file'),
+    exportFile: inv('widget:export-file'),
+    storeList: inv('widget:store-list'),
+    storeInstall: inv('widget:store-install'),
+    storePreview: inv('widget:store-preview'),
+    onDataChanged: listen('widget:data-changed'),
+    onListChanged: listen('widget:list-changed'),
+    onGenerateProgress: listen('widget:generate-progress'),
+  },
+
+  // 网页剪藏
+  clipper: {
+    status: inv('clipper:status'),
+    createPairingCode: inv('clipper:create-pairing-code'),
+    revokeClient: inv('clipper:revoke-client'),
+    issueToken: inv('clipper:issue-token'),
+    saveSettings: inv('clipper:save-settings'),
+    clipUrl: inv('clipper:clip-url'),
+    openExtensionFolder: inv('clipper:open-extension-folder'),
+    onClipped: listen('clipper:clipped'),
   },
 
   // AI 相关 API

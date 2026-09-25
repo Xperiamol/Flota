@@ -20,32 +20,41 @@ class MCPServer {
   /**
    * 初始化并启动 MCP Server
    */
+  /**
+   * 创建配置好工具的 MCP Server 实例（不连接传输）。
+   * stdio（独立进程）与 HTTP（应用内 /mcp，见 IngressService）共用。
+   */
+  createServer() {
+    const server = new Server(
+      {
+        name: 'Flota',
+        version: '1.0.0',
+      },
+      {
+        capabilities: {
+          tools: {},
+        },
+      }
+    );
+
+    // 注册工具列表处理器
+    server.setRequestHandler(ListToolsRequestSchema, async () => {
+      return {
+        tools: this.getToolDefinitions(),
+      };
+    });
+
+    // 注册工具调用处理器
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      return await this.handleToolCall(request);
+    });
+
+    return server;
+  }
+
   async start() {
     try {
-      // 创建 MCP Server 实例
-      this.server = new Server(
-        {
-          name: 'Flota',
-          version: '1.0.0',
-        },
-        {
-          capabilities: {
-            tools: {},
-          },
-        }
-      );
-
-      // 注册工具列表处理器
-      this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-        return {
-          tools: this.getToolDefinitions(),
-        };
-      });
-
-      // 注册工具调用处理器
-      this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-        return await this.handleToolCall(request);
-      });
+      this.server = this.createServer();
 
       // 创建 stdio 传输
       this.transport = new StdioServerTransport();
@@ -75,6 +84,7 @@ class MCPServer {
    */
   getToolDefinitions() {
     return [
+      ...this.getAppOnlyToolDefinitions(),
       // ==================== 笔记相关工具 ====================
       {
         name: 'create_note',
@@ -478,6 +488,42 @@ class MCPServer {
           result = await this.getNotesByTag(args);
           break;
 
+        // ==================== 剪藏与组件（仅应用内 HTTP MCP） ====================
+        case 'clip_url':
+          if (!this.services.clipService) throw new Error('剪藏只在 Flota 应用运行时可用（HTTP MCP）');
+          result = await this.services.clipService.clipUrl(args.url, {
+            kind: args.bookmark ? 'bookmark' : 'article',
+            target: { category: args.category, tags: args.tags || [] },
+            source: 'mcp',
+          });
+          this.services.onNotesChanged?.();
+          break;
+
+        case 'list_widgets': {
+          if (!this.services.widgetService) throw new Error('组件只在 Flota 应用运行时可用（HTTP MCP）');
+          const widgetService = this.services.widgetService;
+          result = widgetService.listWidgets().map((widget) => ({
+            id: widget.id,
+            name: widget.name,
+            description: widget.manifest.description,
+            instances: widgetService.dao.listInstances(widget.id).map((instance) => ({
+              id: instance.id,
+              name: instance.name,
+              collections: widgetService.dao.listCollections(instance.id),
+            })),
+          }));
+          break;
+        }
+
+        case 'query_widget_data': {
+          if (!this.services.widgetService) throw new Error('组件只在 Flota 应用运行时可用（HTTP MCP）');
+          const widgetService = this.services.widgetService;
+          const { instance, widget } = widgetService.getInstance(args.instance_id);
+          const records = widgetService.dao.listRecords(instance.id, String(args.collection || ''));
+          result = { widget: widget.name, instance: instance.name, collection: args.collection, count: records.length, records: records.slice(0, Math.min(Number(args.limit) || 100, 500)) };
+          break;
+        }
+
         default:
           throw new Error(`Unknown tool: ${name}`);
       }
@@ -502,6 +548,50 @@ class MCPServer {
         isError: true,
       };
     }
+  }
+
+  /** 依赖应用内服务的工具：只有在 Flota 运行时（HTTP MCP）才提供 */
+  getAppOnlyToolDefinitions() {
+    const tools = [];
+    if (this.services.clipService) {
+      tools.push({
+        name: 'clip_url',
+        description: '把一个网页剪藏为 Flota 笔记：抓取正文转为 Markdown、下载图片到本地、按链接去重。bookmark 为 true 时只保存标题、摘要和封面。',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            url: { type: 'string', description: '网页链接（http/https）' },
+            bookmark: { type: 'boolean', description: '只保存为书签，默认 false' },
+            category: { type: 'string', description: '保存到的分类，默认使用剪藏设置中的分类' },
+            tags: { type: 'array', items: { type: 'string' }, description: '标签' },
+          },
+          required: ['url'],
+        },
+      });
+    }
+    if (this.services.widgetService) {
+      tools.push(
+        {
+          name: 'list_widgets',
+          description: '列出 Flota 中的组件（看板、闪卡、打卡、记账等小应用）、每个组件的实例及实例的数据集合。',
+          inputSchema: { type: 'object', properties: {} },
+        },
+        {
+          name: 'query_widget_data',
+          description: '读取某个组件实例某个集合中的数据记录（只读）。',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              instance_id: { type: 'string', description: 'list_widgets 返回的实例 id' },
+              collection: { type: 'string', description: '集合名' },
+              limit: { type: 'number', description: '最多返回条数，默认 100' },
+            },
+            required: ['instance_id', 'collection'],
+          },
+        }
+      );
+    }
+    return tools;
   }
 
   // ==================== 笔记操作实现 ====================

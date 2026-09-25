@@ -101,5 +101,161 @@
     "minAppVersion": "2.0.0",
     "shortDescription": "把笔记双链关系以力导向图可视化",
     "icon": "icon.svg"
+  },
+  {
+    "id": "web-clipper",
+    "name": "网页剪藏 (Built-in)",
+    "description": "配合 Flota 浏览器扩展，把网页全文、选中内容或书签一键剪藏为笔记：自动下载图片、按链接去重，可选 AI 摘要与标签。",
+    "version": "1.0.0",
+    "author": {
+      "name": "Flota 团队",
+      "url": "https://github.com/Xperiamol"
+    },
+    "license": "MIT",
+    "homepage": "https://github.com/Xperiamol",
+    "repository": "https://github.com/Xperiamol/Flota",
+    "source": {
+      "type": "directory",
+      "path": "plugins/examples/web-clipper"
+    },
+    "tags": [
+      "clipper",
+      "web",
+      "reading"
+    ],
+    "categories": [
+      "效率",
+      "收集"
+    ],
+    "featured": true,
+    "permissions": [
+      "notes:write",
+      "ingress:receive",
+      "notifications:show"
+    ],
+    "minAppVersion": "3.10.0",
+    "shortDescription": "从浏览器一键剪藏网页",
+    "icon": "icon.svg"
+  },
+  {
+    "id": "widget-reading-list",
+    "type": "widget",
+    "name": "阅读清单",
+    "description": "从浏览器剪藏的文章自动出现在这里，按待读、在读、读完管理阅读进度。",
+    "version": "1.0.0",
+    "author": {
+      "name": "Flota 团队",
+      "url": "https://github.com/Xperiamol"
+    },
+    "license": "MIT",
+    "source": {
+      "type": "file",
+      "path": "plugins/widgets/reading-list.flota-widget.html"
+    },
+    "tags": [
+      "阅读",
+      "剪藏"
+    ],
+    "featured": true,
+    "categories": [
+      "阅读"
+    ]
+  },
+  {
+    "id": "widget-habit-tracker",
+    "type": "widget",
+    "name": "习惯打卡",
+    "description": "每天为习惯打卡，查看连续天数和最近 12 周的完成热力图。",
+    "version": "1.0.0",
+    "author": {
+      "name": "Flota 团队",
+      "url": "https://github.com/Xperiamol"
+    },
+    "license": "MIT",
+    "source": {
+      "type": "file",
+      "path": "plugins/widgets/habit-tracker.flota-widget.html"
+    },
+    "tags": [
+      "习惯",
+      "打卡"
+    ],
+    "featured": true,
+    "categories": [
+      "效率",
+      "生活"
+    ]
+  },
+  {
+    "id": "widget-countdown",
+    "type": "widget",
+    "name": "倒数日",
+    "description": "记录考试、纪念日、生日等重要日子，显示还剩多少天，支持每年重复。",
+    "version": "1.0.0",
+    "author": {
+      "name": "Flota 团队",
+      "url": "https://github.com/Xperiamol"
+    },
+    "license": "MIT",
+    "source": {
+      "type": "file",
+      "path": "plugins/widgets/countdown.flota-widget.html"
+    },
+    "tags": [
+      "日期",
+      "纪念日"
+    ],
+    "featured": true,
+    "categories": [
+      "生活"
+    ]
+  },
+  {
+    "id": "widget-flashcards",
+    "type": "widget",
+    "name": "闪卡复习",
+    "description": "间隔重复记忆卡片，按遗忘曲线安排复习；每个实例是一组独立的卡片。",
+    "version": "1.0.0",
+    "author": {
+      "name": "Flota 团队",
+      "url": "https://github.com/Xperiamol"
+    },
+    "license": "MIT",
+    "source": {
+      "type": "file",
+      "path": "plugins/widgets/flashcards.flota-widget.html"
+    },
+    "categories": [
+      "学习"
+    ],
+    "tags": [
+      "记忆",
+      "学习"
+    ],
+    "featured": true
+  },
+  {
+    "id": "widget-kanban",
+    "type": "widget",
+    "name": "看板",
+    "description": "按待办、进行中、已完成分列管理事项，卡片可以拖拽换列。",
+    "version": "1.0.0",
+    "author": {
+      "name": "Flota 团队",
+      "url": "https://github.com/Xperiamol"
+    },
+    "license": "MIT",
+    "source": {
+      "type": "file",
+      "path": "plugins/widgets/kanban.flota-widget.html"
+    },
+    "categories": [
+      "效率"
+    ],
+    "tags": [
+      "看板",
+      "任务"
+    ],
+    "featured": true
   }
 ]

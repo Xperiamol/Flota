@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<script type="application/flota-widget">
+{
+  "name": "闪卡复习",
+  "description": "间隔重复记忆卡片，按 FSRS 算法安排复习时间。",
+  "help": "每个实例是一组独立的卡片，比如「英语单词」「日语五十音」。\n\n- **复习**：点击卡片翻面，按记得的程度选择“忘了 / 困难 / 记得 / 简单”，系统按遗忘曲线安排下次复习时间。\n- **添加卡片**：在组件主页打开实例，底部输入正面和背面后添加。\n- 放到首页时，显示今天待复习的卡片数。",
+  "icon": "cards",
+  "sizes": [
+    "compact",
+    "medium",
+    "full"
+  ],
+  "libs": [
+    "preact",
+    "ts-fsrs"
+  ],
+  "data": {
+    "cards": {
+      "front": "text",
+      "back": "text",
+      "srs": "json",
+      "due": "number"
+    }
+  },
+  "permissions": []
+}
+</script>
+<style>
+  body { padding: 12px; }
+  :root[data-size="compact"] body { padding: 10px 12px; }
+  .stage { min-height: 150px; display: flex; flex-direction: column; justify-content: center; text-align: center; gap: 10px; cursor: pointer; }
+  .front { font-size: 20px; font-weight: 650; }
+  .back { font-size: 15px; color: var(--fl-text-2); white-space: pre-wrap; }
+  .ratings { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
+  .list { max-height: 260px; overflow: auto; }
+  .item { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--fl-border); }
+  .big { font-size: 28px; font-weight: 700; color: var(--fl-primary); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+  const { html, render, useState, useEffect, useMemo } = htmPreact;
+  const { fsrs, createEmptyCard, Rating } = FSRS;
+  const scheduler = fsrs();
+  const cards = flota.data.collection('cards');
+
+  const restore = (srs) => srs ? { ...srs, due: new Date(srs.due), last_review: srs.last_review ? new Date(srs.last_review) : undefined } : createEmptyCard(new Date());
+
+  function useCards() {
+    const [list, setList] = useState(null);
+    useEffect(() => {
+      const load = () => cards.query({ orderBy: 'due' }).then(setList);
+      load();
+      return cards.subscribe(load);
+    }, []);
+    return list;
+  }
+
+  function Review({ list }) {
+    const [flipped, setFlipped] = useState(false);
+    const now = Date.now();
+    const dueList = list.filter((card) => (card.due || 0) <= now);
+    const current = dueList[0];
+    if (!current) return html`<div class="fl-empty">今天的卡片都复习完了 🎉<div class="fl-small">共 ${list.length} 张卡片</div></div>`;
+    const rate = async (rating) => {
+      const result = scheduler.next(restore(current.srs), new Date(), rating);
+      await cards.update(current._id, { srs: result.card, due: result.card.due.getTime() });
+      setFlipped(false);
+    };
+    return html`
+      <div class="fl-card">
+        <div class="fl-row fl-small fl-muted"><span class="fl-grow">待复习 ${dueList.length} 张</span><span>点击卡片翻面</span></div>
+        <div class="stage" onClick=${() => setFlipped(!flipped)}>
+          <div class="front">${current.front}</div>
+          ${flipped && html`<div class="back">${current.back}</div>`}
+        </div>
+        ${flipped && html`<div class="ratings">
+          <button class="fl-btn fl-btn-danger" onClick=${() => rate(Rating.Again)}>忘了</button>
+          <button class="fl-btn" onClick=${() => rate(Rating.Hard)}>困难</button>
+          <button class="fl-btn" onClick=${() => rate(Rating.Good)}>记得</button>
+          <button class="fl-btn fl-btn-primary" onClick=${() => rate(Rating.Easy)}>简单</button>
+        </div>`}
+      </div>`;
+  }
+
+  function Editor({ list }) {
+    const [front, setFront] = useState('');
+    const [back, setBack] = useState('');
+    const add = async () => {
+      if (!front.trim()) return;
+      const card = createEmptyCard(new Date());
+      await cards.insert({ front: front.trim(), back: back.trim(), srs: card, due: card.due.getTime() });
+      setFront(''); setBack('');
+    };
+    return html`
+      <div class="fl-col" style="margin-top: 14px">
+        <div class="fl-row">
+          <input class="fl-input" placeholder="正面" value=${front} onInput=${(e) => setFront(e.target.value)} />
+          <input class="fl-input" placeholder="背面" value=${back} onInput=${(e) => setBack(e.target.value)}
+            onKeyDown=${(e) => e.key === 'Enter' && add()} />
+          <button class="fl-btn fl-btn-primary" onClick=${add}>添加</button>
+        </div>
+        <div class="list">
+          ${list.map((card) => html`<div class="item">
+            <span class="fl-grow">${card.front}</span>
+            <span class="fl-small fl-muted">${new Date(card.due).toLocaleDateString()}</span>
+            <button class="fl-btn fl-btn-ghost fl-btn-danger" onClick=${() => cards.remove(card._id)}>删除</button>
+          </div>`)}
+        </div>
+      </div>`;
+  }
+
+  function App() {
+    const list = useCards();
+    if (!list) return null;
+    if (flota.env.size === 'compact') {
+      const due = list.filter((card) => (card.due || 0) <= Date.now()).length;
+      return html`<div class="fl-row"><span class="big">${due}</span><span class="fl-muted">张卡片待复习</span></div>`;
+    }
+    return html`<div>
+      <${Review} list=${list} />
+      ${flota.env.size === 'full' ? html`<${Editor} list=${list} />` : null}
+    </div>`;
+  }
+
+  render(html`<${App} />`, document.getElementById('app'));
+</script>
+</body>
+</html>

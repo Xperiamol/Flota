@@ -29,6 +29,7 @@ const getUserDataPath = () => {
 
 const WebDAVClient = require('./webdavClient');
 const StorageAdapter = require('./StorageAdapter');
+const WidgetSync = require('./WidgetSync');
 const { getInstance: getDeviceIdManager } = require('../../utils/DeviceIdManager');
 
 /**
@@ -54,7 +55,7 @@ class SyncEngine extends EventEmitter {
       retryAttempts: config.retryAttempts || 3,
       conflictStrategy: config.conflictStrategy || 'ask',
       enableDebugLog: config.enableDebugLog || false,
-      syncCategories: config.syncCategories || ['notes', 'images', 'attachments', 'settings', 'todos'], // 启用的同步类别
+      syncCategories: config.syncCategories || ['notes', 'images', 'attachments', 'settings', 'todos', 'widgets'], // 启用的同步类别
     };
 
     // WebDAV 客户端
@@ -224,6 +225,28 @@ class SyncEngine extends EventEmitter {
       this.emit('syncProgress', { stage: 'commit', progress: 0.9 });
       await this.commit(localManifest, remoteManifest, tasks, result);
       this.log('同步提交成功');
+
+      // 组件单独同步（独立 manifest，旧版本与 Android 端不受影响）；失败不影响主同步结果
+      if ((this.config.syncCategories || []).includes('widgets')) {
+        try {
+          const widgetResult = await new WidgetSync({
+            client: this.client,
+            rootPath: this.config.rootPath,
+            cachePath: path.join(getUserDataPath(), 'sync-widgets-v2-manifest.json'),
+            log: (...args) => this.log(...args),
+          }).run();
+          result.uploaded = (result.uploaded || 0) + widgetResult.uploaded;
+          result.downloaded = (result.downloaded || 0) + widgetResult.downloaded;
+          result.errors = (result.errors || 0) + widgetResult.errors;
+          if (widgetResult.errorDetails.length) {
+            result.errorDetails = [...(result.errorDetails || []), ...widgetResult.errorDetails];
+          }
+        } catch (error) {
+          this.logError('[WidgetSync] 组件同步失败', error);
+          result.errors = (result.errors || 0) + 1;
+          result.errorDetails = [...(result.errorDetails || []), `组件同步失败：${error.message}`];
+        }
+      }
       if (result.errors > 0) {
         this.logError(`同步完成但有 ${result.errors} 个非致命错误`);
       }
@@ -710,6 +733,8 @@ class SyncEngine extends EventEmitter {
           is_pinned: note.is_pinned || 0,
           is_favorite: note.is_favorite || 0,
           note_type: note.note_type || 'markdown', // 明确存储笔记类型
+          // 笔记附加元数据（如剪藏来源）；不参与内容 hash，旧版本客户端会忽略
+          ...(note.meta ? { extra: note.meta } : {}),
         },
       };
     }
@@ -1711,6 +1736,8 @@ class SyncEngine extends EventEmitter {
         category: meta.category || '',
         is_pinned: meta.is_pinned || 0,
         is_favorite: meta.is_favorite || 0,
+        // 远端带了元数据才写入；缺失（如其他客户端上传）时保留本地已有元数据
+        ...(typeof meta.extra === 'string' && meta.extra ? { meta: meta.extra } : {}),
         // 远端为未删除版本：执行下载即意味着 "本地需对齐为未删除/恢复"
         is_deleted: 0,
         deleted_at: null,

@@ -55,7 +55,9 @@ const streamRequest = async (config, messages, temp, maxTk, onChunk, abortSignal
   const { url, headers, body } = buildRequest(config, messages, temp, maxTk, options, aiService);
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 120000); // 2 分钟超时
+  // 默认 2 分钟超时；长输出任务（如组件生成）可通过 options.timeoutMs 放宽
+  const timeoutMs = Number(options?.timeoutMs) > 0 ? Math.min(Number(options.timeoutMs), 15 * 60 * 1000) : 120000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let abortHandler = null;
 
   if (abortSignal) {

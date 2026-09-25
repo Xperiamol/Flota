@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<script type="application/flota-widget">
+{
+  "name": "倒数日",
+  "description": "记录考试、纪念日、生日等重要日子，显示还剩多少天，支持每年重复。",
+  "help": "记录重要的日子，一眼看到还剩多少天。\n\n- 在组件主页打开时，填写名称、日期后添加；勾选“每年”的日子会自动滚动到下一年。\n- 已经过去的日子会变淡显示。\n- 放到首页时，显示最近的一个日子。",
+  "icon": "hourglass",
+  "sizes": [
+    "compact",
+    "medium",
+    "full"
+  ],
+  "libs": [
+    "preact"
+  ],
+  "data": {
+    "events": {
+      "title": "text",
+      "date": "date",
+      "yearly": "boolean",
+      "emoji": "text"
+    }
+  },
+  "permissions": []
+}
+</script>
+<style>
+  body { padding: 12px 14px; }
+  .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+  .event { position: relative; padding: 12px 14px; border-radius: var(--fl-radius); background: var(--fl-surface); border: 1px solid var(--fl-border); }
+  .event.past { opacity: 0.55; }
+  .days { font-size: 30px; font-weight: 700; color: var(--fl-primary); line-height: 1.2; }
+  .days small { font-size: 13px; font-weight: 500; color: var(--fl-text-2); margin-left: 2px; }
+  .del { position: absolute; top: 6px; right: 8px; opacity: 0; border: 0; background: none; cursor: pointer; color: var(--fl-text-2); }
+  .event:hover .del { opacity: 1; }
+  .form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+  .form > input { min-width: 0; }
+  .form > input:nth-child(1) { flex: 0 0 56px; }
+  .form > input:nth-child(2) { flex: 1 1 140px; }
+  .form > input:nth-child(3) { flex: 0 1 150px; }
+  .hero { display: flex; align-items: baseline; gap: 8px; }
+  .hero b { font-size: 34px; color: var(--fl-primary); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+  const { html, render, useState, useEffect } = htmPreact;
+  const events = flota.data.collection('events');
+
+  const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+  const parseDay = (text) => { const [y, m, d] = String(text).split('-').map(Number); return new Date(y, (m || 1) - 1, d || 1); };
+
+  // 下一次发生的日期：每年重复的事件取今年或明年
+  function nextOccurrence(event) {
+    const date = parseDay(event.date);
+    if (!event.yearly) return date;
+    const today = startOfToday();
+    const thisYear = new Date(today.getFullYear(), date.getMonth(), date.getDate());
+    return thisYear >= today ? thisYear : new Date(today.getFullYear() + 1, date.getMonth(), date.getDate());
+  }
+  const daysUntil = (event) => Math.round((nextOccurrence(event) - startOfToday()) / 86400000);
+
+  function useEvents() {
+    const [list, setList] = useState(null);
+    useEffect(() => {
+      const load = () => events.query().then(setList);
+      load();
+      const off = events.subscribe(load);
+      const timer = setInterval(load, 10 * 60 * 1000);
+      return () => { off(); clearInterval(timer); };
+    }, []);
+    if (!list) return null;
+    return list
+      .map((event) => ({ ...event, days: daysUntil(event) }))
+      .sort((a, b) => (a.days < 0) - (b.days < 0) || Math.abs(a.days) - Math.abs(b.days));
+  }
+
+  function EventCard({ event, editable }) {
+    const label = event.days === 0 ? '就是今天' : event.days > 0 ? '天后' : '天前';
+    const remove = async () => {
+      if (await flota.ui.confirm(`删除「${event.title}」？`)) await events.remove(event._id);
+    };
+    return html`<div class=${`event ${event.days < 0 ? 'past' : ''}`}>
+      ${editable ? html`<button class="del" onClick=${remove} title="删除">✕</button>` : null}
+      <div class="fl-small fl-muted">${event.emoji || '📅'} ${event.title}</div>
+      <div class="days">${event.days === 0 ? '🎉' : Math.abs(event.days)}<small>${label}</small></div>
+      <div class="fl-small fl-muted">${nextOccurrence(event).toLocaleDateString()}${event.yearly ? ' · 每年' : ''}</div>
+    </div>`;
+  }
+
+  function AddEvent() {
+    const [emoji, setEmoji] = useState('🎯');
+    const [title, setTitle] = useState('');
+    const [date, setDate] = useState('');
+    const [yearly, setYearly] = useState(false);
+    const add = async () => {
+      if (!title.trim() || !date) return flota.ui.toast('请填写名称和日期', { type: 'warning' });
+      await events.insert({ title: title.trim(), date, yearly, emoji: emoji.trim() });
+      setTitle(''); setDate(''); setYearly(false);
+    };
+    return html`<div class="form">
+      <input class="fl-input" value=${emoji} maxlength="4" onInput=${(e) => setEmoji(e.target.value)} />
+      <input class="fl-input" placeholder="比如：考研" value=${title} onInput=${(e) => setTitle(e.target.value)} />
+      <input class="fl-input" type="date" value=${date} onInput=${(e) => setDate(e.target.value)} />
+      <label class="fl-row fl-small"><input type="checkbox" checked=${yearly} onChange=${(e) => setYearly(e.target.checked)} />每年</label>
+      <button class="fl-btn fl-btn-primary" onClick=${add}>添加</button>
+    </div>`;
+  }
+
+  function App() {
+    const list = useEvents();
+    if (!list) return null;
+    const size = flota.env.size;
+    const upcoming = list.filter((event) => event.days >= 0);
+    if (size === 'compact') {
+      const next = upcoming[0];
+      return next
+        ? html`<div><div class="fl-small fl-muted">${next.emoji || '📅'} ${next.title}</div><div class="hero"><b>${next.days}</b><span class="fl-muted">${next.days ? '天后' : '就是今天'}</span></div></div>`
+        : html`<div class="fl-muted">还没有即将到来的日子</div>`;
+    }
+    const shown = size === 'full' ? list : upcoming.slice(0, 6);
+    return html`<div>
+      ${shown.length ? html`<div class="list">${shown.map((event) => html`<${EventCard} key=${event._id} event=${event} editable=${size === 'full'} />`)}</div>`
+        : html`<div class="fl-empty">添加一个重要的日子吧</div>`}
+      ${size === 'full' || !list.length ? html`<${AddEvent} />` : null}
+    </div>`;
+  }
+
+  render(html`<${App} />`, document.getElementById('app'));
+</script>
+</body>
+</html>

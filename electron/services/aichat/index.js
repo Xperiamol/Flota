@@ -59,6 +59,10 @@ class AIChatService {
     this._currentNoteGetter = fn;
   }
 
+  setWidgetService(widgetService) {
+    this._widgetService = widgetService;
+  }
+
   /** 懒加载长文档生成管线（复用 _streamRequest 路径作为生成引擎，避免分歧） */
   _getLongDocPipeline() {
     if (!this._longDocPipeline) {
@@ -92,7 +96,7 @@ class AIChatService {
 
     const result = await streamRequest(
       config, messages, temp, maxTk, innerOnChunk, opts.abortSignal,
-      { disableTools: true }, this.aiService
+      { disableTools: true, timeoutMs: opts.timeoutMs }, this.aiService
     );
 
     return {
@@ -113,7 +117,8 @@ class AIChatService {
       webSearchService: this.webSearchService,
       longDocPipeline: this._getLongDocPipeline(),
       logger: this.logger,
-      getCurrentNote: this._currentNoteGetter
+      getCurrentNote: this._currentNoteGetter,
+      widgetService: this._widgetService || null
     };
   }
 

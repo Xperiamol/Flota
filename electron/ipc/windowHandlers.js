@@ -66,6 +66,7 @@ const registerWindowHandlers = (windowManager) => {
       }
     },
     'window:create-todo-window': async (event, todoListId) => windowManager.createTodoWindow(todoListId),
+    'window:create-widget-window': async (event, widgetId, options) => windowManager.createWidgetWindow(widgetId, options),
     'window:focus-session-start': async (event, sessionData) => windowManager.startFocusSession(sessionData, getEventWindow(event)),
     'window:focus-session-update': async (event, sessionData) => windowManager.updateFocusSession(sessionData),
     'window:focus-session-end': async () => windowManager.endFocusSession(),

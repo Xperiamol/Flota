@@ -202,6 +202,92 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'list_widgets',
+      description: '列出用户的组件（AI 生成的小应用，如看板、闪卡、打卡、记账）以及每个组件的实例。一个组件可以有多个实例，数据属于实例，比如闪卡组件有「英语」「日语」两个实例。',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_widget',
+      description: '读取一个组件的清单、代码（单文件 HTML）以及各实例的数据样例。回答关于组件的问题、修改组件或往实例写数据前使用，以了解数据结构。',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: '组件 id（list_widgets 返回的 id，或上下文中给出的组件 ID）' },
+          include_code: { type: 'boolean', description: '是否返回代码，默认 true' },
+          sample_size: { type: 'number', description: '每个集合返回的样例记录数，默认 5' }
+        },
+        required: ['id']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_widget',
+      description: '为用户生成一个新组件（可交互的小应用，如看板、闪卡、习惯打卡、记账、倒数日、统计卡片）。当用户想要一个“工具/模板/面板/追踪器”而不是一篇笔记时使用。确认后由专门的生成流程编写代码、在沙箱中预跑并自动修复，完成后固定到侧边栏并创建第一个实例。你只需要把需求写清楚，不要自己写代码。',
+      parameters: {
+        type: 'object',
+        properties: {
+          instruction: { type: 'string', description: '完整、具体的组件需求：要记录哪些数据、如何展示、有哪些操作，以及用户提到的偏好。用用户的语言书写。' },
+          instance_name: { type: 'string', description: '第一个实例的名称（可选），如「英语单词」' }
+        },
+        required: ['instruction']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_widget',
+      description: '修改已有组件的功能或外观。修改会作用于该组件的所有实例，实例数据会保留。确认后同样经过预跑与自动修复。',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: '要修改的组件 id' },
+          instruction: { type: 'string', description: '具体的修改要求' },
+          instance_id: { type: 'string', description: '用于预览的实例 id（可选，默认第一个实例）' }
+        },
+        required: ['id', 'instruction']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_widget_instance',
+      description: '为已有组件新建一个实例（一份独立的数据），不会重新生成代码。例如“给闪卡再建一个日语的”。',
+      parameters: {
+        type: 'object',
+        properties: {
+          widget_id: { type: 'string', description: '组件 id' },
+          name: { type: 'string', description: '实例名称' }
+        },
+        required: ['widget_id', 'name']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'add_widget_records',
+      description: '往组件实例里批量写入数据记录，例如把笔记里的生词做成闪卡。写入前先用 get_widget 查看该组件的集合名和字段结构，按现有样例的字段格式构造记录。',
+      parameters: {
+        type: 'object',
+        properties: {
+          instance_id: { type: 'string', description: '实例 id' },
+          collection: { type: 'string', description: '集合名（与组件代码中使用的一致）' },
+          records: { type: 'array', items: { type: 'object' }, description: '记录列表，每条是一个字段对象' }
+        },
+        required: ['instance_id', 'collection', 'records']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'search_todos',
       description: '搜索待办事项。可按关键词、状态等搜索。',
       parameters: {

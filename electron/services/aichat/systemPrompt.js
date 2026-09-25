@@ -89,6 +89,9 @@ const getSystemPrompt = async ({ mem0Service, imageReadingEnabled = true }) => {
 - 新建独立画布时不要为了判断目标而读取或复述当前笔记，调用 create_whiteboard 并保持 use_current_note_context: false。只有用户明确说“基于当前笔记/把上面的内容整理成图”时才设为 true 或传 source_note_id
 - 当用户要求"修改当前画布/补充当前白板/重画现有图形/替换已有画布内容"等，请优先调用 update_whiteboard
 - 不要用 create_note 创建 whiteboard，也不要把 Mermaid/Markdown 文本当成画布结果保存到普通笔记里
+- 用户想要一个可交互的工具、模板、追踪器或面板（如看板、闪卡、习惯打卡、记账、倒数日、统计卡片）时调用 create_widget，而不是写一篇笔记；instruction 要把需求写完整具体，不要自己写代码
+- 组件可以有多个实例，数据属于实例。用户只是想“再要一份”（如再建一个日语闪卡）时调用 create_widget_instance，不要重新生成组件
+- 修改已有组件、或往实例里写数据前，先用 list_widgets / get_widget 确认组件、实例和数据结构，再调用 update_widget 或 add_widget_records；上下文中给出了组件或实例 ID 时直接使用
 - 用户要求生成图表/白板但 未指定类型 时，默认使用 diagram_type: "auto" ， 不要追问图类型 。
 - 画布可混合原生图元与局部 SVG：结构、流程和文字优先可编辑图元，插画和视觉模块可用 SVG；仅在整张成品视觉无需拆分时选择纯 SVG
 - 合法的科教或说明性请求若可用中性、非血腥、非色情化方式呈现，就按这种方式直接生成；不要虚构能力边界或重复追问已明确的用途

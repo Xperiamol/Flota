@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<script type="application/flota-widget">
+{
+  "name": "看板",
+  "description": "按状态分列的任务看板，卡片可以拖拽换列。",
+  "help": "按“待办 / 进行中 / 已完成”分列管理事项。\n\n- 在列底部输入内容回车即可添加。\n- 拖动卡片可以换列或调整顺序。\n- 鼠标移到卡片上点 ✕ 删除。\n- 放到首页时，显示每一列的数量。",
+  "icon": "board",
+  "sizes": [
+    "compact",
+    "medium",
+    "full"
+  ],
+  "libs": [
+    "preact",
+    "sortablejs"
+  ],
+  "data": {
+    "items": {
+      "title": "text",
+      "status": "text",
+      "note": "text"
+    }
+  },
+  "permissions": []
+}
+</script>
+<style>
+  body { padding: 12px; }
+  .board { display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)); gap: 10px; }
+  .column { background: var(--fl-surface-2); border: 1px solid var(--fl-border); border-radius: var(--fl-radius); padding: 10px; min-height: 120px; }
+  .column h3 { margin: 0 0 8px; font-size: 13px; color: var(--fl-text-2); display: flex; justify-content: space-between; }
+  .cards { display: flex; flex-direction: column; gap: 8px; min-height: 40px; }
+  .card { background: var(--fl-surface); border: 1px solid var(--fl-border); border-radius: var(--fl-radius-sm); padding: 8px 10px; cursor: grab; display: flex; gap: 6px; align-items: flex-start; }
+  .card .del { opacity: 0; margin-left: auto; border: 0; background: none; cursor: pointer; color: var(--fl-text-2); }
+  .card:hover .del { opacity: 1; }
+  .sortable-ghost { opacity: 0.4; }
+  .stats { display: flex; gap: 16px; }
+  .stats b { font-size: 22px; color: var(--fl-primary); display: block; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+  const { html, render, useState, useEffect, useRef } = htmPreact;
+  const COLUMNS = [
+    { id: 'todo', title: '待办' },
+    { id: 'doing', title: '进行中' },
+    { id: 'done', title: '已完成' },
+  ];
+  const items = flota.data.collection('items');
+
+  function useItems() {
+    const [list, setList] = useState(null);
+    useEffect(() => {
+      const load = () => items.query({ orderBy: '_sortKey' }).then(setList);
+      load();
+      return items.subscribe(load);
+    }, []);
+    return list;
+  }
+
+  function Column({ column, list }) {
+    const ref = useRef(null);
+    const [draft, setDraft] = useState('');
+    useEffect(() => {
+      const sortable = Sortable.create(ref.current, {
+        group: 'kanban',
+        animation: 150,
+        onEnd: async (event) => {
+          const status = event.to.dataset.status;
+          // 目标列的新顺序
+          const order = [...event.to.children].map((el) => el.dataset.id);
+          // 先把 Sortable 挪动的 DOM 放回原处，交给数据驱动重新渲染，避免和 Preact 冲突
+          event.from.insertBefore(event.item, event.from.children[event.oldIndex] || null);
+          await Promise.all(order.map((id, index) => items.update(id, { status, _sortKey: String(index).padStart(6, '0') })));
+        },
+      });
+      return () => sortable.destroy();
+    }, []);
+    const add = async () => {
+      if (!draft.trim()) return;
+      await items.insert({ title: draft.trim(), status: column.id, _sortKey: String(own.length).padStart(6, '0') });
+      setDraft('');
+    };
+    const own = list.filter((item) => (item.status || 'todo') === column.id);
+    return html`
+      <div class="column">
+        <h3><span>${column.title}</span><span>${own.length}</span></h3>
+        <div class="cards" ref=${ref} data-status=${column.id}>
+          ${own.map((item) => html`<div class="card" key=${item._id} data-id=${item._id}>
+            <span>${item.title}</span>
+            <button class="del" title="删除" onClick=${() => items.remove(item._id)}>✕</button>
+          </div>`)}
+        </div>
+        <input class="fl-input" style="margin-top: 8px" placeholder="+ 添加" value=${draft}
+          onInput=${(e) => setDraft(e.target.value)} onKeyDown=${(e) => e.key === 'Enter' && add()} />
+      </div>`;
+  }
+
+  function App() {
+    const list = useItems();
+    if (!list) return null;
+    if (flota.env.size === 'compact') {
+      return html`<div class="stats">${COLUMNS.map((column) => html`<div>
+        <b>${list.filter((item) => (item.status || 'todo') === column.id).length}</b>
+        <span class="fl-small fl-muted">${column.title}</span>
+      </div>`)}</div>`;
+    }
+    return html`<div class="board">${COLUMNS.map((column) => html`<${Column} key=${column.id} column=${column} list=${list} />`)}</div>`;
+  }
+
+  render(html`<${App} />`, document.getElementById('app'));
+</script>
+</body>
+</html>
