@@ -10,6 +10,7 @@ import { createAppTheme } from './styles/theme'
 import './styles/index.css'
 import TitleBar from './components/layout/TitleBar'
 import NoteEditor from './components/editor/NoteEditor'
+import WidgetWindow from './components/widgets/WidgetWindow'
 import TodoList from './components/todos/TodoList'
 import FocusMiniWindow from './components/todos/FocusMiniWindow'
 import TodoReminderWindow from './components/todos/TodoReminderWindow'
@@ -22,7 +23,7 @@ import logger from './utils/logger'
  * 独立窗口内容组件
  * 处理StandaloneProvider的加载状态
  */
-function StandaloneContent({ windowType }) {
+function StandaloneContent({ windowType, windowData }) {
   const { isLoading } = useStandaloneContext()
 
   if (isLoading) {
@@ -43,6 +44,10 @@ function StandaloneContent({ windowType }) {
 
   return (
     <>
+      {windowType === 'widget' && windowData?.instanceId && (
+        <WidgetWindow instanceId={windowData.instanceId} />
+      )}
+
       {windowType === 'note' && (
         <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           <NoteEditor />
@@ -226,6 +231,10 @@ function StandaloneWindow() {
             setError('加载Todo数据时出错')
             return
           }
+
+        } else if (type === 'widget' && urlParams.get('instanceId')) {
+          setWindowType('widget')
+          setWindowData({ instanceId: urlParams.get('instanceId') })
 
         } else if (type === 'focus') {
           logger.log('设置专注伴随窗口类型，通过IPC拉取数据...')
@@ -446,7 +455,7 @@ function StandaloneWindow() {
 
         {!isLoading && !error && windowType && !['focus', 'reminder'].includes(windowType) && windowData && (
           <StandaloneProvider windowType={windowType} windowData={windowData}>
-            <StandaloneContent windowType={windowType} />
+            <StandaloneContent windowType={windowType} windowData={windowData} />
           </StandaloneProvider>
         )}
       </Box>

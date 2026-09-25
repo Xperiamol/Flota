@@ -57,6 +57,7 @@ import STTSettings from './STTSettings';
 import Mem0Settings from './Mem0Settings';
 import ProxySettings from './ProxySettings';
 import MCPSettings from './MCPSettings';
+import ClipperSettings from './ClipperSettings';
 import UsageWaveCard from '../common/UsageWaveCard';
 import ObsidianImportExport from '../ObsidianImportExport/ObsidianImportExport';
 import { SUPPORTED_LANGUAGES, t, initI18n } from '../../utils/i18n';
@@ -75,6 +76,7 @@ import { ALL_CONTEXT_MENU_ITEMS, CONTEXT_MENU_ITEM_LABELS, DEFAULT_CONTEXT_MENU_
 import { PATTERN_STYLES, hexToRgb } from '../../utils/patternStyles';
 import { sectionTitleSx, sectionDescriptionSx, settingsRowSx, settingsSectionSx, colorPresetSwatchSx } from '../../styles/commonStyles';
 import logger from '../../utils/logger';
+import { useHomeStore } from '../../store/useHomeStore';
 
 function TabPanel({ children, value, index, ...other }) {
     return (
@@ -108,7 +110,7 @@ function SettingRow({ primary, secondary, action }) {
                 primary={primary}
                 secondary={secondary}
                 slotProps={{
-                    primary: { sx: { fontWeight: 650, letterSpacing: '-0.01em' } },
+                    primary: { sx: { fontWeight: 500, fontSize: '0.9rem' } },
                     secondary: { sx: { mt: 0.25 } },
                 }}
                 sx={{ flex: '1 1 auto', minWidth: 0, mr: 1 }}
@@ -415,7 +417,7 @@ function EditorSettingsPanel({ aiPanelMode, setAiPanelMode, toolbarOrder, setToo
         bgcolor: hoverZone === zone
             ? (zone === 'recycle'
                 ? (t) => t.palette.mode === 'dark' ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.04)'
-                : (t) => t.palette.mode === 'dark' ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.05)')
+                : (t) => t.palette.mode === 'dark' ? 'rgba(120,120,128,0.08)' : 'rgba(120,120,128,0.05)')
             : 'background.paper',
         transition: 'border-color 0.2s, background-color 0.2s',
     })
@@ -558,6 +560,7 @@ function buildTopUsageSegments(categories = [], limit = 4) {
 }
 
 const Settings = () => {
+    const openHomeOnStartup = useHomeStore((state) => state.openOnStartup);
     const { showError } = useError();
     const muiTheme = useTheme();
     const isDark = muiTheme.palette.mode === 'dark';
@@ -1155,7 +1158,7 @@ const Settings = () => {
         borderRadius: backgroundPanelRadius,
         border: '1px solid',
         borderColor: 'divider',
-        bgcolor: isDark ? 'rgba(15,23,42,0.18)' : 'rgba(248,250,252,0.72)',
+        bgcolor: isDark ? 'rgba(22,22,24,0.18)' : 'rgba(250,250,250,0.72)',
     };
 
     const buildPatternPreviewStyle = (style) => {
@@ -1199,9 +1202,6 @@ const Settings = () => {
                 height: '100%',
                 display: 'flex',
                 flexDirection: 'row',
-                background: isDark
-                    ? 'radial-gradient(circle at top right, rgba(99,102,241,0.10), transparent 32%), transparent'
-                    : 'radial-gradient(circle at top right, rgba(99,102,241,0.08), transparent 34%), transparent',
             }}
         >
             {/* 内容区域 */}
@@ -1221,6 +1221,16 @@ const Settings = () => {
                                 <Switch
                                     checked={settings.autoLaunch}
                                     onChange={(e) => handleSettingChange('autoLaunch', e.target.checked)}
+                                />
+                            )}
+                        />
+                        <SettingRow
+                            primary="启动时打开首页"
+                            secondary="打开应用后先看到首页，而不是笔记"
+                            action={(
+                                <Switch
+                                    checked={openHomeOnStartup}
+                                    onChange={(e) => useHomeStore.getState().setOpenOnStartup(e.target.checked)}
                                 />
                             )}
                         />
@@ -1375,11 +1385,11 @@ const Settings = () => {
                                         borderRadius: '50%',
                                         cursor: 'pointer',
                                         background: 'conic-gradient(from 0deg, #ef4444, #f59e0b, #84cc16, #06b6d4, #6366f1, #ec4899, #ef4444)',
-                                        boxShadow: `inset 0 0 0 2px ${isDark ? '#1e293b' : '#ffffff'}, inset 0 0 0 3px ${alpha('#000', isDark ? 0.35 : 0.12)}, 0 1px 2px ${alpha('#000', isDark ? 0.32 : 0.08)}`,
+                                        boxShadow: `inset 0 0 0 2px ${isDark ? '#1f1f22' : '#ffffff'}, inset 0 0 0 3px ${alpha('#000', isDark ? 0.35 : 0.12)}, 0 1px 2px ${alpha('#000', isDark ? 0.32 : 0.08)}`,
                                         transition: 'transform 160ms ease, box-shadow 200ms ease',
                                         '&:hover': {
                                             transform: 'translateY(-1px)',
-                                            boxShadow: `inset 0 0 0 2px ${isDark ? '#1e293b' : '#ffffff'}, inset 0 0 0 3px ${alpha('#000', isDark ? 0.35 : 0.12)}, 0 4px 12px ${alpha('#000', isDark ? 0.5 : 0.18)}`,
+                                            boxShadow: `inset 0 0 0 2px ${isDark ? '#1f1f22' : '#ffffff'}, inset 0 0 0 3px ${alpha('#000', isDark ? 0.35 : 0.12)}, 0 4px 12px ${alpha('#000', isDark ? 0.5 : 0.18)}`,
                                         },
                                         '& input[type="color"]': {
                                             position: 'absolute',
@@ -1427,7 +1437,7 @@ const Settings = () => {
                                     ...backgroundPanelSx,
                                     px: 1.5,
                                     py: 1.25,
-                                    bgcolor: isDark ? 'rgba(15,23,42,0.24)' : 'rgba(248,250,252,0.88)',
+                                    bgcolor: isDark ? 'rgba(22,22,24,0.24)' : 'rgba(250,250,250,0.88)',
                                 }}
                             >
                                 <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
@@ -1451,7 +1461,7 @@ const Settings = () => {
                                                 borderRadius: backgroundPanelRadius,
                                                 border: '1px solid',
                                                 borderColor: selected ? 'primary.main' : 'divider',
-                                                bgcolor: isDark ? 'rgba(15,23,42,0.28)' : 'rgba(255,255,255,0.88)',
+                                                bgcolor: isDark ? 'rgba(22,22,24,0.28)' : 'rgba(255,255,255,0.88)',
                                                 cursor: 'pointer',
                                                 overflow: 'hidden',
                                                 transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
@@ -1462,7 +1472,7 @@ const Settings = () => {
                                             <Box
                                                 sx={{
                                                     height: 72,
-                                                    bgcolor: isDark ? 'rgba(30,41,59,0.5)' : 'rgba(248,250,252,0.95)',
+                                                    bgcolor: isDark ? 'rgba(31,31,34,0.5)' : 'rgba(250,250,250,0.95)',
                                                 }}
                                                 style={buildPatternPreviewStyle(style)}
                                             />
@@ -1487,7 +1497,7 @@ const Settings = () => {
                                     px: 1.5,
                                     pt: 1.5,
                                     pb: 1.25,
-                                    bgcolor: isDark ? 'rgba(15,23,42,0.24)' : 'rgba(255,255,255,0.88)',
+                                    bgcolor: isDark ? 'rgba(22,22,24,0.24)' : 'rgba(255,255,255,0.88)',
                                 }}
                             >
                                 <Box
@@ -1497,7 +1507,7 @@ const Settings = () => {
                                         alignItems: 'center',
                                         justifyContent: 'center',
                                         borderRadius: 1,
-                                        bgcolor: isDark ? 'rgba(30,41,59,0.6)' : 'rgba(241,245,249,0.95)',
+                                        bgcolor: isDark ? 'rgba(31,31,34,0.6)' : 'rgba(242,242,243,0.95)',
                                         overflow: 'hidden',
                                         mb: 1.25,
                                     }}
@@ -1676,7 +1686,7 @@ const Settings = () => {
                                             ? 'rgba(255,255,255,0.03)'
                                             : 'rgba(0,0,0,0.02)',
                                         borderBottom: '1px solid',
-                                        borderColor: theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.12)' : 'rgba(15,23,42,0.08)',
+                                        borderColor: theme.palette.mode === 'dark' ? 'rgba(157,157,165,0.12)' : 'rgba(22,22,24,0.08)',
                                         display: 'flex', alignItems: 'baseline', gap: 1,
                                     })}>
                                         <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
@@ -1882,6 +1892,11 @@ const Settings = () => {
                     />
                 </TabPanel>
 
+                {/* 网页剪藏 */}
+                <TabPanel value={settingsTabValue} index={12}>
+                    <ClipperSettings />
+                </TabPanel>
+
                 {/* 编辑器设置 */}
                 <TabPanel value={settingsTabValue} index={10}>
                     <Paper elevation={0} sx={settingsSurfaceSx}>
@@ -1970,9 +1985,7 @@ const Settings = () => {
                                 sx={{
                                     borderRadius: 2,
                                     textTransform: 'none',
-                                    px: 1.8,
-                                    background: 'linear-gradient(135deg, rgba(25,118,210,0.95), rgba(66,165,245,0.9))',
-                                    boxShadow: '0 6px 16px rgba(25,118,210,0.25)'
+                                    px: 1.8
                                 }}
                             >
                                 {t('about.copyDebugInfo') || '复制调试信息'}

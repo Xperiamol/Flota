@@ -162,6 +162,7 @@ const useStore = create(
 
                 // 插件商店相关 UI 状态
                 pluginStoreFilters: {
+                    type: 'plugin', // plugin | widget：插件扩展 Flota 本身，组件是可放进笔记的小应用
                     tab: 'market',
                     category: 'all',
                     search: ''
@@ -178,6 +179,7 @@ const useStore = create(
                 // 筛选器相关设置
                 filtersDefaultVisible: true, // 筛选器默认是否显示
                 todoNavigationRequest: null, // { filterBy, viewMode, showCompleted }
+                noteSearchRequest: null, // { query, requestedAt }：从其他页面跳到笔记并搜索
 
                 // 时间轴筛选器状态（对齐手机端 TagFilterDrawer）
                 timelineFilter: {
@@ -408,6 +410,24 @@ const useStore = create(
                     }
                 })),
 
+                // 切换插件 / 组件时回到“市场 + 全部分类”，并关闭详情
+                setPluginStoreType: (type) => set((state) => ({
+                    pluginStoreFilters: {
+                        ...state.pluginStoreFilters,
+                        type: type === 'widget' ? 'widget' : 'plugin',
+                        tab: state.pluginStoreFilters.tab === 'local' && type === 'widget' ? 'market' : state.pluginStoreFilters.tab,
+                        category: 'all'
+                    },
+                    pluginStoreSelectedPluginId: null
+                })),
+
+                // 从其他地方直接跳到商店的某个位置
+                openPluginStore: ({ type = 'plugin', tab = 'market' } = {}) => set((state) => ({
+                    currentView: 'plugins',
+                    pluginStoreFilters: { ...state.pluginStoreFilters, type, tab, category: 'all' },
+                    pluginStoreSelectedPluginId: null
+                })),
+
                 setPluginStoreCategory: (category) => set((state) => ({
                     pluginStoreFilters: {
                         ...state.pluginStoreFilters,
@@ -487,6 +507,7 @@ const useStore = create(
                                     icon: command.icon || null,
                                     shortcut: command.shortcut || null,
                                     shortcutBinding: command.shortcutBinding || null,
+                                    hidden: Boolean(command.hidden),
                                     surfaces: Array.isArray(command.surfaces)
                                         ? command.surfaces
                                             .map((surface) => (typeof surface === 'string' ? surface.trim() : ''))
@@ -570,7 +591,8 @@ const useStore = create(
                                 tags: normalizeTags(payload.tags)
                             }
                             set((state) => ({
-                                notes: [newNote, ...state.notes],
+                                // 主进程的 note:created 事件可能先一步把同一条笔记并入列表，这里按 id 去重
+                                notes: [newNote, ...state.notes.filter((note) => String(note.id) !== String(newNote.id))],
                                 selectedNoteId: selectAfterCreate ? newNote.id : state.selectedNoteId
                             }))
                             try { useLinkGraph.getState().indexNote(newNote) } catch {}
@@ -913,6 +935,8 @@ const useStore = create(
 
                 setCurrentView: (view) => set({ currentView: view }),
 
+
+
                 setTodoNavigationRequest: (request) => set({
                     todoNavigationRequest: request ? {
                         filterBy: request.filterBy || 'all',
@@ -923,6 +947,17 @@ const useStore = create(
                         requestedAt: Date.now(),
                     } : null
                 }),
+
+                // 打开笔记页并用关键词搜索（首页高频词等入口）
+                openNoteSearch: (query) => set({
+                    currentView: 'notes',
+                    noteSearchRequest: { query: String(query || ''), requestedAt: Date.now() }
+                }),
+                consumeNoteSearchRequest: () => {
+                    const request = get().noteSearchRequest
+                    if (request) set({ noteSearchRequest: null })
+                    return request || null
+                },
 
                 consumeTodoNavigationRequest: () => {
                     const request = get().todoNavigationRequest

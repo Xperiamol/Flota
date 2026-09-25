@@ -204,6 +204,10 @@ const TOOL_ICONS = {
   edit_notes: <EditIcon fontSize="small" />,
   create_whiteboard: <EditIcon fontSize="small" />,
   update_whiteboard: <EditIcon fontSize="small" />,
+  list_widgets: <SearchIcon fontSize="small" />,
+  get_widget: <ReadIcon fontSize="small" />,
+  create_widget: <EditIcon fontSize="small" />,
+  update_widget: <EditIcon fontSize="small" />,
   write_long_document: <NoteIcon fontSize="small" />,
   search_todos: <CheckIcon fontSize="small" />,
   get_today_todos: <CalendarIcon fontSize="small" />,
@@ -228,6 +232,10 @@ const TOOL_AVATAR_ICON = {
   edit_notes: EditIcon,
   create_whiteboard: EditIcon,
   update_whiteboard: EditIcon,
+  list_widgets: SearchIcon,
+  get_widget: ReadIcon,
+  create_widget: EditIcon,
+  update_widget: EditIcon,
   write_long_document: NoteIcon,
   search_todos: CheckIcon,
   get_today_todos: CalendarIcon,
@@ -274,6 +282,10 @@ const TOOL_LABELS = {
   edit_notes: { running: '批量编辑笔记中', done: '批量编辑笔记' },
   create_whiteboard: { running: '创建画布中', done: '创建画布' },
   update_whiteboard: { running: '修改画布中', done: '修改画布' },
+  list_widgets: { running: '查看组件中', done: '查看组件' },
+  get_widget: { running: '读取组件中', done: '读取组件' },
+  create_widget: { running: '准备生成组件', done: '生成组件' },
+  update_widget: { running: '准备修改组件', done: '修改组件' },
   write_long_document: { running: '生成长文档中', done: '生成长文档' },
   search_todos: { running: '搜索待办中', done: '搜索待办' },
   get_today_todos: { running: '获取今日待办中', done: '获取今日待办' },
@@ -1444,15 +1456,13 @@ export default function AIChatView({ onTodoUpdated }) {
         </Box>
         <Box sx={{
           display: 'flex', flexDirection: 'column', gap: 1,
-          bgcolor: theme.palette.mode === 'dark'
-            ? alpha(theme.palette.background.paper, 0.5)
-            : alpha(theme.palette.grey[100], 0.5),
-          borderRadius: '16px',
+          bgcolor: 'background.paper',
+          borderRadius: '14px',
           border: `1px solid ${theme.palette.divider}`,
           px: 2, py: 1,
           transition: 'border-color 0.2s',
           '&:focus-within': {
-            borderColor: theme.palette.primary.main,
+            borderColor: alpha(theme.palette.primary.main, 0.5),
           }
         }} onContextMenu={handleInputContextMenu}
           onDragOver={(e) => { if (visionEnabled) e.preventDefault() }}

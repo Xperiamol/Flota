@@ -55,5 +55,6 @@ export const permissionDescriptions = {
   'scheduler:create': '创建和管理定时任务',
   'analytics:read': '读取笔记和待办的统计分析数据',
   'markdown:extend': '扩展 Markdown 语法，注册自定义渲染器',
-  'ai:inference': '调用 AI 服务进行推理（需用户配置 AI）'
+  'ai:inference': '调用 AI 服务进行推理（需用户配置 AI）',
+  'ai:complete': '在组件内调用 AI（需用户配置 AI，每天有调用额度）'
 }

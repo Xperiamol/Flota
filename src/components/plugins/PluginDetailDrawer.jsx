@@ -38,7 +38,12 @@ const PluginDetailDrawer = ({
   pendingAction,
   onExecuteCommand,
   commandPending,
-  onOpenFolder
+  onOpenFolder,
+  // 以下用于组件等非插件条目：替换头像、操作区，并在描述后插入额外内容（使用说明、试用预览）
+  avatarContent,
+  actions,
+  extra,
+  metaLabel
 }) => {
   if (!plugin) return null
 
@@ -47,24 +52,24 @@ const PluginDetailDrawer = ({
   const commands = Array.isArray(plugin.commands) ? plugin.commands : []
 
   return (
-    <Drawer anchor="right" open={open} onClose={onClose} sx={{ '& .MuiDrawer-paper': { width: 400, p: 3 } }}>
+    <Drawer anchor="right" open={open} onClose={onClose} sx={{ '& .MuiDrawer-paper': { width: extra ? 480 : 400, maxWidth: '100vw', p: 3 } }}>
       <Stack spacing={2}>
         <Stack direction="row" spacing={2} alignItems="center">
           <Avatar variant="circular"
             src={plugin.icon || undefined}
             sx={{
-              bgcolor: plugin.icon ? undefined : 'primary.main',
+              bgcolor: avatarContent ? 'action.hover' : plugin.icon ? undefined : 'primary.main',
               color: plugin.icon ? undefined : 'primary.contrastText',
-              width: 56, height: 56, borderRadius: '50%'
+              width: 56, height: 56, borderRadius: '14px', fontSize: avatarContent ? 28 : undefined
             }}>
-            {!plugin.icon && ((plugin.name || '').trim().slice(0, 2).toUpperCase() || 'P')}
+            {avatarContent || (!plugin.icon && ((plugin.name || '').trim().slice(0, 2).toUpperCase() || 'P'))}
           </Avatar>
           <Box>
             <Typography variant="h5" sx={{ lineHeight: 1.2 }}>
               {plugin.manifest?.name || plugin.name || '未知插件'}
             </Typography>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5 }}>
-              <Chip size="small" label={`版本 ${plugin.manifest?.version || plugin.version || '未知'}`} />
+              <Chip size="small" label={metaLabel || `版本 ${plugin.manifest?.version || plugin.version || '未知'}`} />
               {plugin.manifest?.minAppVersion && (
                 <Chip size="small" variant="outlined" label={`最低版本 ${plugin.manifest.minAppVersion}`} />
               )}
@@ -84,7 +89,7 @@ const PluginDetailDrawer = ({
 
         <Divider />
 
-        <Stack direction="row" spacing={1}>
+        {actions ? <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>{actions}</Stack> : <Stack direction="row" spacing={1}>
           <Button variant="contained" startIcon={<CloudDownloadRounded />}
             disabled={pendingAction === 'install'} onClick={() => onInstall(plugin.id)}>
             {plugin.installed ? '重新安装' : '安装插件'}
@@ -109,7 +114,9 @@ const PluginDetailDrawer = ({
               </Button>
             </>
           )}
-        </Stack>
+        </Stack>}
+
+        {extra}
 
         {permissions.length > 0 && (
           <Box>

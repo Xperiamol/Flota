@@ -36,7 +36,7 @@ const UsageWaveCard = ({
   const waveTop = `${100 - visualPercent}%`;
   const resolvedAccentColor = accentColor || theme.palette.primary.main;
   const textOnWater = visualPercent >= 50;
-  const containerBackground = theme.palette.mode === 'dark' ? '#0f172a' : '#f3f4f6';
+  const containerBackground = theme.palette.mode === 'dark' ? '#161618' : '#f3f4f6';
   const borderColor = theme.palette.mode === 'dark'
     ? alpha(resolvedAccentColor, 0.18)
     : alpha('#ffffff', 0.92);
@@ -189,7 +189,7 @@ const UsageWaveCard = ({
                       borderRadius: 999,
                       bgcolor: theme.palette.mode === 'dark' ? alpha('#ffffff', 0.04) : alpha('#ffffff', 0.82),
                       border: '1px solid',
-                      borderColor: theme.palette.mode === 'dark' ? alpha('#ffffff', 0.08) : alpha('#cbd5e1', 0.7),
+                      borderColor: theme.palette.mode === 'dark' ? alpha('#ffffff', 0.08) : alpha('#d1d1d5', 0.7),
                     }}
                   >
                     <Typography variant="caption" sx={{ fontWeight: 600, fontSize: '0.74rem', color: 'text.secondary' }}>
@@ -277,7 +277,7 @@ const UsageWaveCard = ({
                     borderRadius: 2,
                     bgcolor: theme.palette.mode === 'dark' ? alpha('#ffffff', 0.04) : alpha('#ffffff', 0.8),
                     border: '1px solid',
-                    borderColor: theme.palette.mode === 'dark' ? alpha('#ffffff', 0.08) : alpha('#cbd5e1', 0.7),
+                    borderColor: theme.palette.mode === 'dark' ? alpha('#ffffff', 0.08) : alpha('#d1d1d5', 0.7),
                   }}
                 >
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.25 }}>

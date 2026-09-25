@@ -106,7 +106,7 @@ const RecentNotesRail = () => {
 
   const hoverBg = theme.palette.action.hover
   const activeBg = theme.palette.action.selected
-  const pressBg = theme.custom?.surface?.pressed || (isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,23,42,0.08)')
+  const pressBg = theme.custom?.surface?.pressed || (isDark ? 'rgba(255,255,255,0.14)' : 'rgba(22,22,24,0.08)')
 
   return (
     <Box

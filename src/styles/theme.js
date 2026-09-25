@@ -23,43 +23,41 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
     // Modern color palettes
     // Dark: Slate 900 / 800
     // Light: Cool Gray / White
-    const backgroundDefault = isDark ? '#0f172a' : '#f0f4f8';
-    const backgroundPaper = isDark ? '#1e293b' : '#ffffff';
+    const backgroundDefault = isDark ? '#161618' : '#f4f4f2';
+    const backgroundPaper = isDark ? '#1f1f22' : '#ffffff';
 
-    // 统一浮层材质：Dialog / Menu / Popover / AI 浮层共享同一套玻璃参数。
-    // 保持背景可辨识，同时用较高透明度保证正文对比度。
-    const glassBackground = isDark
-        ? alpha('#172033', 0.92)
-        : alpha('#f8fafc', 0.94);
+    // 浮层（菜单 / 弹窗 / 对话框）：实心底色 + 细边框 + 柔和投影，不用毛玻璃和渐变
+    const glassBackground = isDark ? '#242427' : '#ffffff';
     const glassBorder = isDark
-        ? '1px solid rgba(255, 255, 255, 0.11)'
-        : '1px solid rgba(255, 255, 255, 0.68)';
-    const glassBlur = 'blur(20px) saturate(165%)';
-    const glassBackgroundImage = isDark
-        ? `linear-gradient(145deg, ${alpha('#ffffff', 0.075)} 0%, ${alpha('#ffffff', 0.018)} 46%, ${alpha(primaryColor, 0.055)} 100%)`
-        : `linear-gradient(145deg, ${alpha('#ffffff', 0.38)} 0%, ${alpha('#ffffff', 0.08)} 48%, ${alpha(primaryColor, 0.028)} 100%)`;
+        ? '1px solid rgba(255, 255, 255, 0.09)'
+        : '1px solid rgba(0, 0, 0, 0.08)';
+    const glassBlur = 'none';
+    const glassBackgroundImage = 'none';
     const glassShadow = isDark
-        ? '0 16px 44px rgba(2, 6, 23, 0.34), inset 0 1px 0 rgba(255,255,255,0.055)'
-        : '0 16px 44px rgba(15, 23, 42, 0.13), inset 0 1px 0 rgba(255,255,255,0.74)';
+        ? '0 12px 32px rgba(0, 0, 0, 0.45)'
+        : '0 12px 32px rgba(0, 0, 0, 0.10), 0 2px 6px rgba(0, 0, 0, 0.04)';
 
     // Surface tokens — 用于替换全应用的 rgba(255,255,255,0.x) / rgba(0,0,0,0.x) 硬编码
     const surface = {
         // 玻璃态：浅/重两档
-        glassLight: isDark ? alpha('#1e293b', 0.58) : alpha('#ffffff', 0.74),
-        glassHeavy: isDark ? alpha('#1e293b', 0.82) : alpha('#ffffff', 0.92),
+        glassLight: isDark ? alpha('#1f1f22', 0.58) : alpha('#ffffff', 0.74),
+        glassHeavy: isDark ? alpha('#1f1f22', 0.82) : alpha('#ffffff', 0.92),
         // 半透明覆盖：用于 hover/active/selected 等
-        hover:    isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.04)',
-        active:   isDark ? 'rgba(255,255,255,0.10)' : 'rgba(15,23,42,0.06)',
-        pressed:  isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,23,42,0.08)',
+        hover:    isDark ? 'rgba(255,255,255,0.06)' : 'rgba(22,22,24,0.04)',
+        active:   isDark ? 'rgba(255,255,255,0.10)' : 'rgba(22,22,24,0.06)',
+        pressed:  isDark ? 'rgba(255,255,255,0.14)' : 'rgba(22,22,24,0.08)',
         // 表单与嵌入面板使用同一层低对比材质，避免透明、灰底、白底混用。
-        control: isDark ? 'rgba(255,255,255,0.035)' : 'rgba(15,23,42,0.025)',
-        controlHover: isDark ? 'rgba(255,255,255,0.055)' : 'rgba(15,23,42,0.04)',
+        control: isDark ? 'rgba(255,255,255,0.035)' : 'rgba(22,22,24,0.025)',
+        controlHover: isDark ? 'rgba(255,255,255,0.055)' : 'rgba(22,22,24,0.04)',
+        // 面板内的分组底色（首页卡片、四象限等）：比面板略深一点，不用边框
+        inset: isDark ? 'rgba(255,255,255,0.035)' : 'rgba(22,22,24,0.028)',
+        insetHover: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(22,22,24,0.05)',
         // 细分割线
-        subtleBorder:  isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)',
-        strongBorder:  isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,23,42,0.12)',
+        subtleBorder:  isDark ? 'rgba(255,255,255,0.08)' : 'rgba(22,22,24,0.08)',
+        strongBorder:  isDark ? 'rgba(255,255,255,0.14)' : 'rgba(22,22,24,0.12)',
         // 阴影
-        shadowSoft:   isDark ? '0 4px 16px rgba(0,0,0,0.32)' : '0 4px 16px rgba(15,23,42,0.06)',
-        shadowMedium: isDark ? '0 12px 32px rgba(0,0,0,0.4)' : '0 12px 32px rgba(15,23,42,0.10)',
+        shadowSoft:   isDark ? '0 4px 16px rgba(0,0,0,0.32)' : '0 4px 16px rgba(22,22,24,0.06)',
+        shadowMedium: isDark ? '0 12px 32px rgba(0,0,0,0.4)' : '0 12px 32px rgba(22,22,24,0.10)',
     };
 
     return createTheme({
@@ -69,7 +67,7 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                 main: primaryColor,
             },
             secondary: {
-                main: isDark ? '#a78bfa' : '#7c3aed',
+                main: isDark ? '#a1a1aa' : '#6e6e76',
             },
             error: {
                 main: isDark ? '#f87171' : '#dc2626',
@@ -89,8 +87,8 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                 paper: backgroundPaper,
             },
             text: {
-                primary: isDark ? '#f1f5f9' : '#1e293b',
-                secondary: isDark ? '#94a3b8' : '#64748b',
+                primary: isDark ? '#f2f2f3' : '#1f1f22',
+                secondary: isDark ? '#9d9da5' : '#6e6e76',
             },
             action: {
                 hover: surface.hover,
@@ -152,6 +150,11 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                 styleOverrides: {
                     body: {
                         backgroundColor: backgroundDefault,
+                        // 很淡的中性明暗过渡：让浮在上面的玻璃外框有东西可透，不引入颜色
+                        backgroundImage: isDark
+                            ? 'linear-gradient(165deg, #1c1c1f 0%, #151517 55%, #111113 100%)'
+                            : 'linear-gradient(165deg, #f8f8f6 0%, #efeeea 55%, #e8e7e3 100%)',
+                        backgroundAttachment: 'fixed',
                     },
                 },
             },
@@ -163,12 +166,12 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                     elevation1: {
                         boxShadow: isDark
                             ? '0 3px 12px rgba(0, 0, 0, 0.26)'
-                            : '0 3px 12px rgba(15, 23, 42, 0.055)',
+                            : '0 3px 12px rgba(22,22,24, 0.055)',
                     },
                     elevation2: {
                         boxShadow: isDark
                             ? '0 8px 24px rgba(0, 0, 0, 0.3)'
-                            : '0 8px 24px rgba(15, 23, 42, 0.08)',
+                            : '0 8px 24px rgba(22,22,24, 0.08)',
                     }
                 }
             },
@@ -204,28 +207,26 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                         },
                     },
                     outlined: {
-                        borderColor: alpha(primaryColor, isDark ? 0.26 : 0.22),
-                        backgroundColor: alpha(primaryColor, isDark ? 0.04 : 0.03),
+                        borderColor: surface.strongBorder,
+                        backgroundColor: 'transparent',
                         '&:hover': {
-                            borderColor: alpha(primaryColor, isDark ? 0.42 : 0.36),
-                            backgroundColor: alpha(primaryColor, isDark ? 0.10 : 0.07),
+                            borderColor: isDark ? 'rgba(255,255,255,0.24)' : 'rgba(0,0,0,0.2)',
+                            backgroundColor: surface.hover,
                         },
                     },
                     contained: {
-                        boxShadow: `0 1px 2px ${alpha('#000000', isDark ? 0.24 : 0.08)}`,
-                        '&:hover': {
-                            boxShadow: `0 2px 6px ${alpha('#000000', isDark ? 0.22 : 0.08)}`,
-                        },
+                        boxShadow: 'none',
+                        '&:hover': { boxShadow: 'none' },
                     },
                     containedPrimary: {
                         backgroundColor: primaryColor,
                         backgroundImage: 'none',
-                        boxShadow: `0 1px 3px ${alpha(primaryColor, isDark ? 0.2 : 0.14)}`,
+                        boxShadow: 'none',
                         '&:hover': {
                             backgroundColor: primaryColor,
                             backgroundImage: 'none',
                             filter: 'brightness(0.94)',
-                            boxShadow: `0 2px 6px ${alpha(primaryColor, isDark ? 0.22 : 0.16)}`,
+                            boxShadow: 'none',
                         }
                     }
                 },
@@ -265,13 +266,13 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                                 borderColor: alpha(primaryColor, isDark ? 0.28 : 0.22),
                                 backgroundColor: alpha(primaryColor, isDark ? 0.92 : 0.88),
                                 backgroundImage: 'none',
-                                boxShadow: `0 1px 4px ${alpha(primaryColor, isDark ? 0.18 : 0.14)}`,
+                                boxShadow: 'none',
                             },
                             '& .MuiSwitch-thumb': {
                                 backgroundColor: '#ffffff',
                                 boxShadow: isDark
-                                    ? '0 2px 8px rgba(2, 6, 23, 0.28)'
-                                    : '0 2px 8px rgba(15, 23, 42, 0.16)',
+                                    ? '0 2px 8px rgba(11,11,12, 0.28)'
+                                    : '0 2px 8px rgba(22,22,24, 0.16)',
                             },
                         },
                         '&.Mui-disabled': {
@@ -284,23 +285,21 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                     thumb: {
                         width: 22,
                         height: 22,
-                        backgroundColor: isDark ? '#f8fafc' : '#ffffff',
+                        backgroundColor: isDark ? '#fafafa' : '#ffffff',
                         boxShadow: isDark
-                            ? '0 2px 8px rgba(2, 6, 23, 0.22)'
-                            : '0 2px 6px rgba(15, 23, 42, 0.12)',
+                            ? '0 2px 8px rgba(11,11,12, 0.22)'
+                            : '0 2px 6px rgba(22,22,24, 0.12)',
                     },
                     track: {
                         borderRadius: 999,
                         opacity: 1,
                         boxSizing: 'border-box',
-                        border: `1px solid ${alpha(isDark ? '#ffffff' : '#0f172a', isDark ? 0.08 : 0.10)}`,
+                        border: `1px solid ${alpha(isDark ? '#ffffff' : '#161618', isDark ? 0.08 : 0.10)}`,
                         backgroundColor: isDark
-                            ? 'rgba(100,116,139,0.22)'
-                            : 'rgba(203,213,225,0.72)',
+                            ? 'rgba(110,110,118,0.22)'
+                            : 'rgba(209,209,213,0.72)',
                         backgroundImage: 'none',
-                        boxShadow: isDark
-                            ? 'inset 0 1px 1px rgba(255,255,255,0.04)'
-                            : 'inset 0 1px 1px rgba(255,255,255,0.72)',
+                        boxShadow: 'none',
                         transition: 'background 180ms ease, border-color 180ms ease, box-shadow 180ms ease',
                     },
                 },
@@ -324,19 +323,14 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                             height: 18,
                             boxSizing: 'border-box',
                             borderRadius: 6,
-                            border: `1.5px solid ${alpha(isDark ? '#cbd5e1' : '#475569', isDark ? 0.58 : 0.68)}`,
+                            border: `1.5px solid ${alpha(isDark ? '#d1d1d5' : '#4d4d55', isDark ? 0.58 : 0.68)}`,
                             backgroundColor: isDark ? 'rgba(255,255,255,0.025)' : 'rgba(255,255,255,0.42)',
-                            boxShadow: isDark
-                                ? 'inset 0 1px 0 rgba(255,255,255,0.035)'
-                                : 'inset 0 1px 0 rgba(255,255,255,0.72)',
                             transition: 'background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease',
                         },
                         '& .FlotaCheckbox-iconChecked, & .FlotaCheckbox-iconIndeterminate': {
                             borderColor: primaryColor,
                             backgroundColor: primaryColor,
-                            boxShadow: isDark
-                                ? `0 1px 4px ${alpha(primaryColor, 0.38)}, inset 0 1px 0 rgba(255,255,255,0.24)`
-                                : `0 1px 4px ${alpha(primaryColor, 0.3)}, inset 0 1px 0 rgba(255,255,255,0.16)`,
+                            boxShadow: 'none',
                         },
                         '& .FlotaCheckbox-iconChecked::after': {
                             content: '""',
@@ -361,7 +355,7 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                             backgroundColor: '#ffffff',
                         },
                         '&:hover': {
-                            backgroundColor: isDark ? 'rgba(255,255,255,0.055)' : 'rgba(15,23,42,0.045)',
+                            backgroundColor: isDark ? 'rgba(255,255,255,0.055)' : 'rgba(22,22,24,0.045)',
                         },
                         '&.Mui-focusVisible .FlotaCheckbox-icon': {
                             boxShadow: `0 0 0 3px ${alpha(primaryColor, 0.22)}`,
@@ -393,15 +387,12 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                             height: 18,
                             boxSizing: 'border-box',
                             borderRadius: '50%',
-                            border: `1.5px solid ${alpha(isDark ? '#cbd5e1' : '#475569', isDark ? 0.58 : 0.68)}`,
+                            border: `1.5px solid ${alpha(isDark ? '#d1d1d5' : '#4d4d55', isDark ? 0.58 : 0.68)}`,
                             backgroundColor: isDark ? 'rgba(255,255,255,0.025)' : 'rgba(255,255,255,0.42)',
                             transition: 'border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease',
                         },
                         '& .FlotaRadio-iconChecked': {
                             borderColor: primaryColor,
-                            boxShadow: isDark
-                                ? `0 1px 4px ${alpha(primaryColor, 0.34)}`
-                                : `0 1px 4px ${alpha(primaryColor, 0.26)}`,
                         },
                         '& .FlotaRadio-iconChecked::after': {
                             content: '""',
@@ -411,7 +402,7 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                             backgroundColor: primaryColor,
                         },
                         '&:hover': {
-                            backgroundColor: isDark ? 'rgba(255,255,255,0.055)' : 'rgba(15,23,42,0.045)',
+                            backgroundColor: isDark ? 'rgba(255,255,255,0.055)' : 'rgba(22,22,24,0.045)',
                         },
                         '&.Mui-focusVisible .FlotaRadio-icon': {
                             boxShadow: `0 0 0 3px ${alpha(primaryColor, 0.22)}`,
@@ -428,15 +419,14 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
             MuiOutlinedInput: {
                 styleOverrides: {
                     root: {
-                        borderRadius: 12,
+                        borderRadius: 10,
                         backgroundColor: surface.control,
                         transition: 'background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease',
                         '&:hover': {
                             backgroundColor: surface.controlHover,
                         },
                         '&.Mui-focused': {
-                            backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.8)',
-                            boxShadow: `0 0 0 2px ${alpha(primaryColor, 0.2)}`,
+                            backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#ffffff',
                         }
                     },
                     notchedOutline: {
@@ -536,7 +526,7 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                         border: glassBorder,
                         borderRadius: 12,
                         boxShadow: glassShadow,
-                        color: isDark ? '#f8fafc' : '#1e293b',
+                        color: isDark ? '#fafafa' : '#1f1f22',
                     }
                 }
             },
@@ -594,10 +584,37 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                     },
                 },
             },
+            // 标签：实心蓝色药丸换成浅底色小标签，圆角收小
+            MuiChip: {
+                styleOverrides: {
+                    root: {
+                        borderRadius: 8,
+                        fontWeight: 500,
+                    },
+                    filled: {
+                        '&.MuiChip-colorPrimary': {
+                            backgroundColor: alpha(primaryColor, isDark ? 0.2 : 0.1),
+                            color: isDark ? '#ffffff' : primaryColor,
+                        },
+                        '&.MuiChip-colorPrimary.MuiChip-clickable:hover': {
+                            backgroundColor: alpha(primaryColor, isDark ? 0.28 : 0.16),
+                        },
+                        '&.MuiChip-colorDefault': {
+                            backgroundColor: surface.active,
+                        },
+                    },
+                    outlined: {
+                        borderColor: surface.strongBorder,
+                    },
+                    iconColorPrimary: {
+                        color: 'inherit',
+                    },
+                },
+            },
             MuiDrawer: {
                 styleOverrides: {
                     paper: {
-                        backgroundColor: isDark ? '#0f172a' : '#f0f4f8',
+                        backgroundColor: isDark ? '#161618' : '#f4f4f2',
                         borderRight: 'none',
                     }
                 }
@@ -615,9 +632,9 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                             transform: 'none !important',
                         },
                         '&.Mui-selected': {
-                            backgroundColor: alpha(primaryColor, 0.15),
+                            backgroundColor: alpha(primaryColor, isDark ? 0.16 : 0.1),
                             '&:hover': {
-                                backgroundColor: alpha(primaryColor, 0.25),
+                                backgroundColor: alpha(primaryColor, isDark ? 0.22 : 0.14),
                                 transform: 'none !important',
                             },
                         },

@@ -26,6 +26,11 @@ export const markdownLinkDestination = (href) => `<${String(href || '')
 export const openNoteLink = async (href) => {
   const url = normalizeLinkUrl(href)
   if (!url) return false
+  if (/^app:\/\/widget\//i.test(url)) {
+    // 组件实例引用：打开所属组件的主页并进入该实例
+    const { openWidgetInstance } = await import('../store/useWidgetStore')
+    return openWidgetInstance(decodeURIComponent(new URL(url).pathname.slice(1)))
+  }
   if (/^app:\/\/(?:note|whiteboard)\//i.test(url)) {
     const { useStore } = await import('../store/useStore')
     const reference = decodeURIComponent(new URL(url).pathname.slice(1))

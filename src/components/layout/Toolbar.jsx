@@ -21,6 +21,8 @@ import {
 import { FlotaCalendarIcon as Today } from '../common/FlotaIcons'
 import FlotaAIIcon from '../common/FlotaAIIcon'
 import { useStore } from '../../store/useStore'
+import { useWidgetStore, parseWidgetViewId } from '../../store/useWidgetStore'
+import { WidgetToolbarLeft, WidgetToolbarRight } from '../widgets/WidgetToolbar'
 import { useShallow } from 'zustand/react/shallow'
 import DropdownMenu from '../common/DropdownMenu'
 import { executePluginCommand } from '../../api/pluginAPI'
@@ -66,6 +68,11 @@ const Toolbar = ({
   // 只订阅"已删除数量"：订阅整个 notes 会让工具栏在每次编辑自动保存时都重渲染
   const deletedNotesCount = useStore((state) => state.notes.filter((note) => note.is_deleted).length)
   const pluginCommands = useStore((state) => state.pluginCommands)
+  const widgetPageId = parseWidgetViewId(currentView)
+  const widgetTitle = useWidgetStore((state) => {
+    const widgetId = parseWidgetViewId(currentView)
+    return widgetId ? state.widgets.find((widget) => widget.id === widgetId)?.name || '组件' : null
+  })
   const timelineFilter = useStore((state) => state.timelineFilter)
   const setTimelineFilter = useStore((state) => state.setTimelineFilter)
   const [pluginCommandPending, setPluginCommandPending] = useState(null)
@@ -244,6 +251,10 @@ const Toolbar = ({
 
   // 根据当前视图获取标题和新建按钮文本
   const viewConfig = useMemo(() => {
+    // 组件主页：只显示组件名，新建实例等操作在页面内
+    if (widgetTitle) {
+      return { title: widgetTitle, createButtonText: null, createAction: null, showDeletedButton: false, showSidebarToggle: false };
+    }
     switch (currentView) {
       case 'notes':
         return {
@@ -358,7 +369,7 @@ const Toolbar = ({
           showSidebarToggle: true
         };
     }
-  }, [currentView, showDeleted, todoViewMode, calendarShowCompleted, calendarCurrentDate, calendarViewMode,
+  }, [currentView, widgetTitle, showDeleted, todoViewMode, calendarShowCompleted, calendarCurrentDate, calendarViewMode,
       handleCreateNote, handleCreateTodo, handleCreateEvent, handleQuickInput,
       onTodoViewModeChange, onTodoShowCompletedChange, onCalendarShowCompletedChange, onCalendarViewModeChange, t]);
 
@@ -406,13 +417,10 @@ const Toolbar = ({
       ref={toolbarRef}
       disableGutters
       sx={(theme) => ({
-        borderBottom: 1,
-        borderColor: 'divider',
-        backgroundColor: theme.custom?.surface?.glassHeavy,
-        backdropFilter: theme.custom?.glass?.backdropFilter,
-        WebkitBackdropFilter: theme.custom?.glass?.backdropFilter,
+        // 工具栏直接放在应用背景上，下面是面板
+        backgroundColor: 'transparent',
         minHeight: '48px !important',
-        px: 1.25,
+        px: 0.5,
         py: 0.75,
         gap: 1,
         flexWrap: 'wrap',
@@ -435,6 +443,8 @@ const Toolbar = ({
             </IconButton>
           </Tooltip>
         )}
+
+        {widgetPageId && <WidgetToolbarLeft widgetId={widgetPageId} />}
 
         {/* 通用新建按钮 */}
         {viewConfig.createButtonText && (
@@ -512,16 +522,16 @@ const Toolbar = ({
                           borderRadius: '10px',
                           border: '1px solid',
                           borderColor: checked
-                            ? theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(15,23,42,0.09)'
+                            ? theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(22,22,24,0.09)'
                             : 'transparent',
                           bgcolor: checked
-                            ? theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.09)' : 'rgba(15,23,42,0.045)'
+                            ? theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.09)' : 'rgba(22,22,24,0.045)'
                             : 'transparent',
                           color: checked ? 'text.primary' : 'text.secondary',
                           boxShadow: checked
                             ? theme.palette.mode === 'dark'
                               ? 'inset 0 1px 0 rgba(255,255,255,0.04)'
-                              : '0 1px 3px rgba(15,23,42,0.045), inset 0 1px 0 rgba(255,255,255,0.65)'
+                              : '0 1px 3px rgba(22,22,24,0.045), inset 0 1px 0 rgba(255,255,255,0.65)'
                             : 'none',
                           textTransform: 'none',
                           fontSize: '0.8125rem',
@@ -536,7 +546,7 @@ const Toolbar = ({
                           '&:hover': {
                             bgcolor: theme.palette.mode === 'dark'
                               ? 'rgba(255,255,255,0.07)'
-                              : 'rgba(15,23,42,0.05)',
+                              : 'rgba(22,22,24,0.05)',
                             color: 'text.primary',
                           },
                         })}
@@ -668,6 +678,8 @@ const Toolbar = ({
             : 'rgba(0,0,0,0.08)',
         }
       }}>
+        {widgetPageId && <WidgetToolbarRight widgetId={widgetPageId} />}
+
         {currentView === 'todo' && (
           <Tooltip title="使用 FlotaAI 规划和拆解待办" placement="bottom">
             <IconButton

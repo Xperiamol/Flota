@@ -98,19 +98,17 @@ const AudioRecordButton = ({ onAudioInsert, onTranscription, disabled = false, s
             sx={{
               ...sx,
               overflow: 'hidden',
+              // 录音中：红底白色停止键；转写中：主色浅底，呼吸提示
               ...(isRecording && {
                 color: '#fff',
-                background: 'linear-gradient(90deg, #e91e63, #9c27b0, #2196f3, #e91e63)',
-                backgroundSize: '200% 100%',
-                animation: 'fluid-flow 3s linear infinite',
-                '&:hover': { opacity: 0.85 },
+                bgcolor: 'error.main',
+                '&:hover': { bgcolor: 'error.main', opacity: 0.88 },
               }),
               ...(sttBusy && {
-                color: '#fff',
-                background: 'linear-gradient(90deg, #00bcd4, #7c4dff, #00bcd4)',
-                backgroundSize: '200% 100%',
-                animation: 'fluid-flow 2s linear infinite',
-                '&:hover': { opacity: 0.85 },
+                color: 'primary.main',
+                bgcolor: 'action.selected',
+                animation: 'flota-stt-pulse 1.4s ease-in-out infinite',
+                '@keyframes flota-stt-pulse': { '0%, 100%': { opacity: 1 }, '50%': { opacity: 0.5 } },
               }),
             }}
           >

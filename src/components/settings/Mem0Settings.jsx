@@ -90,7 +90,7 @@ const MetricCard = ({ icon, label, value, color = 'text.secondary' }) => (
     px: 1.5, py: 1,
     borderRadius: '12px',
     border: '1px solid',
-    borderColor: theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.10)' : 'rgba(15,23,42,0.06)',
+    borderColor: theme.palette.mode === 'dark' ? 'rgba(157,157,165,0.10)' : 'rgba(22,22,24,0.06)',
     bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.62)',
     minWidth: 72,
   })}>
@@ -345,7 +345,7 @@ const Mem0Settings = () => {
               <Box sx={(theme) => ({
                 display: 'flex', justifyContent: 'center', gap: 3, mb: 2,
                 py: 1.5, px: 2, borderRadius: '14px',
-                bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.035)' : 'rgba(15,23,42,0.035)',
+                bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.035)' : 'rgba(22,22,24,0.035)',
               })}>
                 {layerData.map(ld => (
                   <Tooltip

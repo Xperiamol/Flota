@@ -27,9 +27,14 @@ import { useShallow } from 'zustand/react/shallow'
 import { usePluginViewByNavId } from './store/usePluginViews'
 import { createAppTheme } from './styles/theme'
 import { generatePatternCSS } from './utils/patternStyles'
+import { PANE_GAP, paneOpacity, paneSurfaceSx } from './styles/paneStyles'
 import { initI18n } from './utils/i18n'
 import Toolbar from './components/layout/Toolbar'
 import NoteEditor from './components/editor/NoteEditor'
+import WidgetHomeView from './components/widgets/WidgetHomeView'
+import WidgetProbeHost from './components/widgets/WidgetProbeHost'
+import { parseWidgetViewId } from './store/useWidgetStore'
+import { useHomeStore } from './store/useHomeStore'
 import TitleBar from './components/layout/TitleBar'
 import Sidebar from './components/layout/Sidebar'
 import MultiSelectToolbar from './components/layout/MultiSelectToolbar'
@@ -245,18 +250,8 @@ function App() {
     document.documentElement.setAttribute('data-theme', resolvedTheme)
   }, [resolvedTheme])
 
-  // 根据遮罩透明度设置获取对应的透明度值
-  const getMaskOpacityValue = (isDark) => {
-    const opacityMap = {
-      none: { dark: 0, light: 0 },
-      light: { dark: 0.4, light: 0.35 },
-      medium: { dark: 0.6, light: 0.6 },
-      heavy: { dark: 0.85, light: 0.85 }
-    }
-    const values = opacityMap[maskOpacity] || opacityMap.medium
-    return isDark ? values.dark : values.light
-  }
   const isMobile = useMediaQuery(appTheme.breakpoints.down('md'))
+  const paneOpacityValue = paneOpacity(maskOpacity, backgroundPattern)
 
   // 主题壁纸 - 注入/更新背景花纹CSS
   useEffect(() => {
@@ -332,6 +327,22 @@ function App() {
     return () => unsubscribe?.()
   }, [])
 
+  // 主进程新建的笔记（MCP、插件等）：并入列表；渲染层自己创建的会按 id 合并，不会重复
+  useEffect(() => {
+    const unsubscribe = window.electronAPI?.notes?.onNoteCreated?.((note) => {
+      if (note?.id) useStore.getState().upsertNotesFromMain?.([note])
+    })
+    return () => unsubscribe?.()
+  }, [])
+
+  // 浏览器扩展等外部来源剪藏的新笔记：并入列表
+  useEffect(() => {
+    const unsubscribe = window.electronAPI?.clipper?.onClipped?.((payload) => {
+      if (payload?.note) useStore.getState().upsertNotesFromMain?.([payload.note])
+    })
+    return () => unsubscribe?.()
+  }, [])
+
   // 监听来自独立窗口的笔记更新（实现同步）
   useEffect(() => {
     if (!window.electronAPI?.notes?.onNoteUpdated) return
@@ -356,6 +367,12 @@ function App() {
   useEffect(() => {
     refreshPluginCommands()
   }, [refreshPluginCommands])
+
+  // 设置了「启动时打开首页」：主窗口首次加载时进入首页
+  useEffect(() => {
+    if (useHomeStore.getState().openOnStartup) setCurrentView('profile')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     const unsubscribe = window.electronAPI?.sync?.onSyncComplete?.(async () => {
@@ -993,14 +1010,15 @@ function App() {
           {/* 自定义标题栏 */}
           <TitleBar />
 
-          {/* 主应用区域 */}
-          <Box sx={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+          {/* 主应用区域：左侧栏、二级侧栏、主内容区是放在背景上的三块圆角面板 */}
+          <Box sx={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden', gap: `${PANE_GAP}px`, px: `${PANE_GAP}px`, pb: `${PANE_GAP}px` }}>
             {/* 主侧边栏 */}
             <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
             {/* 工具栏和内容区域 */}
             <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, minWidth: 0 }}>
-              {/* 顶部工具栏 */}
+              {/* 顶部工具栏（首页没有工具栏，编辑按钮在页面里） */}
+              {currentView !== 'profile' && (
               <AppBar
                 position="static"
                 sx={{
@@ -1037,6 +1055,7 @@ function App() {
                   onCalendarViewModeChange={handleCalendarViewModeChange}
                 />
               </AppBar>
+              )}
 
               {/* 多选工具栏 */}
               {multiSelectState.isActive && (
@@ -1193,7 +1212,7 @@ function App() {
               )}
 
               {/* 内容区域 */}
-              <Box sx={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+              <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
                 {/* 二级侧边栏 - 始终渲染以支持动画 */}
                 <Suspense fallback={<LoadingFallback />}>
                   <SecondarySidebar
@@ -1217,19 +1236,12 @@ function App() {
                 </Suspense>
 
                 {/* 主内容区域 */}
-                <Box sx={(theme) => {
-                  const opacity = getMaskOpacityValue(theme.palette.mode === 'dark')
-                  return {
-                    flex: 1,
-                    overflow: 'hidden',
-                    minWidth: 0,
-                    backgroundColor: theme.palette.mode === 'dark'
-                      ? `rgba(15, 23, 42, ${opacity})`
-                      : `rgba(240, 244, 248, ${opacity})`,
-                    backdropFilter: opacity > 0 ? 'blur(8px)' : 'none',
-                    WebkitBackdropFilter: opacity > 0 ? 'blur(8px)' : 'none',
-                  }
-                }}>
+                <Box sx={(theme) => ({
+                  ...paneSurfaceSx(theme, paneOpacityValue),
+                  flex: 1,
+                  overflow: 'hidden',
+                  minWidth: 0,
+                })}>
                   {currentView === 'notes' && (
                     <NoteEditor onCollapseSidebar={() => setSecondarySidebarOpen(false)} />
                   )}
@@ -1255,6 +1267,7 @@ function App() {
                         })()}
                       </Suspense>
                     )}
+                    {parseWidgetViewId(currentView) && <WidgetHomeView key={currentView} widgetId={parseWidgetViewId(currentView)} />}
                     {currentView === 'settings' && <Settings />}
                     {currentView === 'plugins' && (
                       <Box sx={{ p: 3, height: '100%', boxSizing: 'border-box' }}>
@@ -1411,6 +1424,8 @@ function App() {
           open={commandPaletteOpen}
           onClose={() => setCommandPaletteOpen(false)}
         />
+
+        <WidgetProbeHost />
 
         <ExternalFileViewer />
 

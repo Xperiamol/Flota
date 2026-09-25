@@ -23,8 +23,8 @@ const getGlassSx = (theme, density = 'regular') => {
     WebkitBackdropFilter: glass?.backdropFilter || 'blur(20px) saturate(165%)',
     border: glass?.border || `1px solid ${dark ? alpha('#ffffff', 0.11) : alpha('#ffffff', 0.68)}`,
     boxShadow: glass?.boxShadow || (dark
-      ? '0 16px 44px rgba(2,6,23,0.34)'
-      : '0 16px 44px rgba(15,23,42,0.13)'),
+      ? '0 16px 44px rgba(11,11,12,0.34)'
+      : '0 16px 44px rgba(22,22,24,0.13)'),
     transformOrigin: 'top left'
   }
 }

@@ -124,21 +124,11 @@ export const heroCardSx = (muiTheme) => ({
   alignItems: 'center',
   mb: 3,
   p: 3,
-  borderRadius: '16px',
+  borderRadius: '14px',
   position: 'relative',
   overflow: 'hidden',
-  backgroundColor: muiTheme.palette.mode === 'dark'
-    ? 'rgba(30,41,59,0.84)'
-    : 'rgba(255,255,255,0.9)',
-  border: '1px solid',
-  borderColor: muiTheme.palette.mode === 'dark'
-    ? 'rgba(148,163,184,0.16)'
-    : 'rgba(15,23,42,0.08)',
-  boxShadow: muiTheme.palette.mode === 'dark'
-    ? '0 8px 24px rgba(0,0,0,0.18)'
-    : '0 8px 24px rgba(15,23,42,0.055)',
-  backdropFilter: 'blur(8px)',
-  WebkitBackdropFilter: 'blur(8px)',
+  backgroundColor: muiTheme.palette.background.paper,
+  border: `1px solid ${muiTheme.palette.divider}`,
 });
 
 /**
@@ -150,47 +140,20 @@ export const createSoftGlassCardSx = () => (muiTheme) => ({
   position: 'relative',
   overflow: 'hidden',
   borderRadius: '14px',
-  border: '1px solid',
-  borderColor: muiTheme.palette.mode === 'dark'
-    ? 'rgba(148,163,184,0.14)'
-    : 'rgba(15,23,42,0.08)',
-  backgroundColor: muiTheme.palette.mode === 'dark'
-    ? 'rgba(30,41,59,0.78)'
-    : 'rgba(255,255,255,0.86)',
-  boxShadow: muiTheme.palette.mode === 'dark'
-    ? '0 3px 12px rgba(0,0,0,0.16)'
-    : '0 3px 12px rgba(15,23,42,0.045)',
-  backdropFilter: 'blur(8px)',
-  WebkitBackdropFilter: 'blur(8px)',
-  transition: 'border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease',
+  border: `1px solid ${muiTheme.palette.divider}`,
+  backgroundColor: muiTheme.palette.background.paper,
+  boxShadow: 'none',
+  transition: 'border-color 150ms ease',
   '&:hover': {
-    borderColor: muiTheme.palette.mode === 'dark'
-      ? 'rgba(148,163,184,0.34)'
-      : 'rgba(15,23,42,0.18)',
-    backgroundColor: muiTheme.palette.mode === 'dark'
-      ? 'rgba(30,41,59,0.9)'
-      : 'rgba(255,255,255,0.96)',
-    boxShadow: muiTheme.palette.mode === 'dark'
-      ? '0 6px 18px rgba(0,0,0,0.2)'
-      : '0 6px 18px rgba(15,23,42,0.075)',
+    borderColor: muiTheme.palette.mode === 'dark' ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.16)',
   },
 });
 
 // ========== 现代界面基础面板 ==========
 export const modernSurfaceSx = (muiTheme) => ({
   borderRadius: '14px',
-  border: '1px solid',
-  borderColor: muiTheme.palette.mode === 'dark'
-    ? 'rgba(148,163,184,0.14)'
-    : 'rgba(15,23,42,0.08)',
-  background: muiTheme.palette.mode === 'dark'
-    ? 'rgba(30,41,59,0.7)'
-    : 'rgba(255,255,255,0.84)',
-  boxShadow: muiTheme.palette.mode === 'dark'
-    ? '0 2px 10px rgba(0,0,0,0.14)'
-    : '0 2px 10px rgba(15,23,42,0.04)',
-  backdropFilter: 'blur(8px)',
-  WebkitBackdropFilter: 'blur(8px)',
+  border: `1px solid ${muiTheme.palette.divider}`,
+  background: muiTheme.palette.background.paper,
 });
 
 export const sectionHeaderSx = {
@@ -202,7 +165,8 @@ export const sectionHeaderSx = {
 };
 
 export const sectionTitleSx = {
-  fontWeight: 700,
+  fontWeight: 650,
+  fontSize: '1.05rem',
   letterSpacing: '-0.01em',
 };
 
@@ -212,20 +176,27 @@ export const sectionDescriptionSx = {
   color: 'text.secondary',
 };
 
-export const segmentedControlSx = (muiTheme) => ({
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '3px',
-  p: '3px',
-  borderRadius: '10px',
-  border: '1px solid',
-  borderColor: muiTheme.palette.mode === 'dark'
-    ? 'rgba(148,163,184,0.14)'
-    : 'rgba(15,23,42,0.08)',
-  backgroundColor: muiTheme.palette.mode === 'dark'
-    ? 'rgba(255,255,255,0.055)'
-    : 'rgba(15,23,42,0.045)',
-});
+// 分段控件：液态玻璃底（半透明 + 模糊 + 顶部高光边），选中项是实心的小块
+export const segmentedControlSx = (muiTheme) => {
+  const dark = muiTheme.palette.mode === 'dark'
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '3px',
+    p: '3px',
+    borderRadius: '11px',
+    border: `1px solid ${dark ? 'rgba(255,255,255,0.09)' : 'rgba(22,22,24,0.07)'}`,
+    backgroundColor: dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.45)',
+    backgroundImage: dark
+      ? 'linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0))'
+      : 'linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0.1))',
+    backdropFilter: 'blur(16px) saturate(170%)',
+    WebkitBackdropFilter: 'blur(16px) saturate(170%)',
+    boxShadow: dark
+      ? 'inset 0 1px 0 rgba(255,255,255,0.08)'
+      : 'inset 0 1px 0 rgba(255,255,255,0.9), 0 1px 2px rgba(22,22,24,0.04)',
+  }
+};
 
 export const segmentedButtonSx = (active) => (muiTheme) => ({
   px: 1.5,
@@ -246,11 +217,11 @@ export const segmentedButtonSx = (active) => (muiTheme) => ({
     color: muiTheme.palette.text.primary,
     borderColor: muiTheme.palette.mode === 'dark'
       ? 'rgba(255,255,255,0.1)'
-      : 'rgba(15,23,42,0.09)',
+      : 'rgba(22,22,24,0.09)',
     backgroundImage: 'none',
     boxShadow: muiTheme.palette.mode === 'dark'
       ? '0 1px 3px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.05)'
-      : '0 1px 4px rgba(15,23,42,0.07), inset 0 1px 0 rgba(255,255,255,0.8)',
+      : '0 1px 4px rgba(22,22,24,0.07), inset 0 1px 0 rgba(255,255,255,0.8)',
     '&:hover': {
       bgcolor: muiTheme.palette.mode === 'dark'
         ? 'rgba(255,255,255,0.13)'
@@ -262,7 +233,7 @@ export const segmentedButtonSx = (active) => (muiTheme) => ({
     '&:hover': {
       bgcolor: muiTheme.palette.mode === 'dark'
         ? 'rgba(255,255,255,0.06)'
-        : 'rgba(15,23,42,0.055)',
+        : 'rgba(22,22,24,0.055)',
       color: muiTheme.palette.text.primary,
     },
   }),
@@ -275,46 +246,25 @@ export const emptyStateSx = (muiTheme) => ({
   color: muiTheme.palette.text.secondary,
 });
 
-export const settingsSectionSx = (muiTheme) => ({
-  ...modernSurfaceSx(muiTheme),
-  p: 2,
+// 设置分组：直接放在主内容面板上，不再套一层卡片
+export const settingsSectionSx = () => ({
+  px: 1,
+  pt: 1,
+  pb: 2,
   mb: 2,
 });
 
+// 设置项：分组列表里的一行，行与行之间用细分割线，不再每行套一个框
 export const settingsRowSx = (muiTheme) => ({
-  px: 2,
-  py: 1.5,
-  mb: 1,
-  borderRadius: '10px',
-  border: '1px solid',
-  borderColor: muiTheme.palette.mode === 'dark'
-    ? 'rgba(148,163,184,0.10)'
-    : 'rgba(15,23,42,0.06)',
-  bgcolor: muiTheme.palette.mode === 'dark'
-    ? 'rgba(255,255,255,0.025)'
-    : 'rgba(255,255,255,0.58)',
-  transition: 'background-color 180ms cubic-bezier(0.32,0.72,0,1), border-color 180ms cubic-bezier(0.32,0.72,0,1)',
-  '&:hover': {
-    bgcolor: muiTheme.palette.mode === 'dark'
-      ? 'rgba(255,255,255,0.045)'
-      : 'rgba(255,255,255,0.76)',
-    borderColor: muiTheme.palette.mode === 'dark'
-      ? 'rgba(148,163,184,0.18)'
-      : 'rgba(15,23,42,0.10)',
-  },
+  px: 0.5,
+  py: 1.75,
+  borderBottom: `1px solid ${muiTheme.palette.divider}`,
+  '&:last-of-type': { borderBottom: 'none' },
 });
 
 export const settingsFieldGroupSx = (muiTheme) => ({
   ...settingsRowSx(muiTheme),
   display: 'block',
-  '&:hover': {
-    bgcolor: muiTheme.palette.mode === 'dark'
-      ? 'rgba(255,255,255,0.035)'
-      : 'rgba(255,255,255,0.72)',
-    borderColor: muiTheme.palette.mode === 'dark'
-      ? 'rgba(148,163,184,0.14)'
-      : 'rgba(15,23,42,0.08)',
-  },
 });
 
 // ========== 二级面板（侧栏 / MyDay 等容器） ==========
@@ -328,11 +278,7 @@ export const compactGlassPanelSx = (muiTheme) => ({
   height: '100%',
   minHeight: 0,
   p: 1.25,
-  backgroundColor: muiTheme.palette.mode === 'dark'
-    ? 'rgba(15,23,42,0.42)'
-    : 'rgba(248,251,255,0.72)',
-  backdropFilter: 'blur(10px)',
-  WebkitBackdropFilter: 'blur(10px)',
+  backgroundColor: 'transparent',
 });
 
 // ========== 细长滚动条（侧栏列表通用） ==========
@@ -372,18 +318,18 @@ export const editorScrollbarSx = {
   },
   '&::-webkit-scrollbar-thumb': {
     minHeight: '44px',
-    backgroundColor: 'rgba(100, 116, 139, 0.34)',
+    backgroundColor: 'rgba(110,110,118, 0.34)',
     backgroundClip: 'content-box',
     border: '3px solid transparent',
     borderRadius: '999px',
     transition: 'background-color 160ms ease, border-width 160ms ease',
   },
   '&::-webkit-scrollbar-thumb:hover': {
-    backgroundColor: 'rgba(100, 116, 139, 0.58)',
+    backgroundColor: 'rgba(110,110,118, 0.58)',
     borderWidth: '2px',
   },
   '&::-webkit-scrollbar-thumb:active': {
-    backgroundColor: 'rgba(71, 85, 105, 0.76)',
+    backgroundColor: 'rgba(77,77,85, 0.76)',
     borderWidth: '2px',
   },
   '&::-webkit-scrollbar-button': {
@@ -409,12 +355,12 @@ export const colorPresetSwatchSx = ({ color, selected, isDark, alpha }) => ({
   cursor: 'pointer',
   transition: 'transform 160ms ease, box-shadow 200ms ease',
   boxShadow: selected
-    ? `0 0 0 2px ${isDark ? '#0f172a' : '#ffffff'}, 0 0 0 4px ${alpha(color, 0.55)}, 0 4px 14px ${alpha(color, 0.32)}`
+    ? `0 0 0 2px ${isDark ? '#161618' : '#ffffff'}, 0 0 0 4px ${alpha(color, 0.55)}, 0 4px 14px ${alpha(color, 0.32)}`
     : `inset 0 0 0 1px ${alpha('#000', isDark ? 0.35 : 0.10)}, 0 1px 2px ${alpha('#000', isDark ? 0.32 : 0.06)}`,
   '&:hover': {
     transform: 'translateY(-1px)',
     boxShadow: selected
-      ? `0 0 0 2px ${isDark ? '#0f172a' : '#ffffff'}, 0 0 0 4px ${alpha(color, 0.65)}, 0 6px 18px ${alpha(color, 0.36)}`
+      ? `0 0 0 2px ${isDark ? '#161618' : '#ffffff'}, 0 0 0 4px ${alpha(color, 0.65)}, 0 6px 18px ${alpha(color, 0.36)}`
       : `inset 0 0 0 1px ${alpha('#000', isDark ? 0.35 : 0.10)}, 0 4px 12px ${alpha(color, 0.28)}`,
   },
   '&::after': selected ? {

@@ -7,7 +7,7 @@ export const PATTERN_STYLES = {
   dots: {
     name: '圆点',
     css: `
-      background-image: radial-gradient(circle, rgba(99, 102, 241, 0.06) 1px, transparent 1px);
+      background-image: radial-gradient(circle, rgba(120,120,128, 0.06) 1px, transparent 1px);
       background-size: 20px 20px;
     `
   },
@@ -15,8 +15,8 @@ export const PATTERN_STYLES = {
     name: '网格',
     css: `
       background-image: 
-        linear-gradient(rgba(99, 102, 241, 0.04) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(99, 102, 241, 0.04) 1px, transparent 1px);
+        linear-gradient(rgba(120,120,128, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(120,120,128, 0.04) 1px, transparent 1px);
       background-size: 30px 30px;
     `
   },
@@ -24,8 +24,8 @@ export const PATTERN_STYLES = {
     name: '波浪',
     css: `
       background-image: 
-        radial-gradient(ellipse at 50% 50%, transparent 60%, rgba(99, 102, 241, 0.03) 60%),
-        radial-gradient(ellipse at 50% 50%, rgba(99, 102, 241, 0.02) 0%, transparent 50%);
+        radial-gradient(ellipse at 50% 50%, transparent 60%, rgba(120,120,128, 0.03) 60%),
+        radial-gradient(ellipse at 50% 50%, rgba(120,120,128, 0.02) 0%, transparent 50%);
       background-size: 50px 50px;
       background-position: 0 0, 25px 25px;
     `

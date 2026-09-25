@@ -26,6 +26,10 @@ import { getPluginCommandIcon } from '../../utils/pluginCommandUtils.jsx'
 import FloatingGlassSurface from '../common/FloatingGlassSurface'
 import shortcutManager from '../../utils/ShortcutManager'
 import PanelIconButton from '../common/PanelIconButton'
+import { WidgetsRounded } from '../common/AppIcons'
+import { askAIToCreateWidget } from '../../utils/widgets/askAI'
+import { clipUrlFromApp } from '../settings/ClipperSettings'
+import { BookmarkBorder } from '../common/AppIcons'
 
 const PALETTE_TOP_OFFSET = 84
 const IS_MAC =
@@ -91,6 +95,45 @@ const CommandPalette = ({ open, onClose }) => {
       action: async () => {
         await createNote({ type: 'whiteboard' })
         onClose()
+      }
+    },
+    {
+      id: 'new-widget',
+      title: '新建组件',
+      description: '在 AI 小窗里描述需求，生成一个小应用（看板、闪卡、打卡…）',
+      category: '组件',
+      icon: <WidgetsRounded />,
+      action: () => {
+        onClose()
+        askAIToCreateWidget()
+      }
+    },
+    {
+      id: 'widget-store',
+      title: '浏览组件',
+      description: '在插件 / 组件中心查看全部组件，或从商店添加',
+      category: '组件',
+      icon: <WidgetsRounded />,
+      action: () => {
+        onClose()
+        useStore.getState().openPluginStore({ type: 'widget', tab: 'installed' })
+      }
+    },
+    {
+      id: 'clip-url',
+      title: '剪藏网页链接',
+      description: '粘贴链接，抓取正文保存为笔记',
+      category: '剪藏',
+      icon: <BookmarkBorder />,
+      action: async () => {
+        onClose()
+        const result = await clipUrlFromApp()
+        if (result?.noteId) {
+          const state = useStore.getState()
+          await state.loadNotes?.()
+          state.setCurrentView('notes')
+          state.setSelectedNoteId(result.noteId)
+        }
       }
     },
     {
@@ -164,8 +207,9 @@ const CommandPalette = ({ open, onClose }) => {
   // 转换插件命令为统一格式
   const pluginCommandsList = useMemo(() => {
     if (!Array.isArray(pluginCommands)) return []
+    const visibleCommands = pluginCommands.filter(cmd => !cmd.hidden)
     
-    return pluginCommands.map(cmd => ({
+    return visibleCommands.map(cmd => ({
       id: `plugin-${cmd.pluginId}-${cmd.commandId}`,
       title: cmd.title || cmd.commandId,
       description: cmd.description || `来自插件: ${cmd.pluginName || cmd.pluginId}`,

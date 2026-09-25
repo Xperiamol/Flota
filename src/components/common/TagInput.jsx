@@ -181,8 +181,8 @@ const TagInput = ({
           borderColor: focused
             ? theme.palette.primary.main
             : theme.palette.mode === 'dark'
-              ? 'rgba(148, 163, 184, 0.22)'
-              : 'rgba(148, 163, 184, 0.32)',
+              ? 'rgba(157,157,165, 0.22)'
+              : 'rgba(157,157,165, 0.32)',
           bgcolor: theme.custom?.surface?.control,
           transition: 'background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
           boxShadow: focused ? `0 0 0 2px ${theme.palette.primary.main}1f` : 'none',

@@ -193,7 +193,7 @@ const DragPreview = ({
           maxWidth: '320px',
           // 毛玻璃背景
           backgroundColor: isDarkMode 
-            ? (isNearBoundary ? `${primaryColor}18` : 'rgba(30, 41, 59, 0.95)')
+            ? (isNearBoundary ? `${primaryColor}18` : 'rgba(31,31,34, 0.95)')
             : (isNearBoundary ? `${primaryColor}12` : 'rgba(255, 255, 255, 0.98)'),
           backdropFilter: 'blur(16px) saturate(180%)',
           WebkitBackdropFilter: 'blur(16px) saturate(180%)',

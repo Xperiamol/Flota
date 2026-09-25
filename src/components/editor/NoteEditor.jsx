@@ -146,7 +146,6 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     setSearchQuery: state.setSearchQuery,
     setCurrentView: state.setCurrentView,
     renameWikiLinks: state.renameWikiLinks,
-    maskOpacity: state.maskOpacity,
     aiCommandCenterEnabled: state.aiCommandCenterEnabled,
     aiCommandCenterOpen: state.aiCommandCenterOpen,
     setAiCommandCenterEnabled: state.setAiCommandCenterEnabled,
@@ -159,7 +158,6 @@ const NoteEditor = ({ onCollapseSidebar }) => {
   })))
   const store = standaloneContext || mainStore
   const {
-    maskOpacity,
     aiCommandCenterEnabled,
     aiCommandCenterOpen,
     setAiCommandCenterEnabled,
@@ -1871,17 +1869,6 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     }
   }, [isMinibarMode])
 
-  // 根据遮罩透明度设置获取对应的透明度值
-  const getMaskOpacityValue = (isDark) => {
-    const opacityMap = {
-      none: { dark: 0, light: 0 },
-      light: { dark: 0.5, light: 0.45 },
-      medium: { dark: 0.75, light: 0.75 },
-      heavy: { dark: 0.92, light: 0.92 }
-    }
-    const values = opacityMap[maskOpacity] || opacityMap.medium
-    return isDark ? values.dark : values.light
-  }
 
   const relatedOpen = Boolean(relatedAnchorEl)
   const noteTags = parseTags(tags)
@@ -1939,12 +1926,12 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     letterSpacing: '0.01em',
     color: 'text.disabled',
     bgcolor: (theme) => theme.palette.mode === 'dark'
-      ? 'rgba(15, 23, 42, 0.34)'
+      ? 'rgba(22,22,24, 0.34)'
       : 'rgba(255, 255, 255, 0.52)',
     border: '1px solid',
     borderColor: (theme) => theme.palette.mode === 'dark'
-      ? 'rgba(148, 163, 184, 0.10)'
-      : 'rgba(148, 163, 184, 0.16)',
+      ? 'rgba(157,157,165, 0.10)'
+      : 'rgba(157,157,165, 0.16)',
     backdropFilter: 'blur(10px)',
     WebkitBackdropFilter: 'blur(10px)',
     userSelect: 'none',
@@ -2138,22 +2125,18 @@ const NoteEditor = ({ onCollapseSidebar }) => {
       ref={editorContainerRef}
       data-flota-note-editor="true"
       sx={(theme) => {
-        const opacity = getMaskOpacityValue(theme.palette.mode === 'dark')
         return { 
           height: '100%', 
           display: 'flex', 
           flexDirection: 'column', 
           overflow: 'hidden', 
           position: 'relative',
-          backgroundColor: theme.palette.mode === 'dark'
-            ? `rgba(15, 23, 42, ${opacity})`
-            : `rgba(240, 244, 248, ${opacity})`,
-          backdropFilter: opacity > 0 ? 'blur(8px)' : 'none',
-          WebkitBackdropFilter: opacity > 0 ? 'blur(8px)' : 'none',
+          // 主窗口里底色由外层的主内容面板提供；独立窗口没有外层面板，自己用面板底色
+          backgroundColor: standaloneContext ? theme.palette.background.paper : 'transparent',
           // 元素全屏时浏览器把它放到顶层、背后是默认纯黑的 ::backdrop，半透明底色会透出黑色，
           // 浅色模式下整屏发暗。全屏时改用与主题一致的不透明底色。
           '&:fullscreen, &::backdrop': {
-            backgroundColor: theme.palette.mode === 'dark' ? '#0f172a' : '#f0f4f8',
+            backgroundColor: theme.palette.background.paper,
             backdropFilter: 'none',
             WebkitBackdropFilter: 'none',
           },
@@ -2206,7 +2189,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
               zIndex: 10,
               borderRadius: '8px',
               backgroundColor: theme.palette.mode === 'dark'
-                ? 'rgba(15, 23, 42, 0.55)'
+                ? 'rgba(22,22,24, 0.55)'
                 : 'rgba(255, 255, 255, 0.7)',
               border: '1px solid',
               borderColor: 'divider',
@@ -2217,7 +2200,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
               '&:hover': {
                 opacity: 1,
                 backgroundColor: theme.palette.mode === 'dark'
-                  ? 'rgba(15, 23, 42, 0.85)'
+                  ? 'rgba(22,22,24, 0.85)'
                   : 'rgba(255, 255, 255, 0.95)',
               },
             })}
@@ -2235,18 +2218,16 @@ const NoteEditor = ({ onCollapseSidebar }) => {
           px: 1,
           py: 0.5,
           minHeight: '40px',
+          borderRadius: 0,
+          // 标题栏与下方格式栏之间的分隔线
           borderBottom: 1,
           borderColor: 'divider',
-          borderRadius: 0,
           display: toolbarsHidden ? 'none' : 'flex',
           alignItems: 'center',
           gap: 0.5,
           overflow: 'hidden',
-          backgroundColor: (theme) => theme.palette.mode === 'dark'
-            ? 'rgba(15, 23, 42, 0.88)'
-            : 'rgba(255, 255, 255, 0.92)',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
+          // 与所在面板同底，不单独成条
+          backgroundColor: 'transparent',
         }}
       >
         <Box sx={{
@@ -2367,7 +2348,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
                   alignItems: 'center',
                   justifyContent: 'center',
                   borderRadius: '999px',
-                  bgcolor: theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.12)' : 'rgba(15,23,42,0.055)'
+                  bgcolor: theme.palette.mode === 'dark' ? 'rgba(157,157,165,0.12)' : 'rgba(22,22,24,0.055)'
                 })}
               >
                 <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'text.disabled' }} />
@@ -2427,21 +2408,16 @@ const NoteEditor = ({ onCollapseSidebar }) => {
                 minWidth: 0,
                 maxWidth: 156,
                 height: 32,
+                mr: 0.5,
                 px: 1,
                 gap: 0.5,
                 borderRadius: '10px',
                 textTransform: 'none',
                 color: noteTags.length > 0 ? 'text.primary' : 'text.secondary',
-                border: '1px solid',
-                borderColor: tagPopoverOpen
-                  ? theme.palette.primary.main + '55'
-                  : theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.16)' : 'rgba(15,23,42,0.08)',
-                bgcolor: tagPopoverOpen
-                  ? theme.palette.mode === 'dark' ? 'rgba(96,165,250,0.14)' : 'rgba(25,118,210,0.08)'
-                  : theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.045)' : 'rgba(15,23,42,0.035)',
+                border: 'none',
+                bgcolor: tagPopoverOpen ? theme.palette.action.selected : 'transparent',
                 '&:hover': {
-                  bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.075)' : 'rgba(15,23,42,0.055)',
-                  borderColor: theme.palette.primary.main + '44',
+                  bgcolor: theme.palette.action.hover,
                 },
                 '@media (max-width: 960px)': {
                   maxWidth: 112,
@@ -2491,6 +2467,9 @@ const NoteEditor = ({ onCollapseSidebar }) => {
           height: 32,
           boxSizing: 'border-box',
           p: '2px',
+          gap: '2px',
+          // 外圆角 = 内圆角 + 内边距 + 边框，内外两层圆角保持同心
+          borderRadius: '10px',
         }]}>
           {[{ value: 'markdown', Icon: ArticleIcon, label: 'Markdown' },
             { value: 'whiteboard', Icon: WhiteboardIcon, label: '画布' }].map((item) => {
@@ -2506,8 +2485,10 @@ const NoteEditor = ({ onCollapseSidebar }) => {
                 onClick={() => isActive ? null : handleNoteTypeChange(item.value)}
                 sx={[segmentedButtonSx(isActive), {
                   px: compactToolbar ? 0 : 1.25, py: 0,
-                  width: compactToolbar ? 28 : 'auto',
-                  height: 28, minHeight: 28, minWidth: compactToolbar ? 28 : 0,
+                  width: compactToolbar ? 30 : 'auto',
+                  // 32 高的外框减去 1px 边框和 2px 内边距，按钮只剩 26
+                  height: 26, minHeight: 26, minWidth: compactToolbar ? 30 : 0,
+                  borderRadius: '7px',
                   lineHeight: 1,
                 }]}
               >
@@ -2523,8 +2504,6 @@ const NoteEditor = ({ onCollapseSidebar }) => {
           flexShrink: 0,
           height: 32, boxSizing: 'border-box',
           p: '2px', borderRadius: '10px',
-          bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(15, 23, 42, 0.06)',
-          boxShadow: `inset 0 0 0 1px ${alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.035 : 0.025)}`
         })}>
           {toolbarActions.map((action, index) => {
             const hidden = index >= actionVisibleCount
@@ -2708,7 +2687,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
               borderBottom: 1,
               borderColor: 'divider',
               backgroundColor: theme.palette.mode === 'dark'
-                ? 'rgba(15, 23, 42, 0.88)'
+                ? 'rgba(22,22,24, 0.88)'
                 : 'rgba(255, 255, 255, 0.92)',
               backdropFilter: 'blur(10px)',
               WebkitBackdropFilter: 'blur(10px)'
@@ -2760,7 +2739,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
               borderBottom: 1,
               borderColor: 'divider',
               backgroundColor: theme.palette.mode === 'dark'
-                ? 'rgba(15, 23, 42, 0.88)'
+                ? 'rgba(22,22,24, 0.88)'
                 : 'rgba(255, 255, 255, 0.92)',
               backdropFilter: 'blur(10px)',
               WebkitBackdropFilter: 'blur(10px)'

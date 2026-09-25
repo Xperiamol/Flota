@@ -1133,10 +1133,10 @@ const TimelineView = ({ onTodoUpdated }) => {
               px: 0.35,
               color: 'text.primary',
               backgroundColor: theme.palette.mode === 'dark'
-                ? alpha('#1e293b', 0.84)
+                ? alpha('#1f1f22', 0.84)
                 : alpha('#ffffff', 0.9),
               borderColor: theme.palette.mode === 'dark'
-                ? alpha('#e2e8f0', 0.12)
+                ? alpha('#e6e6e8', 0.12)
                 : alpha('#ffffff', 0.75),
               boxShadow: 'none',
               '& .MuiChip-label': {
@@ -1168,12 +1168,12 @@ const TimelineView = ({ onTodoUpdated }) => {
       ? alpha(theme.palette.background.paper, 0.82)
       : alpha(theme.palette.background.paper, 0.92),
     backgroundImage: 'none',
-    border: `1px solid ${theme.palette.mode === 'dark' ? alpha('#ffffff', 0.08) : alpha('#0f172a', 0.08)}`,
+    border: `1px solid ${theme.palette.mode === 'dark' ? alpha('#ffffff', 0.08) : alpha('#161618', 0.08)}`,
     backdropFilter: 'blur(10px)',
     WebkitBackdropFilter: 'blur(10px)',
     boxShadow: theme.palette.mode === 'dark'
       ? '0 3px 12px rgba(0,0,0,0.16)'
-      : '0 3px 12px rgba(15,23,42,0.05)'
+      : '0 3px 12px rgba(22,22,24,0.05)'
   }
 
   const composerActionButtonSx = {
@@ -1182,18 +1182,18 @@ const TimelineView = ({ onTodoUpdated }) => {
     color: 'text.secondary',
     borderRadius: '12px',
     backgroundColor: theme.palette.mode === 'dark'
-      ? alpha('#1e293b', 0.72)
+      ? alpha('#1f1f22', 0.72)
       : alpha('#ffffff', 0.88),
     border: '1px solid',
     borderColor: theme.palette.mode === 'dark'
-      ? alpha('#e2e8f0', 0.08)
+      ? alpha('#e6e6e8', 0.08)
       : alpha('#ffffff', 0.58),
     transition: 'background-color 160ms ease, color 160ms ease, border-color 160ms ease',
     '&:hover': {
       color: 'text.primary',
       backgroundColor: theme.palette.mode === 'dark'
-        ? alpha('#334155', 0.72)
-        : alpha('#f8fafc', 0.98)
+        ? alpha('#3a3a40', 0.72)
+        : alpha('#fafafa', 0.98)
     }
   }
 
@@ -1373,10 +1373,10 @@ const TimelineView = ({ onTodoUpdated }) => {
                   borderRadius: '14px',
                   overflow: 'hidden',
                   border: theme.palette.mode === 'dark'
-                    ? '1px solid rgba(148,163,184,0.16)'
-                    : '1px solid rgba(15,23,42,0.08)',
+                    ? '1px solid rgba(157,157,165,0.16)'
+                    : '1px solid rgba(22,22,24,0.08)',
                   bgcolor: theme.palette.mode === 'dark'
-                    ? 'rgba(15,23,42,0.2)'
+                    ? 'rgba(22,22,24,0.2)'
                     : 'rgba(255,255,255,0.56)',
                   boxShadow: theme.palette.mode === 'dark'
                     ? 'inset 0 1px 0 rgba(255,255,255,0.04)'
@@ -1394,8 +1394,8 @@ const TimelineView = ({ onTodoUpdated }) => {
                     objectFit: 'cover',
                     display: 'block',
                     bgcolor: theme.palette.mode === 'dark'
-                      ? 'rgba(15,23,42,0.36)'
-                      : 'rgba(241,245,249,0.9)'
+                      ? 'rgba(22,22,24,0.36)'
+                      : 'rgba(242,242,243,0.9)'
                   }}
                 />
                 <Stack
@@ -1406,7 +1406,7 @@ const TimelineView = ({ onTodoUpdated }) => {
                     px: 1,
                     py: 0.55,
                     bgcolor: theme.palette.mode === 'dark'
-                      ? 'rgba(2,6,23,0.18)'
+                      ? 'rgba(11,11,12,0.18)'
                       : 'rgba(255,255,255,0.62)'
                   }}
                 >
@@ -1473,8 +1473,8 @@ const TimelineView = ({ onTodoUpdated }) => {
                         height: 92,
                         objectFit: 'cover',
                         borderRadius: '10px',
-                        border: theme.palette.mode === 'dark' ? '1px solid rgba(148,163,184,0.18)' : '1px solid rgba(15,23,42,0.08)',
-                        bgcolor: theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.08)' : 'rgba(15,23,42,0.03)',
+                        border: theme.palette.mode === 'dark' ? '1px solid rgba(157,157,165,0.18)' : '1px solid rgba(22,22,24,0.08)',
+                        bgcolor: theme.palette.mode === 'dark' ? 'rgba(157,157,165,0.08)' : 'rgba(22,22,24,0.03)',
                         cursor: 'zoom-in'
                       }}
                     />
@@ -1543,7 +1543,7 @@ const TimelineView = ({ onTodoUpdated }) => {
                 sx={{
                   height: 24,
                   borderRadius: '8px',
-                  bgcolor: theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.16)' : 'rgba(15,23,42,0.06)',
+                  bgcolor: theme.palette.mode === 'dark' ? 'rgba(157,157,165,0.16)' : 'rgba(22,22,24,0.06)',
                   color: 'text.secondary',
                   fontSize: 12
                 }}
@@ -1582,7 +1582,7 @@ const TimelineView = ({ onTodoUpdated }) => {
               ? `0 0 0 2px ${alpha(theme.palette.primary.main, 0.12)}`
               : theme.palette.mode === 'dark'
                 ? '0 4px 16px rgba(0,0,0,0.18)'
-                : '0 4px 16px rgba(15,23,42,0.06)',
+                : '0 4px 16px rgba(22,22,24,0.06)',
             transition: 'border-color 180ms ease, box-shadow 180ms ease'
           }}
           onDragOver={(event) => {
@@ -1605,11 +1605,11 @@ const TimelineView = ({ onTodoUpdated }) => {
               p: 0.35,
               borderRadius: '16px',
               backgroundColor: theme.palette.mode === 'dark'
-                ? alpha('#020617', 0.18)
+                ? alpha('#0b0b0c', 0.18)
                 : alpha('#ffffff', 0.2),
               border: '1px solid',
               borderColor: theme.palette.mode === 'dark'
-                ? alpha('#e2e8f0', 0.06)
+                ? alpha('#e6e6e8', 0.06)
                 : alpha('#ffffff', 0.46)
             }}
           >
@@ -1705,7 +1705,7 @@ const TimelineView = ({ onTodoUpdated }) => {
                     ? theme.palette.primary.main
                     : theme.palette.mode === 'dark'
                       ? alpha('#ffffff', 0.08)
-                      : alpha('#0f172a', 0.05),
+                      : alpha('#161618', 0.05),
                   boxShadow: canSubmit
                     ? `0 2px 8px ${alpha(theme.palette.primary.main, 0.22)}`
                     : 'none',
@@ -1713,7 +1713,7 @@ const TimelineView = ({ onTodoUpdated }) => {
                   borderColor: canSubmit
                     ? alpha('#ffffff', 0.24)
                     : theme.palette.mode === 'dark'
-                      ? alpha('#e2e8f0', 0.08)
+                      ? alpha('#e6e6e8', 0.08)
                       : alpha('#ffffff', 0.58),
                   transition: 'background-color 180ms ease, box-shadow 180ms ease',
                   '&:hover': canSubmit ? {
@@ -1757,7 +1757,7 @@ const TimelineView = ({ onTodoUpdated }) => {
               ...glassPanel,
               boxShadow: theme.palette.mode === 'dark'
                 ? '0 12px 32px rgba(0,0,0,0.28)'
-                : '0 12px 32px rgba(15,23,42,0.11)',
+                : '0 12px 32px rgba(22,22,24,0.11)',
               maxHeight: 'min(560px, 74vh)',
               overflowY: 'auto',
               overscrollBehavior: 'contain'
@@ -1835,11 +1835,11 @@ const TimelineView = ({ onTodoUpdated }) => {
                       fontSize: 11,
                       color: 'text.secondary',
                       borderColor: theme.palette.mode === 'dark'
-                        ? 'rgba(148,163,184,0.18)'
-                        : 'rgba(15,23,42,0.1)',
+                        ? 'rgba(157,157,165,0.18)'
+                        : 'rgba(22,22,24,0.1)',
                       bgcolor: theme.palette.mode === 'dark'
-                        ? 'rgba(148,163,184,0.08)'
-                        : 'rgba(15,23,42,0.035)',
+                        ? 'rgba(157,157,165,0.08)'
+                        : 'rgba(22,22,24,0.035)',
                       '& .MuiChip-icon': {
                         ml: 0.75,
                         mr: -0.35,
@@ -1895,10 +1895,10 @@ const TimelineView = ({ onTodoUpdated }) => {
                       borderRadius: '14px',
                       overflow: 'hidden',
                       border: theme.palette.mode === 'dark'
-                        ? '1px solid rgba(148,163,184,0.16)'
-                        : '1px solid rgba(15,23,42,0.08)',
+                        ? '1px solid rgba(157,157,165,0.16)'
+                        : '1px solid rgba(22,22,24,0.08)',
                       bgcolor: theme.palette.mode === 'dark'
-                        ? 'rgba(15,23,42,0.2)'
+                        ? 'rgba(22,22,24,0.2)'
                         : 'rgba(255,255,255,0.56)'
                     }}
                   >
@@ -1982,7 +1982,7 @@ const TimelineView = ({ onTodoUpdated }) => {
               ...glassPanel,
               boxShadow: theme.palette.mode === 'dark'
                 ? '0 10px 28px rgba(0,0,0,0.26)'
-                : '0 10px 28px rgba(15,23,42,0.1)',
+                : '0 10px 28px rgba(22,22,24,0.1)',
               '& .MuiMenuItem-root': {
                 minHeight: 38,
                 fontSize: 13,

@@ -24,6 +24,7 @@ import { WikiLinkMark } from './extensions/WikiLinkMark'
 import { WikiLinkSuggestion } from './extensions/WikiLinkSuggestion'
 import { InlineMath, BlockMath, MathAwareText } from './extensions/Math'
 import { WhiteboardEmbed } from './extensions/WhiteboardEmbed'
+import { WidgetEmbed } from './extensions/WidgetEmbed'
 import { getClipboardLink, normalizePastedHtml, pasteEditorText } from '../../utils/editorClipboard'
 import { notifyError, promptInput } from '../../utils/notify'
 import { normalizeLinkUrl, markdownLinkDestination, openNoteLink } from '../../utils/linkUtils'
@@ -816,7 +817,7 @@ const CodeBlockNodeView = ({ node, updateAttributes, editor }) => {
           cursor: editor.isEditable ? 'pointer' : 'default',
           userSelect: 'none',
           color: 'text.secondary',
-          bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.06)',
+          bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(22,22,24,0.06)',
           opacity: 0.55,
           transition: 'opacity 140ms ease, background-color 140ms ease',
           '&:hover': { opacity: editor.isEditable ? 1 : 0.55 },
@@ -903,9 +904,9 @@ const CodeLanguageMenu = ({ anchorEl, filter, onFilterChange, languages, current
           flexDirection: 'column',
           borderRadius: '10px',
           overflow: 'hidden',
-          bgcolor: theme.palette.mode === 'dark' ? 'rgba(30,41,59,0.98)' : 'rgba(255,255,255,0.98)',
+          bgcolor: theme.palette.mode === 'dark' ? 'rgba(31,31,34,0.98)' : 'rgba(255,255,255,0.98)',
           border: '1px solid',
-          borderColor: theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.18)' : 'rgba(15,23,42,0.1)',
+          borderColor: theme.palette.mode === 'dark' ? 'rgba(157,157,165,0.18)' : 'rgba(22,22,24,0.1)',
           boxShadow: '0 8px 32px rgba(0,0,0,0.28)',
           backdropFilter: 'blur(20px)',
         })}
@@ -962,7 +963,7 @@ const LanguageMenuRow = ({ label, hint, active, onClick }) => (
       color: active ? 'primary.main' : 'text.primary',
       fontWeight: active ? 700 : 500,
       bgcolor: active ? (theme) => theme.palette.mode === 'dark' ? 'rgba(96,165,250,0.14)' : 'rgba(25,118,210,0.08)' : 'transparent',
-      '&:hover': { bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.05)' },
+      '&:hover': { bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(22,22,24,0.05)' },
     }}
   >
     <span>{label}</span>
@@ -2147,10 +2148,10 @@ const BlockMultiSelectOverlay = ({
                 height: 22,
                 borderRadius: '50%',
                 border: '1.5px solid',
-                borderColor: selected ? 'primary.main' : 'rgba(100,116,139,0.48)',
+                borderColor: selected ? 'primary.main' : 'rgba(110,110,118,0.48)',
                 bgcolor: selected ? 'primary.main' : 'rgba(255,255,255,0.78)',
                 color: selected ? 'primary.contrastText' : 'transparent',
-                boxShadow: '0 6px 18px rgba(15,23,42,0.14)',
+                boxShadow: '0 6px 18px rgba(22,22,24,0.14)',
                 backdropFilter: 'blur(12px)',
                 WebkitBackdropFilter: 'blur(12px)',
                 cursor: dragState ? 'grabbing' : 'grab',
@@ -2586,6 +2587,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       AIAssistSelection,
       InlineMath,
       WhiteboardEmbed,
+      WidgetEmbed,
       BlockMath,
       MathAwareText,
       StableLink.configure({
@@ -3113,9 +3115,9 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
             textDecoration: 'none',
             verticalAlign: 'middle',
             backgroundColor: (theme) =>
-              theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.12)' : 'rgba(15,23,42,0.055)',
+              theme.palette.mode === 'dark' ? 'rgba(157,157,165,0.12)' : 'rgba(22,22,24,0.055)',
             boxShadow: (theme) =>
-              `inset 0 0 0 1px ${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)'}`,
+              `inset 0 0 0 1px ${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(22,22,24,0.06)'}`,
             '&::before': {
               content: '"📎"',
               marginRight: '6px',
@@ -3125,7 +3127,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
             '&:hover': {
               textDecoration: 'none',
               backgroundColor: (theme) =>
-                theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.18)' : 'rgba(15,23,42,0.085)',
+                theme.palette.mode === 'dark' ? 'rgba(157,157,165,0.18)' : 'rgba(22,22,24,0.085)',
             },
           },
 
@@ -3152,12 +3154,12 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
           },
 
           // ── 代码块 ────────────────────────────────────────────────────────────
-          // 浅色模式下编辑区底色本身接近 #f1f5f9，代码块需要自带描边和更深一点的底色才能看出边界
+          // 浅色模式下编辑区底色本身接近 #f2f2f3，代码块需要自带描边和更深一点的底色才能看出边界
           '& pre': {
             backgroundColor: (theme) =>
-              theme.palette.mode === 'dark' ? 'rgba(30,41,59,0.8)' : 'rgba(15,23,42,0.045)',
+              theme.palette.mode === 'dark' ? 'rgba(31,31,34,0.8)' : 'rgba(22,22,24,0.045)',
             boxShadow: (theme) =>
-              `inset 0 0 0 1px ${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.08)'}`,
+              `inset 0 0 0 1px ${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(22,22,24,0.08)'}`,
             padding: '1rem',
             borderRadius: '10px',
             overflow: 'auto',

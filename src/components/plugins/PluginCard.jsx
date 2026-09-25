@@ -35,7 +35,14 @@ const PluginCard = ({
   onEnableToggle,
   onUninstall,
   onSelect,
-  compact
+  compact,
+  // 以下用于组件等非插件条目：替换头像内容、状态标签与底部操作，其余布局保持一致
+  avatarContent,
+  statusChip,
+  actions,
+  detailLabel = '查看详情', // null：不显示（整张卡片可点）
+  metaLabel, // null：不显示版本
+  hideCategories = false
 }) => {
   if (!plugin) return null
 
@@ -60,14 +67,14 @@ const PluginCard = ({
             variant="circular"
             src={plugin.icon || undefined}
             sx={{
-              bgcolor: plugin.icon ? undefined : 'primary.main',
+              bgcolor: avatarContent ? 'action.hover' : plugin.icon ? undefined : 'primary.main',
               color: plugin.icon ? undefined : 'primary.contrastText',
-              width: 52, height: 52,
-              fontSize: '1.25rem', fontWeight: 600,
-              boxShadow: 1, flexShrink: 0, borderRadius: '50%'
+              width: 48, height: 48,
+              fontSize: '1.15rem', fontWeight: 600,
+              flexShrink: 0, borderRadius: '12px'
             }}
           >
-            {!plugin.icon && ((plugin.name || '').trim().slice(0, 2).toUpperCase() || 'P')}
+            {avatarContent || (!plugin.icon && ((plugin.name || '').trim().slice(0, 2).toUpperCase() || 'P'))}
           </Avatar>
           <Box sx={{ flexGrow: 1, minWidth: 0 }}>
             <Typography variant="h6" component="div"
@@ -76,17 +83,19 @@ const PluginCard = ({
               {plugin.manifest?.name || plugin.name || '未知插件'}
             </Typography>
             <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mt: 0.5, flexWrap: 'wrap', gap: 0.5 }}>
-              <Typography variant="caption"
-                sx={{ color: 'text.secondary', fontWeight: 500,
-                  backgroundColor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
-                  px: 0.75, py: 0.25, borderRadius: 0.5 }}>
-                v{plugin.manifest?.version || plugin.version || '0.0.0'}
-              </Typography>
+              {metaLabel !== null && (
+                <Typography variant="caption"
+                  sx={{ color: 'text.secondary', fontWeight: 500,
+                    backgroundColor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
+                    px: 0.75, py: 0.25, borderRadius: 0.5 }}>
+                  {metaLabel || `v${plugin.manifest?.version || plugin.version || '0.0.0'}`}
+                </Typography>
+              )}
               {plugin.author?.name && (
                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>by {plugin.author.name}</Typography>
               )}
               {/* 状态标签放在元信息行，不再绝对定位压住标题 */}
-              {isInstalled ? (
+              {statusChip !== undefined ? statusChip : isInstalled ? (
                 <Chip
                   size="small"
                   color={isEnabled ? 'success' : 'default'}
@@ -120,10 +129,10 @@ const PluginCard = ({
                 color={plugin.sourceType === 'development' ? 'secondary' : 'default'}
                 variant="filled" sx={{ fontWeight: 500, opacity: 0.9 }} />
             )}
-            {categories.slice(0, 2).map((category) => (
+            {!hideCategories && categories.slice(0, 2).map((category) => (
               <Chip key={category} size="small" label={category} variant="outlined" sx={{ opacity: 0.8 }} />
             ))}
-            {categories.length > 2 && (
+            {!hideCategories && categories.length > 2 && (
               <Chip size="small" label={`+${categories.length - 2}`} variant="outlined" sx={{ opacity: 0.6 }} />
             )}
             {hasUpdate && <Chip size="small" color="warning" label="🔄 可更新" sx={{ fontWeight: 500 }} />}
@@ -134,24 +143,26 @@ const PluginCard = ({
       <Box sx={(muiTheme) => ({
         px: 2, py: 1.5,
         borderTop: `1px solid ${muiTheme.palette.divider}`,
-        backgroundColor: muiTheme.palette.mode === 'dark' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(0, 0, 0, 0.02)',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center'
       })}>
-        <Button size="small" color="primary" startIcon={<RocketLaunchRounded fontSize="small" />}
-          onClick={(e) => { e.stopPropagation(); onSelect(plugin.id) }}
-          sx={{ textTransform: 'none', fontWeight: 500 }}>
-          查看详情
-        </Button>
-        <Stack direction="row" spacing={0.75} alignItems="center">
-          {!isInstalled && (
+        {detailLabel ? (
+          <Button size="small" color="primary" startIcon={<RocketLaunchRounded fontSize="small" />}
+            onClick={(e) => { e.stopPropagation(); onSelect(plugin.id) }}
+            sx={{ textTransform: 'none', fontWeight: 500 }}>
+            {detailLabel}
+          </Button>
+        ) : <span />}
+        <Stack direction="row" spacing={0.75} alignItems="center" onClick={(e) => e.stopPropagation()}>
+          {actions}
+          {!actions && !isInstalled && (
             <Button size="small" variant="contained" startIcon={<CloudDownloadRounded fontSize="small" />}
               disabled={Boolean(pendingAction)}
               onClick={(e) => { e.stopPropagation(); onInstall(plugin.id) }}
-              sx={{ textTransform: 'none', fontWeight: 500, boxShadow: 1 }}>
+              sx={{ textTransform: 'none', fontWeight: 500 }}>
               安装
             </Button>
           )}
-          {isInstalled && (
+          {!actions && isInstalled && (
             <>
               <Button size="small" variant={isEnabled ? 'outlined' : 'contained'}
                 color={isEnabled ? 'warning' : 'success'}

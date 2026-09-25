@@ -5,6 +5,7 @@ import { useTheme } from '@mui/material/styles';
 import { PushPinOutlined as PushPinOutlinedIcon } from '../common/AppIcons';
 import { createTransitionString, ANIMATIONS } from '../../utils/animationConfig';
 import { useStore } from '../../store/useStore';
+import { useWidgetStore, parseWidgetViewId } from '../../store/useWidgetStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useTranslation } from '../../utils/i18n';
 import SyncStatusIndicator from '../sync/SyncStatusIndicator';
@@ -18,6 +19,10 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
     titleBarStyle: state.titleBarStyle,
   })));
   const isMac = titleBarStyle === 'mac';
+  const widgetName = useWidgetStore((state) => {
+    const widgetId = parseWidgetViewId(currentView);
+    return widgetId ? state.widgets.find((widget) => widget.id === widgetId)?.name || '组件' : null;
+  });
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
 
   useEffect(() => {
@@ -41,6 +46,7 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
 
   // 根据当前视图获取对应的标题
   const getViewTitle = () => {
+    if (widgetName) return widgetName;
     switch (currentView) {
       case 'notes':
         return 'Flota';
@@ -53,9 +59,9 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
       case 'settings':
         return '设置';
       case 'plugins':
-        return '插件';
+        return '插件/组件';
       case 'profile':
-        return '个人中心';
+        return '首页';
       case 'ai':
         return 'FlotaAI';
       default:
@@ -109,10 +115,8 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
         userSelect: 'none',
         position: 'relative',
         zIndex: 1000,
-        background: theme.custom?.surface?.glassHeavy,
-        backdropFilter: theme.custom?.glass?.backdropFilter,
-        WebkitBackdropFilter: theme.custom?.glass?.backdropFilter,
-        borderBottom: `1px solid ${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'}`,
+        // 标题栏直接放在应用背景上
+        background: 'transparent',
       }}
     >
       {/* 左上角窗口工具组 */}

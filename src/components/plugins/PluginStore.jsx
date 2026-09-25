@@ -19,8 +19,11 @@ import {
 import {
 	Search as SearchIcon,
 	RefreshRounded,
-	FolderOpenRounded
+	FolderOpenRounded,
+	UploadFileRounded
 } from '../common/AppIcons'
+import FlotaAIIcon from '../common/FlotaAIIcon'
+import { askAIToCreateWidget } from '../../utils/widgets/askAI'
 
 import {
 	fetchAvailablePlugins,
@@ -40,6 +43,8 @@ import { useStore } from '../../store/useStore'
 import { getDisplayCategories, filterPlugins } from './pluginUtils'
 import PluginCard from './PluginCard'
 import PluginDetailDrawer from './PluginDetailDrawer'
+import WidgetStoreSection from '../widgets/WidgetStoreSection'
+import { useWidgetStore } from '../../store/useWidgetStore'
 import { createSoftGlassCardSx, emptyStateSx, modernSurfaceSx } from '../../styles/commonStyles'
 
 const PluginStore = () => {
@@ -58,6 +63,7 @@ const PluginStore = () => {
 	const [pendingActions, setPendingActions] = useState({})
 	const [snackbar, setSnackbar] = useState({ open: false, severity: 'success', message: '' })
 	const [commandPending, setCommandPending] = useState(null)
+	const isWidgetType = pluginStoreFilters.type === 'widget'
 
 	const showMessage = useCallback((severity, message) => {
 		setSnackbar({ open: true, severity, message })
@@ -97,7 +103,6 @@ const PluginStore = () => {
 
 			setAvailablePlugins(Array.isArray(available) ? available : [])
 			setInstalledPlugins(Array.isArray(installed) ? installed : [])
-			synchronizeCategories(Array.isArray(available) ? available : [])
 		} catch (err) {
 			console.error('加载插件数据失败', err)
 			setError(err?.message || '加载插件数据失败')
@@ -117,12 +122,12 @@ const PluginStore = () => {
 		}
 	}, [pluginStoreFilters.tab, loadLocalPlugins])
 
-	// 当 availablePlugins 改变时，同步更新分类
+	// 当 availablePlugins 改变或切回插件时，同步更新分类（组件的分类由组件部分自己设置）
 	useEffect(() => {
-		if (availablePlugins.length > 0) {
+		if (!isWidgetType) {
 			synchronizeCategories(availablePlugins)
 		}
-	}, [availablePlugins, synchronizeCategories])
+	}, [availablePlugins, synchronizeCategories, isWidgetType])
 
 	useEffect(() => {
 		const unsubscribe = subscribePluginEvents((event) => {
@@ -395,6 +400,14 @@ const PluginStore = () => {
 		setPluginStoreSelectedPluginId(pluginId)
 	}
 
+	const handleImportWidget = async () => {
+		const result = await window.electronAPI.widgets.importFile()
+		if (!result?.success) return showMessage('error', result?.error || '导入失败')
+		if (!result.data) return
+		await useWidgetStore.getState().loadWidgets()
+		showMessage('success', `已导入「${result.data.widget.name}」，首次运行前需要确认权限`)
+	}
+
 	const handleRefresh = () => {
 		fetchData()
 		if (pluginStoreFilters.tab === 'local') {
@@ -541,12 +554,12 @@ const PluginStore = () => {
 				})}
 			>
 				<TextField
-					placeholder="搜索插件"
+					placeholder={isWidgetType ? '搜索组件' : '搜索插件'}
 					size="small"
 					value={pluginStoreFilters.search}
 					onChange={handleSearchChange}
 					fullWidth
-					aria-label="搜索插件"
+					aria-label={isWidgetType ? '搜索组件' : '搜索插件'}
 					slotProps={{
 						input: {
 							startAdornment: (
@@ -557,29 +570,45 @@ const PluginStore = () => {
 						}
 					}}
 				/>
-				<Tooltip title="刷新插件列表">
-					<span>
-						<IconButton color="primary" size="small" onClick={handleRefresh} disabled={loading}>
-							<RefreshRounded />
-						</IconButton>
-					</span>
-				</Tooltip>
+				{isWidgetType ? (
+					<>
+						<Button variant="outlined" size="small" startIcon={<FlotaAIIcon sx={{ fontSize: 18 }} />} onClick={() => askAIToCreateWidget()}
+							sx={{ flexShrink: 0, borderRadius: '10px', height: 34 }}>
+							AI 生成
+						</Button>
+						<Tooltip title="从文件导入组件">
+							<IconButton color="primary" size="small" onClick={handleImportWidget}>
+								<UploadFileRounded />
+							</IconButton>
+						</Tooltip>
+					</>
+				) : (
+					<Tooltip title="刷新插件列表">
+						<span>
+							<IconButton color="primary" size="small" onClick={handleRefresh} disabled={loading}>
+								<RefreshRounded />
+							</IconButton>
+						</span>
+					</Tooltip>
+				)}
 			</Stack>
 
-			{loading && <LinearProgress sx={{ mb: 2 }} />}
-			{error && (
+			{loading && !isWidgetType && <LinearProgress sx={{ mb: 2 }} />}
+			{error && !isWidgetType && (
 				<Alert severity="error" sx={{ mb: 2 }}>
 					{error}
 				</Alert>
 			)}
 
 			<Box sx={{ flex: 1, overflow: 'auto', pb: 4 }}>
-				{pluginStoreFilters.tab === 'local' && renderLocalDev()}
+				{isWidgetType && <WidgetStoreSection />}
 
-				{pluginStoreFilters.tab !== 'local' && pluginsToRender.length === 0 && !loading &&
+				{!isWidgetType && pluginStoreFilters.tab === 'local' && renderLocalDev()}
+
+				{!isWidgetType && pluginStoreFilters.tab !== 'local' && pluginsToRender.length === 0 && !loading &&
 					renderEmptyState('暂无插件匹配当前筛选条件')}
 
-				{pluginStoreFilters.tab !== 'local' && pluginsToRender.length > 0 && (
+				{!isWidgetType && pluginStoreFilters.tab !== 'local' && pluginsToRender.length > 0 && (
 					<Box
 						sx={{
 							display: 'grid',
@@ -612,8 +641,8 @@ const PluginStore = () => {
 			</Box>
 
 			<PluginDetailDrawer
-				plugin={selectedPlugin}
-				open={Boolean(selectedPlugin)}
+				plugin={isWidgetType ? null : selectedPlugin}
+				open={!isWidgetType && Boolean(selectedPlugin)}
 				onClose={() => setPluginStoreSelectedPluginId(null)}
 				onInstall={handleInstall}
 				onEnableToggle={handleEnableToggle}

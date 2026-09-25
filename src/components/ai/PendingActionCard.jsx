@@ -1,6 +1,12 @@
 import { useState } from 'react'
-import { Box, Button, Chip, Paper, Typography, alpha, useTheme } from '@mui/material'
+import { Box, Button, Chip, CircularProgress, Paper, Typography, alpha, useTheme } from '@mui/material'
 import { useStore } from '../../store/useStore'
+import WidgetHost from '../widgets/WidgetHost'
+import { openWidgetInstance } from '../../store/useWidgetStore'
+import { useWidgetActionProgress } from '../../utils/widgets/widgetActionProgress'
+import { insertInstanceIntoNote } from '../../utils/widgets/widgetActions'
+import { askAI } from '../../utils/widgets/askAI'
+import { notifyError, notifySuccess } from '../../utils/notify'
 
 // AI 待确认动作卡（AI 功能页与「问 AI」小窗共用）。
 //
@@ -22,7 +28,11 @@ export const ACTION_LABELS = {
   create_todos: '批量创建待办',
   add_memory: '保存记忆',
   update_memory: '更新记忆',
-  write_long_document: '生成并保存长文档'
+  write_long_document: '生成并保存长文档',
+  create_widget: '生成组件',
+  update_widget: '修改组件',
+  create_widget_instance: '新建组件实例',
+  add_widget_records: '写入组件数据'
 }
 
 const TODO_ACTIONS = new Set(['create_todo', 'create_todos'])
@@ -197,6 +207,16 @@ const SimpleActionCard = ({ action, executing, onExecute, onDismiss, compact }) 
       {status === 'failed' && action.error && (
         <Typography variant="caption" color="error.main" sx={{ display: 'block', mt: 0.25, wordBreak: 'break-word' }}>
           {action.error}
+        </Typography>
+      )}
+      {!isFinished && action.name === 'update_widget' && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
+          修改会作用于这个组件的所有实例，数据保留；完成后可以撤销。
+        </Typography>
+      )}
+      {!isFinished && action.name === 'create_widget' && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
+          生成后会先在预览中运行检查，有问题自动修复，完成后固定到侧边栏。
         </Typography>
       )}
       {!isFinished && action.name === 'create_todo' && Array.isArray(action.args?.subtasks) && action.args.subtasks.length > 0 && (
@@ -387,6 +407,124 @@ const renderNoteEditItem = (e, compact) => (
   </>
 )
 
+// ─── 组件生成 / 修改：执行中显示步骤，完成后显示可操作的预览 ───
+const WIDGET_ACTIONS = new Set(['create_widget', 'update_widget'])
+
+const WIDGET_STEPS = [
+  { stage: 'writing', label: '编写组件' },
+  { stage: 'testing', label: '预览检查' },
+  { stage: 'fixing', label: '自动修复' },
+  { stage: 'saving', label: '保存' },
+]
+
+const WidgetProgressSteps = ({ progress }) => {
+  const currentIndex = WIDGET_STEPS.findIndex((step) => step.stage === progress?.stage)
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.4, mt: 0.5 }}>
+      {WIDGET_STEPS.map((step, index) => {
+        const active = index === currentIndex
+        const done = currentIndex > index && !(step.stage === 'fixing' && !progress?.round)
+        const skipped = step.stage === 'fixing' && currentIndex > index && !progress?.round
+        let label = step.label
+        if (step.stage === 'writing' && active && progress?.chars) label = `编写组件（${progress.chars} 字）`
+        if (step.stage === 'fixing' && progress?.round) label = `自动修复（第 ${progress.round} 轮）${active && progress?.chars ? ` · ${progress.chars} 字` : ''}`
+        return (
+          <Box key={step.stage} sx={{ display: 'flex', alignItems: 'center', gap: 0.75, color: active ? 'text.primary' : 'text.secondary', opacity: skipped ? 0.45 : 1 }}>
+            <Box sx={{ width: 14, display: 'grid', placeItems: 'center' }}>
+              {active ? <CircularProgress size={11} /> : <Typography variant="caption">{done ? '✓' : skipped ? '–' : '·'}</Typography>}
+            </Box>
+            <Typography variant="caption" sx={{ fontWeight: active ? 700 : 500 }}>{label}</Typography>
+          </Box>
+        )
+      })}
+    </Box>
+  )
+}
+
+const WidgetActionCard = (props) => {
+  const { action, executing, compact } = props
+  const theme = useTheme()
+  const status = getStatus(action, executing)
+  const progress = useWidgetActionProgress((state) => state.byAction[action.actionId])
+  const selectedNote = useStore((state) => state.notes.find((note) => note.id === state.selectedNoteId))
+  const [undone, setUndone] = useState(false)
+  const [busy, setBusy] = useState(false)
+  if (status !== 'running' && status !== 'done') return <SimpleActionCard {...props} />
+
+  const paletteKey = STATUS_META[status].palette
+  const data = action.resultData || {}
+  const isUpdate = action.name === 'update_widget'
+
+  if (status === 'running') {
+    return (
+      <Paper elevation={0} sx={cardSx(theme, paletteKey, compact)}>
+        <Typography variant="caption" sx={{ display: 'block', color: `${paletteKey}.main`, fontWeight: 800, mb: 0.25 }}>
+          {isUpdate ? '正在修改组件' : '正在生成组件'}
+        </Typography>
+        <Typography variant="body2" sx={{ fontWeight: 650, lineHeight: 1.45, fontSize: compact ? 12.5 : undefined, wordBreak: 'break-word' }}>
+          {getDetail(action)}
+        </Typography>
+        <WidgetProgressSteps progress={progress} />
+      </Paper>
+    )
+  }
+
+  const undo = async () => {
+    setBusy(true)
+    const result = isUpdate
+      ? await window.electronAPI.widgets.rollback(data.widgetId, data.previousVersion)
+      : await window.electronAPI.widgets.delete(data.widgetId)
+    setBusy(false)
+    if (!result?.success) return notifyError(result?.error || '撤销失败')
+    setUndone(true)
+    notifySuccess(isUpdate ? '已恢复到修改前的版本' : '已撤销，组件移到了“最近删除”')
+  }
+
+  const insertIntoNote = async () => {
+    try {
+      const instance = await window.electronAPI.widgets.getInstance(data.instanceId)
+      if (!instance?.success) throw new Error(instance?.error || '实例不存在')
+      await insertInstanceIntoNote(selectedNote, data.widgetName, instance.data.instance)
+    } catch (error) {
+      notifyError(error.message)
+    }
+  }
+
+  const canInsert = !isUpdate && selectedNote && (selectedNote.note_type || 'markdown') === 'markdown'
+
+  return (
+    <Paper elevation={0} sx={cardSx(theme, undone ? 'warning' : paletteKey, compact)}>
+      <Typography variant="caption" sx={{ display: 'block', color: undone ? 'text.secondary' : `${paletteKey}.main`, fontWeight: 800, mb: 0.25 }}>
+        {undone ? '已撤销' : STATUS_META.done.title}
+      </Typography>
+      <Typography variant="body2" sx={{ fontWeight: 650, lineHeight: 1.45, fontSize: compact ? 12.5 : undefined, wordBreak: 'break-word' }}>
+        {action.resultMessage || getDetail(action)}
+      </Typography>
+      {!undone && data.remainingProblems?.length > 0 && (
+        <Typography variant="caption" color="error.main" sx={{ display: 'block' }}>仍有问题：{data.remainingProblems[0]}</Typography>
+      )}
+      {!undone && data.instanceId && (
+        <Box sx={{ mt: 0.75, borderRadius: '10px', border: '1px solid', borderColor: 'divider', overflow: 'hidden', bgcolor: 'background.paper' }}>
+          <WidgetHost instanceId={data.instanceId} size="medium" surface="preview" maxHeight={compact ? 220 : 320} minHeight={48} showErrors={false} />
+        </Box>
+      )}
+      {!undone && (
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 0.5, mt: 0.75 }}>
+          {data.remainingProblems?.length > 0 && (
+            <Button size="small" variant="text" color="inherit" sx={pillSx(compact)}
+              onClick={() => askAI(`组件「${data.widgetName}」（组件 ID：${data.widgetId}，实例 ID：${data.instanceId}）还有问题，请继续修复：${data.remainingProblems.join('；')}`, { autoSend: true })}>
+              继续修复
+            </Button>
+          )}
+          <Button size="small" variant="text" color="inherit" disabled={busy} onClick={undo} sx={{ ...pillSx(compact), color: 'text.secondary' }}>撤销</Button>
+          {canInsert && <Button size="small" variant="outlined" onClick={insertIntoNote} sx={pillSx(compact)}>插入到当前笔记</Button>}
+          {data.instanceId && <Button size="small" variant="contained" color="success" onClick={() => openWidgetInstance(data.instanceId)} sx={pillSx(compact)}>打开</Button>}
+        </Box>
+      )}
+    </Paper>
+  )
+}
+
 /**
  * 统一入口：按动作类型选择卡片样式。
  * @param {object} props
@@ -398,6 +536,7 @@ const renderNoteEditItem = (e, compact) => (
  */
 const PendingActionCard = (props) => {
   const { action } = props
+  if (WIDGET_ACTIONS.has(action.name)) return <WidgetActionCard {...props} />
   if (action.name === 'create_todos') {
     return (
       <BatchActionCard

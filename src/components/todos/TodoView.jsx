@@ -532,20 +532,11 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
                     minHeight: 0,
                     display: 'flex',
                     flexDirection: 'column',
-                    borderRadius: '16px',
-                    backgroundColor: theme.custom?.surface?.glassLight,
-                    backgroundImage: `linear-gradient(180deg, ${quadrant.color}${dark ? '0d' : '08'} 0%, transparent 34%)`,
-                    backdropFilter: theme.custom?.glass?.backdropFilter,
-                    WebkitBackdropFilter: theme.custom?.glass?.backdropFilter,
-                    border: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
+                    borderRadius: '14px',
+                    backgroundColor: theme.custom?.surface?.inset,
+                    border: '1px solid transparent',
                     transition: createTransitionString(ANIMATIONS.hover),
                     overflow: 'hidden',
-                    '&:hover': {
-                      boxShadow: dark
-                        ? '0 6px 18px rgba(0,0,0,0.18)'
-                        : '0 6px 18px rgba(15,23,42,0.07)',
-                      borderColor: `${quadrant.color}35`,
-                    },
                     ...(isDragOver(quadrant.key) && {
                       border: `2px dashed ${quadrant.color}`,
                       boxShadow: `0 0 0 3px ${quadrant.color}12`,
@@ -555,37 +546,21 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
                 >
                   {/* 简洁头部 */}
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, px: 2, pt: 1.75, pb: 1.5 }}>
-                    <Box sx={{
-                      width: 3,
-                      height: 28,
-                      borderRadius: 999,
-                      flexShrink: 0,
-                      bgcolor: quadrant.color,
-                      opacity: dark ? 0.78 : 0.9,
-                      boxShadow: `0 0 12px ${quadrant.color}24`
-                    }} />
                     <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 750, color: 'text.primary', lineHeight: 1.25, letterSpacing: '-0.01em' }}>
+                      <Typography variant="subtitle2" sx={{ display: 'flex', alignItems: 'center', gap: 0.875, fontWeight: 600, color: 'text.primary', lineHeight: 1.25 }}>
+                        <Box component="span" sx={{ width: 7, height: 7, borderRadius: 99, flexShrink: 0, bgcolor: quadrant.color }} />
                         {quadrant.title}
                       </Typography>
-                      <Typography variant="caption" sx={{ display: 'block', mt: 0.25, color: 'text.secondary', lineHeight: 1.2, fontSize: '0.68rem' }}>
+                      <Typography variant="caption" sx={{ display: 'block', mt: 0.25, pl: '15px', color: 'text.secondary', lineHeight: 1.2, fontSize: '0.72rem' }}>
                         {quadrant.subtitle}
                       </Typography>
                     </Box>
                     <Box
                       aria-label={`${quadrant.todos.length} 项待办`}
                       sx={{
-                        minWidth: 28,
-                        height: 28,
-                        px: 0.75,
-                        display: 'grid',
-                        placeItems: 'center',
-                        borderRadius: '9px',
-                        border: `1px solid ${quadrant.color}20`,
-                        fontWeight: 750,
-                        fontSize: '0.72rem',
-                        bgcolor: `${quadrant.color}${dark ? '12' : '0b'}`,
-                        color: quadrant.color,
+                        fontSize: '0.8rem',
+                        color: 'text.secondary',
+                        fontVariantNumeric: 'tabular-nums',
                       }}
                     >
                       {quadrant.todos.length}
@@ -605,7 +580,6 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
                           opacity: 0.44,
                         }}
                       >
-                        <Box sx={{ width: 28, height: 2, mb: 1, borderRadius: 999, bgcolor: `${quadrant.color}70` }} />
                         <Typography variant="caption" sx={{ color: 'text.secondary', letterSpacing: '0.02em' }}>
                             {t('quadrant.empty')}
                           </Typography>

@@ -58,7 +58,7 @@ const createMermaidDialogSlotProps = ({ isDark, primaryColor }) => {
     },
     backdrop: {
       sx: {
-        backgroundColor: isDark ? 'rgba(0,0,0,.36)' : 'rgba(15,23,42,.18)',
+        backgroundColor: isDark ? 'rgba(0,0,0,.36)' : 'rgba(22,22,24,.18)',
         backdropFilter: 'blur(4px)',
         WebkitBackdropFilter: 'blur(4px)',
       },
@@ -569,7 +569,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     if (!excalidrawAPI) return
     const reference = String(note.sync_id || note.id)
     const elements = convertToExcalidrawElements([{ type: 'rectangle', x: 0, y: 0, width: 320, height: 230,
-      backgroundColor: '#f1f5f9', fillStyle: 'solid', strokeColor: primaryColor || '#1976d2', roughness: 0,
+      backgroundColor: '#f2f2f3', fillStyle: 'solid', strokeColor: primaryColor || '#1976d2', roughness: 0,
       link: `app://note/${encodeURIComponent(reference)}`, customData: { kind: 'note-reference', reference },
       label: { text: noteReferenceText(note), fontSize: 16, fontFamily: 2, textAlign: 'left', verticalAlign: 'top' } }])
     await commitWhiteboardScene({ elements: [...excalidrawAPI.getSceneElements(), ...centerElementsInViewport(elements, excalidrawAPI.getAppState())],
@@ -1801,7 +1801,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
                 color: 'text.secondary',
                 bgcolor: isDark ? 'rgba(35, 35, 41, 0.88)' : 'rgba(255, 255, 255, 0.88)',
                 border: '1px solid',
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(15, 23, 42, 0.10)',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(22,22,24, 0.10)',
                 backdropFilter: 'blur(10px)',
                 WebkitBackdropFilter: 'blur(10px)',
                 '&:hover': {

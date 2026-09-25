@@ -451,14 +451,14 @@ const TodoItem = ({
           boxSizing: 'border-box',
           borderRadius: '10px',
           bgcolor: theme.custom?.surface?.control,
-          border: `1px solid ${dark ? 'rgba(255,255,255,0.065)' : 'rgba(15,23,42,0.055)'}`,
+          border: `1px solid ${dark ? 'rgba(255,255,255,0.065)' : 'rgba(22,22,24,0.055)'}`,
           transition: createTransitionString(ANIMATIONS.hover),
           cursor: 'grab',
           '&:active': { cursor: 'grabbing', filter: 'brightness(0.97)' },
           '&:hover': {
             bgcolor: theme.custom?.surface?.controlHover || theme.palette.action.hover,
-            borderColor: dark ? 'rgba(255,255,255,0.11)' : 'rgba(15,23,42,0.09)',
-            boxShadow: dark ? '0 3px 10px rgba(0,0,0,0.22)' : '0 3px 10px rgba(15,23,42,0.055)'
+            borderColor: dark ? 'rgba(255,255,255,0.11)' : 'rgba(22,22,24,0.09)',
+            boxShadow: dark ? '0 3px 10px rgba(0,0,0,0.22)' : '0 3px 10px rgba(22,22,24,0.055)'
           },
         }}
         onClick={(e) => onClick && onClick(e, todo)}

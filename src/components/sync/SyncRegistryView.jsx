@@ -21,6 +21,7 @@ import {
   Tune as TuneIcon,
   Description as DescriptionIcon,
   AttachFile as AttachFileIcon,
+  WidgetsRounded as WidgetIcon,
 } from '../common/AppIcons';
 import { iconWithColor, combo, flex, settingsRowSx, spacing } from '../../styles/commonStyles';
 
@@ -154,6 +155,12 @@ const SyncRegistryView = ({ onOpenSettings }) => {
         name: '设置项',
         icon: <TuneIcon />,
         category: 'settings',
+      }),
+      buildNutcloudCategory({
+        id: 'widgets',
+        name: '组件与组件数据',
+        icon: <WidgetIcon />,
+        category: 'widgets',
       }),
       {
         id: 'todos',

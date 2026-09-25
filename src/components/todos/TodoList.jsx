@@ -758,7 +758,7 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
       // 当作为外部数据源（如 MyDayPanel）的子组件时，不添加背景，避免效果叠加
       ...(isExternalData ? {} : {
         backgroundColor: theme.palette.mode === 'dark'
-          ? 'rgba(30, 41, 59, 0.85)'
+          ? 'rgba(31,31,34, 0.85)'
           : 'rgba(255, 255, 255, 0.85)',
         backdropFilter: 'blur(12px) saturate(150%)',
         WebkitBackdropFilter: 'blur(12px) saturate(150%)'

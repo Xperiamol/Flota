@@ -68,3 +68,8 @@ export const FlotaGraphIcon = icon('FlotaGraphIcon', <>
 export const FlotaTagIcon = icon('FlotaTagIcon',
   <path fillRule="evenodd" d="M5 2h5.3a3 3 0 0 1 2.1.9l9.2 9.2a3 3 0 0 1 0 4.2l-5.3 5.3a3 3 0 0 1-4.2 0l-9.2-9.2a3 3 0 0 1-.9-2.1V5a3 3 0 0 1 3-3Zm2.5 3A2.5 2.5 0 1 0 7.5 10a2.5 2.5 0 0 0 0-5Z" />
 )
+
+export const FlotaHomeIcon = icon('FlotaHomeIcon', <>
+  <path d="M11 3.3a1.5 1.5 0 0 1 2 0l8 6.9c.6.5.2 1.5-.6 1.5H19v7.8a2.5 2.5 0 0 1-2.5 2.5H14v-5.5a2 2 0 0 0-4 0V22H7.5A2.5 2.5 0 0 1 5 19.5v-7.8H3.6c-.8 0-1.2-1-.6-1.5Z" />
+  <path opacity=".5" d="M12 14.5a2 2 0 0 1 2 2V22h-4v-5.5a2 2 0 0 1 2-2Z" />
+</>)

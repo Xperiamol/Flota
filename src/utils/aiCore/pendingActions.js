@@ -98,11 +98,12 @@ export const executeConversationAction = async ({ actionId, read, write, execute
   }
   const latest = read()
   if (!latest) return result // 执行期间会话已删除。
-  const { success, message, error, resultNoteId } = result
+  const { success, message, error, resultNoteId, resultData } = result
   write([
     ...latest.map(msg => patchMessagePendingAction(msg, actionId, {
       status: success ? 'done' : 'failed', resultMessage: message, error,
       ...(resultNoteId != null ? { resultNoteId } : {}),
+      ...(resultData ? { resultData } : {}),
     })),
     { role: 'assistant', content: message },
   ])

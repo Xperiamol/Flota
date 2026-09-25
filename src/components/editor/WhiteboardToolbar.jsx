@@ -170,7 +170,7 @@ export default function WhiteboardToolbar({
       color: tokens.accent,
       backgroundColor: tokens.selected,
     },
-    '& .MuiDivider-root': { borderColor: isDark ? 'rgba(255,255,255,.08)' : 'rgba(15,23,42,.08)' },
+    '& .MuiDivider-root': { borderColor: isDark ? 'rgba(255,255,255,.08)' : 'rgba(22,22,24,.08)' },
   }), [isDark, tokens])
 
   return (
@@ -238,7 +238,7 @@ export default function WhiteboardToolbar({
         '& .flota-toolbar-divider': {
           height: 22,
           mx: 0.5,
-          borderColor: isDark ? 'rgba(255,255,255,.08)' : 'rgba(15,23,42,.08)',
+          borderColor: isDark ? 'rgba(255,255,255,.08)' : 'rgba(22,22,24,.08)',
         },
       })}
     >

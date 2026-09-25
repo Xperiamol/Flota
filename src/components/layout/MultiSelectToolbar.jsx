@@ -55,12 +55,12 @@ const MultiSelectToolbar = ({
     px: 1,
     borderRadius: '9px',
     border: '1px solid',
-    borderColor: 'rgba(148,163,184,0.28)',
+    borderColor: 'rgba(157,157,165,0.28)',
     fontWeight: 600,
     fontSize: '0.75rem',
     lineHeight: 1,
     '&:hover': {
-      borderColor: 'rgba(148,163,184,0.45)',
+      borderColor: 'rgba(157,157,165,0.45)',
       backgroundColor: 'rgba(255,255,255,0.12)'
     },
     '& .MuiButton-startIcon': {
@@ -94,10 +94,10 @@ const MultiSelectToolbar = ({
       <Box
         sx={(theme) => ({
           borderBottom: 1,
-          borderColor: theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.14)' : 'rgba(15,23,42,0.08)',
+          borderColor: theme.palette.mode === 'dark' ? 'rgba(157,157,165,0.14)' : 'rgba(22,22,24,0.08)',
           backgroundColor: theme.palette.mode === 'dark'
-            ? 'rgba(30,41,59,0.78)'
-            : 'rgba(248,251,255,0.82)',
+            ? 'rgba(31,31,34,0.78)'
+            : 'rgba(250,250,250,0.82)',
           color: 'text.primary',
           backdropFilter: 'blur(18px) saturate(160%)',
           WebkitBackdropFilter: 'blur(18px) saturate(160%)'

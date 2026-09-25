@@ -95,16 +95,15 @@ const FocusMiniWindow = ({ initialData = {} }) => {
           border: '1px solid',
           borderColor: theme.palette.mode === 'dark'
             ? 'rgba(255,255,255,0.13)'
-            : 'rgba(15,23,42,0.10)',
+            : 'rgba(22,22,24,0.10)',
           backgroundColor: theme.palette.mode === 'dark'
-            ? 'rgba(18,27,44,0.92)'
-            : 'rgba(250,252,255,0.92)',
-          backgroundImage: `linear-gradient(145deg, ${alpha(theme.palette.primary.main, 0.07)}, transparent 56%)`,
+            ? 'rgba(31,31,34,0.96)'
+            : 'rgba(255,255,255,0.96)',
           backdropFilter: 'blur(22px) saturate(160%)',
           WebkitBackdropFilter: 'blur(22px) saturate(160%)',
           boxShadow: theme.palette.mode === 'dark'
-            ? '0 8px 26px rgba(2,6,23,0.42), inset 0 1px 0 rgba(255,255,255,0.06)'
-            : '0 8px 26px rgba(15,23,42,0.16), inset 0 1px 0 rgba(255,255,255,0.76)',
+            ? '0 8px 26px rgba(11,11,12,0.42), inset 0 1px 0 rgba(255,255,255,0.06)'
+            : '0 8px 26px rgba(22,22,24,0.16), inset 0 1px 0 rgba(255,255,255,0.76)',
           WebkitAppRegion: 'drag'
         })}
       >

@@ -14,7 +14,7 @@ import {
   FlotaCalendarIcon as CalendarToday,
   FlotaTimelineIcon as Timeline,
   FlotaSettingsIcon as Settings,
-  FlotaPersonIcon as Person,
+  FlotaHomeIcon as HomeIcon,
   FlotaPluginIcon as Store,
 } from '../common/FlotaIcons';
 import { alpha, useTheme } from '@mui/material/styles';
@@ -25,7 +25,12 @@ import { useSidebarOrder } from '../../store/useSidebarOrder';
 import logger from '../../utils/logger';
 import { EASING, DURATION_MS } from '../../utils/animationConfig';
 import RecentNotesRail from './RecentNotesRail';
+import AppContextMenu from '../common/AppContextMenu';
+import { useWidgetStore, ensureWidgetsLoaded, widgetViewId, parseWidgetViewId, openWidgetHome } from '../../store/useWidgetStore';
 import FlotaAIIcon from '../common/FlotaAIIcon';
+import { WidgetGlyph } from '../widgets/widgetIcons';
+import { liquidGlassSx, usePaneOpacity } from '../../styles/paneStyles';
+import { createInstanceInteractive } from '../../utils/widgets/widgetActions';
 
 const DynamicIcon = ({ name, ...props }) => {
   const Icon = (name && MuiIcons[name]) || Hub;
@@ -37,7 +42,7 @@ const NAV_EASING = EASING.standard;
 const NAV_DURATION = DURATION_MS.normal;
 const NAV_DURATION_FAST = DURATION_MS.fast;
 
-// 单个导航按钮：左侧流体指示条 + 极轻背景过渡，无 scale/rotate
+// 单个导航按钮：选中时浅色圆角底 + 主色图标，无 scale/rotate
 const NavItem = React.memo(function NavItem({
   active,
   tooltip,
@@ -52,13 +57,14 @@ const NavItem = React.memo(function NavItem({
   onDragLeave,
   onDrop,
   onDragEnd,
+  onContextMenu,
 }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
 
   const hoverBg = theme.palette.action.hover;
   const activeBg = alpha(theme.palette.primary.main, isDark ? 0.18 : 0.1);
-  const pressBg = theme.custom?.surface?.pressed || (isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,23,42,0.08)');
+  const pressBg = theme.custom?.surface?.pressed || (isDark ? 'rgba(255,255,255,0.14)' : 'rgba(22,22,24,0.08)');
 
   return (
     <Tooltip title={tooltip} placement="right" enterDelay={400} enterNextDelay={200}>
@@ -69,6 +75,7 @@ const NavItem = React.memo(function NavItem({
         onDragLeave={onDragLeave}
         onDrop={onDrop}
         onDragEnd={onDragEnd}
+        onContextMenu={onContextMenu}
         sx={{
           position: 'relative',
           width: '36px',
@@ -92,26 +99,6 @@ const NavItem = React.memo(function NavItem({
             : undefined,
         }}
       >
-        {/* 左侧流体指示条：选中时从中心向上下伸展 */}
-        <Box
-          aria-hidden
-          sx={{
-            position: 'absolute',
-            left: '-7px',
-            top: '50%',
-            width: '3px',
-            height: '16px',
-            borderRadius: '2px',
-            backgroundColor: theme.palette.primary.main,
-            transform: active
-              ? 'translateY(-50%) scaleY(1)'
-              : 'translateY(-50%) scaleY(0.2)',
-            opacity: active ? 1 : 0,
-            transformOrigin: 'center',
-            transition: `transform ${NAV_DURATION}ms ${NAV_EASING}, opacity ${NAV_DURATION_FAST}ms ${NAV_EASING}`,
-            pointerEvents: 'none',
-          }}
-        />
         <ButtonBase
           onClick={onClick}
           aria-label={tooltip}
@@ -177,6 +164,7 @@ const CHRISTMAS_GREETINGS = [
 const Sidebar = () => {
   const { t } = useTranslation();
   const theme = useTheme();
+  const paneOpacityValue = usePaneOpacity();
   const { currentView, setCurrentView, userAvatar, userName, christmasMode } = useStore(useShallow((state) => ({
     currentView: state.currentView,
     setCurrentView: state.setCurrentView,
@@ -185,6 +173,11 @@ const Sidebar = () => {
     christmasMode: state.christmasMode,
   })));
   const pluginViews = usePluginViewsBySurface('main:view');
+  // 固定到侧边栏的组件：每个组件一个入口（没有统一的“组件”菜单）
+  const allWidgets = useWidgetStore((state) => state.widgets);
+  const pinnedWidgets = useMemo(() => allWidgets.filter((widget) => widget.pinned), [allWidgets]);
+  const [widgetMenu, setWidgetMenu] = useState(null);
+  React.useEffect(() => { ensureWidgetsLoaded(); }, []);
   const savedOrder = useSidebarOrder((s) => s.order);
   const reorderSidebar = useSidebarOrder((s) => s.reorder);
   const [showWelcome, setShowWelcome] = useState(false);
@@ -199,6 +192,12 @@ const Sidebar = () => {
   // 主侧边栏始终显示，不受open prop控制
 
   const menuItems = [
+    {
+      id: 'profile',
+      icon: <HomeIcon />,
+      label: t('sidebar.profile'),
+      tooltip: t('sidebar.profileTooltip')
+    },
     {
       id: 'notes',
       icon: <StickyNote2 />,
@@ -229,6 +228,12 @@ const Sidebar = () => {
       label: view.title,
       tooltip: view.tooltip
     })),
+    ...pinnedWidgets.map((widget) => ({
+      id: widgetViewId(widget.id),
+      icon: <WidgetGlyph icon={widget.manifest?.icon} />,
+      label: widget.name,
+      tooltip: widget.name
+    })),
     {
       id: 'plugins',
       icon: <Store />,
@@ -241,12 +246,6 @@ const Sidebar = () => {
       label: 'AI',
       tooltip: t('sidebar.aiTooltip') || 'FlotaAI'
     },
-    {
-      id: 'profile',
-      icon: <Person />,
-      label: t('sidebar.profile'),
-      tooltip: t('sidebar.profileTooltip')
-    }
   ];
 
   // 按用户保存的顺序对导航按钮重排：
@@ -379,18 +378,16 @@ const Sidebar = () => {
         minWidth: '52px',
         maxWidth: '52px',
         height: '100%',
-        backgroundColor: 'transparent',
-        borderRight: `1px solid ${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
+        boxSizing: 'border-box',
+        // 浮在背景上的圆角胶囊，和其他面板同一种材质
+        ...liquidGlassSx(theme, { opacity: paneOpacityValue, radius: 18 }),
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        paddingTop: '7px',
-        paddingBottom: '8px',
+        paddingTop: '10px',
+        paddingBottom: '10px',
         position: 'relative',
         zIndex: 100,
-        background: theme.custom?.surface?.glassLight,
-        backdropFilter: theme.custom?.glass?.backdropFilter,
-        WebkitBackdropFilter: theme.custom?.glass?.backdropFilter,
         boxShadow: 'none',
         overflow: 'visible',
         minHeight: 0,
@@ -410,18 +407,14 @@ const Sidebar = () => {
           onMouseEnter={() => setAvatarHover(true)}
           onMouseLeave={() => setAvatarHover(false)}
           sx={{
-            width: '34px',
-            height: '34px',
-            borderRadius: '9px',
+            width: '32px',
+            height: '32px',
+            borderRadius: '50%',
             backgroundColor: userAvatar ? 'transparent' : theme.palette.primary.main,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: userAvatar ? 'none' : `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
-            // 柔和的双层 elevation：环境光 + 投影
-            boxShadow: avatarHover
-              ? '0 0 0 2px rgba(255,255,255,0.08), 0 6px 16px rgba(0,0,0,0.22)'
-              : '0 0 0 0 rgba(255,255,255,0), 0 2px 6px rgba(0,0,0,0.18)',
+            boxShadow: 'none',
             overflow: 'hidden',
             cursor: 'pointer',
             // 仅过渡 box-shadow / filter，不做 transform，避免"翻车感"
@@ -568,6 +561,10 @@ const Sidebar = () => {
             onDragLeave={handleNavDragLeave(item.id)}
             onDrop={handleNavDrop(item.id)}
             onDragEnd={handleNavDragEnd}
+            onContextMenu={parseWidgetViewId(item.id) ? (event) => {
+              event.preventDefault();
+              setWidgetMenu({ x: event.clientX, y: event.clientY, widgetId: parseWidgetViewId(item.id) });
+            } : undefined}
           >
             {christmasMode && CHRISTMAS_ICONS[item.id] ? (
               <Box
@@ -629,6 +626,30 @@ const Sidebar = () => {
           )}
         </NavItem>
       </Box>
+      <AppContextMenu
+        anchor={widgetMenu}
+        onClose={() => setWidgetMenu(null)}
+        items={widgetMenu ? [
+          {
+            label: '新建实例',
+            icon: <MuiIcons.Add fontSize="small" />,
+            onClick: () => {
+              const widget = allWidgets.find((item) => item.id === widgetMenu.widgetId);
+              if (widget) createInstanceInteractive(widget);
+            },
+          },
+          {
+            label: '使用说明',
+            icon: <MuiIcons.HelpOutline fontSize="small" />,
+            onClick: () => {
+              useWidgetStore.getState().setIntroDismissed(widgetMenu.widgetId, false);
+              openWidgetHome(widgetMenu.widgetId);
+            },
+          },
+          { divider: true },
+          { label: '从侧边栏取消固定', icon: <MuiIcons.PushPinOutlined fontSize="small" />, onClick: () => useWidgetStore.getState().setPinned(widgetMenu.widgetId, false) },
+        ] : []}
+      />
     </Box>
   );
 };

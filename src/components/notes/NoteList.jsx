@@ -51,7 +51,7 @@ import FilterContainer from '../filters/FilterContainer'
 import FilterPopover from '../filters/FilterPopover'
 import FilterToggleButton from '../filters/FilterToggleButton'
 import ChoiceFilter from '../filters/ChoiceFilter'
-import { Image as ImageIcon, AccessTime as AccessTimeIcon, Description as MarkdownIcon, Category as CategoryIcon } from '../common/AppIcons'
+import { Image as ImageIcon, AccessTime as AccessTimeIcon, Description as MarkdownIcon, Category as CategoryIcon, BookmarkBorder } from '../common/AppIcons'
 import zhCN from '../../locales/zh-CN'
 
 const {
@@ -218,10 +218,11 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
         if (!passed) return false;
       }
 
-      // 笔记类型
+      // 笔记类型（“剪藏”按来源识别，与 Markdown/白板并列）
       if (selectedTypeFilters.length > 0) {
         const type = note.note_type || 'markdown';
-        if (!selectedTypeFilters.includes(type)) return false;
+        const isClip = typeof note.meta === 'string' && note.meta.includes('"type":"clip"');
+        if (!selectedTypeFilters.includes(type) && !(isClip && selectedTypeFilters.includes('clip'))) return false;
       }
 
       return true;
@@ -311,6 +312,14 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
     searchCondition: showDeleted ? { deleted: true } : {},
     debounceDelay: 300
   })
+
+  // 其他页面请求的搜索（如首页高频词）：填入搜索框
+  const noteSearchRequest = useStore((state) => state.noteSearchRequest)
+  useEffect(() => {
+    if (!noteSearchRequest) return
+    const request = useStore.getState().consumeNoteSearchRequest()
+    if (request) setLocalSearchQuery(request.query)
+  }, [noteSearchRequest, setLocalSearchQuery])
 
   const handleNoteClick = useCallback((noteId) => {
     if (!multiSelect.isMultiSelectMode) {
@@ -662,7 +671,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         border: '2px dashed', borderColor: theme.palette.primary.main,
         borderRadius: '12px', color: theme.palette.primary.main,
-        backgroundColor: theme.palette.mode === 'dark' ? 'rgba(15,23,42,0.94)' : 'rgba(248,251,255,0.94)',
+        backgroundColor: theme.palette.mode === 'dark' ? 'rgba(22,22,24,0.94)' : 'rgba(250,250,250,0.94)',
         fontSize: 13, fontWeight: 600,
       },
       flex: 1,
@@ -671,7 +680,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
       overflow: 'hidden',
       minHeight: 0,
       backgroundColor: theme.palette.mode === 'dark'
-        ? 'rgba(30, 41, 59, 0.85)'
+        ? 'rgba(31,31,34, 0.85)'
         : 'rgba(255, 255, 255, 0.85)',
       backdropFilter: 'blur(12px) saturate(150%)',
       WebkitBackdropFilter: 'blur(12px) saturate(150%)'
@@ -759,7 +768,8 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                 icon={<CategoryIcon />}
                 options={[
                   { key: 'markdown', label: 'Markdown', icon: <MarkdownIcon sx={{ fontSize: 14 }} /> },
-                  { key: 'whiteboard', label: '白板', icon: <WhiteboardIcon sx={{ fontSize: 14 }} /> }
+                  { key: 'whiteboard', label: '白板', icon: <WhiteboardIcon sx={{ fontSize: 14 }} /> },
+                  { key: 'clip', label: '来源：剪藏', icon: <BookmarkBorder sx={{ fontSize: 14 }} /> }
                 ]}
                 selectedKeys={selectedTypeFilters}
                 onChange={setSelectedTypeFilters}

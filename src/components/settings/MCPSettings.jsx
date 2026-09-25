@@ -22,6 +22,7 @@ import {
     ContentCopy as CopyIcon
 } from '../common/AppIcons';
 import mcpAPI from '../../api/mcpAPI';
+import McpHttpSection from './McpHttpSection';
 import { settingsFieldGroupSx, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../../styles/commonStyles';
 
 export default function MCPSettings({ enabled, onEnabledChange }) {
@@ -316,6 +317,8 @@ export default function MCPSettings({ enabled, onEnabledChange }) {
                     </Button>
                 </DialogActions>
             </Dialog>
+
+            <McpHttpSection />
 
             {/* 错误提示对话框 */}
             <Dialog open={errorDialog.open} onClose={() => setErrorDialog({ open: false, message: '' })} maxWidth="xs" fullWidth>

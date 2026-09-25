@@ -1,5 +1,6 @@
 import React from 'react'
 import NoteReferencePicker from './NoteReferencePicker'
+import InstancePicker from '../widgets/InstancePicker'
 import {
   Box,
   IconButton,
@@ -42,13 +43,15 @@ import {
   Checklist as MeetingTodoIcon,
   Email as FollowupEmailIcon,
   SelectAll as BlockSelectIcon,
-  Brush as WhiteboardIcon
+  Brush as WhiteboardIcon,
+  WidgetsRounded as WidgetIcon
 } from '../common/AppIcons'
 import ImageUploadButton from './ImageUploadButton'
 import AudioRecordButton from './AudioRecordButton'
 import { useStore } from '../../store/useStore'
 import { STANDARD_CALLOUT_TYPES } from '../../markdown/calloutConfig.js'
 import { requestLinkEditor } from './LinkEditorDialog'
+import { liquidGlassSx } from '../../styles/paneStyles'
 
 // 所有可用工具栏项的定义（id → 渲染配置）
 const ALL_TOOLBAR_ITEMS = {
@@ -72,6 +75,7 @@ const ALL_TOOLBAR_ITEMS = {
   image:      { group: 'insert', label: '图片', type: 'image' },
   audio:      { group: 'insert', label: '录音', type: 'audio' },
   embedWhiteboard: { group: 'insert', label: '嵌入画布', icon: WhiteboardIcon, type: 'embedWhiteboard' },
+  embedWidget: { group: 'insert', label: '插入组件', icon: WidgetIcon, type: 'embedWidget' },
   wikiLink:   { group: 'ext', label: 'Wiki 链接', type: 'wikiLink' },
   colorText:  { group: 'ext', label: '彩色文本', icon: ColorIcon, type: 'colorMenu' },
   callout:    { group: 'ext', label: '提示框', icon: CalloutIcon, type: 'calloutMenu' },
@@ -90,7 +94,7 @@ const DEFAULT_TOOLBAR_ORDER = [
   'heading', '|',
   'bold', 'italic', 'highlight', 'strike', 'inlineCode', '|',
   'bulletList', 'orderedList', 'taskList', 'quote', '|',
-  'link', 'wikiLink', 'image', 'audio', 'embedWhiteboard', '|',
+  'link', 'wikiLink', 'image', 'audio', 'embedWhiteboard', 'embedWidget', '|',
   'table', 'codeBlock', 'inlineMath', 'blockMath', 'divider', '|',
   'colorText', 'callout', 'clearFormat', 'blockSelect',
 ]
@@ -201,6 +205,15 @@ const MarkdownToolbar = ({
 }) => {
   const [calloutAnchor, setCalloutAnchor] = React.useState(null)
   const [embedPickerOpen, setEmbedPickerOpen] = React.useState(false)
+  const [widgetPickerOpen, setWidgetPickerOpen] = React.useState(false)
+  // 插入组件实例：[组件 · 实例](app://widget/<实例 id>)
+  const insertWidget = ({ widget, instance }) => {
+    const title = `${widget.name} · ${instance.name}`.replace(/[[\]]/g, '')
+    if (editorMode === 'wysiwyg' && editor) {
+      if (!editor.chain().focus().insertContent([{ type: 'widgetEmbed', attrs: { reference: instance.id, title } }, { type: 'paragraph' }]).run()) throw new Error('当前位置无法插入组件，请回到正文重试')
+    }
+    else onInsert(`\n\n[${title}](app://widget/${encodeURIComponent(instance.id)})\n\n`, '', '')
+  }
 
   const [colorAnchor, setColorAnchor] = React.useState(null)
   const [headingAnchor, setHeadingAnchor] = React.useState(null)
@@ -457,6 +470,12 @@ const MarkdownToolbar = ({
           }}
           sx={btnSx}
         />
+      case 'embedWidget':
+        return (
+          <Tooltip key={id} title="插入组件" placement="bottom">
+            <span><IconButton size="small" aria-label="插入组件" disabled={disabled} onClick={() => setWidgetPickerOpen(true)} sx={btnSx}><WidgetIcon /></IconButton></span>
+          </Tooltip>
+        )
       case 'embedWhiteboard':
         return (
           <Tooltip key={id} title="嵌入画布" placement="bottom">
@@ -515,17 +534,22 @@ const MarkdownToolbar = ({
   }
 
   return (
+    <Box sx={{ px: 1.25, pt: 1, pb: 0.5 }}>
     <Box
       ref={containerRef}
-      sx={{
+      sx={(theme) => ({
         display: 'flex', alignItems: 'center', gap: 0,
-        px: 1, py: 0.5,
-        borderBottom: 1, borderColor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
-        bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(30,41,59,0.5)' : 'rgba(255,255,255,0.7)',
-        backdropFilter: 'blur(20px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-        flexWrap: 'nowrap', minHeight: 40, overflow: 'hidden',
-      }}
+        px: 0.75, py: 0.375,
+        flexWrap: 'nowrap', minHeight: 38, overflow: 'hidden',
+        // 格式栏做成一条浮起的液态玻璃胶囊，和上面的标题栏区分开
+        ...liquidGlassSx(theme, { radius: 12 }),
+        // 放在白色面板上时玻璃本身透不出东西，底色略加一点灰，边框换成可见的细线
+        backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.045)' : 'rgba(22,22,24,0.028)',
+        border: `1px solid ${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.09)' : 'rgba(22,22,24,0.08)'}`,
+        boxShadow: theme.palette.mode === 'dark'
+          ? '0 6px 18px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)'
+          : '0 6px 18px rgba(22,22,24,0.06), 0 1px 2px rgba(22,22,24,0.05), inset 0 1px 0 rgba(255,255,255,0.9)',
+      })}
     >
       {effectiveOrder.map((id, index) => {
         const hidden = index >= visibleCount
@@ -555,6 +579,7 @@ const MarkdownToolbar = ({
         }
         else onInsert(`\n\n[关联画布](app://whiteboard/${encodeURIComponent(reference)})\n\n`, '', '')
       }} />
+      <InstancePicker open={widgetPickerOpen} onClose={() => setWidgetPickerOpen(false)} onSelect={insertWidget} />
 
       <Box
         sx={{
@@ -662,6 +687,7 @@ const MarkdownToolbar = ({
           </MenuItem>
         ))}
       </Menu>
+    </Box>
     </Box>
   )
 }

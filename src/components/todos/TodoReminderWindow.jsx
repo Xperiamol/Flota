@@ -77,11 +77,10 @@ const TodoReminderWindow = ({ initialData = {} }) => {
           border: '1px solid',
           borderColor: theme.palette.mode === 'dark'
             ? 'rgba(255,255,255,0.14)'
-            : 'rgba(15,23,42,0.11)',
+            : 'rgba(22,22,24,0.11)',
           bgcolor: theme.palette.mode === 'dark'
-            ? 'rgba(17,25,40,0.93)'
-            : 'rgba(250,252,255,0.94)',
-          backgroundImage: `linear-gradient(145deg, ${alpha(theme.palette.primary.main, 0.075)}, transparent 58%)`,
+            ? 'rgba(31,31,34,0.96)'
+            : 'rgba(255,255,255,0.96)',
           backdropFilter: 'blur(24px) saturate(165%)',
           WebkitBackdropFilter: 'blur(24px) saturate(165%)',
           boxShadow: 'none'

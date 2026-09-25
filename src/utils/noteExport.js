@@ -136,9 +136,9 @@ export const buildExportHtml = async (
     : ''
 
   const isDark = theme === 'dark'
-  const pageBg = isDark ? '#0f172a' : '#ffffff'
-  const pageColor = isDark ? '#e2e8f0' : '#1f2937'
-  const titleColor = isDark ? '#f8fafc' : '#111827'
+  const pageBg = isDark ? '#161618' : '#ffffff'
+  const pageColor = isDark ? '#e6e6e8' : '#1f2937'
+  const titleColor = isDark ? '#fafafa' : '#111827'
   const tagColor = isDark ? '#93c5fd' : '#2563eb'
 
   return `<!DOCTYPE html>
@@ -163,8 +163,8 @@ body {
 .export-body img { max-width: 100%; height: auto; }
 .export-attachment-card {
   display: inline-flex; align-items: center; gap: 10px; max-width: 100%; box-sizing: border-box;
-  margin: 6px 0; padding: 9px 12px; border: 1px solid ${isDark ? '#334155' : '#e2e8f0'};
-  border-radius: 10px; background: ${isDark ? '#172033' : '#f8fafc'}; break-inside: avoid;
+  margin: 6px 0; padding: 9px 12px; border: 1px solid ${isDark ? '#3a3a40' : '#e6e6e8'};
+  border-radius: 10px; background: ${isDark ? '#172033' : '#fafafa'}; break-inside: avoid;
   color: inherit; text-decoration: none;
 }
 .export-attachment-icon {
@@ -174,7 +174,7 @@ body {
 }
 .export-attachment-content { min-width: 0; display: inline-flex; flex-direction: column; line-height: 1.3; }
 .export-attachment-name { overflow-wrap: anywhere; font-size: 13px; color: ${pageColor}; }
-.export-attachment-hint { margin-top: 2px; font-size: 10px; color: ${isDark ? '#94a3b8' : '#64748b'}; }
+.export-attachment-hint { margin-top: 2px; font-size: 10px; color: ${isDark ? '#9d9da5' : '#6e6e76'}; }
 .markdown-preview, .export-body { color: ${pageColor}; }
 </style>
 </head>

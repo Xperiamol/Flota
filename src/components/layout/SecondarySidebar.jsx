@@ -14,7 +14,9 @@ import {
   Menu,
   MenuItem,
   TextField,
-  InputAdornment
+  InputAdornment,
+  Button,
+  alpha
 } from '@mui/material';
 import {
   Settings as SettingsIcon,
@@ -35,7 +37,8 @@ import {
   AddTask as AddTaskIcon,
   Brush as WhiteboardIcon,
   RestartAlt as ResetIcon,
-  Tag as TagIcon
+  Tag as TagIcon,
+  BookmarkBorder
 } from '../common/AppIcons';
 import FlotaAIIcon from '../common/FlotaAIIcon';
 import { useStore } from '../../store/useStore';
@@ -43,7 +46,8 @@ import NoteList from '../notes/NoteList';
 import TodoList from '../todos/TodoList';
 import MyDayPanel from '../todos/MyDayPanel';
 import { t } from '../../utils/i18n';
-import { compactGlassPanelSx, thinScrollbarSx } from '../../styles/commonStyles';
+import { compactGlassPanelSx, thinScrollbarSx, segmentedButtonSx, segmentedControlSx } from '../../styles/commonStyles';
+import { PANE_GAP, liquidGlassSx, usePaneOpacity } from '../../styles/paneStyles';
 
 const DEFAULT_TIMELINE_TYPES = ['note', 'whiteboard', 'todo'];
 
@@ -147,11 +151,11 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
     };
   }, [resizing, sidebarWidth]);
   const currentView = useStore((state) => state.currentView);
-  const maskOpacity = useStore((state) => state.maskOpacity);
   const pluginStoreFilters = useStore((state) => state.pluginStoreFilters);
   const pluginStoreCategories = useStore((state) => state.pluginStoreCategories);
   const setPluginStoreCategory = useStore((state) => state.setPluginStoreCategory);
   const setPluginStoreTab = useStore((state) => state.setPluginStoreTab);
+  const setPluginStoreType = useStore((state) => state.setPluginStoreType);
   const settingsTabValue = useStore((state) => state.settingsTabValue);
   const setSettingsTabValue = useStore((state) => state.setSettingsTabValue);
   const aiConversations = useStore((state) => state.aiConversations);
@@ -177,32 +181,25 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
   const [aiMultiSelectMode, setAiMultiSelectMode] = useState(false);
   const [aiSelectedConvIds, setAiSelectedConvIds] = useState([]);
 
+  // 侧栏条目：选中只用浅底色 + 主色文字，不加描边
   const sidebarItemSx = (active = false) => ({
-    borderRadius: '10px',
+    borderRadius: '8px',
     mb: 0.25,
     px: 1,
     py: 0.25,
-    minHeight: 36,
-    border: '1px solid',
-    borderColor: active
-      ? 'primary.main'
-      : 'transparent',
+    minHeight: 34,
+    color: active ? 'primary.main' : 'text.primary',
     bgcolor: active
-      ? (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(25,118,210,0.08)'
+      ? (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.1)
       : 'transparent',
-    transition: 'background-color 180ms cubic-bezier(0.32,0.72,0,1), border-color 180ms cubic-bezier(0.32,0.72,0,1), color 180ms cubic-bezier(0.32,0.72,0,1)',
+    transition: 'background-color 150ms ease, color 150ms ease',
     '&:hover': {
       bgcolor: active
-        ? (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.11)' : 'rgba(25,118,210,0.11)'
-        : (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.055)' : 'rgba(15,23,42,0.045)',
-      borderColor: active
-        ? 'primary.main'
-        : (theme) => theme.palette.mode === 'dark' ? 'rgba(148,163,184,0.14)' : 'rgba(15,23,42,0.08)',
+        ? (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.2 : 0.13)
+        : 'action.hover',
     },
-    '&.Mui-selected': {
-      bgcolor: active
-        ? (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(25,118,210,0.08)'
-        : undefined,
+    '&.Mui-selected, &.Mui-selected:hover': {
+      bgcolor: (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.1),
     },
     '& .MuiListItemText-root': {
       my: 0
@@ -291,17 +288,7 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
     clearSharedMultiSelectBridge
   ]);
 
-  // 根据遮罩透明度设置获取对应的透明度值
-  const getMaskOpacityValue = (isDark) => {
-    const opacityMap = {
-      none: { dark: 0, light: 0 },
-      light: { dark: 0.45, light: 0.4 },
-      medium: { dark: 0.65, light: 0.65 },
-      heavy: { dark: 0.88, light: 0.88 }
-    }
-    const values = opacityMap[maskOpacity] || opacityMap.medium
-    return isDark ? values.dark : values.light
-  }
+  const paneOpacityValue = usePaneOpacity();
 
   // 根据当前视图渲染不同的侧边栏内容
   const renderSidebarContent = () => {
@@ -379,15 +366,11 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
           timelineFilter.showFuture ||
           (timelineFilter.quickMode || 'all') !== 'all'
 
+        // 筛选分组直接放在面板上，组与组之间用细分割线分开
         const filterSectionSx = (themeObj) => ({
-          p: 1,
-          borderRadius: '12px',
-          border: '1px solid',
-          borderColor: themeObj.palette.mode === 'dark' ? 'rgba(148,163,184,0.14)' : 'rgba(15,23,42,0.07)',
-          bgcolor: themeObj.palette.mode === 'dark' ? 'rgba(15,23,42,0.34)' : 'rgba(255,255,255,0.58)',
-          boxShadow: themeObj.palette.mode === 'dark'
-            ? '0 10px 26px rgba(0,0,0,0.12)'
-            : '0 10px 26px rgba(15,23,42,0.045)'
+          px: 0.25,
+          py: 1.25,
+          borderTop: `1px solid ${themeObj.palette.divider}`,
         })
 
         const sectionTitleSx = {
@@ -541,7 +524,7 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
                       borderRadius: '12px',
                       textAlign: 'center',
                       color: 'text.secondary',
-                      bgcolor: themeObj.palette.mode === 'dark' ? 'rgba(148,163,184,0.06)' : 'rgba(15,23,42,0.035)'
+                      bgcolor: themeObj.palette.mode === 'dark' ? 'rgba(157,157,165,0.06)' : 'rgba(22,22,24,0.035)'
                     })}
                   >
                     <Typography sx={{ fontSize: 12 }}>暂无可用标签</Typography>
@@ -570,8 +553,11 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
         )
       }
       case 'plugins': {
+        const isWidgetType = pluginStoreFilters.type === 'widget';
         const categories = pluginStoreCategories && pluginStoreCategories.length > 0
-          ? [{ id: 'all', name: t('plugins.allPlugins') }, ...pluginStoreCategories]
+          ? [{ id: 'all', name: isWidgetType ? '全部组件' : t('plugins.allPlugins') }, ...pluginStoreCategories]
+          : isWidgetType
+          ? [{ id: 'all', name: '全部组件' }]
           : [
               { id: 'all', name: t('plugins.allPlugins') },
               { id: 'featured', name: t('plugins.featured') },
@@ -584,7 +570,7 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
           { id: 'market', label: t('plugins.market') },
           { id: 'installed', label: t('plugins.installed') },
           { id: 'local', label: t('plugins.local') }
-        ]
+        ].filter((tab) => !(isWidgetType && tab.id === 'local'))
 
         return (
           <Box sx={(theme) => ({ 
@@ -593,6 +579,20 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
             <Typography sx={compactTitleSx}>
               {t('sidebar.plugins')}
             </Typography>
+
+            {/* 插件扩展 Flota 本身；组件是可以放进笔记、侧边栏和首页的小应用 */}
+            <Box sx={(theme) => ({ ...segmentedControlSx(theme), display: 'flex', mb: 1 })}>
+              {[{ id: 'plugin', label: '插件' }, { id: 'widget', label: '组件' }].map((option) => {
+                const active = (pluginStoreFilters.type || 'plugin') === option.id;
+                return (
+                  <Button key={option.id} disableElevation disableRipple variant="text" aria-pressed={active}
+                    onClick={() => setPluginStoreType(option.id)}
+                    sx={(theme) => ({ ...segmentedButtonSx(active)(theme), flex: 1 })}>
+                    {option.label}
+                  </Button>
+                );
+              })}
+            </Box>
 
             <Stack direction="row" spacing={0.75} sx={{ mb: 1.25 }}>
               {tabs.map((tab) => (
@@ -648,6 +648,7 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
           { id: 7, name: t('settings.proxy'), icon: <WifiIcon /> },
           { id: 8, name: t('settings.data'), icon: <ImportIcon /> },
           { id: 9, name: 'MCP 服务', icon: <CodeIcon /> },
+          { id: 12, name: '网页剪藏', icon: <BookmarkBorder /> },
           { id: 10, name: '编辑器', icon: <EditNoteIcon /> },
           { id: 11, name: t('settings.about'), icon: <InfoIcon /> }
         ]
@@ -830,6 +831,7 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
     }
   };
 
+
   const sidebarContent = renderSidebarContent();
   
   // 如果当前视图不需要侧边栏内容，但仍需要渲染容器以支持动画
@@ -841,6 +843,8 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
         width: shouldShow ? sidebarWidth : 0,
         minWidth: shouldShow ? sidebarWidth : 0,
         maxWidth: shouldShow ? sidebarWidth : 0,
+        // 与主内容区之间的间隙，收起时一起收掉
+        mr: shouldShow ? `${PANE_GAP}px` : 0,
         height: '100%',
         // 关闭时必须裁剪并禁用命中；否则内部固定宽度面板虽然透明，
         // 仍会伸出 0 宽容器并拦截主内容区的点击。
@@ -852,30 +856,22 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
         opacity: shouldShow ? 1 : 0,
         transition: resizing
           ? 'none'
-          : theme.transitions.create(['width', 'minWidth', 'maxWidth', 'opacity'], {
+          : theme.transitions.create(['width', 'minWidth', 'maxWidth', 'margin', 'opacity'], {
               easing: theme.transitions.easing.easeInOut,
               duration: theme.transitions.duration.standard,
             }),
       }}
     >
       <Box
-        sx={(themeObj) => {
-          const opacity = getMaskOpacityValue(themeObj.palette.mode === 'dark')
-          return {
-            width: sidebarWidth,
-            height: '100%',
-            backgroundColor: themeObj.palette.mode === 'dark'
-              ? `rgba(15, 23, 42, ${opacity})`
-              : `rgba(240, 244, 248, ${opacity})`,
-            backdropFilter: opacity > 0 ? 'blur(12px)' : 'none',
-            WebkitBackdropFilter: opacity > 0 ? 'blur(12px)' : 'none',
-            borderRight: 1,
-            borderColor: 'divider',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-          }
-        }}
+        sx={(themeObj) => ({
+          ...liquidGlassSx(themeObj, { opacity: paneOpacityValue }),
+          width: sidebarWidth,
+          height: '100%',
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        })}
       >
         {sidebarContent}
       </Box>
@@ -892,7 +888,7 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
           sx={(themeObj) => ({
             position: 'absolute',
             top: 0,
-            right: -3,
+            right: -(PANE_GAP / 2 + 3),
             width: 6,
             height: '100%',
             cursor: 'col-resize',

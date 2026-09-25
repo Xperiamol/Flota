@@ -222,7 +222,7 @@ const isUnsupportedDirectiveLine = (line, kind) => {
 }
 
 // flowchart 合法语句的白名单关键字与节点/连接行的特征字符。
-// 用来识别模型偶尔自造的伪指令行（例如 `bg #0f172a,#1e1b4b`），并整行丢弃。
+// 用来识别模型偶尔自造的伪指令行（例如 `bg #161618,#1e1b4b`），并整行丢弃。
 const FLOWCHART_KEYWORD_RE = /^(flowchart|graph|subgraph|end|style|classDef|class|linkStyle|direction|click)\b/i
 const FLOWCHART_LINK_RE = /(-->|---|-\.->|-\.-|==>|===|<-->|o--|--o|x--|--x)/
 const FLOWCHART_NODE_SHAPE_RE = /[\[\]\(\){}<>]/

@@ -9,13 +9,13 @@
  * 这里用 data-theme=dark 做最小覆盖，保证暗黑模式可读性。
  */
 [data-theme="dark"] .hljs {
-  color: #e2e8f0;            /* slate-200 */
+  color: #e6e6e8;            /* slate-200 */
   background: transparent;   /* 交由外层 pre/code 背景控制 */
 }
 
 [data-theme="dark"] .hljs-comment,
 [data-theme="dark"] .hljs-quote {
-  color: #94a3b8;            /* slate-400 */
+  color: #9d9da5;            /* slate-400 */
 }
 
 [data-theme="dark"] .hljs-keyword,
@@ -85,14 +85,14 @@
 }
 
 .markdown-wiki-link-not-found {
-  color: #94a3b8;
+  color: #9d9da5;
   text-decoration: underline dashed;
   text-underline-offset: 2px;
 }
 
 .markdown-wiki-link-not-found:hover {
-  background-color: rgba(148, 163, 184, 0.15);
-  color: #64748b;
+  background-color: rgba(157,157,165, 0.15);
+  color: #6e6e76;
 }
 
 /* Wiki 嵌入样式 */
@@ -162,12 +162,12 @@
   }
 
   .markdown-wiki-link-not-found {
-    color: #64748b;
+    color: #6e6e76;
   }
 
   .markdown-wiki-link-not-found:hover {
-    background-color: rgba(100, 116, 139, 0.18);
-    color: #94a3b8;
+    background-color: rgba(110,110,118, 0.18);
+    color: #9d9da5;
   }
 
   .markdown-wiki-link-embed {

@@ -2,9 +2,9 @@ import { alpha } from '@mui/material/styles'
 
 export const createWhiteboardSurfaceTokens = ({ isDark, primaryColor }) => {
   const accent = primaryColor || '#1976d2'
-  const text = isDark ? '#f1f5f9' : '#1e293b'
-  const muted = isDark ? '#94a3b8' : '#64748b'
-  const glassBackground = isDark ? alpha('#172033', 0.92) : alpha('#f8fafc', 0.94)
+  const text = isDark ? '#f2f2f3' : '#1f1f22'
+  const muted = isDark ? '#9d9da5' : '#6e6e76'
+  const glassBackground = isDark ? alpha('#172033', 0.92) : alpha('#fafafa', 0.94)
   const glassBackgroundImage = isDark
     ? `linear-gradient(145deg, ${alpha('#ffffff', 0.075)} 0%, ${alpha('#ffffff', 0.018)} 46%, ${alpha(accent, 0.055)} 100%)`
     : `linear-gradient(145deg, ${alpha('#ffffff', 0.38)} 0%, ${alpha('#ffffff', 0.08)} 48%, ${alpha(accent, 0.028)} 100%)`
@@ -12,10 +12,10 @@ export const createWhiteboardSurfaceTokens = ({ isDark, primaryColor }) => {
     ? '1px solid rgba(255, 255, 255, 0.11)'
     : '1px solid rgba(255, 255, 255, 0.68)'
   const glassShadow = isDark
-    ? '0 16px 44px rgba(2, 6, 23, 0.34), inset 0 1px 0 rgba(255,255,255,0.055)'
-    : '0 16px 44px rgba(15, 23, 42, 0.13), inset 0 1px 0 rgba(255,255,255,0.74)'
-  const hover = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.04)'
-  const pressed = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,23,42,0.10)'
+    ? '0 16px 44px rgba(11,11,12, 0.34), inset 0 1px 0 rgba(255,255,255,0.055)'
+    : '0 16px 44px rgba(22,22,24, 0.13), inset 0 1px 0 rgba(255,255,255,0.74)'
+  const hover = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(22,22,24,0.04)'
+  const pressed = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(22,22,24,0.10)'
   const selected = alpha(accent, isDark ? 0.22 : 0.12)
   const selectedBorder = alpha(accent, isDark ? 0.52 : 0.34)
 
@@ -144,7 +144,7 @@ export const createWhiteboardSurfaceSx = ({ isDark, primaryColor }) => {
     '& .excalidraw .App-toolbar__divider': {
       marginInline: '4px',
       opacity: 1,
-      borderColor: `${isDark ? alpha('#ffffff', 0.08) : alpha('#0f172a', 0.08)} !important`,
+      borderColor: `${isDark ? alpha('#ffffff', 0.08) : alpha('#161618', 0.08)} !important`,
     },
 
     // Main menu and library use the same control geometry.
@@ -197,7 +197,7 @@ export const createWhiteboardSurfaceSx = ({ isDark, primaryColor }) => {
       justifyContent: 'center',
       padding: 0,
       border: '0 !important',
-      borderRight: `1px solid ${isDark ? alpha('#ffffff', 0.08) : alpha('#0f172a', 0.08)} !important`,
+      borderRight: `1px solid ${isDark ? alpha('#ffffff', 0.08) : alpha('#161618', 0.08)} !important`,
       borderRadius: '0 !important',
       background: 'transparent !important',
       color: `${muted} !important`,
@@ -252,7 +252,7 @@ export const createWhiteboardSurfaceSx = ({ isDark, primaryColor }) => {
       justifyContent: 'space-between',
       padding: '0 6px 0 12px',
       color: text,
-      borderBottom: `1px solid ${isDark ? alpha('#ffffff', 0.08) : alpha('#0f172a', 0.08)}`,
+      borderBottom: `1px solid ${isDark ? alpha('#ffffff', 0.08) : alpha('#161618', 0.08)}`,
       fontSize: '12px',
       fontWeight: 650,
       letterSpacing: '.02em',
@@ -293,7 +293,7 @@ export const createWhiteboardSurfaceSx = ({ isDark, primaryColor }) => {
     '& .excalidraw .flota-context-menu-host': {
       marginBottom: '4px',
       paddingBottom: '4px',
-      borderBottom: `1px solid ${isDark ? alpha('#ffffff', 0.08) : alpha('#0f172a', 0.08)}`,
+      borderBottom: `1px solid ${isDark ? alpha('#ffffff', 0.08) : alpha('#161618', 0.08)}`,
     },
     '& .excalidraw input, & .excalidraw textarea, & .excalidraw select': {
       borderRadius: '8px',

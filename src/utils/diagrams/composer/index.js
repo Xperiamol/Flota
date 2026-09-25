@@ -182,7 +182,7 @@ register('divider', {
   place(node, x, y, w, out) {
     out.push(makeLine({
       x, y: y + 6, points: [[0, 0], [w, 0]],
-      stroke: '#e2e8f0', strokeWidth: 1,
+      stroke: '#e6e6e8', strokeWidth: 1,
     }))
   },
 })
@@ -438,7 +438,7 @@ register('nav.top', {
   },
   place(node, x, y, w, out) {
     const p = node.props || {}
-    out.push(makeRect({ x, y, width: w, height: node._h, bg: '#f1f5f9', stroke: '#cbd5e1', strokeWidth: 1, rounded: true }))
+    out.push(makeRect({ x, y, width: w, height: node._h, bg: '#f2f2f3', stroke: '#d1d1d5', strokeWidth: 1, rounded: true }))
     const cy = y + (node._h - 16) / 2
     if (p.back) {
       out.push(makeText({ x: x + 12, y: cy, text: '←', fontSize: 16, color: DIAGRAM_THEME.text, align: 'left', metrics: measureTextBlock('←', 16) }))
@@ -465,7 +465,7 @@ register('nav.bottom', {
   place(node, x, y, w, out) {
     const p = node.props || {}
     const tabs = Array.isArray(p.tabs) ? p.tabs : []
-    out.push(makeRect({ x, y, width: w, height: node._h, bg: '#f8fafc', stroke: '#cbd5e1', strokeWidth: 1, rounded: true }))
+    out.push(makeRect({ x, y, width: w, height: node._h, bg: '#fafafa', stroke: '#d1d1d5', strokeWidth: 1, rounded: true }))
     if (!tabs.length) return
     const cellW = w / tabs.length
     const active = p.active != null ? p.active : 0
@@ -494,11 +494,11 @@ register('input', {
       out.push(makeText({ x, y: cy, text: p.label, fontSize: 12, color: DIAGRAM_THEME.textSecondary, align: 'left', metrics: lm }))
       cy += node._labelH
     }
-    out.push(makeRect({ x, y: cy, width: w, height: 38, bg: '#ffffff', stroke: '#cbd5e1', strokeWidth: 1.2, rounded: true }))
+    out.push(makeRect({ x, y: cy, width: w, height: 38, bg: '#ffffff', stroke: '#d1d1d5', strokeWidth: 1.2, rounded: true }))
     const ph = String(p.value || p.placeholder || '')
     if (ph) {
       const pm = measureTextBlock(ph, 13)
-      out.push(makeText({ x: x + 12, y: cy + (38 - pm.height) / 2, text: ph, fontSize: 13, color: p.value ? DIAGRAM_THEME.text : '#94a3b8', align: 'left', metrics: pm }))
+      out.push(makeText({ x: x + 12, y: cy + (38 - pm.height) / 2, text: ph, fontSize: 13, color: p.value ? DIAGRAM_THEME.text : '#9d9da5', align: 'left', metrics: pm }))
     }
   },
 })
@@ -568,14 +568,14 @@ register('list', {
     return { w, h: Math.max(LIST_MIN_ROW_H, total) }
   },
   place(node, x, y, w, out) {
-    out.push(makeRect({ x, y, width: w, height: node._h, bg: '#ffffff', stroke: '#e2e8f0', strokeWidth: 1.2, rounded: true }))
+    out.push(makeRect({ x, y, width: w, height: node._h, bg: '#ffffff', stroke: '#e6e6e8', strokeWidth: 1.2, rounded: true }))
     let ry = y
     node._rows.forEach((row, i) => {
       if (i > 0) out.push(makeLine({ x: x + 8, y: ry, points: [[0, 0], [w - 16, 0]], stroke: '#eef2f7', strokeWidth: 1 }))
       const { obj, hasCheck, leadX, trailing, trailM, titleWrap, subWrap, titleM, subM, h } = row
       if (hasCheck) {
         const checked = obj.checkbox === true || obj.done === true
-        out.push(makeRect({ x: x + 12, y: ry + (h - 16) / 2, width: 16, height: 16, bg: checked ? DIAGRAM_THEME.semantics.success.bg : '#ffffff', stroke: checked ? DIAGRAM_THEME.semantics.success.stroke : '#94a3b8', strokeWidth: 1.2, rounded: true }))
+        out.push(makeRect({ x: x + 12, y: ry + (h - 16) / 2, width: 16, height: 16, bg: checked ? DIAGRAM_THEME.semantics.success.bg : '#ffffff', stroke: checked ? DIAGRAM_THEME.semantics.success.stroke : '#9d9da5', strokeWidth: 1.2, rounded: true }))
       }
       const tx = x + leadX
       const contentH = titleM.height + (subWrap ? subM.height : 0)
@@ -624,10 +624,10 @@ register('table', {
   },
   place(node, x, y, w, out) {
     const { _colW: colW, _headers: headers, _rows: rows } = node
-    out.push(makeRect({ x, y, width: w, height: node._h, bg: '#ffffff', stroke: '#cbd5e1', strokeWidth: 1.2, rounded: true }))
+    out.push(makeRect({ x, y, width: w, height: node._h, bg: '#ffffff', stroke: '#d1d1d5', strokeWidth: 1.2, rounded: true }))
     let ry = y
     const drawRow = (cells, isHeader) => {
-      if (isHeader) out.push(makeRect({ x, y: ry, width: w, height: TABLE_ROW_H, bg: '#f1f5f9', stroke: '#cbd5e1', strokeWidth: 0, rounded: false }))
+      if (isHeader) out.push(makeRect({ x, y: ry, width: w, height: TABLE_ROW_H, bg: '#f2f2f3', stroke: '#d1d1d5', strokeWidth: 0, rounded: false }))
       else if (ry > y) out.push(makeLine({ x, y: ry, points: [[0, 0], [w, 0]], stroke: '#eef2f7', strokeWidth: 1 }))
       let cx = x
       for (let i = 0; i < node._cols; i++) {
@@ -654,9 +654,9 @@ register('image', {
     return { w, h: p.h || Math.round(w * ratio) }
   },
   place(node, x, y, w, out) {
-    out.push(makeRect({ x, y, width: w, height: node._h, bg: '#f1f5f9', stroke: '#cbd5e1', strokeWidth: 1.2, rounded: true }))
-    out.push(makeLine({ x, y, points: [[0, 0], [w, node._h]], stroke: '#cbd5e1', strokeWidth: 1 }))
-    out.push(makeLine({ x, y, points: [[w, 0], [0, node._h]], stroke: '#cbd5e1', strokeWidth: 1 }))
+    out.push(makeRect({ x, y, width: w, height: node._h, bg: '#f2f2f3', stroke: '#d1d1d5', strokeWidth: 1.2, rounded: true }))
+    out.push(makeLine({ x, y, points: [[0, 0], [w, node._h]], stroke: '#d1d1d5', strokeWidth: 1 }))
+    out.push(makeLine({ x, y, points: [[w, 0], [0, node._h]], stroke: '#d1d1d5', strokeWidth: 1 }))
     const label = String((node.props || {}).label || '图片')
     const m = measureTextBlock(label, 12)
     out.push(makeText({ x: x + (w - m.width) / 2, y: y + (node._h - m.height) / 2, text: label, fontSize: 12, color: DIAGRAM_THEME.textSecondary, align: 'center', metrics: m }))
@@ -700,7 +700,7 @@ register('avatar', {
   },
   place(node, x, y, w, out) {
     const d = node._d
-    out.push(makeEllipse({ x, y, width: d, height: d, bg: '#e2e8f0', stroke: '#94a3b8', strokeWidth: 1.2 }))
+    out.push(makeEllipse({ x, y, width: d, height: d, bg: '#e6e6e8', stroke: '#9d9da5', strokeWidth: 1.2 }))
     const label = String((node.props || {}).label || '')
     if (label) {
       const txt = label.slice(0, 2)

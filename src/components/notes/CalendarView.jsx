@@ -490,7 +490,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
             overflow: 'hidden',
             minWidth: '560px',
             backgroundColor: muiTheme.palette.mode === 'dark'
-              ? 'rgba(30, 41, 59, 0.9)'
+              ? 'rgba(31,31,34, 0.9)'
               : 'rgba(255, 255, 255, 0.94)'
           })}
         >
@@ -680,7 +680,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                               height: 20,
                               px: 0.75,
                               borderRadius: 999,
-                              backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.10)' : 'rgba(15,23,42,0.06)',
+                              backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.10)' : 'rgba(22,22,24,0.06)',
                               color: theme.palette.primary.main,
                               border: `1px solid ${theme.palette.primary.main}33`,
                               display: 'flex',
@@ -850,13 +850,13 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                         const isWhiteboard = note.note_type === 'whiteboard';
                         const bgColor = isWhiteboard
                           ? (theme.palette.mode === 'dark' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(236, 72, 153, 0.08)')
-                          : (theme.palette.mode === 'dark' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.08)');
+                          : (theme.palette.mode === 'dark' ? 'rgba(120,120,128, 0.15)' : 'rgba(120,120,128, 0.08)');
                         const borderColor = isWhiteboard
                           ? (theme.palette.mode === 'dark' ? 'rgba(236, 72, 153, 0.3)' : 'rgba(236, 72, 153, 0.2)')
-                          : (theme.palette.mode === 'dark' ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.2)');
+                          : (theme.palette.mode === 'dark' ? 'rgba(120,120,128, 0.3)' : 'rgba(120,120,128, 0.2)');
                         const hoverBgColor = isWhiteboard
                           ? (theme.palette.mode === 'dark' ? 'rgba(236, 72, 153, 0.25)' : 'rgba(236, 72, 153, 0.15)')
-                          : (theme.palette.mode === 'dark' ? 'rgba(99, 102, 241, 0.25)' : 'rgba(99, 102, 241, 0.15)');
+                          : (theme.palette.mode === 'dark' ? 'rgba(120,120,128, 0.25)' : 'rgba(120,120,128, 0.15)');
 
                         return (
                           <Fade key={note.id} in timeout={200}>
@@ -920,15 +920,15 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                                 ? 'rgba(139, 92, 246, 0.14)'
                                 : 'rgba(139, 92, 246, 0.09)'
                               : theme.palette.mode === 'dark'
-                                ? 'rgba(100, 116, 139, 0.15)'
-                                : 'rgba(100, 116, 139, 0.08)',
+                                ? 'rgba(110,110,118, 0.15)'
+                                : 'rgba(110,110,118, 0.08)',
                             border: `1px solid ${itemsToDisplay.focusTimeSeconds > 0
                               ? theme.palette.mode === 'dark'
                                 ? 'rgba(168, 85, 247, 0.3)'
                                 : 'rgba(168, 85, 247, 0.2)'
                               : theme.palette.mode === 'dark'
-                                ? 'rgba(100, 116, 139, 0.3)'
-                                : 'rgba(100, 116, 139, 0.2)'
+                                ? 'rgba(110,110,118, 0.3)'
+                                : 'rgba(110,110,118, 0.2)'
                               }`,
                             transition: createTransitionString(ANIMATIONS.listItem),
                             '&:hover': {
@@ -937,8 +937,8 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                                   ? 'rgba(139, 92, 246, 0.22)'
                                   : 'rgba(139, 92, 246, 0.14)'
                                 : theme.palette.mode === 'dark'
-                                  ? 'rgba(100, 116, 139, 0.25)'
-                                  : 'rgba(100, 116, 139, 0.15)'
+                                  ? 'rgba(110,110,118, 0.25)'
+                                  : 'rgba(110,110,118, 0.15)'
                             },
                             '&:active': {
                               backgroundColor: itemsToDisplay.focusTimeSeconds > 0
@@ -946,8 +946,8 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                                   ? 'rgba(139, 92, 246, 0.28)'
                                   : 'rgba(139, 92, 246, 0.19)'
                                 : theme.palette.mode === 'dark'
-                                  ? 'rgba(100, 116, 139, 0.35)'
-                                  : 'rgba(100, 116, 139, 0.25)'
+                                  ? 'rgba(110,110,118, 0.35)'
+                                  : 'rgba(110,110,118, 0.25)'
                             }
                           }}
                         >
@@ -1063,7 +1063,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                                       width: 4,
                                       height: 4,
                                       borderRadius: '50%',
-                                      backgroundColor: 'rgb(99, 102, 241)'
+                                      backgroundColor: 'rgb(120,120,128)'
                                     }}
                                   />
                                   <Typography
@@ -1267,12 +1267,12 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
           paper: {
             sx: {
               backgroundColor: theme.palette.mode === 'dark'
-                ? 'rgba(30, 41, 59, 0.96)'
+                ? 'rgba(31,31,34, 0.96)'
                 : 'rgba(255, 255, 255, 0.98)',
               maxHeight: '80vh',
               boxShadow: theme.palette.mode === 'dark'
                 ? '0 14px 36px rgba(0, 0, 0, 0.34)'
-                : '0 14px 36px rgba(15, 23, 42, 0.13)'
+                : '0 14px 36px rgba(22,22,24, 0.13)'
             }
           },
           backdrop: {
@@ -1301,10 +1301,10 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
               sx={{
                 backgroundColor: previewNote?.note_type === 'whiteboard'
                   ? 'rgba(236, 72, 153, 0.2)'
-                  : 'rgba(99, 102, 241, 0.2)',
+                  : 'rgba(120,120,128, 0.2)',
                 color: previewNote?.note_type === 'whiteboard'
                   ? 'rgb(236, 72, 153)'
-                  : 'rgb(99, 102, 241)',
+                  : 'rgb(120,120,128)',
                 fontWeight: 600
               }}
             />
