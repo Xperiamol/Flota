@@ -127,10 +127,15 @@
     "appId": "com.flota.app",
     "fileAssociations": [
       {
-        "ext": [
-          "md",
-          "markdown"
-        ],
+        "ext": "md",
+        "name": "Markdown Document",
+        "description": "Markdown 文档",
+        "mimeType": "text/markdown",
+        "role": "Viewer",
+        "rank": "Alternate"
+      },
+      {
+        "ext": "markdown",
         "name": "Markdown Document",
         "description": "Markdown 文档",
         "mimeType": "text/markdown",
