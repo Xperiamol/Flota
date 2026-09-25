@@ -1,0 +1,8 @@
+{
+	"name": "@Flota-plugin/web-clipper",
+	"version": "1.0.0",
+	"description": "Flota 网页剪藏插件",
+	"main": "index.js",
+	"license": "MIT",
+	"private": true
+}

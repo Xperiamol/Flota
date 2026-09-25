@@ -1,0 +1,35 @@
+{
+	"id": "web-clipper",
+	"name": "网页剪藏 (Built-in)",
+	"version": "1.0.0",
+	"description": "配合 Flota 浏览器扩展，把网页全文、选中内容或书签一键剪藏为笔记：自动下载图片、按链接去重，可选 AI 摘要与标签。停用本插件后，浏览器扩展将无法再向 Flota 发送内容。",
+	"author": {
+		"name": "Flota 团队",
+		"url": "https://github.com/Xperiamol"
+	},
+	"homepage": "https://github.com/Xperiamol",
+	"repository": "https://github.com/Xperiamol/Flota",
+	"license": "MIT",
+	"categories": [
+		"效率",
+		"收集"
+	],
+	"tags": [
+		"clipper",
+		"web",
+		"reading"
+	],
+	"icon": "icon.svg",
+	"entry": "index.js",
+	"permissions": {
+		"notes:write": true,
+		"ingress:receive": true,
+		"notifications:show": true
+	},
+	"capabilities": {
+		"ingress": [
+			{ "kind": "clip", "command": "web-clipper.receive" }
+		]
+	},
+	"minAppVersion": "3.10.0"
+}

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img src="icons/icon48.png" alt="" width="22" height="22">
+    <span>剪藏到 Flota</span>
+  </header>
+
+  <section id="view-loading" class="view">正在连接 Flota…</section>
+
+  <section id="view-offline" class="view" hidden>
+    <p class="title">没有检测到 Flota</p>
+    <p class="muted">请先打开 Flota 桌面应用，并确认已启用“网页剪藏”插件。</p>
+    <button id="retry" class="btn">重新检测</button>
+  </section>
+
+  <section id="view-pair" class="view" hidden>
+    <p class="title">与 Flota 配对</p>
+    <p class="muted">在 Flota 中打开「设置 → 网页剪藏」，点击“生成配对码”，把 6 位数字填到这里。</p>
+    <input id="pair-code" class="input code" maxlength="6" inputmode="numeric" placeholder="000000" autocomplete="off">
+    <button id="pair" class="btn primary">配对</button>
+  </section>
+
+  <section id="view-clip" class="view" hidden>
+    <p id="page-title" class="page-title"></p>
+    <div class="modes">
+      <label><input type="radio" name="mode" value="article" checked><span>全文</span></label>
+      <label><input type="radio" name="mode" value="selection"><span>选中内容</span></label>
+      <label><input type="radio" name="mode" value="bookmark"><span>书签</span></label>
+    </div>
+    <label class="field">分类
+      <select id="category" class="input"></select>
+    </label>
+    <label class="field">标签
+      <input id="tags" class="input" placeholder="用逗号分隔，可留空" list="tag-list">
+      <datalist id="tag-list"></datalist>
+    </label>
+    <label class="check"><input type="checkbox" id="ai-summary"> AI 摘要（需在 Flota 中配置 AI）</label>
+    <label class="check"><input type="checkbox" id="create-todo"> 同时创建“稍后阅读”待办</label>
+    <button id="clip" class="btn primary">剪藏</button>
+  </section>
+
+  <p id="message" class="message" hidden></p>
+  <script src="flota.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
