@@ -1181,8 +1181,10 @@ if (!gotTheLock) {
         }
 
         // 组件运行时资源：app://widget-runtime/<sdk.js|base.css|lib/x.js>
-        if (normalized.startsWith('widget-runtime/')) {
-          const asset = widgetRuntime.readRuntimeAsset(normalized.slice('widget-runtime/'.length).split(path.sep).join('/'))
+        // Windows 上 path.normalize 会把 / 换成 \，先统一成 / 再匹配路由
+        const posixPath = normalized.split(path.sep).join('/')
+        if (posixPath.startsWith('widget-runtime/')) {
+          const asset = widgetRuntime.readRuntimeAsset(posixPath.slice('widget-runtime/'.length))
           if (!asset) return new Response('Not found', { status: 404 })
           return new Response(asset.body, {
             headers: { 'Content-Type': asset.type, 'Cache-Control': 'no-cache', 'Access-Control-Allow-Origin': '*' }
