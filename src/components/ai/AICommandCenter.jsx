@@ -852,42 +852,47 @@ const AICommandCenter = ({
         )}
       </Box>
 
-      <Box sx={(theme) => ({
-        px: 1.25,
-        py: 0.9,
-        boxShadow: `inset 0 1px 0 ${alpha(theme.palette.common.white, theme.palette.mode === 'dark' ? 0.03 : 0.34)}`,
-        display: 'flex',
-        alignItems: 'flex-end',
-        gap: 0.75,
-        bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.08 : 0.1)
-      })}>
+      {/* 输入区：一个圆角输入框，发送按钮放在框内右下角 */}
+      <Box sx={{ px: 1.25, pt: 0.5, pb: 1.25 }}>
+      <Box sx={(theme) => {
+        const dark = theme.palette.mode === 'dark'
+        return {
+          display: 'flex',
+          alignItems: 'flex-end',
+          gap: 0.75,
+          pl: 1.5,
+          pr: 0.75,
+          py: 0.75,
+          borderRadius: '14px',
+          border: `1px solid ${dark ? 'rgba(255,255,255,0.10)' : 'rgba(22,22,24,0.10)'}`,
+          bgcolor: dark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.78)',
+          boxShadow: dark
+            ? 'inset 0 1px 0 rgba(255,255,255,0.06)'
+            : 'inset 0 1px 0 rgba(255,255,255,0.9), 0 1px 3px rgba(22,22,24,0.05)',
+          transition: 'border-color 160ms ease, box-shadow 160ms ease',
+          '&:focus-within': {
+            borderColor: alpha(theme.palette.primary.main, dark ? 0.55 : 0.45),
+            boxShadow: `0 0 0 3px ${alpha(theme.palette.primary.main, dark ? 0.16 : 0.1)}`,
+          },
+        }
+      }}>
         <TextField
           inputRef={inputRef}
           fullWidth
           multiline
-          maxRows={4}
+          maxRows={5}
           placeholder={isTaskPlanning
             ? '告诉我你的目标、期限或当前困难…'
             : currentNote ? `就「${truncateText(currentNote.title || '未命名', 14)}」问点什么…` : '问 AI 任何问题…'}
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={handleKeyDown}
-          variant="outlined"
-          size="small"
+          variant="standard"
           slotProps={{
             input: {
-              sx: {
-                fontSize: 13,
-                borderRadius: 1,
-                bgcolor: (theme) => alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.22 : 0.34),
-                backdropFilter: 'blur(14px)'
-              }
+              disableUnderline: true,
+              sx: { fontSize: 13.5, lineHeight: 1.55, py: '5px' }
             }
-          }}
-          sx={{
-            '& .MuiOutlinedInput-notchedOutline': { borderColor: 'transparent' },
-            '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'transparent' },
-            '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: 'transparent' }
           }}
         />
         <IconButton
@@ -898,20 +903,22 @@ const AICommandCenter = ({
           disabled={loading ? false : !input.trim()}
           aria-label={loading ? '停止生成' : '发送'}
           sx={(theme) => ({
-            width: 32,
-            height: 32,
-            borderRadius: 1,
+            flexShrink: 0,
+            width: 30,
+            height: 30,
+            borderRadius: '10px',
             bgcolor: loading
               ? alpha(theme.palette.error.main, 0.12)
               : (input.trim() ? theme.palette.primary.main : 'transparent'),
             color: loading
               ? theme.palette.error.main
-              : (input.trim() ? theme.palette.primary.contrastText : theme.palette.action.disabled),
+              : (input.trim() ? theme.palette.primary.contrastText : theme.palette.text.disabled),
             '&:hover': {
               bgcolor: loading
                 ? alpha(theme.palette.error.main, 0.2)
                 : (input.trim() ? theme.palette.primary.dark : 'transparent')
             },
+            '&.Mui-disabled': { color: theme.palette.text.disabled },
             overflow: 'hidden',
             '& .MuiTouchRipple-root': { inset: 0, borderRadius: 'inherit', overflow: 'hidden' },
             '& .MuiTouchRipple-child': { borderRadius: '8px !important' },
@@ -920,6 +927,7 @@ const AICommandCenter = ({
         >
           {loading ? <StopIcon sx={{ fontSize: 16 }} /> : <SendIcon sx={{ fontSize: 16 }} />}
         </IconButton>
+      </Box>
       </Box>
 
       <Box
