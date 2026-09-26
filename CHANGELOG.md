@@ -2,6 +2,14 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [4.0.2] - 2026-09-26
+
+### Changed / 更新内容
+- feat: open files in separate windows with copy, edit-and-save and a context menu
+- fix(ai): clearer input box in the AI mini window
+- fix(widgets): runtime assets 404 on Windows, so preset widgets failed to load
+
+
 ## [4.0.1] - 2026-09-25
 
 ### Fixed / 修复
