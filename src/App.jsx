@@ -76,7 +76,6 @@ import { PluginNotificationListener } from './utils/PluginNotificationListener'
 import shortcutManager from './utils/ShortcutManager'
 import { showOpenExternalFileDialog } from './utils/externalFiles'
 import { notifyAINoteIdsUpdated } from './utils/aiCore/noteRefresh'
-import ExternalFileViewer from './components/common/ExternalFileViewer'
 
 function App() {
   const { theme, primaryColor, notes, loadNotes, currentView, initializeSettings, setCurrentView, createNote, batchDeleteNotes, batchDeleteTodos, batchCompleteTodos, batchRestoreNotes, batchPermanentDeleteNotes, getAllTags, batchSetTags, selectedNoteId, setSelectedNoteId, updateNoteInList, aiDeleteConvs, aiCommandCenterEnabled, aiCommandCenterOpen, setAiCommandCenterOpen, noteNavigatorOpen, setNoteNavigatorOpen, maskOpacity, christmasMode, backgroundPattern, patternOpacity, wallpaperPath } = useStore(useShallow((state) => ({
@@ -787,6 +786,12 @@ function App() {
           case 'open-file':
             await showOpenExternalFileDialog()
             break
+          case 'open-note':
+            // 外部文件窗口导入为笔记后，在主窗口打开这条笔记
+            await state.loadNotes?.()
+            state.setCurrentView('notes')
+            if (payload) state.setSelectedNoteId(payload)
+            break
           case 'check-updates':
             await state.checkForUpdates?.({ silent: false })
             break
@@ -1427,7 +1432,6 @@ function App() {
 
         <WidgetProbeHost />
 
-        <ExternalFileViewer />
 
         {aiCommandCenterEnabled && (
           <AICommandCenter

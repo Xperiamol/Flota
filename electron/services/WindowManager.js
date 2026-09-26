@@ -1199,6 +1199,76 @@ class WindowManager extends EventEmitter {
   }
 
   /**
+   * 外部文件窗口：每个文件一个窗口，同一个文件再次打开时聚焦已有窗口
+   * @param {string} filePath 已登记白名单的绝对路径
+   */
+  async createExternalFileWindow(filePath) {
+    if (!filePath || typeof filePath !== 'string') throw new Error('缺少文件路径');
+    if (!this.externalFileWindows) this.externalFileWindows = new Map();
+    const existing = this.externalFileWindows.get(filePath);
+    if (existing && !existing.isDestroyed()) {
+      if (existing.isMinimized()) existing.restore();
+      existing.show();
+      existing.focus();
+      return { reused: true };
+    }
+    if (isDev && !(await this.checkViteServer())) {
+      throw new Error('Vite开发服务器不可用，请确保npm run dev正在运行');
+    }
+
+    const isWhiteboard = path.extname(filePath).toLowerCase() === '.excalidraw';
+    // 连续打开多个文件时依次错开，避免完全叠在一起
+    const openCount = [...this.externalFileWindows.values()].filter((win) => !win.isDestroyed()).length;
+    const offset = (openCount % 8) * 28;
+    const focused = BrowserWindow.getFocusedWindow();
+    const bounds = focused && !focused.isDestroyed() ? focused.getBounds() : null;
+    const width = isWhiteboard ? 1120 : 880;
+    const height = isWhiteboard ? 760 : 760;
+
+    const fileWindow = new BrowserWindow({
+      width,
+      height,
+      ...(bounds ? { x: bounds.x + 48 + offset, y: bounds.y + 36 + offset } : {}),
+      minWidth: 420,
+      minHeight: 320,
+      show: false,
+      frame: false,
+      title: path.basename(filePath),
+      icon: this.getAppIcon(),
+      titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+      trafficLightPosition: process.platform === 'darwin' ? { x: 14, y: 15 } : undefined,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, '../preload.js'),
+        webSecurity: true,
+      },
+    });
+    fileWindow.webContents.setWindowOpenHandler(({ url }) => {
+      if (url.startsWith('http://') || url.startsWith('https://')) shell.openExternal(url);
+      return { action: 'deny' };
+    });
+    const windowId = `external-file-${Date.now()}-${openCount}`;
+    this.windows.set(windowId, fileWindow);
+    this.externalFileWindows.set(filePath, fileWindow);
+    fileWindow.once('ready-to-show', () => {
+      fileWindow.show();
+      fileWindow.focus();
+    });
+    fileWindow.on('closed', () => {
+      this.windows.delete(windowId);
+      if (this.externalFileWindows.get(filePath) === fileWindow) this.externalFileWindows.delete(filePath);
+    });
+
+    if (isDev) {
+      await fileWindow.loadURL(`http://localhost:5174/standalone.html?type=external-file&path=${encodeURIComponent(filePath)}`);
+    } else {
+      await fileWindow.loadFile(path.join(__dirname, '../../dist/standalone.html'), { query: { type: 'external-file', path: filePath } });
+    }
+    return { windowId };
+  }
+
+  /**
    * 创建独立Todo窗口
    */
   async createTodoWindow(todoData) {

@@ -155,20 +155,14 @@ let pluginManager
 const activeAIStreams = new Map()
 let cspConfigured = false
 
-function showMainWindow() {
-  if (!mainWindow || mainWindow.isDestroyed()) return false
-  if (mainWindow.isMinimized()) mainWindow.restore()
-  mainWindow.show()
-  mainWindow.focus()
-  return true
-}
-
 // 外部文件（双击 .md / .excalidraw、拖到 Dock、「打开方式」）
 const externalFileService = new ExternalFileService()
+// 每个文件在自己的独立窗口中打开；窗口管理器就绪前的文件先排队
 externalFileService.attach((filePath) => {
-  if (!mainWindow || mainWindow.isDestroyed()) return false
-  mainWindow.webContents.send('external-file:opened', filePath)
-  showMainWindow()
+  if (!windowManager) return false
+  windowManager.createExternalFileWindow(filePath).catch((error) => {
+    console.error('[ExternalFile] 打开文件窗口失败:', error)
+  })
   return true
 })
 
@@ -176,7 +170,6 @@ externalFileService.attach((filePath) => {
 app.on('open-file', (event, filePath) => {
   event.preventDefault()
   externalFileService.open(filePath)
-  showMainWindow()
 })
 
 function setupContentSecurityPolicy() {
@@ -894,6 +887,7 @@ async function initializeServices() {
       windowManager.applyContentProtection(window)
     })
     services.notificationService.setWindowManager(windowManager)
+    externalFileService.setReady()
 
     // windowManager 就绪后再注册依赖它的 IPC 处理器，避免闭包捕获 undefined
     const { registerWindowHandlers } = require('./ipc/windowHandlers')

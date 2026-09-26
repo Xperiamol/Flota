@@ -14,6 +14,7 @@ import WidgetWindow from './components/widgets/WidgetWindow'
 import TodoList from './components/todos/TodoList'
 import FocusMiniWindow from './components/todos/FocusMiniWindow'
 import TodoReminderWindow from './components/todos/TodoReminderWindow'
+import ExternalFileWindow from './components/common/ExternalFileWindow'
 import StandaloneProvider, { useStandaloneContext } from './components/common/StandaloneProvider'
 import { useStandaloneStore } from './store/useStandaloneStore'
 import { ErrorProvider } from './components/common/ErrorProvider'
@@ -236,6 +237,10 @@ function StandaloneWindow() {
           setWindowType('widget')
           setWindowData({ instanceId: urlParams.get('instanceId') })
 
+        } else if (type === 'external-file' && urlParams.get('path')) {
+          setWindowType('external-file')
+          setWindowData({ path: urlParams.get('path') })
+
         } else if (type === 'focus') {
           logger.log('设置专注伴随窗口类型，通过IPC拉取数据...')
           try {
@@ -395,7 +400,7 @@ function StandaloneWindow() {
         <CssBaseline />
         <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
           {/* 使用主应用的TitleBar组件 */}
-          {windowType && !['focus', 'reminder'].includes(windowType) && (
+          {windowType && !['focus', 'reminder', 'external-file'].includes(windowType) && (
             <TitleBar
               isStandalone={true}
               isMinibarMode={store.minibarMode}
@@ -453,7 +458,11 @@ function StandaloneWindow() {
           <TodoReminderWindow initialData={windowData} />
         )}
 
-        {!isLoading && !error && windowType && !['focus', 'reminder'].includes(windowType) && windowData && (
+        {!isLoading && !error && windowType === 'external-file' && windowData?.path && (
+          <ExternalFileWindow filePath={windowData.path} />
+        )}
+
+        {!isLoading && !error && windowType && !['focus', 'reminder', 'external-file'].includes(windowType) && windowData && (
           <StandaloneProvider windowType={windowType} windowData={windowData}>
             <StandaloneContent windowType={windowType} windowData={windowData} />
           </StandaloneProvider>

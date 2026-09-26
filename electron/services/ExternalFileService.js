@@ -5,7 +5,8 @@ const { pathToFileURL } = require('url')
 // 从系统（双击 / 打开方式 / 拖到 Dock）或「打开文件…」打开的外部文件。
 //
 // 设计要点：
-// - 只读：外部文件在查看器中只读展示，不会被改写；需要编辑时「导入为笔记」生成副本。
+// - 独立窗口：每个文件在自己的窗口里打开，默认预览；切换到编辑模式后才会写回原文件。
+// - 写回：保留原文件的编码（UTF-8 / BOM / UTF-16）和换行符；文件在外部被改过时先提示冲突。
 // - 白名单：渲染层只能读取由系统或打开对话框交给主进程的路径，不能借 IPC 读任意文件。
 // - 兼容：自动识别 UTF-8 / UTF-8 BOM / UTF-16 / GB18030 编码，统一换行符；
 //   Markdown 中引用的本地图片内联为 data URL（CSP 不允许 file://），导入时再落盘。
@@ -175,6 +176,22 @@ const parseWhiteboard = (text) => {
   }
 }
 
+// 把规范化为 \n 的文本按原文件的编码和换行符编码回去
+const encodeText = (text, { encoding, eol }) => {
+  const body = eol === '\r\n' ? text.replace(/\n/g, '\r\n') : text
+  if (encoding === 'UTF-8 (BOM)') {
+    return { buffer: Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(body, 'utf8')]), encoding }
+  }
+  if (encoding === 'UTF-16 LE') {
+    return { buffer: Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(body, 'utf16le')]), encoding }
+  }
+  if (encoding === 'UTF-16 BE') {
+    return { buffer: Buffer.concat([Buffer.from([0xfe, 0xff]), Buffer.from(body, 'utf16le').swap16()]), encoding }
+  }
+  // GB18030 等 Node 无法编码的格式统一存为 UTF-8
+  return { buffer: Buffer.from(body, 'utf8'), encoding: 'UTF-8' }
+}
+
 class ExternalFileService {
   constructor() {
     this.allowedPaths = new Set()
@@ -183,9 +200,16 @@ class ExternalFileService {
     this.ready = false
   }
 
-  // deliver(path) 负责把文件交给窗口；渲染层第一次取积压列表后才视为就绪
+  // deliver(path) 负责为文件打开窗口；窗口管理器就绪（setReady）前的文件先排队
   attach(deliver) {
     this.deliver = deliver
+  }
+
+  setReady() {
+    this.ready = true
+    const list = this.pendingPaths
+    this.pendingPaths = []
+    list.forEach((filePath) => this.deliver?.(filePath))
   }
 
   // 只登记白名单（打开对话框的结果由渲染层自己打开）
@@ -205,20 +229,18 @@ class ExternalFileService {
     return true
   }
 
-  consumePending() {
-    this.ready = true
-    const list = this.pendingPaths
-    this.pendingPaths = []
-    return list
-  }
-
   isAllowed(filePath) {
     return this.allowedPaths.has(path.resolve(String(filePath || '')))
   }
 
-  read(filePath) {
+  resolveAllowed(filePath) {
     const resolved = path.resolve(String(filePath || ''))
-    if (!this.isAllowed(resolved)) throw new Error('无权读取该文件')
+    if (!this.isAllowed(resolved)) throw new Error('无权访问该文件')
+    return resolved
+  }
+
+  read(filePath) {
+    const resolved = this.resolveAllowed(filePath)
     const format = getFormat(resolved)
     if (!format) throw new Error('不支持的文件格式')
 
@@ -229,6 +251,7 @@ class ExternalFileService {
     }
 
     const { text: rawText, encoding } = decodeText(fs.readFileSync(resolved))
+    const eol = /\r\n/.test(rawText) ? '\r\n' : '\n'
     const text = rawText.replace(/\r\n?/g, '\n')
     let writable = false
     try {
@@ -245,6 +268,7 @@ class ExternalFileService {
       size: stat.size,
       modifiedAt: stat.mtimeMs,
       encoding,
+      eol,
       writable,
       fileUrl: pathToFileURL(resolved).href
     }
@@ -252,8 +276,9 @@ class ExternalFileService {
     if (format === 'whiteboard') {
       return { ...base, whiteboard: parseWhiteboard(text) }
     }
+    // raw：编辑模式用的原文（含 front-matter、图片路径不内联）；content：预览用
     if (format === 'text') {
-      return { ...base, content: text }
+      return { ...base, raw: text, content: text }
     }
     const { frontMatter, body } = parseFrontMatter(text)
     const { content, missingImages } = inlineLocalImages(body, path.dirname(resolved))
@@ -261,9 +286,83 @@ class ExternalFileService {
       ...base,
       title: frontMatter?.title || base.title,
       tags: frontMatter?.tags || [],
+      raw: text,
       content,
       missingImages
     }
+  }
+
+  // 编辑中的草稿生成预览内容（去掉 front-matter、内联本地图片），不写盘
+  render(filePath, text) {
+    const resolved = this.resolveAllowed(filePath)
+    const normalized = String(text ?? '').replace(/\r\n?/g, '\n')
+    if (getFormat(resolved) !== 'markdown') return { content: normalized, missingImages: 0 }
+    const { body } = parseFrontMatter(normalized)
+    return inlineLocalImages(body, path.dirname(resolved))
+  }
+
+  // 写盘前检查：可写、且没有在外部被改过（expectedMtime 为打开 / 上次保存时的修改时间）
+  checkWritable(resolved, { expectedMtime, force } = {}) {
+    try {
+      fs.accessSync(resolved, fs.constants.W_OK)
+    } catch {
+      throw new Error('文件是只读的，无法保存')
+    }
+    const stat = fs.statSync(resolved)
+    if (!force && expectedMtime && Math.abs(stat.mtimeMs - expectedMtime) > 1) {
+      return { conflict: true, modifiedAt: stat.mtimeMs }
+    }
+    return null
+  }
+
+  write(filePath, text, options = {}) {
+    const resolved = this.resolveAllowed(filePath)
+    const format = getFormat(resolved)
+    if (!format || format === 'whiteboard') throw new Error('不支持的文件格式')
+    const conflict = this.checkWritable(resolved, options)
+    if (conflict) return conflict
+
+    // 按磁盘上当前文件的编码和换行符写回
+    const current = decodeText(fs.readFileSync(resolved))
+    const eol = /\r\n/.test(current.text) ? '\r\n' : '\n'
+    const normalized = String(text ?? '').replace(/\r\n?/g, '\n')
+    const { buffer, encoding } = encodeText(normalized, { encoding: current.encoding, eol })
+    fs.writeFileSync(resolved, buffer)
+    const stat = fs.statSync(resolved)
+    return {
+      modifiedAt: stat.mtimeMs,
+      size: stat.size,
+      encoding,
+      convertedFrom: encoding !== current.encoding ? current.encoding : null
+    }
+  }
+
+  // 白板：只替换 elements / files / 背景色，文件里其他字段（appState 其余项、source 等）原样保留
+  writeWhiteboard(filePath, scene = {}, options = {}) {
+    const resolved = this.resolveAllowed(filePath)
+    if (getFormat(resolved) !== 'whiteboard') throw new Error('不是白板文件')
+    const conflict = this.checkWritable(resolved, options)
+    if (conflict) return conflict
+
+    let data = {}
+    try {
+      data = JSON.parse(decodeText(fs.readFileSync(resolved)).text) || {}
+    } catch {}
+    const next = {
+      ...data,
+      type: data.type || 'excalidraw',
+      version: data.version || 2,
+      source: data.source || 'Flota',
+      elements: Array.isArray(scene.elements) ? scene.elements : [],
+      appState: {
+        ...(data.appState && typeof data.appState === 'object' ? data.appState : {}),
+        ...(scene.appState?.viewBackgroundColor ? { viewBackgroundColor: scene.appState.viewBackgroundColor } : {})
+      },
+      files: scene.files && typeof scene.files === 'object' ? scene.files : {}
+    }
+    fs.writeFileSync(resolved, JSON.stringify(next, null, 2))
+    const stat = fs.statSync(resolved)
+    return { modifiedAt: stat.mtimeMs, size: stat.size }
   }
 }
 

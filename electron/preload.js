@@ -390,13 +390,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // 通用附件 API（按 SHA-1 内容去重存到 attachments/）
-  // 外部文件（系统双击 / 打开方式 / 打开文件…）：只读查看，可导入为笔记
+  // 外部文件（系统双击 / 打开方式 / 打开文件…）：每个文件一个独立窗口，可预览、编辑写回、导入为笔记
   externalFiles: {
-    consumePending: inv('external-file:consume-pending'),
     read: inv('external-file:read'),
+    render: inv('external-file:render'),
+    write: inv('external-file:write'),
+    writeWhiteboard: inv('external-file:write-whiteboard'),
     showOpenDialog: inv('external-file:show-open-dialog'),
     reveal: inv('external-file:reveal'),
-    onOpened: listen('external-file:opened'),
+    showNote: inv('external-file:show-note'),
+    copyText: inv('external-file:copy-text'),
+    readClipboard: inv('external-file:read-clipboard'),
   },
 
   // macOS 菜单栏命令
