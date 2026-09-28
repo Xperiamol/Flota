@@ -100,6 +100,8 @@ const FocusModeView = ({
   const [isFocusing, setIsFocusing] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  // 本次专注里已经写进待办的秒数：暂停、每分钟自动存档都会先存一部分，结束时只补存剩下的
+  const [savedSessionSeconds, setSavedSessionSeconds] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
   const [pressProgress, setPressProgress] = useState(0);
@@ -124,6 +126,37 @@ const FocusModeView = ({
   const focusWindowSessionRef = useRef(false);
   const focusWindowActionRef = useRef({});
   const autoStartTokenRef = useRef(null);
+  const savedSessionSecondsRef = useRef(0);
+  // 本次专注所属的待办：切换待办时 currentTodo 已经变了，存档必须记到开始时的那一项上
+  const sessionTodoIdRef = useRef(null);
+  const checkpointingRef = useRef(false);
+
+  /** 本次专注到现在的总秒数（含暂停前累计的部分） */
+  const currentSessionSeconds = () => accumulatedFocusSecondsRef.current
+    + (focusStartRef.current ? Math.round((Date.now() - focusStartRef.current) / 1000) : 0);
+
+  /** 把还没保存的专注时长写进待办（暂停时、专注中每分钟一次）；返回本次写入的秒数 */
+  const checkpoint = useCallback(async () => {
+    const todoId = sessionTodoIdRef.current;
+    if (!focusSessionActiveRef.current || !todoId || !onLogFocusTime || checkpointingRef.current) return 0;
+    const delta = currentSessionSeconds() - savedSessionSecondsRef.current;
+    if (delta < 1) return 0;
+    checkpointingRef.current = true;
+    savedSessionSecondsRef.current += delta;
+    setSavedSessionSeconds(savedSessionSecondsRef.current);
+    try {
+      const updatedTodo = await onLogFocusTime(todoId, delta);
+      if (updatedTodo && onTodoUpdated) onTodoUpdated(updatedTodo);
+      return delta;
+    } catch (error) {
+      // 没存上：退回去，下次存档或结束时再试
+      savedSessionSecondsRef.current -= delta;
+      setSavedSessionSeconds(savedSessionSecondsRef.current);
+      return 0;
+    } finally {
+      checkpointingRef.current = false;
+    }
+  }, [onLogFocusTime, onTodoUpdated]);
 
   const currentTodo = focusCandidates.length > 0 ? focusCandidates[clampIndex(activeIndex, focusCandidates.length)] : null;
 
@@ -162,6 +195,13 @@ const FocusModeView = ({
     };
   }, [isFocusing, isPaused]);
 
+  // 专注进行中每分钟自动存一次：直接退出应用或忘了点结束，最多丢一分钟
+  useEffect(() => {
+    if (!isFocusing || isPaused) return undefined;
+    const autosave = setInterval(() => { checkpoint(); }, 60 * 1000);
+    return () => clearInterval(autosave);
+  }, [isFocusing, isPaused, checkpoint]);
+
   const stopSession = useCallback(
     async ({ persist = true, silent = false } = {}) => {
       if (!focusSessionActiveRef.current || !currentTodo) {
@@ -175,10 +215,16 @@ const FocusModeView = ({
         return;
       }
 
-      const runningSegmentSeconds = focusStartRef.current
-        ? Math.round((Date.now() - focusStartRef.current) / 1000)
-        : 0;
-      const durationSeconds = Math.max(1, accumulatedFocusSecondsRef.current + runningSegmentSeconds);
+      const sessionSeconds = currentSessionSeconds();
+      const alreadySaved = savedSessionSecondsRef.current;
+      // 已经存过的部分不再重复记；一秒都没存过时至少记 1 秒
+      const durationSeconds = alreadySaved > 0
+        ? Math.max(0, sessionSeconds - alreadySaved)
+        : Math.max(1, sessionSeconds);
+      const todoId = sessionTodoIdRef.current || currentTodo.id;
+      savedSessionSecondsRef.current = 0;
+      setSavedSessionSeconds(0);
+      sessionTodoIdRef.current = null;
       setIsFocusing(false);
       setIsPaused(false);
       setElapsedSeconds(0);
@@ -193,12 +239,14 @@ const FocusModeView = ({
 
       try {
         setIsSaving(true);
-        const updatedTodo = await onLogFocusTime(currentTodo.id, durationSeconds);
-        if (updatedTodo && onTodoUpdated) {
-          onTodoUpdated(updatedTodo);
+        if (durationSeconds > 0) {
+          const updatedTodo = await onLogFocusTime(todoId, durationSeconds);
+          if (updatedTodo && onTodoUpdated) {
+            onTodoUpdated(updatedTodo);
+          }
         }
         if (!silent) {
-          setFeedback({ type: 'success', message: `已记录 ${formatSeconds(durationSeconds)} 专注时长` });
+          setFeedback({ type: 'success', message: `已记录 ${formatSeconds(sessionSeconds)} 专注时长` });
         }
       } catch (error) {
         const message = error?.message || '保存专注时长失败';
@@ -225,9 +273,13 @@ const FocusModeView = ({
     previousTodoIdRef.current = currentTodo.id;
   }, [currentTodo, isFocusing, stopSession]);
 
+  // 只在真正卸载时收尾：stopSession 会随待办对象刷新而变化（每次存档都会刷新），
+  // 若把它放进依赖，旧的清理函数会在专注中途被执行，把正在进行的专注直接结束
+  const stopSessionRef = useRef(stopSession);
+  stopSessionRef.current = stopSession;
   useEffect(() => () => {
     if (focusSessionActiveRef.current) {
-      stopSession({ persist: true, silent: true });
+      stopSessionRef.current({ persist: true, silent: true });
     }
     if (pressAnimationRef.current) {
       cancelAnimationFrame(pressAnimationRef.current);
@@ -235,7 +287,7 @@ const FocusModeView = ({
     if (rippleTimeoutRef.current) {
       clearTimeout(rippleTimeoutRef.current);
     }
-  }, [stopSession]);
+  }, []);
 
   const handleStartFocus = () => {
     if (!currentTodo || isFocusing) return;
@@ -251,6 +303,9 @@ const FocusModeView = ({
     }
     
     accumulatedFocusSecondsRef.current = 0;
+    savedSessionSecondsRef.current = 0;
+    setSavedSessionSeconds(0);
+    sessionTodoIdRef.current = currentTodo.id;
     focusSessionActiveRef.current = true;
     focusStartRef.current = Date.now();
     setElapsedSeconds(0);
@@ -287,7 +342,11 @@ const FocusModeView = ({
     setElapsedSeconds(durationSeconds);
     setIsPaused(true);
     setShowFocusBackground(false);
-  }, [isPaused]);
+    // 暂停即保存：不用非得点「结束」，这段时间已经记上了
+    checkpoint().then(() => {
+      setFeedback({ type: 'success', message: `已暂停，本次 ${formatSeconds(durationSeconds)} 已保存` });
+    });
+  }, [isPaused, checkpoint]);
 
   const handleResumeFocus = useCallback(() => {
     if (!focusSessionActiveRef.current || !isPaused) return;
@@ -371,7 +430,7 @@ const FocusModeView = ({
   };
 
   const totalFocusedSeconds = currentTodo
-    ? (currentTodo.focus_time_seconds || 0) + (isFocusing ? elapsedSeconds : 0)
+    ? (currentTodo.focus_time_seconds || 0) + (isFocusing ? Math.max(0, elapsedSeconds - savedSessionSeconds) : 0)
     : 0;
 
   focusWindowActionRef.current.stop = handleStopFocus;
