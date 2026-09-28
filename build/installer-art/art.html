@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  /* 安装器美术：同一份 HTML 按 ?art= 渲染 DMG 背景、NSIS 侧栏与页眉。改完运行 render.js 重新生成 */
+  @font-face { font-family: 'OPPOSans'; src: url('../../OPPOSans R.woff2') format('woff2'); }
+  :root { --blue: #1277e6; --blue-deep: #0a4fbf; --ink: #1d1d1f; --muted: #6e6e73; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; font-family: 'OPPOSans', -apple-system, 'PingFang SC', sans-serif; -webkit-font-smoothing: antialiased; }
+  body { position: relative; background: #fbfbfd; color: var(--ink); }
+  .glow { position: absolute; border-radius: 50%; filter: blur(var(--b, 40px)); pointer-events: none; }
+  .art { display: none; position: absolute; inset: 0; }
+
+  /* ── macOS DMG 背景 660×420：图标由 Finder 画在 (180,200) 和 (480,200) ── */
+  .dmg { background: linear-gradient(180deg, #fdfdff 0%, #f3f6fb 100%); }
+  .dmg .glow.a { width: 260px; height: 260px; left: 50px; top: 70px; background: rgba(18,119,230,0.16); --b: 60px; }
+  .dmg .glow.b { width: 240px; height: 240px; left: 360px; top: 80px; background: rgba(91,140,255,0.14); --b: 60px; }
+  .dmg .glow.c { width: 420px; height: 140px; left: 120px; top: 330px; background: rgba(18,119,230,0.06); --b: 50px; }
+  .dmg .title { position: absolute; top: 34px; width: 100%; text-align: center; font-size: 22px; letter-spacing: -0.01em; font-weight: 600; }
+  .dmg .title b { background: linear-gradient(90deg, var(--blue), #5b8cff); -webkit-background-clip: text; color: transparent; }
+  .dmg .sub { position: absolute; top: 68px; width: 100%; text-align: center; font-size: 13px; color: var(--muted); letter-spacing: 0.02em; }
+  .dmg .arrow { position: absolute; left: 258px; top: 186px; width: 144px; height: 28px; }
+  .dmg .hint { position: absolute; bottom: 30px; width: 100%; text-align: center; font-size: 12px; color: #86868b; letter-spacing: 0.02em; }
+
+  /* ── NSIS 侧栏 164×314（欢迎 / 完成 / 卸载页左侧） ── */
+  .sidebar { background: linear-gradient(170deg, #0f6fe0 0%, #0b56c9 55%, #083a94 100%); color: #fff; }
+  .sidebar .glow.a { width: 180px; height: 180px; left: -40px; top: -30px; background: rgba(120,190,255,0.55); --b: 50px; }
+  .sidebar .glow.b { width: 160px; height: 160px; left: 60px; top: 190px; background: rgba(80,120,255,0.45); --b: 50px; }
+  .sidebar .mark { position: absolute; left: 50%; top: 70px; width: 76px; height: 76px; transform: translateX(-50%);
+    border-radius: 20px; background: rgba(255,255,255,0.96); box-shadow: 0 10px 24px rgba(4,30,90,0.28), inset 0 1px 0 #fff; display: grid; place-items: center; }
+  .sidebar .mark img { width: 56px; height: 56px; }
+  .sidebar .name { position: absolute; top: 162px; width: 100%; text-align: center; font-size: 22px; font-weight: 600; letter-spacing: 0.01em; }
+  .sidebar .tag { position: absolute; top: 196px; width: 100%; text-align: center; font-size: 11px; line-height: 1.7; color: rgba(255,255,255,0.82); letter-spacing: 0.06em; }
+  .sidebar .foot { position: absolute; bottom: 16px; width: 100%; text-align: center; font-size: 9px; letter-spacing: 0.18em; color: rgba(255,255,255,0.55); }
+
+  /* ── NSIS 页眉 150×57（安装过程页右上角） ── */
+  .header { background: #fff; }
+  .header .glow.a { width: 120px; height: 60px; right: -30px; top: -10px; left: auto; background: rgba(18,119,230,0.14); --b: 24px; }
+  .header .row { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 8px; }
+  .header img { width: 30px; height: 30px; }
+  .header span { font-size: 17px; font-weight: 600; color: var(--ink); }
+</style>
+</head>
+<body>
+  <section class="art dmg">
+    <div class="glow a"></div><div class="glow b"></div><div class="glow c"></div>
+    <div class="title">欢迎使用 <b>Flota</b></div>
+    <div class="sub">写下来。理清楚。常回看。</div>
+    <svg class="arrow" viewBox="0 0 144 28" fill="none">
+      <defs><linearGradient id="g" gradientUnits="userSpaceOnUse" x1="8" y1="14" x2="130" y2="14"><stop offset="0" stop-color="#1277e6" stop-opacity="0.08"/><stop offset="1" stop-color="#1277e6" stop-opacity="0.8"/></linearGradient></defs>
+      <path d="M8 14 H130" stroke="url(#g)" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M120 6 L132 14 L120 22" stroke="#1277e6" stroke-opacity="0.8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="hint">把 Flota 拖到「应用程序」文件夹即可完成安装</div>
+  </section>
+
+  <section class="art sidebar">
+    <div class="glow a"></div><div class="glow b"></div>
+    <div class="mark"><img src="../../logomac.png" alt=""></div>
+    <div class="name">Flota</div>
+    <div class="tag">写下来。理清楚。<br>常回看。</div>
+    <div class="foot">NOTES · TODOS · AI</div>
+  </section>
+
+  <section class="art header">
+    <div class="glow a"></div>
+    <div class="row"><img src="../../logomac.png" alt=""><span>Flota</span></div>
+  </section>
+
+  <script>
+    const art = new URLSearchParams(location.search).get('art') || 'dmg'
+    document.querySelector('.art.' + art).style.display = 'block'
+  </script>
+</body>
+</html>
