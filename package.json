@@ -276,8 +276,11 @@
       "runAfterFinish": true
     },
     "appx": {
+      "identityName": "Xperiamol.FlotaNotes",
+      "publisher": "CN=345EC87C-B7F5-42A2-B071-7C02B9F00B7A",
+      "publisherDisplayName": "Xperiamol",
       "applicationId": "Flota",
-      "displayName": "Flota",
+      "displayName": "Flota Notes",
       "backgroundColor": "transparent",
       "languages": [
         "zh-CN",
