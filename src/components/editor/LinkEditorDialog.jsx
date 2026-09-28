@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getMarkRange } from '@tiptap/core'
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from '@mui/material'
 import { normalizeLinkUrl } from '../../utils/linkUtils'
+import { isImeComposing } from '../../utils/imeUtils'
 
 export const requestLinkEditor = editor => window.dispatchEvent(new CustomEvent('flota-edit-link', { detail: { editor } }))
 
@@ -36,7 +37,7 @@ export default function LinkEditorDialog({ editor }) {
       <TextField autoFocus fullWidth label="网址或邮箱" placeholder="example.com" value={draft?.url || ''}
         onChange={event => { setDraft(value => ({ ...value, url: event.target.value })); setError('') }}
         error={Boolean(error)} helperText={error || '网址可以省略 https://'} sx={{ mt: 1 }}
-        onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); save() } }} />
+        onKeyDown={event => { if (event.key === 'Enter' && !isImeComposing(event)) { event.preventDefault(); save() } }} />
       <TextField fullWidth label="显示文字" value={draft?.text || ''} placeholder="留空时显示网址" sx={{ mt: 2 }}
         onChange={event => setDraft(value => ({ ...value, text: event.target.value }))} />
     </DialogContent>

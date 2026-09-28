@@ -1309,7 +1309,7 @@ const LinkBubbleMenu = ({ editor, containerRef }) => {
             helperText={urlError || undefined}
             onChange={(e) => setDraftUrl(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') { e.preventDefault(); applyUrl() }
+              if (e.key === 'Enter' && !isImeComposing(e)) { e.preventDefault(); applyUrl() }
               if (e.key === 'Escape') { e.preventDefault(); cancel() }
             }}
             placeholder="https://"
