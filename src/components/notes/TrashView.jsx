@@ -1,17 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Box, Button, IconButton, InputAdornment, TextField, Typography, alpha } from '@mui/material'
+import { Box, Button, IconButton, InputAdornment, List, TextField, Typography, alpha } from '@mui/material'
 import AppContextMenu from '../common/AppContextMenu'
-import PanelIconButton from '../common/PanelIconButton'
 import { useShallow } from 'zustand/react/shallow'
 import { zhCN as dateFnsZhCN } from 'date-fns/locale/zh-CN'
-import { DeleteForever, DeleteSweepRounded, RestoreFromTrashRounded, Search, Close, MoreVert } from '../common/AppIcons'
-import { FlotaWhiteboardIcon as WhiteboardIcon } from '../common/FlotaIcons'
+import { DeleteForever, DeleteSweepRounded, RestoreFromTrashRounded, Search, Close } from '../common/AppIcons'
 import MarkdownPreview from '../editor/MarkdownPreview'
 import { useStore } from '../../store/useStore'
 import { confirmAction, notifyError, notifySuccess } from '../../utils/notify'
 import { formatRelativeNoteTime } from '../../utils/noteDateUtils'
-import { stripMarkdownToPreviewText } from '../../utils/markdownTextUtils'
-import { rowActionRevealSx, thinScrollbarSx } from '../../styles/commonStyles'
+import { getNoteDisplayTitle, getNoteRowPreview } from '../../utils/notePreviewCache'
+import { thinScrollbarSx } from '../../styles/commonStyles'
+import NoteRow, { NOTE_LIST_GUTTER } from './NoteRow'
 
 const noteTitle = (note) => note?.title?.trim() || (note?.note_type === 'whiteboard' ? '未命名画布' : '未命名笔记')
 
@@ -37,13 +36,11 @@ const daysLeft = (note, policy) => {
 
 const leftLabel = (left) => (left <= 0 ? '即将清除' : left === 1 ? '明天清除' : `${left} 天后清除`)
 
-const openTrashSettings = () => {
+export const openTrashSettings = () => {
   const state = useStore.getState()
   state.setSettingsTabValue(8)
   state.setCurrentView('settings')
 }
-
-const notePreview = (note) => (note?.note_type === 'whiteboard' ? '画布' : stripMarkdownToPreviewText(note?.content || '').slice(0, 80))
 
 /** 恢复 / 永久删除，列表和预览共用 */
 export const useTrashActions = () => {
@@ -104,12 +101,19 @@ export function TrashList() {
     selectedId: state.selectedTrashNoteId,
     setSelectedId: state.setSelectedTrashNoteId,
   })))
-  const { restore, destroy, empty, restoreAll } = useTrashActions()
+  const { restore, destroy } = useTrashActions()
   const [query, setQuery] = useState('')
   // 行菜单：与笔记列表一致，行尾「⋮」或右键打开
   const [menu, setMenu] = useState(null) // { anchor, note }
 
   useEffect(() => { loadTrash() }, [loadTrash])
+
+  // 与笔记列表共用行组件：点击选中，右键或行尾「⋮」打开恢复 / 永久删除菜单
+  const rowActions = useMemo(() => ({
+    onClick: (event, note) => setSelectedId(note.id),
+    onContextMenu: (event, note) => { event.preventDefault(); setMenu({ anchor: { x: event.clientX, y: event.clientY }, note }) },
+    onMenuClick: (event, note) => { event.stopPropagation(); setMenu({ anchor: { el: event.currentTarget }, note }) },
+  }), [setSelectedId])
 
   const keyword = query.trim().toLowerCase()
   const visible = useMemo(() => (keyword
@@ -117,30 +121,10 @@ export function TrashList() {
     : trashNotes), [trashNotes, keyword])
 
   return (
-    <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-      <Box sx={{ px: '10px', pt: 1.25, pb: 0.75, flexShrink: 0 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1, px: 0.5 }}>
-          {/* 标题栏已经显示「回收站」，这里只放数量和清理规则 */}
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
-              {trashNotes.length ? `${trashNotes.length} 篇 · ` : ''}
-              <Box component="button" type="button" onClick={openTrashSettings}
-                sx={{ p: 0, border: 0, background: 'none', font: 'inherit', color: 'inherit', cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 3, '&:hover': { color: 'primary.main' } }}>
-                {policy?.days ? `删除 ${policy.days} 天后自动清除` : '不自动清除'}
-              </Box>
-            </Typography>
-          </Box>
-          {trashNotes.length > 0 && (
-            <>
-              <PanelIconButton title="全部恢复" onClick={() => restoreAll(trashNotes)} stopDrag={false}>
-                <RestoreFromTrashRounded />
-              </PanelIconButton>
-              <PanelIconButton title="清空回收站" tone="danger" onClick={() => empty(trashNotes.length)} stopDrag={false}>
-                <DeleteSweepRounded />
-              </PanelIconButton>
-            </>
-          )}
-        </Box>
+    <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      {/* 边距与笔记列表的搜索栏一致 */}
+      <Box sx={{ pl: NOTE_LIST_GUTTER, pr: `calc(${NOTE_LIST_GUTTER} + 8px)`, pt: 1.25, pb: 1, flexShrink: 0 }}>
+        {/* 篇数、清理规则和「全部恢复 / 清空」在上方工具栏 */}
         {trashNotes.length > 0 && (
           <TextField
             fullWidth
@@ -170,7 +154,8 @@ export function TrashList() {
         )}
       </Box>
 
-      <Box sx={{ flex: 1, minHeight: 0, px: '10px', pb: 1, ...thinScrollbarSx }}>
+      {/* 列表区域与笔记列表一致：同一套滚动容器、边距和行组件 */}
+      <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', scrollbarGutter: 'stable', pb: 1 }}>
         {trashLoaded && trashNotes.length === 0 && (
           <Box sx={{ py: 8, textAlign: 'center', color: 'text.secondary' }}>
             <DeleteSweepRounded sx={{ fontSize: 40, opacity: 0.35 }} />
@@ -180,60 +165,28 @@ export function TrashList() {
         {trashNotes.length > 0 && visible.length === 0 && (
           <Typography sx={{ py: 4, textAlign: 'center', fontSize: 13, color: 'text.secondary' }}>没有匹配的笔记</Typography>
         )}
-        {visible.map((note) => {
-          const selected = note.id === selectedId
-          const left = daysLeft(note, policy)
-          return (
-            <Box
-              key={note.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => setSelectedId(note.id)}
-              onKeyDown={(event) => { if (event.key === 'Enter') setSelectedId(note.id) }}
-              onContextMenu={(event) => { event.preventDefault(); setMenu({ anchor: { x: event.clientX, y: event.clientY }, note }) }}
-              data-menu-open={menu?.note?.id === note.id}
-              sx={(theme) => ({
-                ...rowActionRevealSx,
-                position: 'relative',
-                px: 1.25,
-                py: 0.875,
-                borderRadius: '10px',
-                border: '1px solid transparent',
-                cursor: 'pointer',
-                outline: 'none',
-                transition: 'background-color 160ms ease, border-color 160ms ease',
-                '&:hover, &:focus-visible': { bgcolor: 'action.hover' },
-                ...(selected ? {
-                  bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.07),
-                  borderColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.24 : 0.14),
-                } : {}),
-              })}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0, pr: 3 }}>
-                {note.note_type === 'whiteboard' && <WhiteboardIcon sx={{ fontSize: 14, color: 'text.secondary' }} />}
-                <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: selected ? 600 : 500, color: 'text.secondary' }}>
-                  {noteTitle(note)}
-                </Typography>
-              </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 0.25 }}>
-                <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: 12, color: 'text.disabled' }}>{notePreview(note)}</Typography>
-                <Typography sx={{ flexShrink: 0, fontSize: 11.5, color: left != null && left <= 3 ? 'warning.main' : 'text.secondary' }}>
-                  {left == null ? deletedLabel(note) : leftLabel(left)}
-                </Typography>
-              </Box>
-              {/* 行尾「⋮」：与笔记列表同一种悬停浮现的行内按钮 */}
-              <IconButton
-                aria-label="更多操作"
-                size="small"
-                className="row-inline-action"
-                onClick={(event) => { event.stopPropagation(); setMenu({ anchor: { el: event.currentTarget }, note }) }}
-                sx={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', width: 28, height: 28, zIndex: 3, padding: 0 }}
-              >
-                <MoreVert fontSize="small" />
-              </IconButton>
-            </Box>
-          )
-        })}
+        {visible.length > 0 && (
+          <List sx={{ py: 0, px: NOTE_LIST_GUTTER }}>
+            {visible.map((note) => {
+              const left = daysLeft(note, policy)
+              return (
+                <NoteRow
+                  key={note.id}
+                  note={note}
+                  title={getNoteDisplayTitle(note, note.note_type === 'whiteboard' ? '未命名画布' : '未命名笔记')}
+                  preview={getNoteRowPreview(note, '空笔记')}
+                  timeLabel={left == null ? deletedLabel(note) : leftLabel(left)}
+                  timeColor={left != null && left <= 3 ? 'warning.main' : undefined}
+                  selected={note.id === selectedId}
+                  isCurrent={note.id === selectedId}
+                  menuOpen={menu?.note?.id === note.id}
+                  actions={rowActions}
+                  muted
+                />
+              )
+            })}
+          </List>
+        )}
       </Box>
       <AppContextMenu anchor={menu?.anchor || null} onClose={() => setMenu(null)} items={menu ? [
         { label: '恢复', icon: <RestoreFromTrashRounded fontSize="small" />, onClick: () => restore(menu.note) },

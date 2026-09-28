@@ -16,8 +16,11 @@ import {
   ChevronRight,
   EditNote as EditNoteIcon,
   VisibilityRounded as VisibilityIcon,
-  VisibilityOffRounded as VisibilityOffIcon
+  VisibilityOffRounded as VisibilityOffIcon,
+  RestoreFromTrashRounded,
+  DeleteSweepRounded
 } from '../common/AppIcons'
+import { openTrashSettings, useTrashActions } from '../notes/TrashView'
 import { FlotaCalendarIcon as Today } from '../common/FlotaIcons'
 import FlotaAIIcon from '../common/FlotaAIIcon'
 import { useStore } from '../../store/useStore'
@@ -31,6 +34,16 @@ import { segmentedButtonSx, segmentedControlSx } from '../../styles/commonStyles
 import { wallpaperControlGlassSx } from '../../styles/paneStyles'
 import { t } from '../../utils/i18n'
 import logger from '../../utils/logger'
+
+// 工具栏左侧的文字按钮（新建、随手记、回收站的全部恢复 / 清空）统一尺寸
+const TOOLBAR_PILL_SX = {
+  ml: 0.5,
+  height: '30px',
+  minHeight: '30px',
+  px: 1.25,
+  borderRadius: '10px',
+  fontSize: '0.8125rem',
+}
 
 const Toolbar = ({
   onToggleSidebar,
@@ -68,6 +81,9 @@ const Toolbar = ({
   })))
   // 回收站数量：只订阅数字，避免工具栏随笔记编辑重渲染
   const deletedNotesCount = useStore((state) => state.trashNotes.length)
+  // 回收站自动清理天数（0 / 空为不自动清理），显示在回收站工具栏右侧
+  const trashPolicyDays = useStore((state) => state.trashPolicy?.days || 0)
+  const { empty: emptyTrash, restoreAll: restoreAllTrash } = useTrashActions()
   const pluginCommands = useStore((state) => state.pluginCommands)
   const onWallpaper = useStore((state) => state.backgroundPattern === 'custom' && Boolean(state.wallpaperPath))
   const widgetPageId = parseWidgetViewId(currentView)
@@ -465,18 +481,37 @@ const Toolbar = ({
               size="small"
               startIcon={<AddIcon />}
               onClick={viewConfig.createAction}
-              sx={{
-                ml: 0.5,
-                height: '30px',
-                minHeight: '30px',
-                px: 1.25,
-                borderRadius: '10px',
-                fontSize: '0.8125rem',
-              }}
+              sx={TOOLBAR_PILL_SX}
             >
               {viewConfig.createButtonText}
             </Button>
           </Tooltip>
+        )}
+
+        {/* 回收站：批量操作放在工具栏，与笔记页「新建 / 随手记」同一种按钮；为空时置灰而不隐藏，避免工具栏跳动 */}
+        {currentView === 'notes' && showDeleted && (
+          <>
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<RestoreFromTrashRounded />}
+              disabled={!deletedNotesCount}
+              onClick={() => restoreAllTrash(useStore.getState().trashNotes)}
+              sx={TOOLBAR_PILL_SX}
+            >
+              全部恢复
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<DeleteSweepRounded />}
+              disabled={!deletedNotesCount}
+              onClick={() => emptyTrash(deletedNotesCount)}
+              sx={TOOLBAR_PILL_SX}
+            >
+              清空回收站
+            </Button>
+          </>
         )}
 
         {/* 快速输入按钮（仅笔记视图） */}
@@ -487,14 +522,7 @@ const Toolbar = ({
               size="small"
               startIcon={<EditNoteIcon />}
               onClick={handleQuickInput}
-              sx={{
-                ml: 0.5,
-                height: '30px',
-                minHeight: '30px',
-                px: 1.25,
-                borderRadius: '10px',
-                fontSize: '0.8125rem',
-              }}
+              sx={TOOLBAR_PILL_SX}
             >
               {t('toolbar.newNote')}
             </Button>
@@ -804,6 +832,19 @@ const Toolbar = ({
               return null;
             })}
           </Box>
+        )}
+
+        {currentView === 'notes' && showDeleted && (
+          <Tooltip title="回收站设置">
+            <Button
+              variant="text"
+              size="small"
+              onClick={openTrashSettings}
+              sx={{ height: '30px', minHeight: '30px', px: 1.25, borderRadius: '10px', fontSize: '0.75rem', fontWeight: 400, color: 'text.secondary' }}
+            >
+              {deletedNotesCount ? `${deletedNotesCount} 篇 · ` : ''}{trashPolicyDays ? `删除 ${trashPolicyDays} 天后自动清除` : '不自动清除'}
+            </Button>
+          </Tooltip>
         )}
 
         {/* 回收站按钮 - 仅在笔记视图显示 */}
