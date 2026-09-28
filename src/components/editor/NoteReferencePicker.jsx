@@ -4,6 +4,7 @@ import { Add, Brush, Check, Description, Search } from '../common/AppIcons'
 import { useStore } from '../../store/useStore'
 import { stripMarkdownToPreviewText } from '../../utils/markdownTextUtils'
 import { editorScrollbarSx } from '../../styles/commonStyles'
+import { isImeComposing } from '../../utils/imeUtils'
 
 export default function NoteReferencePicker({ open, onClose, onSelect, whiteboards = false, excludeId }) {
   const notes = useStore(state => state.notes)
@@ -48,7 +49,7 @@ export default function NoteReferencePicker({ open, onClose, onSelect, whiteboar
         onChange={e => { setQuery(e.target.value); setSelectedId(null) }}
         onKeyDown={e => {
           if (e.nativeEvent.isComposing || busy) return
-          if (e.key === 'Enter' && (selected || candidates[0])) { e.preventDefault(); insert(selected || candidates[0]) }
+          if (e.key === 'Enter' && !isImeComposing(e) && (selected || candidates[0])) { e.preventDefault(); insert(selected || candidates[0]) }
           if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && candidates.length) {
             e.preventDefault()
             const index = candidates.findIndex(note => note.id === selectedId)

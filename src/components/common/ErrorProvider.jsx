@@ -43,12 +43,18 @@ export function ErrorProvider({ children }) {
     if (current?.type === 'prompt') setInputValue(current.defaultValue || '');
   }, [current]);
   const toastRef = useRef({ showError, showWarning, showSuccess, showInfo });
+  // 带操作按钮的提示（撤销等），与普通提示分开显示
+  const [actionToast, setActionToast] = useState(null);
   toastRef.current = { showError, showWarning, showSuccess, showInfo };
 
   // 接住组件外（utils/notify）发出的提示与确认请求
   useEffect(() => subscribeNotify((payload) => {
     if (payload.type === 'confirm' || payload.type === 'prompt') {
       setConfirmQueue((queue) => [...queue, payload]);
+      return;
+    }
+    if (payload.action) {
+      setActionToast({ ...payload, key: Date.now() });
       return;
     }
     const toast = toastRef.current;
@@ -81,6 +87,28 @@ export function ErrorProvider({ children }) {
       }}
     >
       {children}
+      <Snackbar
+        key={actionToast?.key}
+        open={Boolean(actionToast)}
+        autoHideDuration={6000}
+        onClose={(_, reason) => { if (reason !== 'clickaway') setActionToast(null); }}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={() => setActionToast(null)}
+          severity={actionToast?.severity || 'success'}
+          variant="filled"
+          sx={{ width: '100%', alignItems: 'center' }}
+          action={actionToast?.action ? (
+            <Button color="inherit" size="small" sx={{ fontWeight: 700 }}
+              onClick={() => { actionToast.action.onClick?.(); setActionToast(null); }}>
+              {actionToast.action.label}
+            </Button>
+          ) : null}
+        >
+          {actionToast?.message}
+        </Alert>
+      </Snackbar>
       <Snackbar
         open={snackbar.open}
         autoHideDuration={6000}

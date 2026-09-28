@@ -13,9 +13,11 @@ const radioCheckedIcon = React.createElement('span', { className: 'FlotaRadio-ic
  * Create the application theme based on mode and primary color
  * @param {string} mode - 'light' or 'dark'
  * @param {string} primaryColor - Hex color string
+ * @param {object} [options]
+ * @param {boolean} [options.onWallpaper] - 设了自定义壁纸：面板半透明，面板内的分组需要自己的底色
  * @returns {object} MUI Theme object
  */
-export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
+export const createAppTheme = (mode = 'light', primaryColor = '#1976d2', { onWallpaper = false } = {}) => {
     // Ensure mode is valid
     const validMode = mode === 'dark' ? 'dark' : 'light';
     const isDark = validMode === 'dark';
@@ -47,11 +49,21 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
         active:   isDark ? 'rgba(255,255,255,0.10)' : 'rgba(22,22,24,0.06)',
         pressed:  isDark ? 'rgba(255,255,255,0.14)' : 'rgba(22,22,24,0.08)',
         // 表单与嵌入面板使用同一层低对比材质，避免透明、灰底、白底混用。
-        control: isDark ? 'rgba(255,255,255,0.035)' : 'rgba(22,22,24,0.025)',
-        controlHover: isDark ? 'rgba(255,255,255,0.055)' : 'rgba(22,22,24,0.04)',
-        // 面板内的分组底色（首页卡片、四象限等）：比面板略深一点，不用边框
-        inset: isDark ? 'rgba(255,255,255,0.035)' : 'rgba(22,22,24,0.028)',
-        insetHover: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(22,22,24,0.05)',
+        control: onWallpaper
+            ? (isDark ? 'rgba(22,22,26,0.4)' : 'rgba(255,255,255,0.5)')
+            : (isDark ? 'rgba(255,255,255,0.035)' : 'rgba(22,22,24,0.025)'),
+        controlHover: onWallpaper
+            ? (isDark ? 'rgba(30,30,34,0.5)' : 'rgba(255,255,255,0.62)')
+            : (isDark ? 'rgba(255,255,255,0.055)' : 'rgba(22,22,24,0.04)'),
+        // 面板内的分组底色（首页卡片、四象限等）：比面板略深一点，不用边框。
+        // 设了壁纸时面板是半透明的，淡淡的深色底等于没有：壁纸里的暗块会透上来，
+        // 看起来像卡片带了阴影、每张深浅不一。这时改用统一的浅玻璃底（不加投影）。
+        inset: onWallpaper
+            ? (isDark ? 'rgba(22,22,26,0.42)' : 'rgba(255,255,255,0.5)')
+            : (isDark ? 'rgba(255,255,255,0.035)' : 'rgba(22,22,24,0.028)'),
+        insetHover: onWallpaper
+            ? (isDark ? 'rgba(30,30,34,0.52)' : 'rgba(255,255,255,0.62)')
+            : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(22,22,24,0.05)'),
         // 细分割线
         subtleBorder:  isDark ? 'rgba(255,255,255,0.08)' : 'rgba(22,22,24,0.08)',
         strongBorder:  isDark ? 'rgba(255,255,255,0.14)' : 'rgba(22,22,24,0.12)',
@@ -232,6 +244,12 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                 },
             },
             MuiIconButton: {
+                // 涟漪从点击处扩散并铺满按钮，再按按钮自身的圆角裁切：
+                // 圆形按钮仍是圆的，圆角方形按钮（面板按钮、小窗按钮等）就是圆角方形，
+                // 不会在方按钮里出现一个居中的小圆
+                defaultProps: {
+                    centerRipple: false,
+                },
                 styleOverrides: {
                     // 注意：不要在 root 设置 borderRadius，让 IconButton 维持 MUI 默认的 50%（圆形），
                     // 否则像 CalendarView / TodoList 里完成任务的勾选按钮会变成圆角方形。
@@ -248,59 +266,77 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                 },
             },
             MuiSwitch: {
+                // 全应用统一的 iOS 风格开关：没有涟漪；按下时滑块被拉长；弹性过渡；
+                // 关闭态底槽带一点内阴影；键盘聚焦时显示描边。标准 46×28，小号 36×22（同比例）。
+                defaultProps: {
+                    disableRipple: true,
+                },
                 styleOverrides: {
                     root: {
                         width: 46,
                         height: 28,
                         padding: 0,
                         overflow: 'visible',
+                        '--flota-switch-travel': '18px',
+                        '--flota-switch-thumb': '22px',
+                        '&.MuiSwitch-sizeSmall': {
+                            width: 36,
+                            height: 22,
+                            '--flota-switch-travel': '14px',
+                            '--flota-switch-thumb': '16px',
+                            '& .MuiSwitch-switchBase': { padding: 3 },
+                        },
+                        // 按下时滑块拉长（打开时向左拉长，关闭时向右拉长）
+                        '&:active .MuiSwitch-switchBase:not(.Mui-disabled) .MuiSwitch-thumb': {
+                            width: 'calc(var(--flota-switch-thumb) + 5px)',
+                        },
+                        '&:active .MuiSwitch-switchBase.Mui-checked:not(.Mui-disabled)': {
+                            transform: 'translateX(calc(var(--flota-switch-travel) - 5px))',
+                        },
                     },
                     switchBase: {
                         padding: 3,
-                        transitionDuration: '180ms',
+                        transition: 'transform 260ms cubic-bezier(0.34, 1.36, 0.64, 1)',
+                        '&:hover': { backgroundColor: 'transparent' },
                         '&.Mui-checked': {
-                            transform: 'translateX(18px)',
+                            transform: 'translateX(var(--flota-switch-travel))',
                             color: '#fff',
+                            '&:hover': { backgroundColor: 'transparent' },
                             '& + .MuiSwitch-track': {
                                 opacity: 1,
-                                borderColor: alpha(primaryColor, isDark ? 0.28 : 0.22),
-                                backgroundColor: alpha(primaryColor, isDark ? 0.92 : 0.88),
-                                backgroundImage: 'none',
-                                boxShadow: 'none',
+                                border: `1px solid ${alpha(primaryColor, isDark ? 0.5 : 0.35)}`,
+                                backgroundColor: primaryColor,
+                                boxShadow: `inset 0 1px 2px ${alpha('#000', 0.12)}`,
                             },
-                            '& .MuiSwitch-thumb': {
-                                backgroundColor: '#ffffff',
-                                boxShadow: isDark
-                                    ? '0 2px 8px rgba(11,11,12, 0.28)'
-                                    : '0 2px 8px rgba(22,22,24, 0.16)',
-                            },
+                        },
+                        '&.Mui-focusVisible + .MuiSwitch-track': {
+                            outline: `2px solid ${alpha(primaryColor, 0.55)}`,
+                            outlineOffset: 2,
                         },
                         '&.Mui-disabled': {
-                            opacity: 0.42,
-                            '& + .MuiSwitch-track': {
-                                opacity: 0.52,
-                            },
+                            '& .MuiSwitch-thumb': { boxShadow: 'none' },
+                            '& + .MuiSwitch-track': { opacity: 0.4 },
                         },
+                        '&.Mui-disabled.Mui-checked + .MuiSwitch-track': { opacity: 0.4 },
                     },
                     thumb: {
-                        width: 22,
-                        height: 22,
-                        backgroundColor: isDark ? '#fafafa' : '#ffffff',
+                        width: 'var(--flota-switch-thumb)',
+                        height: 'var(--flota-switch-thumb)',
+                        borderRadius: 999,
+                        backgroundColor: '#ffffff',
                         boxShadow: isDark
-                            ? '0 2px 8px rgba(11,11,12, 0.22)'
-                            : '0 2px 6px rgba(22,22,24, 0.12)',
+                            ? '0 1px 2px rgba(0,0,0,0.4), 0 3px 8px rgba(0,0,0,0.3)'
+                            : '0 1px 2px rgba(22,22,24,0.14), 0 3px 8px rgba(22,22,24,0.12)',
+                        transition: 'width 200ms cubic-bezier(0.34, 1.36, 0.64, 1), box-shadow 180ms ease',
                     },
                     track: {
                         borderRadius: 999,
                         opacity: 1,
                         boxSizing: 'border-box',
-                        border: `1px solid ${alpha(isDark ? '#ffffff' : '#161618', isDark ? 0.08 : 0.10)}`,
-                        backgroundColor: isDark
-                            ? 'rgba(110,110,118,0.22)'
-                            : 'rgba(209,209,213,0.72)',
-                        backgroundImage: 'none',
-                        boxShadow: 'none',
-                        transition: 'background 180ms ease, border-color 180ms ease, box-shadow 180ms ease',
+                        border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(22,22,24,0.06)'}`,
+                        backgroundColor: isDark ? 'rgba(120,120,128,0.32)' : 'rgba(120,120,128,0.2)',
+                        boxShadow: isDark ? 'inset 0 1px 2px rgba(0,0,0,0.35)' : 'inset 0 1px 2px rgba(22,22,24,0.08)',
+                        transition: 'background-color 220ms ease, border-color 220ms ease, box-shadow 220ms ease',
                     },
                 },
             },
@@ -679,6 +715,7 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2') => {
                 boxShadow: glassShadow,
             },
             surface,
+            onWallpaper,
             gradients: {
                 primary: `linear-gradient(135deg, ${primaryColor} 0%, ${alpha(primaryColor, 0.8)} 100%)`,
             }

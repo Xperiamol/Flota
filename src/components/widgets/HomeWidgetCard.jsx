@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Box, IconButton } from '@mui/material'
+import { Box } from '@mui/material'
+import PanelIconButton from '../common/PanelIconButton'
 import { DeleteOutline, MoreHoriz, OpenInNew } from '../common/AppIcons'
 import AppContextMenu from '../common/AppContextMenu'
 import { openWidgetInstance } from '../../store/useWidgetStore'
@@ -32,9 +33,9 @@ export default function HomeWidgetCard({ instanceId, editing }) {
           icon={(props) => <WidgetGlyph icon={info.widget.manifest?.icon} {...props} />}
           title={<Box component="span" className="home-widget-title" sx={{ transition: 'color 150ms ease' }}>{instanceLabel(info.widget.name, info.instance.name)}</Box>}
           action={!editing && (
-            <IconButton size="small" aria-label="更多" onClick={(event) => { event.stopPropagation(); setMenu({ el: event.currentTarget }) }} sx={{ my: -0.5, mr: -0.75 }}>
-              <MoreHoriz sx={{ fontSize: 18 }} />
-            </IconButton>
+            <PanelIconButton title="更多" size="sm" onClick={(event) => { event.stopPropagation(); setMenu({ el: event.currentTarget }) }}>
+              <MoreHoriz />
+            </PanelIconButton>
           )}
         />
       </Box>

@@ -24,6 +24,7 @@ import logger from './utils/logger'
  * 独立窗口内容组件
  * 处理StandaloneProvider的加载状态
  */
+import { useApplyEditorPrefs } from './store/usePrefsStore'
 function StandaloneContent({ windowType, windowData }) {
   const { isLoading } = useStandaloneContext()
 
@@ -80,6 +81,7 @@ function StandaloneContent({ windowType, windowData }) {
  * 根据URL参数决定显示笔记编辑器还是Todo列表
  */
 function StandaloneWindow() {
+  useApplyEditorPrefs()
   const [windowType, setWindowType] = useState(null)
   const [windowData, setWindowData] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -403,6 +405,7 @@ function StandaloneWindow() {
           {windowType && !['focus', 'reminder', 'external-file'].includes(windowType) && (
             <TitleBar
               isStandalone={true}
+              windowType={windowType}
               isMinibarMode={store.minibarMode}
               onMinibarClick={async () => {
                 if (store.minibarMode) {

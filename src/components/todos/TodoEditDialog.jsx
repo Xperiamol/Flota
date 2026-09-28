@@ -19,6 +19,7 @@ import {
 } from '../../utils/todoDisplayUtils';
 import zhCN from '../../locales/zh-CN';
 import { todoSchema, extractValidationErrors } from '../../validators/todoValidation';
+import { isImeComposing } from '../../utils/imeUtils'
 
 const AnimatedProgressValue = ({ value, color = 'text.primary', variant = 'body2' }) => {
   const previousValueRef = useRef(value);
@@ -456,7 +457,7 @@ const TodoEditDialog = ({ todo, open, onClose, onUpdated }) => {
               placeholder="添加子任务..."
               value={newSubtask}
               onChange={e => setNewSubtask(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddSubtask(); } }}
+              onKeyDown={e => { if (e.key === 'Enter' && !isImeComposing(e)) { e.preventDefault(); handleAddSubtask(); } }}
               sx={{ minWidth: 0 }}
             />
             <IconButton size="small" onClick={handleAddSubtask} disabled={!newSubtask.trim()}

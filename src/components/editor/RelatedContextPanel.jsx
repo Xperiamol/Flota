@@ -24,6 +24,7 @@ import { useStore } from '../../store/useStore'
 import { useShallow } from 'zustand/react/shallow'
 import { getRelatedNotes, getTodoTemporalStatus, isTodoCompleted, normalizeMemories, truncateText } from '../../utils/aiContextUtils'
 import { toListResult } from '../../utils/todoDisplayUtils'
+import { stripMarkdownToPreviewText } from '../../utils/markdownTextUtils'
 
 const getTodoScore = (todo, query) => {
   const text = `${todo?.content || ''}\n${todo?.description || ''}\n${todo?.tags || ''}`.toLowerCase()
@@ -34,17 +35,25 @@ const getTodoScore = (todo, query) => {
   return wordScore + priorityScore + dueScore
 }
 
-const Section = ({ icon, title, children }) => (
+// 与「反向链接」「未链接的提及」同一种小标题：灰色图标 + 名称 · 数量
+const Section = ({ icon, title, count, children }) => (
   <Box sx={{ mb: 0.75 }}>
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, px: 0.7, pt: 0.35, pb: 0.2 }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, px: 0.4, pt: 0.35, pb: 0.4, color: 'text.disabled' }}>
       {icon}
       <Typography variant="caption" sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.04em', color: 'text.disabled' }}>
-        {title}
+        {title}{count ? ` · ${count}` : ''}
       </Typography>
     </Box>
     {children}
   </Box>
 )
+
+// 关联依据改成简短的说明：「同标签：Flota」→「#Flota」，「标题命中：xx」→「标题相关」
+const shortReason = (reason) => {
+  const [kind, value] = String(reason || '').split('：')
+  if (kind === '同标签' && value) return `#${value}`
+  return kind.replace('命中', '相关')
+}
 
 const RelatedContextPanel = ({
   embedded = false,
@@ -156,6 +165,9 @@ const RelatedContextPanel = ({
     })
   }
 
+  // 嵌在笔记详情里时，没有可推荐的内容就整块不显示
+  if (embedded && forceExpanded && !hasContent && !loading) return null
+
   return (
     <Box
       sx={(theme) => ({
@@ -163,7 +175,9 @@ const RelatedContextPanel = ({
         mb: embedded ? 0 : 1,
         borderRadius: embedded ? 0 : '14px',
         border: embedded ? 0 : '1px solid',
-        borderColor: alpha(theme.palette.divider, 0.7),
+        // 嵌在笔记详情里：自带上分割线（没有内容时整块连同分割线一起隐藏）
+        borderTop: embedded ? `1px solid ${theme.palette.divider}` : undefined,
+        ...(embedded ? {} : { borderColor: alpha(theme.palette.divider, 0.7) }),
         bgcolor: embedded
           ? 'transparent'
           : alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.28 : 0.56),
@@ -172,6 +186,7 @@ const RelatedContextPanel = ({
         boxShadow: 'none',
       })}
     >
+      {!(embedded && forceExpanded) && (
       <Box
         onClick={forceExpanded ? undefined : handleToggle}
         sx={{
@@ -210,9 +225,10 @@ const RelatedContextPanel = ({
           </IconButton>
         )}
       </Box>
+      )}
 
       <Collapse in={isExpanded} timeout={160} unmountOnExit>
-        <Box sx={{ px: 0.55, py: 0.55, maxHeight: embedded ? 280 : '38vh', overflowY: 'auto' }}>
+        <Box sx={{ px: embedded ? 1.25 : 0.55, py: 0.85, maxHeight: embedded ? 280 : '38vh', overflowY: 'auto' }}>
           {!hasContent && !loading && (
             <Typography variant="caption" color="text.secondary">
               没有足够明确的标签、标题或关键词关联，暂不推荐。
@@ -220,28 +236,32 @@ const RelatedContextPanel = ({
           )}
 
           {relatedNotes.length > 0 && (
-            <Section icon={<NoteIcon sx={{ fontSize: 15 }} />} title="相关笔记">
+            <Section icon={<NoteIcon sx={{ fontSize: 14 }} />} title="相关笔记" count={relatedNotes.length}>
               <List dense disablePadding>
                 {relatedNotes.map(note => (
                   <ListItemButton
                     key={note.id}
                     onClick={() => setSelectedNoteId(note.id)}
-                    sx={{ borderRadius: '8px', px: 1.1, py: 0.7 }}
+                    // 与下方「反向链接」的条目左对齐
+                    sx={{ borderRadius: '8px', px: embedded ? 0 : 1.1, py: 0.7 }}
                   >
                     <ListItemText
                       primary={(
-                        <Typography variant="body2" noWrap sx={{ fontSize: 13, fontWeight: 650 }}>
+                        <Typography variant="body2" noWrap sx={{ fontSize: 13, fontWeight: embedded ? 500 : 650 }}>
                           {note.title || '未命名'}
                         </Typography>
                       )}
                       secondary={(
                         <Box component="span" sx={{ display: 'block' }}>
-                          <Typography variant="caption" color="primary" noWrap sx={{ display: 'block', fontSize: 11.5, fontWeight: 650 }}>
-                            依据：{(note.reasons || []).join(' · ')}
-                          </Typography>
                           <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', fontSize: 11.5 }}>
-                            {note.timeLabel}{note.stalenessLabel ? ` · ${note.stalenessLabel}` : ''} · {truncateText(note.excerpt, 56)}
+                            {[...new Set((note.reasons || []).map(shortReason))].slice(0, 3).join(' · ')}
+                            {note.timeLabel ? ` · ${note.timeLabel}` : ''}
                           </Typography>
+                          {note.excerpt && (
+                            <Typography variant="caption" color="text.disabled" noWrap sx={{ display: 'block', fontSize: 11.5 }}>
+                              {truncateText(stripMarkdownToPreviewText(note.excerpt), 56)}
+                            </Typography>
+                          )}
                         </Box>
                       )}
                     />
@@ -254,7 +274,7 @@ const RelatedContextPanel = ({
           {relatedTodos.length > 0 && (
             <>
               {relatedNotes.length > 0 && <Divider sx={{ my: 0.6 }} />}
-              <Section icon={<TodoIcon sx={{ fontSize: 15 }} />} title="相关待办">
+              <Section icon={<TodoIcon sx={{ fontSize: 14 }} />} title="相关待办" count={relatedTodos.length}>
                 {relatedTodos.map(todo => {
                   const temporal = getTodoTemporalStatus(todo)
                   return (
@@ -276,7 +296,7 @@ const RelatedContextPanel = ({
           {memories.length > 0 && (
             <>
               {(relatedNotes.length > 0 || relatedTodos.length > 0) && <Divider sx={{ my: 0.6 }} />}
-              <Section icon={<MemoryIcon sx={{ fontSize: 15 }} />} title="相关记忆">
+              <Section icon={<MemoryIcon sx={{ fontSize: 14 }} />} title="相关记忆" count={Math.min(3, memories.length)}>
                 {memories.slice(0, 3).map((memory, index) => (
                   <Typography key={memory.id || index} variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.5, mb: 0.5 }}>
                     {truncateText(memory.content, 88)}{memory.stalenessLabel ? ` · ${memory.stalenessLabel}` : ''}

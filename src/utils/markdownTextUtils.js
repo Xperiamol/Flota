@@ -16,11 +16,14 @@ export const stripMarkdownBlocks = (content = '') => String(content || '')
   .replace(/^[ \t]*\|(.*)\|[ \t]*$/gm, (_, row) => row.split('|').map((cell) => cell.trim()).filter(Boolean).join('  '))
   // 分割线
   .replace(/^[ \t]*(?:[-*_][ \t]*){3,}$/gm, '')
-  // 任务列表 / 无序 / 有序列表 / 引用 / 标题（允许缩进，嵌套列表同样处理）
+  // 引用与提示块先去掉（提示块里常是列表：> - 要点），再去列表 / 标题（允许缩进，嵌套列表同样处理）
+  .replace(/^[ \t]*>+[ \t]?/gm, '')
+  // 提示块标记 [!tip] / [!note]- 与 :::tip 容器的起止行
+  .replace(/^[ \t]*\[![\w-]+\][+-]?[ \t]*/gm, '')
+  .replace(/^[ \t]*:::[ \t]*[\w-]*[ \t]*/gm, '')
   .replace(/^[ \t]*[-*+][ \t]+\[[ xX]\][ \t]+/gm, '')
   .replace(/^[ \t]*[-*+][ \t]+/gm, '')
   .replace(/^[ \t]*\d+[.)][ \t]+/gm, '')
-  .replace(/^[ \t]*>+[ \t]?/gm, '')
   .replace(/^[ \t]*#{1,6}[ \t]+/gm, '')
 
 /**

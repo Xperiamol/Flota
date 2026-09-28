@@ -31,6 +31,17 @@ export const notifySuccess = notify('success')
 export const notifyInfo = notify('info')
 
 /**
+ * 带一个操作按钮的提示（如「已移到 9月25日 · 撤销」）。
+ * @param {string} message
+ * @param {{ label: string, onClick: () => void }} action
+ */
+export const notifyWithAction = (message, action, severity = 'success') => {
+  const text = String(message || '')
+  if (!text) return
+  emit({ type: 'toast', severity, message: text, action })
+}
+
+/**
  * 应用内确认框。
  * @returns {Promise<boolean>} 用户点确认为 true，取消 / 关闭为 false
  */

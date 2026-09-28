@@ -52,6 +52,7 @@ import MarkdownPreview from './MarkdownPreview'
 import MarkdownToolbar from './MarkdownToolbar'
 import NoteTypeConversionDialog from './NoteTypeConversionDialog'
 import AIAssistPanel from '../ai/AIAssistPanel'
+import NoteInfoSummary from './NoteInfoSummary'
 import RelatedContextPanel from './RelatedContextPanel'
 import BacklinksPanel from './BacklinksPanel'
 import UnlinkedMentionsPanel from './UnlinkedMentionsPanel'
@@ -1897,20 +1898,10 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     const timer = setTimeout(() => setContentForWordStats(content), 180)
     return () => clearTimeout(timer)
   }, [content])
-  const { wordCount, charCount } = useMemo(
+  const { wordCount } = useMemo(
     () => countEditorWords(contentForWordStats),
     [contentForWordStats]
   )
-  const noteCreatedAt = currentNote?.created_at || currentNote?.createdAt
-  const noteUpdatedAt = lastSaved || currentNote?.updated_at || currentNote?.updatedAt || noteCreatedAt
-  const noteMetaItems = [
-    { label: '类型', value: noteType === 'whiteboard' ? '画布' : editorMode === 'wysiwyg' ? '所见即所得' : 'Markdown' },
-    { label: '字数', value: `${wordCount} 字` },
-    { label: '字符', value: `${charCount} 个` },
-    { label: '创建', value: formatLastSaved(noteCreatedAt) || '未知' },
-    { label: '更新', value: formatLastSaved(noteUpdatedAt) || '未知' },
-    { label: '状态', value: currentNote?.is_pinned ? '已置顶' : hasUnsavedChanges ? '有未保存更改' : '已保存' },
-  ]
   const wordCountBadgeSx = {
     position: 'absolute',
     right: 14,
@@ -2915,7 +2906,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
                         padding: 0
                       },
                       '& .MuiInput-input': {
-                        fontSize: '1rem',
+                        fontSize: 'var(--flota-editor-font-size, 1rem)',
                         lineHeight: 1.6,
                         fontFamily: '"OPPOSans R", "OPPOSans", system-ui, -apple-system, sans-serif',
                         height: '100% !important',
@@ -3064,68 +3055,16 @@ const NoteEditor = ({ onCollapseSidebar }) => {
           }
         }}
       >
-        <Box sx={{ p: 0.55 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1.25, pt: 0.7, pb: 0.35 }}>
-            <Box sx={{ minWidth: 0 }}>
-              <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.04em', color: 'text.disabled' }}>
-                笔记详情
-              </Typography>
-              <Typography noWrap sx={{ fontSize: 13, fontWeight: 650, mt: 0.25 }}>
-                {currentNote?.title || '未命名'}
-              </Typography>
-            </Box>
-            <PanelIconButton title="关闭详情" onClick={handleCloseRelatedContext}>
-              <CloseIcon />
-            </PanelIconButton>
-          </Box>
-
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-              columnGap: 1,
-              rowGap: 0,
-              px: 0.65,
-              py: 0.25,
-            }}
-          >
-            {noteMetaItems.map((item, index) => (
-              <Box
-                key={item.label}
-                sx={{
-                  minWidth: 0,
-                  px: 0.45,
-                  py: 0.55,
-                  borderTop: index > 1 ? '1px solid' : 0,
-                  borderColor: 'divider',
-                }}
-              >
-                <Typography color="text.disabled" sx={{ fontSize: 10.5, fontWeight: 700, mb: 0.1 }}>
-                  {item.label}
-                </Typography>
-                <Typography noWrap sx={{ fontSize: 12.5, fontWeight: 650 }}>
-                  {item.value}
-                </Typography>
-              </Box>
-            ))}
-          </Box>
-
-          {noteTags.length > 0 && (
-            <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap" sx={{ mt: 0.7, px: 0.15 }}>
-              {noteTags.slice(0, 8).map((tag) => (
-                <Chip
-                  key={tag}
-                  label={`#${tag}`}
-                  size="small"
-                  variant="outlined"
-                  sx={{ height: 21, borderRadius: '7px', fontSize: 11.5, fontWeight: 650 }}
-                />
-              ))}
-            </Stack>
-          )}
-        </Box>
-
-        <Divider sx={{ opacity: 0.7 }} />
+        {/* 笔记详情：类型与字数、创建时间（可修改）、修改时间、剪藏来源、标签 */}
+        <NoteInfoSummary
+          note={currentNote}
+          noteType={noteType}
+          wordCount={wordCount}
+          tags={noteTags}
+          lastSaved={lastSaved}
+          onEditTags={(event) => setTagAnchorEl(event.currentTarget)}
+          onClose={handleCloseRelatedContext}
+        />
 
         <RelatedContextPanel
           embedded

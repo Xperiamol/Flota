@@ -14,6 +14,7 @@ import { parseTags, formatTags, validateTags, getTagColor } from '../../utils/ta
 import { usePluginExtensions } from '../../hooks/usePluginExtensions';
 import logger from '../../utils/logger';
 import FlotaAIIcon from './FlotaAIIcon';
+import { isImeComposing } from '../../utils/imeUtils'
 
 /**
  * 标签输入组件
@@ -111,6 +112,7 @@ const TagInput = ({
   };
 
   const handleKeyDown = (e) => {
+    if (isImeComposing(e)) return;
     if (e.key === 'Enter') {
       e.preventDefault();
       if (selectedSuggestionIndex >= 0 && suggestions[selectedSuggestionIndex]) {

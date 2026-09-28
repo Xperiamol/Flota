@@ -5,24 +5,22 @@ import { useTheme } from '@mui/material/styles';
 import { PushPinOutlined as PushPinOutlinedIcon } from '../common/AppIcons';
 import { createTransitionString, ANIMATIONS } from '../../utils/animationConfig';
 import { useStore } from '../../store/useStore';
-import { useWidgetStore, parseWidgetViewId } from '../../store/useWidgetStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useTranslation } from '../../utils/i18n';
 import SyncStatusIndicator from '../sync/SyncStatusIndicator';
+import TitleBarAIButton from './TitleBarAIButton';
 import OpenNoteButton from '../notes/OpenNoteButton';
+import { usePageTitle } from '../../utils/pageTitle';
 
-const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false }) => {
+const STANDALONE_TITLES = { todo: '待办', widget: '组件' };
+
+const TitleBar = ({ isStandalone = false, windowType = null, onMinibarClick, isMinibarMode = false }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const { currentView, titleBarStyle } = useStore(useShallow((state) => ({
-    currentView: state.currentView,
+  const { titleBarStyle } = useStore(useShallow((state) => ({
     titleBarStyle: state.titleBarStyle,
   })));
   const isMac = titleBarStyle === 'mac';
-  const widgetName = useWidgetStore((state) => {
-    const widgetId = parseWidgetViewId(currentView);
-    return widgetId ? state.widgets.find((widget) => widget.id === widgetId)?.name || '组件' : null;
-  });
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
 
   useEffect(() => {
@@ -44,30 +42,15 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
     };
   }, []);
 
-  // 根据当前视图获取对应的标题
-  const getViewTitle = () => {
-    if (widgetName) return widgetName;
-    switch (currentView) {
-      case 'notes':
-        return 'Flota';
-      case 'todo':
-        return '待办事项';
-      case 'calendar':
-        return '日历';
-      case 'timeline':
-        return 'Flota · 时间轴';
-      case 'settings':
-        return '设置';
-      case 'plugins':
-        return '插件/组件';
-      case 'profile':
-        return '首页';
-      case 'ai':
-        return 'FlotaAI';
-      default:
-        return 'Flota';
-    }
-  };
+  // 当前页面的名字（笔记、回收站、设置 · 外观、插件页面……），规则见 utils/pageTitle
+  const pageTitle = usePageTitle();
+  // 独立窗口：笔记窗口显示笔记标题，其他显示窗口类型
+  const standaloneNoteTitle = useStore((state) => {
+    if (!isStandalone || windowType !== 'note') return null;
+    const note = state.notes.find((item) => String(item.id) === String(state.selectedNoteId));
+    return note ? (note.title?.trim() || '未命名笔记') : '笔记';
+  });
+  const getViewTitle = () => (isStandalone ? (standaloneNoteTitle || STANDALONE_TITLES[windowType] || 'Flota') : pageTitle);
 
   const handleMinimize = async () => {
     if (window.electronAPI) {
@@ -296,28 +279,19 @@ const TitleBar = ({ isStandalone = false, onMinibarClick, isMinibarMode = false 
         </Typography>
       )}
 
-      {/* 同步状态指示器 - 右侧（Windows样式时） */}
-      {titleBarStyle === 'windows' && (
+      {/* 右侧：AI 入口 + 同步状态（Windows 样式时让出窗口控制按钮的位置） */}
+      {(
         <Box
           sx={{
             position: 'absolute',
-            right: '140px', // 留出空间给窗口控制按钮
+            right: titleBarStyle === 'windows' ? '140px' : '12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '2px',
             WebkitAppRegion: 'no-drag',
           }}
         >
-          <SyncStatusIndicator />
-        </Box>
-      )}
-
-      {/* 同步状态指示器 - 右侧（Mac样式时） */}
-      {titleBarStyle === 'mac' && (
-        <Box
-          sx={{
-            position: 'absolute',
-            right: '12px',
-            WebkitAppRegion: 'no-drag',
-          }}
-        >
+          {!isStandalone && !isMinibarMode && <TitleBarAIButton />}
           <SyncStatusIndicator />
         </Box>
       )}

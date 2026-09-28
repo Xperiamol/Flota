@@ -109,6 +109,14 @@ class NoteService extends EventEmitter {
       normalizedData.title = String(normalizedData.title || '').trim();
     }
 
+    // 修改创建时间（日历里拖动、信息面板里编辑）：统一存成 UTC 的 SQLite 时间格式，不允许晚于现在
+    if (normalizedData.created_at !== undefined) {
+      const date = new Date(normalizedData.created_at);
+      if (Number.isNaN(date.getTime())) return { success: false, error: '创建时间格式不正确' };
+      if (date.getTime() > Date.now() + 60 * 1000) return { success: false, error: '创建时间不能晚于现在' };
+      normalizedData.created_at = date.toISOString().replace('T', ' ').slice(0, 19);
+    }
+
     try {
       // 清除自动保存定时器
       this.clearAutoSaveTimer(id);
@@ -557,6 +565,21 @@ class NoteService extends EventEmitter {
   }
 
   /**
+   * 清空回收站：永久删除所有已删除的笔记
+   */
+  async emptyTrash() {
+    try {
+      const ids = this.noteDAO.findDeletedIds();
+      if (ids.length === 0) return { success: true, data: { count: 0 } };
+      const result = await this.batchPermanentDeleteNotes(ids);
+      return result.success ? { success: true, data: { count: ids.length, ids } } : result;
+    } catch (error) {
+      console.error('清空回收站失败:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
    * 获取最近修改的笔记
    */
   async getRecentNotes(limit = 10) {
@@ -603,6 +626,25 @@ class NoteService extends EventEmitter {
    * 获取笔记活动热力图数据（基于变更日志，精确到每天的真实活动次数）
    * @param {number} days - 统计最近天数
    */
+  /**
+   * 日历「笔记视图」的活动：每天改过哪些笔记（按变更日志；已同步的旧记录会被清理，只保证近期完整）
+   * @returns {{ [day: string]: string[] }} day 为本地日期 YYYY-MM-DD，值是笔记的 sync_id（变更日志按 sync_id 记录）
+   */
+  async getActivityRange(startDay, endDay) {
+    try {
+      const rows = this.noteDAO.changeLog.getEntityActivity('note', startDay, endDay);
+      const byDay = {};
+      rows.forEach((row) => {
+        if (!byDay[row.day]) byDay[row.day] = [];
+        byDay[row.day].push(String(row.entity_id));
+      });
+      return { success: true, data: byDay };
+    } catch (error) {
+      console.error('获取笔记活动失败:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
   async getActivityHeatmap(days = 90) {
     try {
       const counts = this.noteDAO.changeLog.getDailyActivityCounts('note', days);
@@ -758,14 +800,8 @@ class NoteService extends EventEmitter {
             updated_at: new Date().toISOString()
           });
 
-          if (result) {
-            updatedCount++;
-            // 更新标签使用统计
-            if (finalTags.length > 0) {
-              const tagService = new TagService();
-              await tagService.updateTagsUsage(finalTags);
-            }
-          }
+          // 标签使用次数由 NoteDAO.update 按实际笔记重算
+          if (result) updatedCount++;
         } catch (error) {
           errors.push(`更新笔记 ${noteId} 失败: ${error.message}`);
         }

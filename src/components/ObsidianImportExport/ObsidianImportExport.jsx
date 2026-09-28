@@ -142,7 +142,7 @@ const ObsidianImportExport = () => {
   return (
     <Box>
       {/* 导入部分 */}
-      <Paper elevation={0} sx={{ p: 2, mb: 2, bgcolor: 'background.default' }}>
+      <Paper elevation={0} sx={(theme) => ({ p: 2, mb: 2, bgcolor: theme.custom?.surface?.inset })}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
           <Typography variant="subtitle1" fontWeight="medium">
             从 Obsidian 导入
@@ -232,7 +232,7 @@ const ObsidianImportExport = () => {
       </Paper>
 
       {/* 导出部分 */}
-      <Paper elevation={0} sx={{ p: 2, bgcolor: 'background.default' }}>
+      <Paper elevation={0} sx={(theme) => ({ p: 2, bgcolor: theme.custom?.surface?.inset })}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
           <Typography variant="subtitle1" fontWeight="medium">
             导出到 Obsidian

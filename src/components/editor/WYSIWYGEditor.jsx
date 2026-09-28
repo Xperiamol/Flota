@@ -234,6 +234,7 @@ const isAttachmentRef = (src) => {
 // ─── Callout 装饰插件 ─────────────────────────────────────────────────────────
 // 在 WYSIWYG 中检测 blockquote 内的 [!type] 标记,渲染为彩色卡片
 import { CALLOUT_TYPES } from '../../markdown/calloutConfig.js'
+import { isImeComposing } from '../../utils/imeUtils'
 
 const calloutPluginKey = new PluginKey('calloutDecoration')
 
@@ -1843,7 +1844,7 @@ const SlashCommandMenu = ({ editor, containerRef }) => {
         setSelectedIndex((i) => (i - 1 + commands.length) % commands.length)
         return
       }
-      if (e.key === 'Enter' || e.key === 'Tab') {
+      if ((e.key === 'Enter' || e.key === 'Tab') && !isImeComposing(e)) {
         e.preventDefault()
         runSlashCommand(editor, slashState, commands[selectedIndex] || commands[0])
       }
@@ -3065,10 +3066,14 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
           minHeight: '100%',
           padding: '16px',
           fontFamily: '"OPPOSans R", "OPPOSans", system-ui, -apple-system, sans-serif',
+          // 设置 → 编辑器：正文字号与内容宽度（适合阅读时居中限宽）
+          fontSize: 'var(--flota-editor-font-size, 1rem)',
+          boxSizing: 'border-box',
+          marginInline: 'auto',
           // 保留多空格（NBSP 之外的普通空格在编辑期间也不被折叠）
           whiteSpace: 'pre-wrap',
           // 防止超长无断词文本把 flex 布局撑破（导致侧栏/按钮不可点击）
-          maxWidth: '100%',
+          maxWidth: 'min(100%, var(--flota-editor-max-width, none))',
           overflowWrap: 'anywhere',
           wordBreak: 'break-word',
 

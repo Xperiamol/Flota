@@ -5,10 +5,33 @@ import { createTransitionString, ANIMATIONS } from '../../utils/animationConfig'
 import { useStore } from '../../store/useStore'
 import { sanitizeMarkdownHtml } from '../../markdown/sanitizeHtml'
 
-const supported = (file) => /\.(md|markdown|txt|html?|excalidraw)$/i.test(file.name)
+// 与主进程同一份类型表（设置 → 笔记与文件 可以关掉某些类型）
+const DEFAULT_EXTENSIONS = ['md', 'markdown', 'mdown', 'mkd', 'txt', 'text', 'log', 'html', 'htm', 'excalidraw']
+let enabledExtensions = DEFAULT_EXTENSIONS
+export const refreshOpenableExtensions = async () => {
+  try {
+    const result = await window.electronAPI?.externalFiles?.getFileTypes?.()
+    if (result?.success) {
+      const { types, enabled } = result.data
+      enabledExtensions = types.filter((type) => enabled.includes(type.id)).flatMap((type) => type.extensions)
+    }
+  } catch {
+    // 读取失败时沿用默认列表
+  }
+  return enabledExtensions
+}
+const extensionOf = (name) => String(name || '').split('.').pop().toLowerCase()
+const supported = (file) => enabledExtensions.includes(extensionOf(file.name))
 
 export default function OpenNoteButton() {
   const inputRef = useRef(null)
+  const [accept, setAccept] = useState(DEFAULT_EXTENSIONS.map((ext) => `.${ext}`).join(','))
+  useEffect(() => {
+    const load = () => refreshOpenableExtensions().then((list) => setAccept(list.map((ext) => `.${ext}`).join(',')))
+    load()
+    window.addEventListener('flota:file-types-changed', load)
+    return () => window.removeEventListener('flota:file-types-changed', load)
+  }, [])
   const busyRef = useRef(false)
   const [notice, setNotice] = useState(null)
   const openFiles = async (files) => {
@@ -21,7 +44,7 @@ export default function OpenNoteButton() {
       await window.__saveBeforeClose?.()
       for (const file of files) {
         try {
-          if (!supported(file)) throw new Error('不支持此格式')
+          if (!supported(file)) throw new Error('这种文件没有在「设置 → 笔记与文件」里开启')
           if (file.size > 20 * 1024 * 1024) throw new Error('文件超过 20 MB')
           let content = (await file.text()).replace(/^\uFEFF/, '')
           const whiteboard = /\.excalidraw$/i.test(file.name)
@@ -89,11 +112,11 @@ export default function OpenNoteButton() {
     }
   }, [])
   return <>
-    <input ref={inputRef} hidden type="file" multiple accept=".md,.markdown,.txt,.html,.htm,.excalidraw" onChange={(event) => {
+    <input ref={inputRef} hidden type="file" multiple accept={accept} onChange={(event) => {
       void openFiles(Array.from(event.target.files || []))
       event.target.value = ''
     }} />
-    <Tooltip title="打开文件（Markdown / TXT / HTML / Excalidraw）">
+    <Tooltip title="打开文件，保存为笔记">
       <IconButton aria-label="打开文件" size="small" disableRipple onClick={() => inputRef.current?.click()} sx={(theme) => ({
         width: 28, height: 28, p: 0, borderRadius: '7px', color: 'text.secondary', opacity: 0.58,
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',

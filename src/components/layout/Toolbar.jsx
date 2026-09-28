@@ -11,7 +11,7 @@ import {
 import {
   Add as AddIcon,
   Delete as DeleteIcon,
-  Restore as RestoreIcon,
+  ArrowBackRounded as NotesBackIcon,
   ChevronLeft,
   ChevronRight,
   EditNote as EditNoteIcon,
@@ -28,6 +28,7 @@ import DropdownMenu from '../common/DropdownMenu'
 import { executePluginCommand } from '../../api/pluginAPI'
 import { getPluginCommandIcon } from '../../utils/pluginCommandUtils.jsx'
 import { segmentedButtonSx, segmentedControlSx } from '../../styles/commonStyles'
+import { wallpaperControlGlassSx } from '../../styles/paneStyles'
 import { t } from '../../utils/i18n'
 import logger from '../../utils/logger'
 
@@ -65,9 +66,10 @@ const Toolbar = ({
     aiNewChat: state.aiNewChat,
     setAiCommandCenterOpen: state.setAiCommandCenterOpen,
   })))
-  // 只订阅"已删除数量"：订阅整个 notes 会让工具栏在每次编辑自动保存时都重渲染
-  const deletedNotesCount = useStore((state) => state.notes.filter((note) => note.is_deleted).length)
+  // 回收站数量：只订阅数字，避免工具栏随笔记编辑重渲染
+  const deletedNotesCount = useStore((state) => state.trashNotes.length)
   const pluginCommands = useStore((state) => state.pluginCommands)
+  const onWallpaper = useStore((state) => state.backgroundPattern === 'custom' && Boolean(state.wallpaperPath))
   const widgetPageId = parseWidgetViewId(currentView)
   const widgetTitle = useWidgetStore((state) => {
     const widgetId = parseWidgetViewId(currentView)
@@ -428,6 +430,15 @@ const Toolbar = ({
         position: 'relative',
         '& .MuiButton-root': { whiteSpace: 'nowrap' },
         '& .MuiIconButton-root': { minWidth: 32, minHeight: 32 },
+        // 设了壁纸时，工具栏上没有底色的按钮垫一层轻玻璃，避免文字和图标融进壁纸
+        ...(onWallpaper ? {
+          // 分段切换器自带底座，里面的按钮不再单独垫玻璃
+          '& :is(.MuiIconButton-root, .MuiButton-text, .MuiButton-outlined):not(.flota-segmented *)': {
+            ...wallpaperControlGlassSx(theme),
+            '&:hover': { backgroundColor: theme.palette.mode === 'dark' ? 'rgba(52,52,58,0.7)' : 'rgba(255,255,255,0.8)' },
+          },
+          '& :is(.MuiButton-text, .MuiButton-outlined):not(.flota-segmented *)': { color: 'text.primary', borderColor: 'transparent' },
+        } : {}),
       })}
     >
       {/* 左侧按钮组 */}
@@ -592,7 +603,7 @@ const Toolbar = ({
             .map((button, index) => {
               if (button.type === 'calendarViewMode') {
                 return (
-                  <Box key={index} sx={segmentedControlSx}>
+                  <Box key={index} className="flota-segmented" sx={segmentedControlSx}>
                     {button.options.map((option) => {
                       const isActive = (calendarViewMode || 'todos') === option.value;
                       return (
@@ -619,7 +630,7 @@ const Toolbar = ({
               }
               if (button.type === 'viewToggle') {
                 return (
-                  <Box key={index} sx={segmentedControlSx}>
+                  <Box key={index} className="flota-segmented" sx={segmentedControlSx}>
                     {button.options.map((option) => {
                       const isActive = todoViewMode === option.value;
                       return (
@@ -695,7 +706,7 @@ const Toolbar = ({
 
         {currentView === 'timeline' && (
           <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 0.75, mr: 0.75 }}>
-            <Box sx={segmentedControlSx}>
+            <Box className="flota-segmented" sx={segmentedControlSx}>
               {[
                 { value: 'all', label: '全部' },
                 { value: 'today', label: '今天' },
@@ -738,7 +749,7 @@ const Toolbar = ({
 
         {/* 插件命令按钮 */}
         {[
-          { view: 'notes', commands: noteToolbarCommands },
+          { view: 'notes', commands: showDeleted ? [] : noteToolbarCommands },
           { view: 'todo', commands: todoToolbarCommands },
         ].map(({ view, commands }) =>
           currentView === view && commands.length > 0 && (
@@ -797,10 +808,12 @@ const Toolbar = ({
 
         {/* 回收站按钮 - 仅在笔记视图显示 */}
         {viewConfig.showDeletedButton && (
-          <Tooltip title={showDeleted ? t('common.restore') : t('sidebar.trash')}>
-            <IconButton size="small" onClick={onToggleDeleted} aria-label={showDeleted ? t('common.restore') : t('sidebar.trash')} aria-pressed={Boolean(showDeleted)} color={showDeleted ? 'primary' : 'default'}>
-              <Badge badgeContent={deletedNotesCount} color="error">
-                {showDeleted ? <RestoreIcon fontSize="small" /> : <DeleteIcon fontSize="small" />}
+          <Tooltip title={showDeleted ? '返回笔记' : `回收站${deletedNotesCount ? `（${deletedNotesCount}）` : ''}`}>
+            <IconButton size="small" onClick={onToggleDeleted} aria-label={showDeleted ? '返回笔记' : '回收站'} aria-pressed={Boolean(showDeleted)} color={showDeleted ? 'primary' : 'default'}>
+              {/* 只显示小圆点：数字徽标会让人误以为是未读消息 */}
+              <Badge variant="dot" invisible={showDeleted || !deletedNotesCount} color="default"
+                sx={{ '& .MuiBadge-dot': { bgcolor: 'text.disabled', minWidth: 6, height: 6 } }}>
+                {showDeleted ? <NotesBackIcon fontSize="small" /> : <DeleteIcon fontSize="small" />}
               </Badge>
             </IconButton>
           </Tooltip>

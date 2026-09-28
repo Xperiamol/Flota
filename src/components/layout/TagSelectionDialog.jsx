@@ -22,6 +22,7 @@ import {
   Label as LabelIcon
 } from '../common/AppIcons';
 import { parseTags, formatTags } from '../../utils/tagUtils';
+import { isImeComposing } from '../../utils/imeUtils'
 
 /**
  * 标签选择对话框组件
@@ -98,7 +99,7 @@ const TagSelectionDialog = ({
 
   // 处理新标签输入的回车键
   const handleNewTagKeyDown = (e) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !isImeComposing(e)) {
       e.preventDefault();
       handleAddNewTag();
     }

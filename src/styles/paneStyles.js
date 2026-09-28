@@ -23,12 +23,21 @@ export const usePaneOpacity = () => {
   return paneOpacity(maskOpacity, backgroundPattern)
 }
 
+/**
+ * 半透明面板的背景处理（类似 macOS 的毛玻璃）：大半径模糊 + 补饱和度，再压低背景自身的明暗对比。
+ * 只靠模糊去不掉照片里大块的暗区（山、树），它们会在面板上留下一团团「阴影」、让文字发虚；
+ * 压对比后浅色主题再略提亮、深色主题略压暗，壁纸的颜色还在，但不再有斑块，也不用再叠一层白。
+ */
+export const paneBackdropFilter = (theme) => (theme.palette.mode === 'dark'
+  ? 'blur(36px) saturate(150%) contrast(0.72) brightness(0.82)'
+  : 'blur(36px) saturate(160%) contrast(0.72) brightness(1.1)')
+
 /** 面板材质：统一底色、细边框、圆角；半透明时加模糊保证文字可读 */
 export const paneSurfaceSx = (theme, opacity = 1, { radius = PANE_RADIUS } = {}) => ({
   backgroundColor: opacity >= 1 ? theme.palette.background.paper : alpha(theme.palette.background.paper, opacity),
   border: `1px solid ${theme.palette.divider}`,
   borderRadius: `${radius}px`,
-  ...(opacity < 1 ? { backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)' } : {}),
+  ...(opacity < 1 ? { backdropFilter: paneBackdropFilter(theme), WebkitBackdropFilter: paneBackdropFilter(theme) } : {}),
 })
 
 /**
@@ -49,8 +58,9 @@ export const liquidGlassSx = (theme, { opacity = 1, radius = PANE_RADIUS, elevat
     backgroundImage: dark
       ? 'linear-gradient(135deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0) 42%)'
       : 'linear-gradient(135deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0) 45%)',
-    backdropFilter: 'blur(22px) saturate(180%)',
-    WebkitBackdropFilter: 'blur(22px) saturate(180%)',
+    // 有壁纸时与主内容面板用同一种背景处理，侧栏和主区的透感一致
+    backdropFilter: opacity < 1 ? paneBackdropFilter(theme) : 'blur(22px) saturate(180%)',
+    WebkitBackdropFilter: opacity < 1 ? paneBackdropFilter(theme) : 'blur(22px) saturate(180%)',
     border: `1px solid ${dark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.75)'}`,
     boxShadow: [
       elevated ? (dark ? '0 10px 30px rgba(0,0,0,0.38)' : '0 10px 30px rgba(22,22,24,0.07)') : null,
@@ -58,5 +68,21 @@ export const liquidGlassSx = (theme, { opacity = 1, radius = PANE_RADIUS, elevat
       `inset 0 1px 0 ${dark ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.95)'}`,
       `inset 0 -1px 0 ${dark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.4)'}`,
     ].filter(Boolean).join(', '),
+  }
+}
+
+/**
+ * 直接放在壁纸上的小控件（工具栏按钮等）：设了壁纸时背景花色不可控，
+ * 给按钮垫一层轻玻璃保证文字和图标可读；纯色 / 花纹背景下不需要。
+ */
+export const wallpaperControlGlassSx = (theme) => {
+  const dark = theme.palette.mode === 'dark'
+  return {
+    backgroundColor: dark ? 'rgba(36,36,40,0.52)' : 'rgba(255,255,255,0.58)',
+    backdropFilter: 'blur(14px) saturate(170%)',
+    WebkitBackdropFilter: 'blur(14px) saturate(170%)',
+    boxShadow: dark
+      ? 'inset 0 0 0 1px rgba(255,255,255,0.08)'
+      : 'inset 0 0 0 1px rgba(255,255,255,0.7), 0 1px 3px rgba(22,22,24,0.06)',
   }
 }

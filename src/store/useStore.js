@@ -3,6 +3,9 @@ import { devtools, persist } from 'zustand/middleware'
 import {
     fetchNotes,
     fetchDeletedNotes,
+    emptyTrash as emptyTrashAPI,
+    fetchTrashPolicy,
+    setTrashRetention as setTrashRetentionAPI,
     createNote as createNoteAPI,
     updateNote as updateNoteAPI,
     deleteNote as deleteNoteAPI,
@@ -531,10 +534,65 @@ const useStore = create(
                 setSettingsTabValue: (value) => set({ settingsTabValue: value }),
 
                 // 笔记相关 actions
+                // ── 回收站：单独的列表，不再替换全局 notes（否则首页统计、双链索引等都会读到已删除笔记）──
+                trashNotes: [],
+                trashLoaded: false,
+                // 笔记页是否在看回收站（标题栏据此显示「回收站」）
+                noteTrashOpen: false,
+                setNoteTrashOpen: (open) => set({ noteTrashOpen: Boolean(open) }),
+                // 回收站自动清理策略：{ days, since }，days 为 0 表示不自动清理
+                trashPolicy: null,
+                setTrashRetention: async (days) => {
+                    try {
+                        const result = await setTrashRetentionAPI(days)
+                        set({ trashPolicy: result?.policy || null })
+                        if (result?.purged) await get().loadTrash()
+                        return { success: true, purged: result?.purged || 0 }
+                    } catch (error) {
+                        return { success: false, error: error.message }
+                    }
+                },
+                selectedTrashNoteId: null,
+                setSelectedTrashNoteId: (id) => set({ selectedTrashNoteId: id }),
+                loadTrash: async () => {
+                    try {
+                        const [payload, trashPolicy] = await Promise.all([fetchDeletedNotes(), fetchTrashPolicy().catch(() => null)])
+                        if (trashPolicy) set({ trashPolicy })
+                        const rawNotes = Array.isArray(payload) ? payload : (payload?.notes || [])
+                        const trashNotes = rawNotes.map((note) => ({ ...note, tags: normalizeTags(note.tags) }))
+                        set((state) => ({
+                            trashNotes,
+                            trashLoaded: true,
+                            selectedTrashNoteId: trashNotes.some((note) => note.id === state.selectedTrashNoteId) ? state.selectedTrashNoteId : null,
+                        }))
+                        return trashNotes
+                    } catch (error) {
+                        console.error('Failed to load trash:', error)
+                        set({ trashLoaded: true })
+                        return []
+                    }
+                },
+                emptyTrash: async () => {
+                    try {
+                        const result = await emptyTrashAPI()
+                        const ids = result?.ids || []
+                        set({ trashNotes: [], selectedTrashNoteId: null })
+                        try { ids.forEach((id) => useLinkGraph.getState().removeNote(id)) } catch {}
+                        return { success: true, count: result?.count || 0 }
+                    } catch (error) {
+                        console.error('Failed to empty trash:', error)
+                        return { success: false, error: error.message }
+                    }
+                },
+
                 loadNotes: async (options = {}) => {
+                    // 兼容旧调用：loadNotes({ deleted: true }) 只刷新回收站
+                    if (options.deleted) return get().loadTrash()
                     set({ isLoading: true })
                     try {
-                        const payload = options.deleted ? await fetchDeletedNotes() : await fetchNotes(options)
+                        // 一次取全部未删除的笔记：列表、筛选、日历、首页都基于它。
+                        // 以前默认只取最近 50 条，老笔记在列表里看不到，按标签也筛不出来。
+                        const payload = await fetchNotes({ limit: 100000, ...options })
                         const rawNotes = Array.isArray(payload) ? payload : (payload?.notes || [])
                         const normalized = rawNotes.map(n => ({
                             ...n,
@@ -722,6 +780,7 @@ const useStore = create(
                                 whiteboardElementCounts: { ...state.whiteboardElementCounts, [id]: undefined }
                             }))
                             try { useLinkGraph.getState().removeNote(id) } catch {}
+                            get().loadTrash()
                             return { success: true }
                         }
                         return { success: false, error: result?.error || 'Failed to delete note' }
@@ -735,7 +794,11 @@ const useStore = create(
                     try {
                         const result = await restoreNoteAPI(id)
                         if (result?.success || result?.id) {
-                            get().loadNotes()
+                            set((state) => ({
+                                trashNotes: state.trashNotes.filter((note) => note.id !== id),
+                                selectedTrashNoteId: state.selectedTrashNoteId === id ? null : state.selectedTrashNoteId,
+                            }))
+                            await get().loadNotes()
                             return { success: true }
                         }
                         return { success: false, error: result?.error || 'Failed to restore note' }
@@ -751,6 +814,8 @@ const useStore = create(
                         if (result?.success || result === true) {
                             set((state) => ({
                                 notes: state.notes.filter(note => note.id !== id),
+                                trashNotes: state.trashNotes.filter((note) => note.id !== id),
+                                selectedTrashNoteId: state.selectedTrashNoteId === id ? null : state.selectedTrashNoteId,
                                 selectedNoteId: state.selectedNoteId === id ? null : state.selectedNoteId,
                                 whiteboardElementCounts: { ...state.whiteboardElementCounts, [id]: undefined }
                             }))
@@ -804,6 +869,7 @@ const useStore = create(
                                 selectedNoteId: ids.includes(state.selectedNoteId) ? null : state.selectedNoteId
                             }))
                             try { ids.forEach((id) => useLinkGraph.getState().removeNote(id)) } catch {}
+                            get().loadTrash()
                             return { success: true }
                         }
                         return { success: false, error: result?.error || 'Failed to batch delete notes' }
@@ -818,6 +884,10 @@ const useStore = create(
                     try {
                         const result = await batchRestoreNotesAPI(ids)
                         if (result?.success || result === true) {
+                            set((state) => ({
+                                trashNotes: state.trashNotes.filter((note) => !ids.includes(note.id)),
+                                selectedTrashNoteId: ids.includes(state.selectedTrashNoteId) ? null : state.selectedTrashNoteId,
+                            }))
                             await get().loadNotes()
                             return { success: true }
                         }
@@ -835,6 +905,8 @@ const useStore = create(
                         if (result?.success || result === true) {
                             set((state) => ({
                                 notes: state.notes.filter(note => !ids.includes(note.id)),
+                                trashNotes: state.trashNotes.filter((note) => !ids.includes(note.id)),
+                                selectedTrashNoteId: ids.includes(state.selectedTrashNoteId) ? null : state.selectedTrashNoteId,
                                 selectedNoteId: ids.includes(state.selectedNoteId) ? null : state.selectedNoteId
                             }))
                             try { ids.forEach((id) => useLinkGraph.getState().removeNote(id)) } catch {}

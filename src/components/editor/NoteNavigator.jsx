@@ -22,6 +22,7 @@ import FloatingGlassSurface from '../common/FloatingGlassSurface'
 import useDraggableFloatingPanel from '../../hooks/useDraggableFloatingPanel'
 import { useBookmarks } from '../../store/useBookmarks'
 import PanelIconButton from '../common/PanelIconButton'
+import { isImeComposing } from '../../utils/imeUtils'
 
 const PANEL_WIDTH = 360
 const PANEL_BOTTOM_OFFSET = 24
@@ -544,7 +545,7 @@ const NoteNavigator = ({
             if (e.key === 'Escape') {
               e.preventDefault()
               onClose?.()
-            } else if (e.key === 'Enter' && contentMatches.length) {
+            } else if (e.key === 'Enter' && contentMatches.length && !isImeComposing(e)) {
               e.preventDefault()
               goToContentMatch(activeContentIdx + (e.shiftKey ? -1 : 1))
             }

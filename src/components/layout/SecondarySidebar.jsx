@@ -16,6 +16,7 @@ import {
   TextField,
   InputAdornment,
   Button,
+  Divider,
   alpha
 } from '@mui/material';
 import {
@@ -38,11 +39,16 @@ import {
   Brush as WhiteboardIcon,
   RestartAlt as ResetIcon,
   Tag as TagIcon,
-  BookmarkBorder
+  BookmarkBorder,
+  FolderOpenRounded,
+  TaskAltRounded,
 } from '../common/AppIcons';
 import FlotaAIIcon from '../common/FlotaAIIcon';
 import { useStore } from '../../store/useStore';
 import NoteList from '../notes/NoteList';
+import { SETTINGS_GROUPS } from '../settings/settingsCategories';
+import { TrashList } from '../notes/TrashView';
+import CalendarNotesPanel from '../notes/CalendarNotesPanel';
 import TodoList from '../todos/TodoList';
 import MyDayPanel from '../todos/MyDayPanel';
 import { t } from '../../utils/i18n';
@@ -102,7 +108,7 @@ const clampSidebarWidth = (value, fallback) => {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(n)));
 };
 
-const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, onShowCompletedChange, viewMode, showCompleted, onMultiSelectChange, onMultiSelectRefChange, todoRefreshTrigger, todoSortBy, onTodoSortByChange, showDeleted, selectedDate, calendarRefreshTrigger, onTodoUpdated }) => {
+const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, onShowCompletedChange, viewMode, showCompleted, onMultiSelectChange, onMultiSelectRefChange, todoRefreshTrigger, todoSortBy, onTodoSortByChange, showDeleted, selectedDate, calendarRefreshTrigger, onTodoUpdated, calendarViewMode = 'todos' }) => {
   const theme = useTheme();
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     try {
@@ -297,7 +303,9 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
         return (
           <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflow: 'hidden' }}>
             <Box sx={{ flex: 1, minHeight: 0, height: '100%', display: 'flex', overflow: 'hidden' }}>
-              <NoteList showDeleted={showDeleted} onMultiSelectChange={onMultiSelectChange} onMultiSelectRefChange={onMultiSelectRefChange} />
+              {showDeleted
+                ? <TrashList />
+                : <NoteList onMultiSelectChange={onMultiSelectChange} onMultiSelectRefChange={onMultiSelectRefChange} />}
             </Box>
           </Box>
         );
@@ -319,6 +327,8 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
           />
         );
       case 'calendar':
+        // 笔记视图：左侧栏显示选中那天的笔记；待办 / 专注视图显示那天的待办
+        if (calendarViewMode === 'notes') return <CalendarNotesPanel selectedDate={selectedDate} />;
         return (
           <MyDayPanel
             selectedDate={selectedDate}
@@ -576,10 +586,6 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
           <Box sx={(theme) => ({ 
             ...compactPanelSx(theme)
           })}>
-            <Typography sx={compactTitleSx}>
-              {t('sidebar.plugins')}
-            </Typography>
-
             {/* 插件扩展 Flota 本身；组件是可以放进笔记、侧边栏和首页的小应用 */}
             <Box sx={(theme) => ({ ...segmentedControlSx(theme), display: 'flex', mb: 1 })}>
               {[{ id: 'plugin', label: '插件' }, { id: 'widget', label: '组件' }].map((option) => {
@@ -637,52 +643,47 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
         )
       }
       case 'settings': {
-        const settingsCategories = [
-          { id: 0, name: t('settings.general'), icon: <SettingsIcon /> },
-          { id: 1, name: t('settings.appearance'), icon: <PaletteIcon /> },
-          { id: 2, name: t('settings.shortcuts'), icon: <KeyboardIcon /> },
-          { id: 3, name: t('settings.ai'), icon: <FlotaAIIcon sx={{ fontSize: 22 }} /> },
-          { id: 4, name: t('settings.stt'), icon: <STTIcon /> },
-          { id: 5, name: t('settings.memory'), icon: <MemoryIcon /> },
-          { id: 6, name: t('settings.cloud'), icon: <CloudIcon /> },
-          { id: 7, name: t('settings.proxy'), icon: <WifiIcon /> },
-          { id: 8, name: t('settings.data'), icon: <ImportIcon /> },
-          { id: 9, name: 'MCP 服务', icon: <CodeIcon /> },
-          { id: 12, name: '网页剪藏', icon: <BookmarkBorder /> },
-          { id: 10, name: '编辑器', icon: <EditNoteIcon /> },
-          { id: 11, name: t('settings.about'), icon: <InfoIcon /> }
-        ]
+        const settingsIcons = {
+          general: <SettingsIcon />, appearance: <PaletteIcon />, shortcuts: <KeyboardIcon />,
+          editor: <EditNoteIcon />, files: <FolderOpenRounded />, todo: <TaskAltRounded />, clipper: <BookmarkBorder />,
+          ai: <FlotaAIIcon sx={{ fontSize: 22 }} />, stt: <STTIcon />, memory: <MemoryIcon />,
+          cloud: <CloudIcon />, data: <ImportIcon />, proxy: <WifiIcon />, mcp: <CodeIcon />, about: <InfoIcon />,
+        }
 
         return (
           <Box sx={(theme) => ({
             ...compactPanelSx(theme)
           })}>
-            <Typography sx={compactTitleSx}>
-              {t('settings.settings')}
-            </Typography>
-
+            {/* 页面名称已经显示在标题栏（设置 · 分类），侧栏不再重复标题；按用途分组：通用 / 记录 / 智能 / 数据 / 高级 */}
             <List dense disablePadding sx={sidebarScrollableListSx}>
-              {settingsCategories.map((category) => (
-                <ListItemButton
-                  key={category.id}
-                  selected={settingsTabValue === category.id}
-                  onClick={() => setSettingsTabValue(category.id)}
-                  sx={sidebarItemSx(settingsTabValue === category.id)}
-                >
-                  <ListItemIcon sx={{ minWidth: 32, color: settingsTabValue === category.id ? 'primary.main' : 'text.secondary' }}>
-                    {category.icon}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={(
-                      <Typography sx={{
-                        fontSize: 13,
-                        fontWeight: settingsTabValue === category.id ? 600 : 400
-                      }}>
-                        {category.name}
-                      </Typography>
-                    )}
-                  />
-                </ListItemButton>
+              {SETTINGS_GROUPS.map((group, groupIndex) => (
+                <Box key={group.label || `group-${groupIndex}`} sx={{ mb: 0.75 }}>
+                  {group.label ? (
+                    <Typography sx={{ ...compactSectionLabelSx, mt: groupIndex === 0 ? 0 : 0.75 }}>{group.label}</Typography>
+                  ) : <Divider sx={{ my: 1, mx: 1 }} />}
+                  {group.items.map((category) => (
+                    <ListItemButton
+                      key={category.id}
+                      selected={settingsTabValue === category.id}
+                      onClick={() => setSettingsTabValue(category.id)}
+                      sx={sidebarItemSx(settingsTabValue === category.id)}
+                    >
+                      <ListItemIcon sx={{ minWidth: 32, color: settingsTabValue === category.id ? 'primary.main' : 'text.secondary' }}>
+                        {settingsIcons[category.icon]}
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={(
+                          <Typography sx={{
+                            fontSize: 13,
+                            fontWeight: settingsTabValue === category.id ? 600 : 400
+                          }}>
+                            {category.name}
+                          </Typography>
+                        )}
+                      />
+                    </ListItemButton>
+                  ))}
+                </Box>
               ))}
             </List>
           </Box>

@@ -31,10 +31,13 @@ import { PANE_GAP, paneOpacity, paneSurfaceSx } from './styles/paneStyles'
 import { initI18n } from './utils/i18n'
 import Toolbar from './components/layout/Toolbar'
 import NoteEditor from './components/editor/NoteEditor'
+import { TrashNotePreview } from './components/notes/TrashView'
+import { usePageTitle, useSyncDocumentTitle } from './utils/pageTitle'
+import { usePrefsStore, useApplyEditorPrefs } from './store/usePrefsStore'
 import WidgetHomeView from './components/widgets/WidgetHomeView'
 import WidgetProbeHost from './components/widgets/WidgetProbeHost'
 import { parseWidgetViewId } from './store/useWidgetStore'
-import { useHomeStore } from './store/useHomeStore'
+import { useHomeStore, isRestorableView } from './store/useHomeStore'
 import TitleBar from './components/layout/TitleBar'
 import Sidebar from './components/layout/Sidebar'
 import MultiSelectToolbar from './components/layout/MultiSelectToolbar'
@@ -47,6 +50,7 @@ import AICommandCenter from './components/ai/AICommandCenter'
 import NoteNavigator from './components/editor/NoteNavigator'
 import { ErrorProvider } from './components/common/ErrorProvider'
 import logger from './utils/logger'
+import { notifyWithAction } from './utils/notify'
 
 // 懒加载非首屏组件，减少初始bundle大小
 const TodoView = lazy(() => import('./components/todos/TodoView'))
@@ -124,25 +128,32 @@ function App() {
   const checkForUpdates = useStore((state) => state.checkForUpdates)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [secondarySidebarOpen, setSecondarySidebarOpen] = useState(true)
-  const [showDeleted, setShowDeleted] = useState(false)
+  // 回收站开关放在 store 里：标题栏要显示「回收站」
+  const showDeleted = useStore((state) => state.noteTrashOpen)
+  const setShowDeleted = useStore((state) => state.setNoteTrashOpen)
+  useSyncDocumentTitle(usePageTitle())
+  useApplyEditorPrefs()
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [aiCommandCenterPortalContainer, setAiCommandCenterPortalContainer] = useState(null)
 
   // TODO视图相关状态
-  const [todoViewMode, setTodoViewMode] = useState('quadrant')
-  const [todoShowCompleted, setTodoShowCompleted] = useState(false)
+  // 设置 → 待办 → 默认视图
+  const [todoViewMode, setTodoViewMode] = useState(() => usePrefsStore.getState().todoDefaultView || 'quadrant')
+  const [todoShowCompleted, setTodoShowCompleted] = useState(() => Boolean(usePrefsStore.getState().todoShowCompleted))
   const [selectedTodo, setSelectedTodo] = useState(null)
   const [showTodoCreateForm, setShowTodoCreateForm] = useState(false)
-  const [todoSortBy, setTodoSortBy] = useState('priority')
+  const [todoSortBy, setTodoSortBy] = useState(() => usePrefsStore.getState().todoSortBy || 'priority')
   const [initialTodoData, setInitialTodoData] = useState(null) // 用于预设初始todo数据
 
   // 初始todo状态定义
+  // 设置 → 待办 → 新建待办默认截止：今天
+  const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
   const initialTodoState = {
     content: '',
     description: '',
     is_important: false,
     is_urgent: false,
-    due_date: '',
+    due_date: usePrefsStore.getState().todoDefaultDue === 'today' ? todayKey() : '',
     due_time: '',
     repeat_type: 'none',
     repeat_interval: 1,
@@ -235,8 +246,8 @@ function App() {
   const [resolvedTheme, setResolvedTheme] = useState(() => resolveDisplayTheme(theme))
 
   const appTheme = useMemo(
-    () => createAppTheme(resolvedTheme, primaryColor),
-    [resolvedTheme, primaryColor]
+    () => createAppTheme(resolvedTheme, primaryColor, { onWallpaper: backgroundPattern === 'custom' && Boolean(wallpaperPath) }),
+    [resolvedTheme, primaryColor, backgroundPattern, wallpaperPath]
   )
 
   const noteNavigatorContent = useMemo(
@@ -367,9 +378,14 @@ function App() {
     refreshPluginCommands()
   }, [refreshPluginCommands])
 
-  // 设置了「启动时打开首页」：主窗口首次加载时进入首页
+  // 启动页面：设置 → 通用 → 启动时打开（「上次离开时的页面」会记住最后所在的主页面）
   useEffect(() => {
-    if (useHomeStore.getState().openOnStartup) setCurrentView('profile')
+    const { startupView, lastView } = useHomeStore.getState()
+    const target = startupView === 'last' ? lastView : startupView
+    if (isRestorableView(target) && target !== useStore.getState().currentView) setCurrentView(target)
+    return useStore.subscribe((state, prev) => {
+      if (state.currentView !== prev.currentView) useHomeStore.getState().setLastView(state.currentView)
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -388,6 +404,8 @@ function App() {
     if (currentView === 'notes') {
       logger.log('[App] 切换到笔记视图，重新加载笔记列表');
       loadNotes();
+      // 回收站数量用于工具栏按钮上的提示点和首页统计
+      useStore.getState().loadTrash();
     }
   }, [currentView, loadNotes]);
 
@@ -668,7 +686,16 @@ function App() {
         } catch (error) {
           logger.warn('[App] 获取应用版本失败:', error)
         }
-        checkForUpdates({ silent: true })
+        if (usePrefsStore.getState().autoCheckUpdates !== false) {
+          checkForUpdates({ silent: true }).then((result) => {
+            const info = result?.data
+            if (!info?.hasUpdate) return
+            notifyWithAction(`Flota ${info.latestVersion} 已发布`, {
+              label: '前往下载',
+              onClick: () => window.electronAPI?.system?.openExternal?.(info.downloadUrl || useStore.getState().appUpdateInfo?.downloadUrl),
+            }, 'info')
+          })
+        }
       }
     }
 
@@ -677,8 +704,7 @@ function App() {
     // 启动后从 SQLite 水合完整 AI 会话（localStorage 仅是首屏索引占位）
     useStore.getState().loadAiConversations?.()
 
-    // 🟡优化：初始只加载首屏笔记(20条)，后续按需分页加载
-    loadNotes({ limit: 20, page: 1 })
+    loadNotes()
 
     // 监听来自托盘菜单的事件
     const handleTrayEvents = () => {
@@ -1037,10 +1063,13 @@ function App() {
                   sidebarOpen={secondarySidebarOpen}
                   showDeleted={showDeleted}
                   onToggleDeleted={() => {
+                    // 回收站有自己的列表和选中项：进出回收站不再清空正在编辑的笔记
                     const newShowDeleted = !showDeleted;
                     setShowDeleted(newShowDeleted);
-                    setSelectedNoteId(null);
-                    loadNotes(newShowDeleted ? { deleted: true } : {});
+                    if (newShowDeleted) {
+                      setSecondarySidebarOpen(true);
+                      useStore.getState().loadTrash();
+                    }
                   }}
                   currentView={currentView}
                   todoViewMode={todoViewMode}
@@ -1237,6 +1266,7 @@ function App() {
                     selectedDate={selectedDate}
                     calendarRefreshTrigger={calendarRefreshTrigger}
                     onTodoUpdated={handleTodoUpdated}
+                    calendarViewMode={calendarViewMode}
                   />
                 </Suspense>
 
@@ -1247,8 +1277,9 @@ function App() {
                   overflow: 'hidden',
                   minWidth: 0,
                 })}>
-                  {currentView === 'notes' && (
-                    <NoteEditor onCollapseSidebar={() => setSecondarySidebarOpen(false)} />
+                  {currentView === 'notes' && (showDeleted
+                    ? <TrashNotePreview />
+                    : <NoteEditor onCollapseSidebar={() => setSecondarySidebarOpen(false)} />
                   )}
                   <Suspense fallback={<LoadingFallback />}>
                     {currentView === 'todo' && (

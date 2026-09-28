@@ -252,6 +252,10 @@ export const settingsSectionSx = () => ({
   pt: 1,
   pb: 2,
   mb: 2,
+  // 设置分组直接放在主面板上：常被用在 Paper 上，需要显式去掉 Paper 的白底，
+  // 否则设了壁纸后每个分组都是一块白色色块
+  backgroundColor: 'transparent',
+  backgroundImage: 'none',
 });
 
 // 设置项：分组列表里的一行，行与行之间用细分割线，不再每行套一个框

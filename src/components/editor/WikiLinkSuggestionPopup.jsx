@@ -3,6 +3,7 @@ import { Box, Typography, Portal, ButtonBase } from '@mui/material'
 import { Article as ArticleIcon } from '../common/AppIcons'
 import { Add as AddIcon } from '../common/AppIcons'
 import { floatingGlassSx } from '../../utils/floatingGlassSx'
+import { isImeComposing } from '../../utils/imeUtils'
 
 const MAX_ITEMS = 8
 
@@ -61,6 +62,7 @@ const WikiLinkSuggestionPopup = ({ state, allTitles, onSelect, onClose, avoidRec
   useEffect(() => {
     if (!state?.open) return
     const onKey = (e) => {
+      if (isImeComposing(e)) return
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         setActiveIdx((i) => (i + 1) % Math.max(1, items.length))

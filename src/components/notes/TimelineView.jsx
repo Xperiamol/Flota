@@ -52,6 +52,7 @@ import { getWhiteboardPreviewUrl } from '../../utils/whiteboardPreview'
 import AudioRecordButton from '../editor/AudioRecordButton'
 import MarkdownPreview from '../editor/MarkdownPreview'
 import TodoEditDialog from '../todos/TodoEditDialog'
+import { isImeComposing } from '../../utils/imeUtils'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const DEFAULT_TIMELINE_TYPES = ['note', 'whiteboard', 'todo']
@@ -1666,7 +1667,7 @@ const TimelineView = ({ onTodoUpdated }) => {
               onBlur={() => setComposerFocused(false)}
               onPaste={handleComposerPaste}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
+                if (event.key === 'Enter' && !event.shiftKey && !isImeComposing(event)) {
                   event.preventDefault()
                   handleSubmit()
                 }

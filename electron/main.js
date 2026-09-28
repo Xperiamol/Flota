@@ -431,6 +431,20 @@ function createWindow() {
 
   // 当窗口关闭时触发 - 最小化到托盘而不是退出
   mainWindow.on('close', (event) => {
+    // 设置 → 通用 → 关闭主窗口时：隐藏到托盘（默认）或直接退出
+    if (!app.isQuiting) {
+      let closeToTray = true
+      try {
+        const SettingDAO = require('./dao/SettingDAO')
+        const row = new SettingDAO().get('close_to_tray')
+        if (row && row.value === false) closeToTray = false
+      } catch {}
+      if (!closeToTray) {
+        app.isQuiting = true
+        setImmediate(() => app.quit())
+        return
+      }
+    }
     if (!app.isQuiting) {
       event.preventDefault()
       mainWindow.hide()
@@ -702,6 +716,20 @@ async function initializeServices() {
     // 并行初始化AI/STT/Mem0服务，减少启动时间
     const SettingDAO = require('./dao/SettingDAO')
     const settingDAO = new SettingDAO()
+
+    // 回收站自动清理：启动时清一次，之后每 6 小时检查
+    // 设置里启用的可打开文件类型
+    try {
+      const { FILE_TYPES_SETTING_KEY, setEnabledFileTypes } = require('./services/ExternalFileService')
+      const saved = settingDAO.get(FILE_TYPES_SETTING_KEY)?.value
+      if (saved !== undefined && saved !== null) setEnabledFileTypes(saved)
+    } catch (error) {
+      console.warn('[Main] 读取可打开文件类型失败:', error.message)
+    }
+
+    const TrashRetention = require('./services/TrashRetention')
+    services.trashRetention = new TrashRetention({ settingDAO, noteService: services.noteService })
+    services.trashRetention.start()
     
     services.aiService = new AIService(settingDAO)
     services.sttService = new STTService(settingDAO)
@@ -764,12 +792,11 @@ async function initializeServices() {
       },
       getTargets: () => {
         const db = dbManager.getDatabase()
-        const { CLIPPER_SETTING_KEYS } = require('./ipc/clipperHandlers')
-        const defaultCategory = settingDAO.get(CLIPPER_SETTING_KEYS.defaultCategory.key)?.value || CLIPPER_SETTING_KEYS.defaultCategory.fallback
+        const { readClipperSettings } = require('./ipc/clipperHandlers')
         return {
-          defaultCategory,
-          categories: db.prepare('SELECT name FROM categories ORDER BY sort_order, id').all().map((row) => row.name),
-          tags: db.prepare('SELECT name FROM tags ORDER BY usage_count DESC LIMIT 50').all().map((row) => row.name)
+          // 剪藏用标签归类：扩展弹窗预填默认标签，并用常用标签做补全
+          defaultTags: readClipperSettings(settingDAO).defaultTags,
+          tags: db.prepare('SELECT name FROM tags WHERE usage_count > 0 ORDER BY usage_count DESC LIMIT 50').all().map((row) => row.name)
         }
       }
     })
@@ -1010,112 +1037,10 @@ async function initializeServices() {
       }
     })
 
-    // 检查是否为首次启动，如果没有笔记则创建示例笔记
+    // 首次启动（还没有任何笔记）时创建示例笔记
     try {
-      const notesResult = await services.noteService.getNotes({ limit: 1 })
-      if (notesResult.success && notesResult.data && notesResult.data.notes && notesResult.data.notes.length === 0) {
-        console.log('检测到首次启动，创建示例笔记')
-        const welcomeNote = {
-          title: '欢迎使用 Flota 2.3！',
-          content: `# 欢迎使用 Flota 2.3！ 🎉
-
-恭喜你成功安装了 Flota，这是一个现代化的本地笔记应用。
-
-## 版本新功能
-
-### 画布笔记
-- **Excalidraw 集成**：创建画布笔记，支持手绘图形和流程图
-- **素材库支持**：使用内置素材库或浏览在线素材库
-- **独立窗口优化**：支持拖拽画布笔记到独立窗口中编辑
-- **PNG 导出**：一键导出画布为高清图片
-
-### Markdown 增强
-- **扩展语法**：支持高亮（==text==）、@orange{彩色文本}、[[Wiki 链接]]、#标签等
-- **自定义MD插件**：完整可插拔的 Markdown 插件系统
-- **实时预览**：所见即所得的编辑体验（测试中）
-
-### 插件系统
-- **扩展生态**：支持安装第三方插件
-- **本地开发**：可以开发自己的插件
-- **主题定制**：插件可以注入自定义样式
-- **命令面板**：Ctrl+Shift+P 打开命令面板使用插件功能
-
-### 同步优化
-- **新增日历同步**：可选CALDAV和Google Calendar（需要代理）
-- **智能冲突处理**：基于时间戳的智能冲突解决与增量同步
-
-## 快速开始
-
-### 基本操作
-- **创建笔记**：点击左上角的 "新建" 按钮或使用快捷键 \`Ctrl+N\`
-- **创建画布**：选择"画布笔记"类型，使用 Excalidraw 进行创作
-- **搜索笔记**：使用顶部搜索框快速找到你需要的笔记
-- **标签管理**：为笔记添加标签，方便分类和查找
-- **拖拽窗口**：试试拖动笔记列表到窗口外~
-
-### 快捷键
-- \`Ctrl+N\`：新建笔记
-- \`Ctrl+S\`：保存笔记
-- \`Ctrl+F\`：搜索笔记
-- \`Ctrl+Shift+P\`：打开命令面板
-- \`Ctrl+Shift+N\`：快速输入
-
-## 特色功能
-
-### Markdown 支持
-这个笔记应用支持 **Markdown** 语法，你可以：
-
-- 使用 **粗体** 和 *斜体*
-- 使用 ==高亮文本==
-- 创建 [[Wiki链接]]
-- 添加 #标签
-- 创建 [链接](https://github.com)
-- 添加代码块：
-
-\`\`\`javascript
-console.log('Hello, Flota!');
-\`\`\`
-
-- 制作任务列表：
-  - [x] 安装 Flota
-  - [x] 阅读欢迎笔记
-  - [ ] 创建第一个画布笔记
-  - [ ] 尝试插件系统
-  - [ ] 探索更多功能
-
-### 画布功能
-- 🎨 手绘风格图形
-- 📐 多种形状和箭头
-- 📝 文本注释
-- 🖼️ 图片插入
-- 📚 素材库管理
-- 💾 自动保存
-
-### 数据安全
-- 所有数据都存储在本地，保护你的隐私
-- 支持数据导入导出功能
-- 自动保存，不用担心数据丢失
-- 支持坚果云、Google Calendar 等同步方案
-
-## 开始使用
-
-现在你可以：
-1. 创建你的第一个画布笔记
-2. 尝试使用 Markdown 扩展语法
-3. 打开命令面板（Ctrl+Shift+P）探索插件功能
-4. 在设置中配置云同步
-5. 探索设置选项，个性化你的使用体验
-
-祝你使用愉快！ 📝✨
-By Xperiamol
-`,
-          tags: ['欢迎', '教程', '2.3'],
-          category: 'default'
-        }
-
-        await services.noteService.createNote(welcomeNote)
-        console.log('示例笔记创建成功')
-      }
+      const { createWelcomeNotes } = require('./services/welcomeNotes')
+      if (await createWelcomeNotes(services.noteService)) console.log('示例笔记创建成功')
     } catch (error) {
       console.error('创建示例笔记失败:', error)
     }

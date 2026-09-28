@@ -25,6 +25,19 @@ class NoteDAO {
   }
 
   /**
+   * 标签使用次数由「未删除笔记」实时重算，而不是逐次加减：
+   * 以前创建时会重复计数、删除到回收站时不扣减，导致只存在于已删除笔记里的标签
+   * 仍出现在标签筛选、补全和 AI 标签库里。
+   */
+  syncTagUsage() {
+    try {
+      this.tagService.tagDAO.recalculateTagUsage();
+    } catch (error) {
+      console.warn('[NoteDAO] 重算标签使用次数失败:', error.message);
+    }
+  }
+
+  /**
    * 创建新笔记
    * @param {object} noteData - 笔记数据
    * @param {object} options - 选项
@@ -67,10 +80,7 @@ class NoteDAO {
       result = stmt.run(finalSyncId, title, content, tags, category, note_type, created_at, updated_at);
     }
     
-    // 更新标签使用次数
-    if (tags) {
-      this.tagService.updateTagsUsage(tags);
-    }
+    if (tags) this.syncTagUsage();
 
     if (noteData.meta !== undefined && noteData.meta !== null) {
       db.prepare('UPDATE notes SET meta = ? WHERE id = ?').run(serializeMeta(noteData.meta), result.lastInsertRowid);
@@ -141,7 +151,7 @@ class NoteDAO {
   update(id, noteData, options = {}) {
     const { skipChangeLog = false } = options;
     const db = this.getDB();
-    const { title, content, tags, category, is_pinned, is_deleted, deleted_at, note_type, updated_at } = noteData;
+    const { title, content, tags, category, is_pinned, is_deleted, deleted_at, note_type, updated_at, created_at } = noteData;
 
     const updates = [];
     const values = [];
@@ -159,16 +169,17 @@ class NoteDAO {
     if (tags !== undefined) {
       updates.push('tags = ?');
       values.push(tags);
-
-      // 更新标签使用次数
-    if (tags) {
-      this.tagService.updateTagsUsage(tags);
-    }
     }
 
     if (category !== undefined) {
       updates.push('category = ?');
       values.push(category);
+    }
+
+    // 创建时间（已由 NoteService 校验并转成 UTC 的 SQLite 时间格式）
+    if (created_at !== undefined && created_at !== null) {
+      updates.push('created_at = ?');
+      values.push(created_at);
     }
 
     if (note_type !== undefined) {
@@ -218,13 +229,24 @@ class NoteDAO {
     }
     values.push(id);
 
+    // 标签或删除状态真的变了才重算标签次数（自动保存每次都会带上 tags）
+    const before = (tags !== undefined || is_deleted !== undefined)
+      ? db.prepare('SELECT tags, is_deleted FROM notes WHERE id = ?').get(id)
+      : null;
+
     const stmt = db.prepare(`
       UPDATE notes
       SET ${updates.join(', ')}
       WHERE id = ?${skipChangeLog ? '' : ' AND is_deleted = 0'}
     `);
 
-    stmt.run(...values);
+    const changed = stmt.run(...values).changes > 0;
+    if (changed && before && (
+      (tags !== undefined && String(before.tags || '') !== String(tags || ''))
+      || (is_deleted !== undefined && Boolean(before.is_deleted) !== Boolean(is_deleted))
+    )) {
+      this.syncTagUsage();
+    }
 
     // 获取更新后的完整笔记数据（包含 sync_id）
     const updatedNote = this.findById(id);
@@ -258,6 +280,7 @@ class NoteDAO {
     `);
     
     const result = stmt.run(id).changes > 0;
+    if (result && !options.skipTagSync) this.syncTagUsage();
     
     if (result && !skipChangeLog && noteBeforeDelete) {
       // 记录变更日志（同步来源的操作不记录，防止无限循环）
@@ -284,6 +307,7 @@ class NoteDAO {
     `);
     
     const result = stmt.run(id).changes > 0;
+    if (result && !options.skipTagSync) this.syncTagUsage();
     
     if (result && !skipChangeLog) {
       // 获取恢复后的完整实体数据（包含 sync_id）
@@ -299,10 +323,17 @@ class NoteDAO {
   /**
    * 永久删除笔记
    */
-  hardDelete(id) {
+  hardDelete(id, options = {}) {
     const db = this.getDB();
     const stmt = db.prepare('DELETE FROM notes WHERE id = ?');
-    return stmt.run(id).changes > 0;
+    const result = stmt.run(id).changes > 0;
+    if (result && !options.skipTagSync) this.syncTagUsage();
+    return result;
+  }
+
+  /** 回收站里所有笔记的 id */
+  findDeletedIds() {
+    return this.getDB().prepare('SELECT id FROM notes WHERE is_deleted = 1').all().map((row) => row.id);
   }
 
   /**
@@ -558,8 +589,9 @@ class NoteDAO {
     const db = this.getDB();
     const transaction = db.transaction(() => {
       for (const id of ids) {
-        this.softDelete(id);
+        this.softDelete(id, { skipTagSync: true });
       }
+      this.syncTagUsage();
     });
     
     return transaction();
@@ -572,8 +604,9 @@ class NoteDAO {
     const db = this.getDB();
     const transaction = db.transaction(() => {
       for (const id of ids) {
-        this.restore(id);
+        this.restore(id, { skipTagSync: true });
       }
+      this.syncTagUsage();
     });
     
     return transaction();
@@ -586,8 +619,9 @@ class NoteDAO {
     const db = this.getDB();
     const transaction = db.transaction(() => {
       for (const id of ids) {
-        this.hardDelete(id);
+        this.hardDelete(id, { skipTagSync: true });
       }
+      this.syncTagUsage();
     });
     
     return transaction();
