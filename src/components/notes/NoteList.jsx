@@ -3,8 +3,6 @@ import { useTranslation } from '../../utils/i18n'
 import {
   Box,
   List,
-  ListItem,
-  ListItemButton,
   ListItemText,
   ListItemIcon,
   Typography,
@@ -17,7 +15,6 @@ import {
   Skeleton,
   Fade,
   CircularProgress,
-  Checkbox,
   useTheme,
   Dialog,
   DialogTitle,
@@ -30,14 +27,13 @@ import {
   Delete as DeleteIcon,
   ContentCopy as CopyIcon,
   SelectAll as SelectAllIcon,
-  MoreVert as MoreVertIcon,
   Search as SearchIcon,
   Clear as ClearIcon,
   Restore as RestoreIcon,
   DeleteForever as DeleteForeverIcon,
   WebAsset as WindowIcon
 } from '../common/AppIcons'
-import { FlotaPinIcon as PinIcon, FlotaNoteIcon as NoteIcon, FlotaWhiteboardIcon as WhiteboardIcon, FlotaTodoIcon as TodoIcon } from '../common/FlotaIcons'
+import { FlotaPinIcon as PinIcon, FlotaNoteIcon as NoteIcon, FlotaTodoIcon as TodoIcon } from '../common/FlotaIcons'
 import { useStore } from '../../store/useStore'
 import { useShallow } from 'zustand/react/shallow'
 import { zhCN as dateFnsZhCN } from 'date-fns/locale/zh-CN'
@@ -62,13 +58,11 @@ import { useError } from '../common/ErrorProvider'
 import logger from '../../utils/logger'
 import { formatRelativeNoteTime, parseNoteDate } from '../../utils/noteDateUtils'
 import { usePrefsStore } from '../../store/usePrefsStore'
-import { stripMarkdownToPreviewText } from '../../utils/markdownTextUtils'
-import { rowActionRevealSx } from '../../styles/commonStyles'
-import { alpha } from '@mui/material/styles'
+import { getNoteDisplayTitle as getNoteDisplayTitleText, getNoteRowPreview } from '../../utils/notePreviewCache'
+import NoteRow, { NOTE_LIST_GUTTER } from './NoteRow'
 
-const NOTE_LIST_GUTTER = '10px'
 const NOTE_SCROLLBAR_COMPENSATION = '8px'
-const NOTE_ITEM_RADIUS = '12px'
+
 const RENDER_BATCH = 150
 
 const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefChange }) => {
@@ -331,8 +325,16 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
     searchFunction: stableSearchFunction,
     loadFunction: stableLoadFunction,
     searchCondition: showDeleted ? { deleted: true } : {},
-    debounceDelay: 300
+    debounceDelay: 300,
+    // 切到笔记页时 App 已经加载过笔记，这里不再重复加载；回收站模式仍在挂载时加载
+    loadOnMount: showDeleted
   })
+
+  // 搜索框挂载时是空的；如果全局还留着上次的搜索词（笔记是搜索结果），清掉并恢复完整列表
+  useEffect(() => {
+    if (useStore.getState().searchQuery) stableLoadFunction(showDeleted ? { deleted: true } : {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // 其他页面请求的搜索（如首页高频词）：填入搜索框
   const noteSearchRequest = useStore((state) => state.noteSearchRequest)
@@ -593,63 +595,28 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
     })
   }
 
-  const getPreviewText = (content, noteType, skipChars = 0) => {
-    if (!content) return t('notes.emptyNote')
+  // 标题与摘要的计算与回收站列表共用（带缓存）
+  const getNoteDisplayTitle = (note) => getNoteDisplayTitleText(note, t('notes.untitled'))
+  const getNotePreviewText = (note) => getNoteRowPreview(note, t('notes.emptyNote'))
 
-    // Handle whiteboard notes specially
-    if (noteType === 'whiteboard') {
-      try {
-        const whiteboardData = JSON.parse(content)
-        const texts = whiteboardData.elements
-          ?.filter(e => e.type === 'text' && !e.isDeleted && e.text?.trim())
-          .map(e => stripMarkdownToPreviewText(e.text).trim())
-          .filter(Boolean) || []
-        if (texts.length > 0) return texts.join(' ').substring(0, 100)
-        const count = whiteboardData.elements?.filter(e => !e.isDeleted)?.length || 0
-        return count > 0 ? `画布笔记 · ${count} 个元素` : '画布笔记'
-      } catch (error) {
-        return '画布笔记'
-      }
-    }
-
-    const clean = stripMarkdownToPreviewText(content)
-
-    if (skipChars > 0) {
-      const remaining = clean.substring(skipChars).trim()
-      return remaining.substring(0, 100) || null
-    }
-    return clean.substring(0, 100) || null
-  }
-
-  // 获取笔记显示标题：如果有标题则显示标题，否则显示内容前9个字
-  const getNoteDisplayTitle = (note) => {
-    if (note.title && note.title !== '无标题' && note.title !== 'Untitled') {
-      return note.title
-    }
-    if (note.content) {
-      if (note.note_type === 'whiteboard') {
-        return '画布笔记'
-      }
-      // Reuse the same preview cleaning for title fallback
-      const preview = getPreviewText(note.content, note.note_type, 0)
-      if (preview) {
-        return preview.substring(0, 9) + (preview.length > 9 ? '...' : '')
-      }
-    }
-    return t('notes.untitled')
-  }
-
-  // 获取笔记内容预览：如果标题显示的是内容前9个字，则预览从第9个字开始
-  const getNotePreviewText = (note) => {
-    const hasRealTitle = note.title && note.title !== '无标题' && note.title !== 'Untitled'
-    if (hasRealTitle) {
-      // 有真实标题，预览显示完整内容
-      return getPreviewText(note.content, note.note_type, 0)
-    } else {
-      // 标题显示的是内容前9个字，预览从第9个字开始
-      return getPreviewText(note.content, note.note_type, 9)
-    }
-  }
+  const rowHandlersRef = useRef(null)
+  rowHandlersRef.current = { multiSelect, handleNoteClick, handleMenuClick, dragHandler }
+  const rowActions = useMemo(() => ({
+    onClick: (e, note) => {
+      const { multiSelect: ms, handleNoteClick: onSelect } = rowHandlersRef.current
+      ms.handleClick(e, note.id, onSelect)
+    },
+    onContextMenu: (e, note) => {
+      const { multiSelect: ms, handleMenuClick: openMenu } = rowHandlersRef.current
+      ms.handleContextMenu(e, note.id, ms.isMultiSelectMode, () => openMenu(e, note))
+    },
+    onMouseDown: (e, note) => {
+      const { multiSelect: ms, dragHandler: drag } = rowHandlersRef.current
+      // 只在非多选模式下启用拖拽
+      if (!ms.isMultiSelectMode && e.button === 0) drag.handleDragStart(e, note)
+    },
+    onMenuClick: (e, note) => rowHandlersRef.current.handleMenuClick(e, note),
+  }), [])
 
   // 渲染加载状态
   const renderLoadingState = () => (
@@ -915,177 +882,19 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
             ) : (
               <List sx={{ py: 0, px: NOTE_LIST_GUTTER }}>
                 {visibleNotes.map((note) => (
-                  <React.Fragment key={note.id}>
-                    <ListItem
-                      disablePadding
-                      data-menu-open={Boolean(anchorEl) && selectedNote?.id === note.id}
-                      sx={{
-                        mb: 0.5,
-                        position: 'relative',
-                        overflow: 'hidden',
-                        width: '100%',
-                        display: 'block',
-                        borderRadius: NOTE_ITEM_RADIUS,
-                        ...rowActionRevealSx,
-                      }}
-                    >
-                      <ListItemButton
-                        selected={!multiSelect.isMultiSelectMode && selectedNoteId === note.id}
-                        onClick={(e) => {
-                          multiSelect.handleClick(e, note.id, handleNoteClick)
-                        }}
-                        onContextMenu={(e) => multiSelect.handleContextMenu(
-                          e,
-                          note.id,
-                          multiSelect.isMultiSelectMode,
-                          () => handleMenuClick(e, note)
-                        )}
-                        onMouseDown={(e) => {
-                          // 只在非多选模式下启用拖拽
-                          if (!multiSelect.isMultiSelectMode && e.button === 0) {
-                            dragHandler.handleDragStart(e, note)
-                          }
-                        }}
-                        sx={(theme) => ({
-                          position: 'relative',
-                          width: '100%',
-                          maxWidth: 'none',
-                          boxSizing: 'border-box',
-                          m: '0 !important',
-                          borderRadius: NOTE_ITEM_RADIUS,
-                          overflow: 'hidden',
-                          backgroundClip: 'padding-box',
-                          border: '1px solid',
-                          borderColor: 'transparent',
-                          backgroundColor: 'transparent',
-                          transition: 'background-color 160ms ease, border-color 160ms ease',
-                          minHeight: 58,
-                          py: 0.875,
-                          px: 1.25,
-                          '& .MuiTouchRipple-root': {
-                            borderRadius: 'inherit'
-                          },
-                          '&:hover': {
-                            backgroundColor: theme.palette.action.hover,
-                          },
-                          '&.Mui-selected': {
-                            backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.07),
-                            borderColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.24 : 0.14),
-                            '&:hover': {
-                              backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.2 : 0.1),
-                            }
-                          },
-                          ...(multiSelect.isMultiSelectMode && multiSelect.isSelected(note.id) && {
-                            backgroundColor: 'action.selected',
-                            borderColor: theme.palette.primary.main,
-                            '&:hover': {
-                              backgroundColor: 'action.selected'
-                            }
-                          })
-                        })}
-                      >
-                        {multiSelect.isMultiSelectMode && (
-                          <ListItemIcon sx={{ minWidth: 30 }}>
-                            <Checkbox
-                              checked={multiSelect.isSelected(note.id)}
-                              size="small"
-                              sx={{ p: 0.5 }}
-                            />
-                          </ListItemIcon>
-                        )}
-                        <ListItemText
-                          primary={
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
-                              {!!note.is_pinned && <PinIcon sx={{ fontSize: 13, color: 'primary.main', flexShrink: 0 }} />}
-                              {!!note.note_type && note.note_type === 'whiteboard' && (
-                                <WhiteboardIcon sx={{ fontSize: 14, color: 'text.secondary', flexShrink: 0 }} />
-                              )}
-                              <Typography
-                                variant="subtitle2"
-                                sx={{
-                                  fontWeight: note.is_pinned || selectedNoteId === note.id ? 600 : 500,
-                                  fontSize: '0.875rem',
-                                  letterSpacing: 0,
-                                  lineHeight: 1.5,
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                  flex: 1,
-                                  minWidth: 0
-                                }}
-                              >
-                                {getNoteDisplayTitle(note)}
-                              </Typography>
-                            </Box>
-                          }
-                          secondary={
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0, mt: 0.25 }}>
-                              {noteListPreview && getNotePreviewText(note) && (
-                                <Typography
-                                  component="span"
-                                  variant="body2"
-                                  color="text.secondary"
-                                  sx={{
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                    display: 'block',
-                                    fontSize: '0.75rem',
-                                    lineHeight: 1.4,
-                                    flex: 1,
-                                    minWidth: 0
-                                  }}
-                                >
-                                  {getNotePreviewText(note)}
-                                </Typography>
-                              )}
-                              <Typography
-                                component="span"
-                                variant="caption"
-                                color="text.secondary"
-                                sx={{
-                                  whiteSpace: 'nowrap',
-                                  flexShrink: 0,
-                                  fontSize: '0.7rem',
-                                  fontVariantNumeric: 'tabular-nums',
-                                  lineHeight: 1.35,
-                                  ml: noteListPreview && getNotePreviewText(note) ? 0 : 'auto',
-                                }}
-                              >
-                                {formatDate(note.updated_at || note.created_at)}
-                              </Typography>
-                            </Box>
-                          }
-                          sx={{ my: 0, minWidth: 0 }}
-                          slotProps={{
-                            primary: { component: 'div' },
-                            secondary: { component: 'div' }
-                          }}
-                        />
-                      </ListItemButton>
-                        {/* 视觉上嵌入行内，事件不冒泡到笔记选择按钮 */}
-                        {!multiSelect.isMultiSelectMode && (
-                          <IconButton
-                            onClick={(e) => handleMenuClick(e, note)}
-                            aria-label="更多操作"
-                            size="small"
-                            className="note-menu-button row-inline-action"
-                            sx={{
-                              position: 'absolute',
-                              right: 4,
-                              top: '50%',
-                              transform: 'translateY(-50%)',
-                              width: 28,
-                              height: 28,
-                              zIndex: 3,
-                              padding: 0,
-                            }}
-                          >
-                            <MoreVertIcon fontSize="small" />
-                          </IconButton>
-                        )}
-                    </ListItem>
-                  </React.Fragment>
+                  <NoteRow
+                    key={note.id}
+                    note={note}
+                    title={getNoteDisplayTitle(note)}
+                    preview={noteListPreview ? getNotePreviewText(note) : null}
+                    timeLabel={formatDate(note.updated_at || note.created_at)}
+                    selected={!multiSelect.isMultiSelectMode && selectedNoteId === note.id}
+                    isCurrent={selectedNoteId === note.id}
+                    menuOpen={Boolean(anchorEl) && selectedNote?.id === note.id}
+                    multiSelectMode={multiSelect.isMultiSelectMode}
+                    checked={multiSelect.isSelected(note.id)}
+                    actions={rowActions}
+                  />
                 ))}
               </List>
             )}

@@ -21,6 +21,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "test:ai-actions": "node --test scripts/tests/pending-actions.test.mjs",
     "test:widgets": "node --test scripts/tests/widget-runtime.test.mjs",
+    "test:notes": "node --test scripts/tests/note-reuse.test.mjs",
     "test:editor": "node scripts/tests/editor-regression.cjs",
     "build:clipper": "node scripts/build-clipper-extension.js",
     "release:notes": "node scripts/extract-release-notes.js",

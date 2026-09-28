@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, InputAdornment, List, ListItemButton, ListItemIcon, ListItemText, TextField, Typography } from '@mui/material'
 import { Add, Brush, Check, Description, Search } from '../common/AppIcons'
 import { useStore } from '../../store/useStore'
-import { stripMarkdownToPreviewText } from '../../utils/markdownTextUtils'
+import { getCleanPreview } from '../../utils/notePreviewCache'
 import { editorScrollbarSx } from '../../styles/commonStyles'
 import { isImeComposing } from '../../utils/imeUtils'
 
@@ -17,10 +17,11 @@ export default function NoteReferencePicker({ open, onClose, onSelect, whiteboar
   const listRef = useRef(null)
   useEffect(() => { if (open) { setQuery(''); setSelectedId(null); setError(''); createdNote.current = null } }, [open])
   useEffect(() => { listRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' }) }, [selectedId])
-  const candidates = notes.filter(note => !note.is_deleted && !note.deleted_at && String(note.id) !== String(excludeId)
+  // 选择器常驻在编辑器里（关着也会随笔记数据渲染），候选列表只在相关输入变化时重算
+  const candidates = useMemo(() => notes.filter(note => !note.is_deleted && !note.deleted_at && String(note.id) !== String(excludeId)
     && (whiteboards ? note.note_type === 'whiteboard' : note.note_type !== 'whiteboard')
     && (note.title || '').toLowerCase().includes(query.trim().toLowerCase()))
-    .sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0))
+    .sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0)), [notes, excludeId, whiteboards, query])
   const selected = candidates.find(note => note.id === selectedId)
   const insert = async (note, create = false) => {
     if (submitting.current) return
@@ -61,7 +62,7 @@ export default function NoteReferencePicker({ open, onClose, onSelect, whiteboar
         {candidates.map(note => <ListItemButton key={note.id} selected={note.id === selectedId} aria-selected={note.id === selectedId} disabled={busy}
           onClick={() => setSelectedId(note.id)} onDoubleClick={() => insert(note)} sx={{ borderRadius: 2, mb: 0.5 }}>
           <ListItemIcon sx={{ minWidth: 36 }}><Icon fontSize="small" /></ListItemIcon>
-          <ListItemText primary={note.title || '未命名'} secondary={whiteboards ? '关联画布' : stripMarkdownToPreviewText(note.content || '').slice(0, 100) || '空笔记'}
+          <ListItemText primary={note.title || '未命名'} secondary={whiteboards ? '关联画布' : (getCleanPreview(note).text || '').slice(0, 100) || '空笔记'}
             slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }} />
           {note.id === selectedId && <Check color="primary" fontSize="small" />}
         </ListItemButton>)}

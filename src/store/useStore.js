@@ -28,6 +28,7 @@ import { normalizeTags } from '../utils/tagUtils'
 import { searchNotesAPI } from '../api/searchAPI'
 import logger from '../utils/logger'
 import { useLinkGraph } from './useLinkGraph'
+import { reuseUnchangedNotes, shallowEqualRecord } from './noteReuse'
 
 const IS_MACOS =
     typeof navigator !== 'undefined' &&
@@ -590,7 +591,9 @@ const useStore = create(
                 loadNotes: async (options = {}) => {
                     // 兼容旧调用：loadNotes({ deleted: true }) 只刷新回收站
                     if (options.deleted) return get().loadTrash()
-                    set({ isLoading: true })
+                    // 已有数据时是后台刷新：不切加载态（只有列表为空时才显示骨架屏），避免整列表跟着重渲染
+                    const hadNotes = get().notes.length > 0
+                    if (!hadNotes) set({ isLoading: true })
                     try {
                         // 一次取全部未删除的笔记：列表、筛选、日历、首页都基于它。
                         // 以前默认只取最近 50 条，老笔记在列表里看不到，按标签也筛不出来。
@@ -615,11 +618,13 @@ const useStore = create(
                             }
                         })
 
-                        set({
-                            notes: normalized,
-                            whiteboardElementCounts: elementCounts,
-                            isLoading: false
-                        })
+                        // 内容没变的笔记沿用原对象，全部没变时连数组也沿用：订阅者（笔记列表等）不必重渲染
+                        const notes = reuseUnchangedNotes(get().notes, normalized)
+                        const patch = {}
+                        if (notes !== get().notes) patch.notes = notes
+                        if (!shallowEqualRecord(get().whiteboardElementCounts, elementCounts)) patch.whiteboardElementCounts = elementCounts
+                        if (get().isLoading) patch.isLoading = false
+                        if (Object.keys(patch).length) set(patch)
 
                         // 重建双链索引
                         try {

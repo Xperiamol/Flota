@@ -10,10 +10,14 @@ export const useSearchManager = ({
   searchFunction,
   loadFunction,
   searchCondition,
-  debounceDelay = 300
+  debounceDelay = 300,
+  // false：挂载时搜索框为空不触发 loadFunction（数据已由别处加载，避免进页面就重复加载一遍）
+  loadOnMount = true
 }) => {
   const [localSearchQuery, setLocalSearchQuery] = useState('');
   const debounceTimerRef = useRef(null);
+  // 上次处理过的搜索词；不在挂载时加载时视为已处理过空串
+  const handledQueryRef = useRef(loadOnMount ? null : '');
   
   // 使用useRef存储最新的函数引用，避免依赖项变化导致的无限循环
   const searchFunctionRef = useRef(searchFunction);
@@ -46,6 +50,10 @@ export const useSearchManager = ({
   
   // 监听搜索查询变化
   useEffect(() => {
+    if (!loadOnMount) {
+      if (localSearchQuery === handledQueryRef.current) return undefined;
+      handledQueryRef.current = localSearchQuery;
+    }
     debouncedSearch(localSearchQuery);
     
     // 清理函数
@@ -54,7 +62,7 @@ export const useSearchManager = ({
         clearTimeout(debounceTimerRef.current);
       }
     };
-  }, [localSearchQuery, debouncedSearch]);
+  }, [localSearchQuery, debouncedSearch, loadOnMount]);
   
   // 清理定时器
   useEffect(() => {
