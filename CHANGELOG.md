@@ -2,6 +2,20 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [4.1.1] - 2026-09-28
+
+### Changed / 更新内容
+- fix(trash): the trash list matches the note list and no longer overflows; Restore all and Empty trash moved to the toolbar
+- perf(notes): the note list stays fast with hundreds of notes - opening the notes page, selecting a note, searching and typing no longer stall
+- feat(ui): frosted-glass AI panel, smoother panel dragging, and a new pick-up animation when dragging notes and todos out of the list
+- feat(widgets): home cards can have one-tap actions like check-in, every widget size is tested before saving, and AI has more design freedom
+- fix(ai): when the assistant claims a confirmation card but never created one, it now retries and the card appears
+- docs: privacy policy for the Microsoft Store listing
+- build(windows): Store identity for Flota Notes; build the AppX from win-unpacked in its own step
+- ci(windows): read the Store display name from MS_STORE_DISPLAY_NAME
+- feat(windows): Microsoft Store (AppX) package
+
+
 ## [4.1.0] - 2026-09-28
 
 ### Changed / 更新内容
