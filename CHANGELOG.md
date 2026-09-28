@@ -2,6 +2,13 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [4.1.2] - 2026-09-28
+
+### Changed / 更新内容
+- fix(editor): pressing Enter to pick an IME candidate in a link field no longer saves the link early
+- fix(editor): Tab works again in notes - it indents list items (Shift+Tab outdents) and inserts spaces elsewhere; in source mode the title no longer swallows Tab or Ctrl+B
+
+
 ## [4.1.1] - 2026-09-28
 
 ### Changed / 更新内容
