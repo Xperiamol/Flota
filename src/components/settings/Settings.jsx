@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
+    MenuItem,
     Box,
     Typography,
     Paper,
@@ -43,10 +44,7 @@ import {
     Visibility as VisibilityIcon,
     Language as LanguageIcon,
     Image as ImageIcon,
-    ContentCopy as ContentCopyIcon,
-    Check as CheckIcon,
-    ArrowOutward as ArrowOutwardIcon,
-    Autorenew as AutorenewIcon
+    ContentCopy as ContentCopyIcon
 } from '../common/AppIcons';
 import { useStore } from '../../store/useStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -57,6 +55,11 @@ import STTSettings from './STTSettings';
 import Mem0Settings from './Mem0Settings';
 import ProxySettings from './ProxySettings';
 import MCPSettings from './MCPSettings';
+import TrashRetentionSetting from './TrashRetentionSetting';
+import { SettingRow, SettingGroupLabel } from './SettingRow';
+import AppUpdateCard from './AppUpdateCard';
+import { usePrefsStore } from '../../store/usePrefsStore';
+import FileTypesSetting from './FileTypesSetting';
 import ClipperSettings from './ClipperSettings';
 import UsageWaveCard from '../common/UsageWaveCard';
 import ObsidianImportExport from '../ObsidianImportExport/ObsidianImportExport';
@@ -76,7 +79,7 @@ import { ALL_CONTEXT_MENU_ITEMS, CONTEXT_MENU_ITEM_LABELS, DEFAULT_CONTEXT_MENU_
 import { PATTERN_STYLES, hexToRgb } from '../../utils/patternStyles';
 import { sectionTitleSx, sectionDescriptionSx, settingsRowSx, settingsSectionSx, colorPresetSwatchSx } from '../../styles/commonStyles';
 import logger from '../../utils/logger';
-import { useHomeStore } from '../../store/useHomeStore';
+import { useHomeStore, STARTUP_VIEWS } from '../../store/useHomeStore';
 
 function TabPanel({ children, value, index, ...other }) {
     return (
@@ -93,32 +96,6 @@ function TabPanel({ children, value, index, ...other }) {
                 </Box>
             )}
         </div>
-    );
-}
-
-function SettingRow({ primary, secondary, action }) {
-    return (
-        <ListItem
-            sx={(theme) => ({
-                ...settingsRowSx(theme),
-                display: 'flex',
-                alignItems: 'center',
-                gap: 2,
-            })}
-        >
-            <ListItemText
-                primary={primary}
-                secondary={secondary}
-                slotProps={{
-                    primary: { sx: { fontWeight: 500, fontSize: '0.9rem' } },
-                    secondary: { sx: { mt: 0.25 } },
-                }}
-                sx={{ flex: '1 1 auto', minWidth: 0, mr: 1 }}
-            />
-            <Box sx={{ flex: '0 0 auto' }}>
-                {action}
-            </Box>
-        </ListItem>
     );
 }
 
@@ -418,7 +395,7 @@ function EditorSettingsPanel({ aiPanelMode, setAiPanelMode, toolbarOrder, setToo
             ? (zone === 'recycle'
                 ? (t) => t.palette.mode === 'dark' ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.04)'
                 : (t) => t.palette.mode === 'dark' ? 'rgba(120,120,128,0.08)' : 'rgba(120,120,128,0.05)')
-            : 'background.paper',
+            : (t) => t.custom?.surface?.inset,
         transition: 'border-color 0.2s, background-color 0.2s',
     })
     const labelSx = { mt: 2.5, mb: 0.75, fontSize: 12, letterSpacing: 0.5, textTransform: 'uppercase' }
@@ -560,7 +537,7 @@ function buildTopUsageSegments(categories = [], limit = 4) {
 }
 
 const Settings = () => {
-    const openHomeOnStartup = useHomeStore((state) => state.openOnStartup);
+    const startupView = useHomeStore((state) => state.startupView);
     const { showError } = useError();
     const muiTheme = useTheme();
     const isDark = muiTheme.palette.mode === 'dark';
@@ -603,6 +580,18 @@ const Settings = () => {
     const appVersion = useStore((state) => state.appVersion);
     const updateInfo = useStore((state) => state.appUpdateInfo);
     const checkForUpdates = useStore((state) => state.checkForUpdates);
+    const prefs = usePrefsStore();
+    const [closeToTray, setCloseToTray] = useState(true);
+    useEffect(() => {
+        window.electronAPI?.settings?.get?.('close_to_tray').then((result) => {
+            const value = result?.data ?? result;
+            if (value === false || value === 'false') setCloseToTray(false);
+        }).catch(() => {});
+    }, []);
+    const savePref = (key, value) => {
+        prefs.setPref(key, value);
+        showSnackbar(t('settings.settingsSaved'), 'success');
+    };
     const [settings, setSettings] = useState({
         autoLaunch: false,
         userAvatar: '',
@@ -1208,12 +1197,12 @@ const Settings = () => {
             <Box sx={{ flex: 1, overflow: 'auto' }}>
                 {/* 通用设置 */}
                 <TabPanel value={settingsTabValue} index={0}>
-                    <Paper elevation={0} sx={{ ...settingsSurfaceSx, p: 2 }}>
-                    <Typography variant="h6" sx={sectionTitleSx}>通用设置</Typography>
-                    <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
-                        应用启动、语言与窗口行为
+                    <Paper elevation={0} sx={settingsSurfaceSx}>
+                    <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 1 }}>
+                        应用怎么启动、窗口怎么关闭，以及界面语言
                     </Typography>
                     <List disablePadding>
+                        <SettingGroupLabel first>启动</SettingGroupLabel>
                         <SettingRow
                             primary={t('settings.autoLaunch')}
                             secondary={t('settings.autoLaunchDesc')}
@@ -1225,14 +1214,44 @@ const Settings = () => {
                             )}
                         />
                         <SettingRow
-                            primary="启动时打开首页"
-                            secondary="打开应用后先看到首页，而不是笔记"
+                            primary="启动时打开"
+                            secondary="打开 Flota 后先进入的页面"
+                            action={(
+                                <TextField
+                                    select
+                                    size="small"
+                                    value={startupView}
+                                    onChange={(e) => useHomeStore.getState().setStartupView(e.target.value)}
+                                    sx={{ minWidth: 180 }}
+                                    slotProps={{ htmlInput: { 'aria-label': '启动时打开的页面' } }}
+                                >
+                                    {STARTUP_VIEWS.map((view) => (
+                                        <MenuItem key={view.value} value={view.value}>{view.label}</MenuItem>
+                                    ))}
+                                </TextField>
+                            )}
+                        />
+
+                        <SettingRow
+                            primary="自动检查更新"
+                            secondary="每次启动时看看有没有新版本，有的话提醒你，不会自动下载"
                             action={(
                                 <Switch
-                                    checked={openHomeOnStartup}
-                                    onChange={(e) => useHomeStore.getState().setOpenOnStartup(e.target.checked)}
+                                    checked={prefs.autoCheckUpdates !== false}
+                                    onChange={(e) => savePref('autoCheckUpdates', e.target.checked)}
+                                    inputProps={{ 'aria-label': '启动时自动检查更新' }}
                                 />
                             )}
+                        />
+
+                        <SettingGroupLabel>窗口</SettingGroupLabel>
+                        <SettingRow
+                            primary="关闭主窗口时"
+                            secondary="隐藏到托盘时，快捷键和提醒仍然可用"
+                            action={<ChipSelector
+                                options={[{ value: 'tray', label: '隐藏到托盘' }, { value: 'quit', label: '退出 Flota' }]}
+                                value={closeToTray ? 'tray' : 'quit'}
+                                onChange={(value) => { setCloseToTray(value === 'tray'); handleSettingChange('close_to_tray', value === 'tray'); }} />}
                         />
                         <SettingRow
                             primary={t('settings.defaultMinibarMode')}
@@ -1254,6 +1273,8 @@ const Settings = () => {
                                 />
                             )}
                         />
+
+                        <SettingGroupLabel>语言</SettingGroupLabel>
                         <SettingRow
                             primary={t('settings.language')}
                             secondary={t('settings.languageDesc')}
@@ -1261,32 +1282,13 @@ const Settings = () => {
                                 onChange={v => handleSettingChange('language', v)}
                                 getKey={o => o.code} getLabel={o => o.nativeName} getIcon={() => <LanguageIcon />} />}
                         />
-                        <SettingRow
-                            primary="附件最大大小 (MB)"
-                            secondary="超过此大小的文件无法添加为附件，0 表示不限制"
-                            action={(
-                                <TextField
-                                    size="small"
-                                    type="number"
-                                    inputProps={{ min: 0, step: 1, style: { textAlign: 'right', width: 80 } }}
-                                    value={Number.isFinite(Number(settings.attachmentMaxSizeMB)) ? Number(settings.attachmentMaxSizeMB) : 50}
-                                    onChange={(e) => setSettings(prev => ({ ...prev, attachmentMaxSizeMB: e.target.value }))}
-                                    onBlur={(e) => {
-                                        const raw = Number(e.target.value)
-                                        const value = Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 50
-                                        handleSettingChange('attachmentMaxSizeMB', value)
-                                    }}
-                                />
-                            )}
-                        />
                     </List>
                     </Paper>
                 </TabPanel>
 
                 {/* 外观设置 */}
                 <TabPanel value={settingsTabValue} index={1}>
-                    <Paper elevation={0} sx={{ ...settingsSurfaceSx, p: 2 }}>
-                    <Typography variant="h6" sx={sectionTitleSx}>外观与个性化</Typography>
+                    <Paper elevation={0} sx={settingsSurfaceSx}>
                     <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
                         主题、头像、背景和界面显示方式
                     </Typography>
@@ -1461,7 +1463,7 @@ const Settings = () => {
                                                 borderRadius: backgroundPanelRadius,
                                                 border: '1px solid',
                                                 borderColor: selected ? 'primary.main' : 'divider',
-                                                bgcolor: isDark ? 'rgba(22,22,24,0.28)' : 'rgba(255,255,255,0.88)',
+                                                bgcolor: muiTheme.custom?.surface?.inset,
                                                 cursor: 'pointer',
                                                 overflow: 'hidden',
                                                 transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
@@ -1497,7 +1499,7 @@ const Settings = () => {
                                     px: 1.5,
                                     pt: 1.5,
                                     pb: 1.25,
-                                    bgcolor: isDark ? 'rgba(22,22,24,0.24)' : 'rgba(255,255,255,0.88)',
+                                    bgcolor: muiTheme.custom?.surface?.inset,
                                 }}
                             >
                                 <Box
@@ -1646,7 +1648,6 @@ const Settings = () => {
                     <Paper elevation={0} sx={settingsSurfaceSx}>
                     <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
                         <Box>
-                            <Typography variant="h6" sx={sectionTitleSx}>{t('settings.shortcuts')}</Typography>
                             <Typography variant="caption" sx={sectionDescriptionSx}>
                                 管理全局快捷键和输入行为
                             </Typography>
@@ -1805,6 +1806,10 @@ const Settings = () => {
 
                     <Divider sx={{ my: 3 }} />
 
+                    <TrashRetentionSetting />
+
+                    <Divider sx={{ my: 3 }} />
+
                     <Box sx={{ mb: 3 }}>
                         <Typography variant="h6" sx={sectionTitleSx}>
                             本地备份与恢复
@@ -1900,16 +1905,31 @@ const Settings = () => {
                 {/* 编辑器设置 */}
                 <TabPanel value={settingsTabValue} index={10}>
                     <Paper elevation={0} sx={settingsSurfaceSx}>
-                    <Typography variant="h6" sx={sectionTitleSx}>编辑器</Typography>
-                    <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
-                        管理编辑模式、浮动面板和工具栏顺序
+                    <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 1 }}>
+                        编辑模式、正文排版、浮动面板和工具栏
                     </Typography>
                     <List disablePadding sx={{ mb: 1 }}>
+                        <SettingGroupLabel first>编辑</SettingGroupLabel>
                         <SettingRow
                             primary={t('settings.editorMode')}
                             secondary={t('settings.editorModeDesc')}
                             action={<ChipSelector options={editorModeOptions} value={editorMode}
                                 onChange={(value) => handleSettingChange('editorMode', value)} getIcon={o => o.icon} />}
+                        />
+                        <SettingGroupLabel>排版</SettingGroupLabel>
+                        <SettingRow
+                            primary="正文字号"
+                            secondary="笔记正文的文字大小，标题按比例跟着变化"
+                            action={<ChipSelector
+                                options={[{ value: 'small', label: '小' }, { value: 'standard', label: '标准' }, { value: 'large', label: '大' }]}
+                                value={prefs.editorFontSize} onChange={(value) => savePref('editorFontSize', value)} />}
+                        />
+                        <SettingRow
+                            primary="内容宽度"
+                            secondary="宽屏上限制正文宽度并居中，长文读起来更舒服"
+                            action={<ChipSelector
+                                options={[{ value: 'full', label: '铺满' }, { value: 'readable', label: '适合阅读' }]}
+                                value={prefs.editorWidth} onChange={(value) => savePref('editorWidth', value)} />}
                         />
                     </List>
                     <Alert severity="info" sx={{ mb: 3 }}>
@@ -1931,6 +1951,99 @@ const Settings = () => {
                     </Paper>
                 </TabPanel>
 
+                {/* 笔记与文件 */}
+                <TabPanel value={settingsTabValue} index={13}>
+                    <Paper elevation={0} sx={settingsSurfaceSx}>
+                    <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 1 }}>
+                        笔记列表的显示方式，以及 Flota 能打开哪些文件
+                    </Typography>
+                    <List disablePadding>
+                        <SettingGroupLabel first>笔记列表</SettingGroupLabel>
+                        <SettingRow
+                            primary="显示正文预览"
+                            secondary="在标题下面显示一行正文；关掉后列表更紧凑"
+                            action={<Switch checked={prefs.noteListPreview} onChange={(e) => savePref('noteListPreview', e.target.checked)} />}
+                        />
+                        <SettingRow
+                            primary="时间显示"
+                            secondary="「3 分钟前」或具体的日期和时间"
+                            action={<ChipSelector
+                                options={[{ value: 'relative', label: '相对时间' }, { value: 'absolute', label: '具体日期' }]}
+                                value={prefs.noteListTime} onChange={(value) => savePref('noteListTime', value)} />}
+                        />
+
+                        <SettingGroupLabel>用 Flota 打开的文件</SettingGroupLabel>
+                        <FileTypesSetting />
+                        <SettingRow
+                            primary="打开外部文件时"
+                            secondary="只读文件总是以预览打开"
+                            action={<ChipSelector
+                                options={[{ value: 'preview', label: '先预览' }, { value: 'edit', label: '直接编辑' }]}
+                                value={prefs.externalFileMode} onChange={(value) => savePref('externalFileMode', value)} />}
+                        />
+
+                        <SettingGroupLabel>附件</SettingGroupLabel>
+                        <SettingRow
+                            primary="附件最大大小 (MB)"
+                            secondary="超过此大小的文件无法添加为附件，0 表示不限制"
+                            action={(
+                                <TextField
+                                    size="small"
+                                    type="number"
+                                    inputProps={{ min: 0, step: 1, style: { textAlign: 'right', width: 80 } }}
+                                    value={Number.isFinite(Number(settings.attachmentMaxSizeMB)) ? Number(settings.attachmentMaxSizeMB) : 50}
+                                    onChange={(e) => setSettings(prev => ({ ...prev, attachmentMaxSizeMB: e.target.value }))}
+                                    onBlur={(e) => {
+                                        const raw = Number(e.target.value)
+                                        const value = Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 50
+                                        handleSettingChange('attachmentMaxSizeMB', value)
+                                    }}
+                                />
+                            )}
+                        />
+                    </List>
+                    </Paper>
+                </TabPanel>
+
+                {/* 待办 */}
+                <TabPanel value={settingsTabValue} index={14}>
+                    <Paper elevation={0} sx={settingsSurfaceSx}>
+                    <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 1 }}>
+                        打开待办页时的默认视图、排序，以及新建待办的默认值
+                    </Typography>
+                    <List disablePadding>
+                        <SettingGroupLabel first>待办页</SettingGroupLabel>
+                        <SettingRow
+                            primary="默认视图"
+                            secondary="四象限按重要 / 紧急分组；专注视图适合一项一项做"
+                            action={<ChipSelector
+                                options={[{ value: 'quadrant', label: '四象限' }, { value: 'focus', label: '专注' }]}
+                                value={prefs.todoDefaultView} onChange={(value) => savePref('todoDefaultView', value)} />}
+                        />
+                        <SettingRow
+                            primary="默认排序"
+                            secondary="侧栏待办列表的排列方式"
+                            action={<ChipSelector
+                                options={[{ value: 'priority', label: '优先级' }, { value: 'dueDate', label: '截止日期' }, { value: 'createdAt', label: '创建日期' }]}
+                                value={prefs.todoSortBy} onChange={(value) => savePref('todoSortBy', value)} />}
+                        />
+                        <SettingRow
+                            primary="显示已完成的待办"
+                            secondary="打开待办页时默认显示已经完成的事项"
+                            action={<Switch checked={Boolean(prefs.todoShowCompleted)} onChange={(e) => savePref('todoShowCompleted', e.target.checked)} />}
+                        />
+                        <SettingGroupLabel>新建待办</SettingGroupLabel>
+                        <SettingRow
+                            primary="默认截止日期"
+                            secondary="新建待办时自动填上的截止日期，之后可以改"
+                            action={<ChipSelector
+                                options={[{ value: 'none', label: '不设置' }, { value: 'today', label: '今天' }]}
+                                value={prefs.todoDefaultDue} onChange={(value) => savePref('todoDefaultDue', value)} />}
+                        />
+                    </List>
+                    </Paper>
+                </TabPanel>
+
                 {/* 关于 */}
                 <TabPanel value={settingsTabValue} index={11}>
                     <Paper elevation={0} sx={{ ...settingsSurfaceSx, textAlign: 'center' }}>
@@ -1941,40 +2054,13 @@ const Settings = () => {
                                 style={{ maxWidth: '100%', width: 360, borderRadius: 12 }}
                             />
                         </Box>
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, mb: 4 }}>
-                            <Typography variant="body2" color="text.secondary">
-                                {t('about.version')}{` v${appVersion || 'unknown'}`}
-                            </Typography>
-                            {updateInfo.checking ? (
-                                <Tooltip title="正在检查更新">
-                                    <span>
-                                        <IconButton size="small" disabled sx={{ color: 'text.secondary' }}>
-                                            <AutorenewIcon sx={{ fontSize: 16, animation: 'spin 1s linear infinite', '@keyframes spin': { from: { transform: 'rotate(0deg)' }, to: { transform: 'rotate(360deg)' } } }} />
-                                        </IconButton>
-                                    </span>
-                                </Tooltip>
-                            ) : updateInfo.hasUpdate ? (
-                                <Tooltip title={`发现新版本 v${updateInfo.latestVersion}，点击跳转下载`}>
-                                    <IconButton
-                                        size="small"
-                                        onClick={() => window.electronAPI?.system?.openExternal?.(updateInfo.downloadUrl)}
-                                        sx={{ color: 'warning.main' }}
-                                    >
-                                        <ArrowOutwardIcon sx={{ fontSize: 16 }} />
-                                    </IconButton>
-                                </Tooltip>
-                            ) : (
-                                <Tooltip title={updateInfo.error ? `检查失败，点击重试` : '已是最新版本，点击手动检查更新'}>
-                                    <IconButton
-                                        size="small"
-                                        onClick={handleCheckForUpdates}
-                                        sx={{ color: updateInfo.error ? 'text.secondary' : 'success.main' }}
-                                    >
-                                        <CheckIcon sx={{ fontSize: 16 }} />
-                                    </IconButton>
-                                </Tooltip>
-                            )}
-                        </Box>
+                        <AppUpdateCard
+                            version={appVersion}
+                            info={updateInfo}
+                            autoCheck={prefs.autoCheckUpdates !== false}
+                            onAutoCheckChange={(on) => savePref('autoCheckUpdates', on)}
+                            onCheck={handleCheckForUpdates}
+                        />
 
                         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1.5, flexWrap: 'wrap' }}>
                             <Button

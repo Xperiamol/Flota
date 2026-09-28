@@ -381,11 +381,12 @@ const SyncStatusIndicator = () => {
             alignItems: 'center', 
             justifyContent: 'center',
             cursor: 'pointer',
-            padding: '4px',
-            borderRadius: '4px',
-            width: 32,
-            height: 32,
-            '&:hover': { bgcolor: 'action.hover' }
+            // 与标题栏其他按钮（置顶、AI）同尺寸同圆角
+            borderRadius: '7px',
+            width: 28,
+            height: 28,
+            '& .MuiSvgIcon-root': { fontSize: 18 },
+            '&:hover': { bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(22,22,24,0.05)' }
           }}
         >
           {renderMainIcon()}

@@ -124,7 +124,6 @@ const STTSettings = ({ showSnackbar }) => {
   return (
     <Box>
       <Box sx={settingsSectionSx}>
-        <Typography variant="h6" sx={sectionTitleSx}>语音转文字</Typography>
         <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
           配置火山引擎语音识别服务和测试识别能力
         </Typography>

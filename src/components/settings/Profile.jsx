@@ -7,7 +7,6 @@ import {
   Alert,
   Tooltip,
   ButtonBase,
-  IconButton,
   InputBase,
   LinearProgress,
   alpha,
@@ -19,7 +18,11 @@ import {
   WidthFull as WideIcon,
   WidthNormal as NarrowIcon,
   DashboardCustomizeRounded as CustomizeIcon,
+  AddRounded as AddCardIcon,
+  VisibilityOffRounded as VisibilityOffIcon,
 } from '../common/AppIcons';
+import AppContextMenu from '../common/AppContextMenu';
+import { notifyInfo } from '../../utils/notify';
 import { useStore } from '../../store/useStore';
 import { fetchTodoStats } from '../../api/todoAPI';
 import { fetchActivityHeatmap } from '../../api/noteAPI';
@@ -28,9 +31,11 @@ import { useTranslation } from '../../utils/i18n';
 import { useError } from '../common/ErrorProvider';
 import FlotaAIIcon from '../common/FlotaAIIcon';
 import HomeWidgetCard from '../widgets/HomeWidgetCard';
+import PanelIconButton from '../common/PanelIconButton';
 import HomeAddPanel from './HomeAddPanel';
 import {
-  FocusCard, HeatmapCard, NotesOverviewCard, OverdueCard, PluginsCard, RecentNotesCard, TodayTodosCard, TodoRateCard, TopWordsCard
+  FocusCard, HeatmapCard, NotesOverviewCard, OverdueCard, PinnedNotesCard, PluginsCard, QuickNoteCard, RecentClipsCard, RecentNotesCard,
+  ReviewCard, TagsCard, TodayTodosCard, TodoRateCard, TopWordsCard, UpcomingCard
 } from './homeCards';
 import { useHomeStore, parseWidgetCardId } from '../../store/useHomeStore';
 import { askAI, openAI } from '../../utils/widgets/askAI';
@@ -55,7 +60,9 @@ const DEFAULT_TODO_STATS = {
 const STOP_WORDS = new Set([
   '的', '了', '是', '在', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很',
   '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '这', '这个', '那个',
-  '可以', '因为', '所以', '如果', '然后', '已经', '已有', '复制', '链接', '广告', '联系'
+  '可以', '因为', '所以', '如果', '然后', '已经', '已有', '复制', '链接', '广告', '联系',
+  // 网页剪藏在每篇笔记开头写的来源行
+  '来源', '剪藏', '剪藏于', '原文'
 ]);
 
 // 网格：列宽自适应，卡片按内容高度占行（瀑布流），宽卡片占两列
@@ -105,18 +112,22 @@ const HomeGridItem = ({ wide, fullWidth, editing, dragOver, onDragStart, onDragO
         {children}
         {editing && <Box sx={{ position: 'absolute', inset: 0, zIndex: 1 }} />}
         {editing && (
+          // 操作条骑在卡片上边框上（卡片内边距之外），不遮挡卡片标题和按钮
           <Box sx={(theme) => ({
-            position: 'absolute', top: 8, right: 8, zIndex: 2, display: 'flex', gap: 0.25, p: 0.25,
-            borderRadius: '9px', bgcolor: 'background.paper', border: `1px solid ${theme.palette.divider}`,
+            position: 'absolute', top: -13, right: 14, zIndex: 2, display: 'flex', gap: '2px', p: '2px',
+            borderRadius: '8px', bgcolor: 'background.paper', border: `1px solid ${theme.palette.divider}`,
+            boxShadow: theme.palette.mode === 'dark' ? '0 2px 8px rgba(0,0,0,0.4)' : '0 2px 8px rgba(22,22,24,0.1)',
+            animation: 'homeEditPop 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+            '@keyframes homeEditPop': { from: { opacity: 0, transform: 'scale(0.85)' }, to: { opacity: 1, transform: 'scale(1)' } },
           })}>
-            <Tooltip title={wide ? '改为窄卡片' : '改为宽卡片'}>
-              <IconButton size="small" aria-label={wide ? '改为窄卡片' : '改为宽卡片'} onClick={onToggleWide} sx={{ display: { xs: 'none', md: 'inline-flex' } }}>
-                {wide ? <NarrowIcon sx={{ fontSize: 17 }} /> : <WideIcon sx={{ fontSize: 17 }} />}
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="移除卡片">
-              <IconButton size="small" aria-label="移除卡片" onClick={onRemove}><CloseIcon sx={{ fontSize: 17 }} /></IconButton>
-            </Tooltip>
+            <Box sx={{ display: { xs: 'none', md: 'inline-flex' } }}>
+              <PanelIconButton title={wide ? '改为窄卡片' : '改为宽卡片'} size="sm" onClick={onToggleWide}>
+                {wide ? <NarrowIcon /> : <WideIcon />}
+              </PanelIconButton>
+            </Box>
+            <PanelIconButton title="移除卡片" size="sm" tone="danger" onClick={onRemove}>
+              <CloseIcon />
+            </PanelIconButton>
           </Box>
         )}
       </Box>
@@ -149,9 +160,13 @@ const Profile = () => {
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
   const [aiDraft, setAiDraft] = useState('');
+  const [addAnchor, setAddAnchor] = useState(null);
+  const [aiBarMenu, setAiBarMenu] = useState(null);
+  const showAiBar = useHomeStore((state) => !state.aiBarHidden && !state.aiBarHiddenThisSession);
 
   // 离开首页时退出编辑
   useEffect(() => () => useHomeStore.getState().setEditing(false), []);
+  useEffect(() => { if (!editing) setAddAnchor(null); }, [editing]);
 
   // 笔记页搜索会把全局笔记列表换成搜索结果；首页需要完整列表
   useEffect(() => {
@@ -194,12 +209,14 @@ const Profile = () => {
     loadStats();
   }, []);
 
+  const trashCount = useStore((state) => state.trashNotes.length);
+  useEffect(() => { useStore.getState().loadTrash(); }, []);
   const noteStats = useMemo(() => ({
     total: notes.length,
-    deleted: notes.filter((note) => note.is_deleted).length,
+    deleted: trashCount,
     pinned: notes.filter((note) => note.is_pinned && !note.is_deleted).length,
     active: notes.filter((note) => !note.is_deleted).length,
-  }), [notes]);
+  }), [notes, trashCount]);
 
   const todoStatsDisplay = useMemo(() => ({ ...DEFAULT_TODO_STATS, ...(todoStats || {}) }), [todoStats]);
 
@@ -258,6 +275,11 @@ const Profile = () => {
       case 'todo-rate':
       case 'todo-today':
         return handleTodoFilterNavigation('today');
+      case 'upcoming':
+        return handleTodoFilterNavigation('all');
+      case 'recent-clips':
+      case 'pinned-notes':
+      case 'tags':
       case 'todo-overdue':
         return handleTodoFilterNavigation('overdue');
       case 'focus':
@@ -300,6 +322,12 @@ const Profile = () => {
       case 'heatmap': return <HeatmapCard days={heatmapDays} notes={notes} onOpen={open} />;
       case 'top-words': return <TopWordsCard words={topWords} onOpen={open} />;
       case 'plugins': return <PluginsCard plugins={installedPlugins} onOpen={open} />;
+      case 'quick-note': return <QuickNoteCard />;
+      case 'upcoming': return <UpcomingCard onOpen={open} />;
+      case 'recent-clips': return <RecentClipsCard onOpen={open} />;
+      case 'pinned-notes': return <PinnedNotesCard onOpen={open} />;
+      case 'review': return <ReviewCard />;
+      case 'tags': return <TagsCard onOpen={open} />;
       default: return null;
     }
   };
@@ -346,7 +374,11 @@ const Profile = () => {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
             {editing ? (
               <>
-                <Typography sx={{ fontSize: 13, color: 'text.secondary', mr: 0.5 }}>拖动卡片调整顺序</Typography>
+                <Typography sx={{ fontSize: 13, color: 'text.secondary', mr: 0.5, display: { xs: 'none', md: 'block' } }}>拖动卡片调整顺序</Typography>
+                <Button variant="outlined" size="small" startIcon={<AddCardIcon />} onClick={(event) => setAddAnchor(event.currentTarget)}
+                  sx={{ height: 34, px: 1.75, borderRadius: '999px' }}>
+                  添加卡片
+                </Button>
                 <Button variant="contained" size="small" onClick={() => setEditing(false)}
                   sx={{ height: 34, px: 2.25, borderRadius: '999px' }}>
                   完成
@@ -385,10 +417,12 @@ const Profile = () => {
           </Box>
         </Box>
 
-        {/* 与 AI 小窗同一个入口：回车直接发送 */}
+        {/* 与 AI 小窗同一个入口：回车直接发送；可以本次隐藏或永久隐藏 */}
+        {showAiBar && (
         <Box sx={(theme) => ({
           height: 46, mb: 3, pl: 1.75, pr: 0.75, display: 'flex', alignItems: 'center', gap: 1.25, borderRadius: '12px',
-          bgcolor: 'background.paper', border: `1px solid ${theme.palette.divider}`,
+          // 半透明：设了壁纸时不是一整条白块
+          bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.5 : 0.72), border: `1px solid ${theme.palette.divider}`,
           transition: 'border-color 150ms ease', '&:focus-within': { borderColor: alpha(theme.palette.primary.main, 0.6) },
         })}>
           <FlotaAIIcon sx={{ fontSize: 18, color: 'primary.main' }} />
@@ -404,14 +438,29 @@ const Profile = () => {
           <Button size="small" onClick={sendToAI} sx={{ flexShrink: 0, borderRadius: '8px', minWidth: 0, px: 1.5, color: aiDraft.trim() ? 'primary.main' : 'text.secondary' }}>
             {aiDraft.trim() ? '发送' : '打开 AI'}
           </Button>
+          <PanelIconButton title="隐藏输入框" size="sm" onClick={(event) => setAiBarMenu({ el: event.currentTarget })} sx={{ mr: 0.25 }}>
+            <CloseIcon />
+          </PanelIconButton>
         </Box>
+        )}
+        <AppContextMenu anchor={aiBarMenu} onClose={() => setAiBarMenu(null)} items={[
+          { label: '本次不显示', icon: <VisibilityOffIcon fontSize="small" />, onClick: () => useHomeStore.getState().hideAiBarThisSession() },
+          {
+            label: '不再显示', icon: <CloseIcon fontSize="small" />,
+            onClick: () => {
+              useHomeStore.getState().setAiBarHidden(true);
+              notifyInfo('已隐藏。可以在「编辑首页 → 添加卡片」或「设置 → AI」里重新打开');
+            },
+          },
+        ]} />
 
         {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
 
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+        <Box>
           <Box sx={{
-            flex: 1,
             minWidth: 0,
+            // 编辑时卡片顶上有操作条，留出位置
+            pt: editing ? 1 : 0,
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
             gridAutoRows: `${GRID_ROW}px`,
@@ -446,8 +495,9 @@ const Profile = () => {
               </HomeGridItem>
             )}
           </Box>
-          {editing && <HomeAddPanel onClose={() => setEditing(false)} />}
         </Box>
+        {/* 添加卡片：弹出面板，不再占网格的一列（以前一进编辑模式整个布局就重排） */}
+        <HomeAddPanel anchorEl={addAnchor} onClose={() => setAddAnchor(null)} />
 
         {!editing && cards.length === 0 && (
           <Box sx={{ py: 8, textAlign: 'center', color: 'text.secondary' }}>

@@ -273,7 +273,7 @@ export default function MCPSettings({ enabled, onEnabledChange }) {
                     </Typography>
                     
                     {installInfo && (
-                        <Box sx={{ mt: 2, p: 1.5, bgcolor: 'background.paper', borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                        <Box sx={(theme) => ({ mt: 2, p: 1.5, bgcolor: theme.custom?.surface?.inset, borderRadius: 2, border: '1px solid', borderColor: 'divider' })}>
                             <Typography variant="caption" component="div" sx={{ fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
                                 {JSON.stringify(generateClaudeConfig(), null, 2)}
                             </Typography>

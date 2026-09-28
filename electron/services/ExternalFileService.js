@@ -18,8 +18,34 @@ const FORMAT_BY_EXT = {
   '.mkd': 'markdown',
   '.txt': 'text',
   '.text': 'text',
+  '.log': 'text',
   '.excalidraw': 'whiteboard'
 }
+
+// 设置 → 笔记与文件：Flota 接受哪些文件（系统打开方式、打开对话框、拖进笔记列表）。
+// html 只能导入为笔记，不能作为外部文件在独立窗口里编辑。
+const FILE_TYPES = [
+  { id: 'markdown', name: 'Markdown', extensions: ['md', 'markdown', 'mdown', 'mkd'] },
+  { id: 'text', name: '纯文本', extensions: ['txt', 'text', 'log'] },
+  { id: 'html', name: '网页', extensions: ['html', 'htm'], importOnly: true },
+  { id: 'whiteboard', name: 'Excalidraw 画布', extensions: ['excalidraw'] },
+]
+const DEFAULT_FILE_TYPES = FILE_TYPES.map((type) => type.id)
+const FILE_TYPES_SETTING_KEY = 'openable_file_types'
+let enabledFileTypes = new Set(DEFAULT_FILE_TYPES)
+
+const setEnabledFileTypes = (ids) => {
+  const list = (Array.isArray(ids) ? ids : String(ids || '').split(','))
+    .map((id) => String(id).trim())
+    .filter((id) => DEFAULT_FILE_TYPES.includes(id))
+  enabledFileTypes = new Set(list)
+  return [...enabledFileTypes]
+}
+const getEnabledFileTypes = () => [...enabledFileTypes]
+/** 当前允许在独立窗口打开的扩展名（打开对话框的过滤器用） */
+const getEnabledExtensions = () => FILE_TYPES
+  .filter((type) => !type.importOnly && enabledFileTypes.has(type.id))
+  .flatMap((type) => type.extensions)
 
 const MAX_TEXT_BYTES = 20 * 1024 * 1024
 const MAX_WHITEBOARD_BYTES = 60 * 1024 * 1024
@@ -37,7 +63,10 @@ const IMAGE_MIME = {
   '.avif': 'image/avif'
 }
 
-const getFormat = (filePath) => FORMAT_BY_EXT[path.extname(String(filePath || '')).toLowerCase()] || null
+const getFormat = (filePath) => {
+  const format = FORMAT_BY_EXT[path.extname(String(filePath || '')).toLowerCase()] || null
+  return format && enabledFileTypes.has(format) ? format : null
+}
 
 const isSupportedFile = (filePath) => {
   if (!filePath || !getFormat(filePath)) return false
@@ -369,6 +398,11 @@ class ExternalFileService {
 module.exports = {
   ExternalFileService,
   SUPPORTED_EXTENSIONS: Object.keys(FORMAT_BY_EXT).map((ext) => ext.slice(1)),
+  FILE_TYPES,
+  FILE_TYPES_SETTING_KEY,
+  setEnabledFileTypes,
+  getEnabledFileTypes,
+  getEnabledExtensions,
   extractFilesFromArgv,
   isSupportedFile
 }

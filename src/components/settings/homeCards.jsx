@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Box, ButtonBase, Checkbox, IconButton, InputBase, LinearProgress, Popover, Tooltip, Typography, alpha } from '@mui/material'
+import { Box, ButtonBase, Checkbox, InputBase, Popover, Tooltip, Typography, alpha } from '@mui/material'
 import {
-  CalendarMonth, CheckCircle, Extension, Notes, PlayArrowRounded, Tag, Today, TrendingUp, Warning
+  AutoStoriesRounded, BookmarkBorder, CalendarMonth, CheckCircle, EditNote, EventRounded, Extension, Notes, PlayArrowRounded,
+  PushPinRounded, RefreshRounded, SellRounded, Tag, Today, TrendingUp, Warning
 } from '../common/AppIcons'
-import { createTodo, fetchOverdueTodos, fetchTodosDueToday, toggleTodoComplete } from '../../api/todoAPI'
+import { createTodo, fetchOverdueTodos, fetchTodosByDueDate, fetchTodosDueToday, toggleTodoComplete } from '../../api/todoAPI'
+import { stripMarkdownToPreviewText } from '../../utils/markdownTextUtils'
+import PanelIconButton from '../common/PanelIconButton'
+import WaveOrb from '../common/WaveOrb'
 import { useStore } from '../../store/useStore'
 import { notifyError } from '../../utils/notify'
 import { formatRelativeNoteTime, parseNoteDate } from '../../utils/noteDateUtils'
@@ -67,12 +71,6 @@ const Rows = ({ children }) => (
   <Box sx={(theme) => ({ mt: 1.5, pt: 1, borderTop: `1px solid ${theme.palette.divider}` })}>{children}</Box>
 )
 
-const thinBarSx = (theme) => ({
-  height: 4,
-  borderRadius: 99,
-  bgcolor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.1 : 0.07),
-  '& .MuiLinearProgress-bar': { borderRadius: 99 },
-})
 
 const stop = (event) => event.stopPropagation()
 
@@ -98,12 +96,24 @@ export const startFocus = (todo) => {
 
 // ---------- 待办 ----------
 
+/** 待办完成率：水波球显示今天的完成度（与设置里「本地使用量」同一个组件），右侧是具体数字 */
 export function TodoRateCard({ stats, onOpen }) {
   const rate = Number.isFinite(stats.todayCompletionRate) ? stats.todayCompletionRate : null
+  const workload = stats.todayWorkload || 0
+  const done = stats.todayCompleted || 0
+  const caption = workload === 0 ? '今天还没有待办' : done >= workload ? '今天的都完成了' : `还差 ${workload - done} 项`
   return (
     <HomeCard icon={CheckCircle} title="待办完成率" onOpen={onOpen}>
-      <BigNumber value={rate == null ? '—' : `${rate}%`} unit={stats.todayWorkload > 0 ? `今天完成 ${stats.todayCompleted || 0} / ${stats.todayWorkload}` : '今天还没有待办'} />
-      <LinearProgress variant="determinate" value={rate || 0} sx={(theme) => ({ ...thinBarSx(theme), mt: 1.5 })} />
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <WaveOrb percent={rate} size={96} />
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>今天</Typography>
+          <Typography sx={{ fontSize: 22, fontWeight: 650, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums', lineHeight: 1.3 }}>
+            {done}<Box component="span" sx={{ fontSize: 15, color: 'text.secondary', fontWeight: 500 }}> / {workload}</Box>
+          </Typography>
+          <Typography sx={{ fontSize: 12.5, color: 'text.secondary', mt: 0.25 }}>{caption}</Typography>
+        </Box>
+      </Box>
       <Rows>
         <StatRow label="按时完成率" value={stats.completedWithDueDate > 0 ? `${stats.onTimeRate || 0}%` : '—'} />
         <StatRow label="待完成" value={stats.pending || 0} />
@@ -203,12 +213,10 @@ export function TodayTodosCard({ onOpen, onChanged }) {
                 {todo.content}
               </Typography>
               {due && <Typography sx={{ fontSize: 12, ml: 1, color: todo.overdue ? 'error.main' : 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>{due}</Typography>}
-              <Tooltip title="开始专注">
-                <IconButton className="focus-button" size="small" aria-label={`专注「${todo.content}」`} onClick={() => startFocus(todo)}
-                  sx={{ ml: 0.25, opacity: 0, transition: 'opacity 120ms ease', color: 'text.secondary', '&:focus-visible': { opacity: 1 } }}>
-                  <PlayArrowRounded sx={{ fontSize: 18 }} />
-                </IconButton>
-              </Tooltip>
+              <PanelIconButton title="开始专注" size="sm" className="focus-button" aria-label={`专注「${todo.content}」`} onClick={() => startFocus(todo)}
+                sx={{ ml: 0.5, opacity: 0, '&:focus-visible': { opacity: 1 } }}>
+                <PlayArrowRounded />
+              </PanelIconButton>
             </Box>
           )
         })}
@@ -263,10 +271,19 @@ const openNote = (note) => {
   state.setSelectedNoteId(note.id)
 }
 
+// 没有标题的笔记（随手记等）用正文开头代替，不再一律显示「未命名笔记」
+const noteDisplayTitle = (note) => {
+  const title = String(note?.title || '').trim()
+  if (title && title !== '无标题' && title !== 'Untitled') return title
+  if (note?.note_type === 'whiteboard') return '画布笔记'
+  const preview = stripMarkdownToPreviewText(note?.content || '').trim()
+  return preview ? preview.slice(0, 40) : '未命名笔记'
+}
+
 const NoteLink = ({ note, meta }) => (
   <ButtonBase onClick={(event) => { stop(event); openNote(note) }}
     sx={{ width: '100%', justifyContent: 'flex-start', gap: 1, py: 0.75, px: 1, borderRadius: '8px', textAlign: 'left', '&:hover': { bgcolor: 'action.hover' } }}>
-    <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: 14 }}>{note.title || '未命名笔记'}</Typography>
+    <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: 14 }}>{noteDisplayTitle(note)}</Typography>
     {meta && <Typography sx={{ flexShrink: 0, fontSize: 12, color: 'text.secondary' }}>{meta}</Typography>}
   </ButtonBase>
 )
@@ -411,6 +428,221 @@ export function PluginsCard({ plugins, onOpen }) {
         </Box>
       ))}
       {plugins.length > 5 && <Typography sx={{ fontSize: 13, color: 'text.secondary', pt: 0.5 }}>还有 {plugins.length - 5} 个</Typography>}
+    </HomeCard>
+  )
+}
+
+// ---------- 新增卡片 ----------
+
+/** 快速记录：写一句话直接存成笔记，不用离开首页；Ctrl/⌘ + Enter 保存 */
+export function QuickNoteCard() {
+  const [draft, setDraft] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(null)
+  const save = async () => {
+    const content = draft.trim()
+    if (!content || saving) return
+    setSaving(true)
+    const result = await useStore.getState().createNote({ content, selectAfterCreate: false })
+    setSaving(false)
+    if (!result?.success) return notifyError(result?.error || '保存失败')
+    setDraft('')
+    setSaved(result.data)
+  }
+  useEffect(() => {
+    if (!saved) return undefined
+    const timer = setTimeout(() => setSaved(null), 4000)
+    return () => clearTimeout(timer)
+  }, [saved])
+  return (
+    <HomeCard icon={EditNote} title="快速记录" meta={saved ? (
+      <ButtonBase onClick={() => openNote(saved)} sx={{ fontSize: 12, color: 'success.main', borderRadius: 1 }}>已保存 · 打开</ButtonBase>
+    ) : null}>
+      <Box onClick={stop} sx={(theme) => ({
+        borderRadius: '10px', px: 1.25, py: 0.75, bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.06 : 0.7),
+        border: `1px solid ${theme.palette.divider}`, transition: 'border-color 150ms ease, box-shadow 150ms ease',
+        '&:focus-within': { borderColor: alpha(theme.palette.primary.main, 0.55), boxShadow: `0 0 0 3px ${alpha(theme.palette.primary.main, 0.1)}` },
+      })}>
+        <InputBase fullWidth multiline minRows={2} maxRows={8} value={draft} placeholder="记下一个想法…"
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.nativeEvent.isComposing) { event.preventDefault(); save() }
+          }}
+          inputProps={{ 'aria-label': '快速记录' }} sx={{ fontSize: 14, lineHeight: 1.6 }} />
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 0.5 }}>
+          <Typography sx={{ fontSize: 11.5, color: 'text.disabled' }}>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'} + Enter 保存</Typography>
+          <ButtonBase onClick={save} disabled={!draft.trim() || saving}
+            sx={(theme) => ({
+              height: 26, px: 1.25, borderRadius: '8px', fontSize: 12.5, fontWeight: 600,
+              color: draft.trim() ? 'primary.contrastText' : 'text.disabled',
+              bgcolor: draft.trim() ? 'primary.main' : alpha(theme.palette.text.primary, 0.06),
+              transition: 'background-color 150ms ease',
+            })}>
+            {saving ? '保存中…' : '保存为笔记'}
+          </ButtonBase>
+        </Box>
+      </Box>
+    </HomeCard>
+  )
+}
+
+const WEEKDAY_SHORT = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+
+/** 未来 7 天：按天列出即将到期的待办，提前看到这周要做什么 */
+export function UpcomingCard({ onOpen }) {
+  const [groups, setGroups] = useState(null)
+  useEffect(() => {
+    let alive = true
+    fetchTodosByDueDate().then((todos) => {
+      if (!alive) return
+      const today = new Date()
+      const start = localDateKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1))
+      const end = localDateKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 7))
+      const byDay = new Map()
+      ;(Array.isArray(todos) ? todos : []).forEach((todo) => {
+        if (todo.is_completed || !todo.due_date) return
+        const key = String(todo.due_date).slice(0, 10)
+        if (key < start || key > end) return
+        if (!byDay.has(key)) byDay.set(key, [])
+        byDay.get(key).push(todo)
+      })
+      setGroups([...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)))
+    }).catch(() => alive && setGroups([]))
+    return () => { alive = false }
+  }, [])
+  const total = (groups || []).reduce((sum, [, list]) => sum + list.length, 0)
+  const tomorrow = localDateKey(new Date(Date.now() + 86400000))
+  return (
+    <HomeCard icon={EventRounded} title="未来 7 天" meta={total || null} onOpen={onOpen}>
+      {groups && !groups.length && <Typography sx={{ fontSize: 14, color: 'text.secondary' }}>接下来一周没有安排</Typography>}
+      {(groups || []).slice(0, 4).map(([day, list]) => {
+        const date = new Date(`${day}T00:00:00`)
+        return (
+          <Box key={day} sx={{ display: 'flex', gap: 1.5, py: 0.5 }}>
+            <Typography sx={{ width: 44, flexShrink: 0, fontSize: 12, color: 'text.secondary', pt: '2px', fontVariantNumeric: 'tabular-nums' }}>
+              {day === tomorrow ? '明天' : WEEKDAY_SHORT[date.getDay()]}
+              <Box component="span" sx={{ display: 'block', fontSize: 11, color: 'text.disabled' }}>{date.getMonth() + 1}/{date.getDate()}</Box>
+            </Typography>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              {list.slice(0, 3).map((todo) => (
+                <Typography key={todo.id} noWrap sx={{ fontSize: 13.5, lineHeight: 1.7 }}>{todo.content}</Typography>
+              ))}
+              {list.length > 3 && <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>还有 {list.length - 3} 项</Typography>}
+            </Box>
+          </Box>
+        )
+      })}
+    </HomeCard>
+  )
+}
+
+const isClipNote = (note) => typeof note.meta === 'string' ? note.meta.includes('"type":"clip"') : note.meta?.source?.type === 'clip'
+const clipSite = (note) => {
+  try {
+    const meta = typeof note.meta === 'string' ? JSON.parse(note.meta) : note.meta
+    return meta?.source?.site || new URL(meta?.source?.url).hostname.replace(/^www\./, '')
+  } catch {
+    return ''
+  }
+}
+
+/** 最近剪藏：网页剪藏进来的文章，方便回头读 */
+export function RecentClipsCard({ onOpen }) {
+  const notes = useStore((state) => state.notes)
+  const clips = useMemo(() => notes
+    .filter((note) => !note.is_deleted && isClipNote(note))
+    .sort((a, b) => (parseNoteDate(b.created_at)?.getTime() || 0) - (parseNoteDate(a.created_at)?.getTime() || 0))
+    .slice(0, 5), [notes])
+  return (
+    <HomeCard icon={BookmarkBorder} title="最近剪藏" onOpen={onOpen}>
+      {!clips.length && <Typography sx={{ fontSize: 14, color: 'text.secondary' }}>用浏览器扩展剪藏网页后会出现在这里</Typography>}
+      <Box sx={{ mx: -1 }}>
+        {clips.map((note) => <NoteLink key={note.id} note={note} meta={clipSite(note)} />)}
+      </Box>
+    </HomeCard>
+  )
+}
+
+/** 置顶笔记：常用笔记的快捷入口 */
+export function PinnedNotesCard({ onOpen }) {
+  const notes = useStore((state) => state.notes)
+  const pinned = useMemo(() => notes.filter((note) => note.is_pinned && !note.is_deleted).slice(0, 6), [notes])
+  return (
+    <HomeCard icon={PushPinRounded} title="置顶笔记" meta={pinned.length || null} onOpen={onOpen}>
+      {!pinned.length && <Typography sx={{ fontSize: 14, color: 'text.secondary' }}>在笔记菜单里选择「置顶」，常用笔记会出现在这里</Typography>}
+      <Box sx={{ mx: -1 }}>
+        {pinned.map((note) => <NoteLink key={note.id} note={note} />)}
+      </Box>
+    </HomeCard>
+  )
+}
+
+/** 温故：每天随机翻出一篇一周前的笔记，点「换一篇」再抽 */
+export function ReviewCard() {
+  const notes = useStore((state) => state.notes)
+  const [offset, setOffset] = useState(0)
+  const candidates = useMemo(() => {
+    const cutoff = Date.now() - 7 * 86400000
+    return notes.filter((note) => !note.is_deleted && note.note_type !== 'whiteboard'
+      && (parseNoteDate(note.updated_at || note.created_at)?.getTime() || 0) < cutoff
+      && stripMarkdownToPreviewText(note.content || '').trim().length > 20)
+  }, [notes])
+  // 以日期做种子：同一天里刷新首页看到的是同一篇
+  const daySeed = Math.floor(Date.now() / 86400000)
+  const note = candidates.length ? candidates[(daySeed * 7919 + offset) % candidates.length] : null
+  const age = note ? formatRelativeNoteTime(note.created_at || note.updated_at, { locale: dateFnsZhCN }) : ''
+  return (
+    <HomeCard icon={AutoStoriesRounded} title="温故" onOpen={note ? () => openNote(note) : undefined}
+      action={candidates.length > 1 ? (
+        <PanelIconButton title="换一篇" size="sm" onClick={(event) => { stop(event); setOffset((value) => value + 1) }}>
+          <RefreshRounded />
+        </PanelIconButton>
+      ) : null}>
+      {!note && <Typography sx={{ fontSize: 14, color: 'text.secondary' }}>笔记攒多一些后，这里会帮你翻出旧笔记重读</Typography>}
+      {note && (
+        <>
+          <Typography sx={{ fontSize: 15, fontWeight: 600, mb: 0.5 }} noWrap>{noteDisplayTitle(note)}</Typography>
+          <Typography sx={{
+            fontSize: 13.5, color: 'text.secondary', lineHeight: 1.65,
+            display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+          }}>
+            {stripMarkdownToPreviewText(note.content || '').slice(0, 240)}
+          </Typography>
+          <Typography sx={{ fontSize: 12, color: 'text.disabled', mt: 1 }}>写于{age}</Typography>
+        </>
+      )}
+    </HomeCard>
+  )
+}
+
+/** 常用标签：点标签在笔记页里搜索 */
+export function TagsCard({ onOpen }) {
+  const notes = useStore((state) => state.notes)
+  // 直接按当前笔记统计，已删除笔记的标签不会出现
+  const tags = useMemo(() => {
+    const counts = new Map()
+    notes.forEach((note) => {
+      if (note.is_deleted) return
+      ;(Array.isArray(note.tags) ? note.tags : []).forEach((tag) => counts.set(tag, (counts.get(tag) || 0) + 1))
+    })
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 16)
+  }, [notes])
+  return (
+    <HomeCard icon={SellRounded} title="常用标签" meta={tags.length || null} onOpen={onOpen}>
+      {!tags.length && <Typography sx={{ fontSize: 14, color: 'text.secondary' }}>给笔记加上标签后，可以从这里快速筛选</Typography>}
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+        {tags.map(([tag, count]) => (
+          <ButtonBase key={tag} onClick={(event) => { stop(event); useStore.getState().openNoteSearch(tag) }}
+            sx={(theme) => ({
+              height: 26, px: 1, gap: 0.5, borderRadius: '8px', fontSize: 13,
+              bgcolor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.07 : 0.05),
+              '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.1), color: 'primary.main' },
+            })}>
+            #{tag}
+            <Box component="span" sx={{ fontSize: 11, color: 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>{count}</Box>
+          </ButtonBase>
+        ))}
+      </Box>
     </HomeCard>
   )
 }

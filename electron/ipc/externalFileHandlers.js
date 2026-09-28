@@ -1,5 +1,7 @@
 const { ipcMain, dialog, shell, BrowserWindow, clipboard } = require('electron')
-const { SUPPORTED_EXTENSIONS } = require('../services/ExternalFileService')
+const {
+  FILE_TYPES, FILE_TYPES_SETTING_KEY, setEnabledFileTypes, getEnabledFileTypes, getEnabledExtensions
+} = require('../services/ExternalFileService')
 
 const wrap = (fn) => (...args) => {
   try {
@@ -29,16 +31,33 @@ const registerExternalFileHandlers = ({ externalFileService, getMainWindow }) =>
     const result = await dialog.showOpenDialog(win, {
       title: '打开文件',
       properties: ['openFile', 'multiSelections'],
+      // 只列出在「设置 → 笔记与文件」里启用的类型
       filters: [
-        { name: '支持的文件', extensions: SUPPORTED_EXTENSIONS },
-        { name: 'Markdown', extensions: ['md', 'markdown', 'mdown', 'mkd'] },
-        { name: '纯文本', extensions: ['txt', 'text'] },
-        { name: 'Excalidraw 白板', extensions: ['excalidraw'] }
+        { name: '支持的文件', extensions: getEnabledExtensions() },
+        ...FILE_TYPES
+          .filter((type) => !type.importOnly && getEnabledFileTypes().includes(type.id))
+          .map((type) => ({ name: type.name, extensions: type.extensions })),
       ]
     })
     if (result.canceled) return { success: true, data: [] }
     const opened = result.filePaths.filter((filePath) => externalFileService.open(filePath))
     return { success: true, data: opened }
+  })
+
+  // 设置 → 笔记与文件：可打开的文件类型
+  ipcMain.handle('external-file:get-file-types', () => ({
+    success: true,
+    data: { types: FILE_TYPES, enabled: getEnabledFileTypes() },
+  }))
+  ipcMain.handle('external-file:set-file-types', (_event, ids) => {
+    try {
+      const enabled = setEnabledFileTypes(ids)
+      const SettingDAO = require('../dao/SettingDAO')
+      new SettingDAO().set(FILE_TYPES_SETTING_KEY, enabled.join(','), 'string', '可以用 Flota 打开的文件类型')
+      return { success: true, data: enabled }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
   })
 
   ipcMain.handle('external-file:reveal', (_event, filePath) => {

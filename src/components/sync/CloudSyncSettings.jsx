@@ -5,7 +5,7 @@ import SyncRegistryView from './SyncRegistryView';
 import NutcloudSyncSettings from './NutcloudSyncSettings';
 import GoogleCalendarSettings from './GoogleCalendarSettings';
 import CalendarSyncSettings from './CalendarSyncSettings';
-import { sectionDescriptionSx, sectionTitleSx, settingsSectionSx } from '../../styles/commonStyles';
+import { sectionDescriptionSx, settingsSectionSx } from '../../styles/commonStyles';
 
 const CloudSyncSettings = () => {
   const [currentView, setCurrentView] = useState('registry'); // 'registry', 'nutcloud', 'google-calendar', 'caldav'
@@ -22,7 +22,6 @@ const CloudSyncSettings = () => {
     <Box>
       {currentView === 'registry' && (
         <Box sx={settingsSectionSx}>
-          <Typography variant="h6" sx={sectionTitleSx}>云同步</Typography>
           <Typography variant="caption" sx={sectionDescriptionSx}>
             管理笔记、待办和日历的同步服务
           </Typography>

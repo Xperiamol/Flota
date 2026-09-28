@@ -38,6 +38,7 @@ import AppContextMenu from './AppContextMenu'
 import MarkdownPreview from '../editor/MarkdownPreview'
 import { useError } from './ErrorProvider'
 import { replaceDataImagesInMarkdown } from '../../utils/dataUrlImage'
+import { usePrefsStore } from '../../store/usePrefsStore'
 import { editorScrollbarSx, segmentedButtonSx, segmentedControlSx } from '../../styles/commonStyles'
 
 const ExternalWhiteboardView = lazy(() => import('./ExternalWhiteboardView'))
@@ -74,7 +75,8 @@ export default function ExternalFileWindow({ filePath }) {
   const [file, setFile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [mode, setMode] = useState('preview')
+  // 设置 → 笔记与文件：外部文件默认进入预览还是编辑
+  const [mode, setMode] = useState(() => (usePrefsStore.getState().externalFileMode === 'edit' ? 'edit' : 'preview'))
   const [draft, setDraft] = useState('')
   const [savedText, setSavedText] = useState('')
   const [previewContent, setPreviewContent] = useState('')
@@ -106,6 +108,8 @@ export default function ExternalFileWindow({ filePath }) {
       if (!result?.success) throw new Error(result?.error || '无法读取文件')
       const data = result.data
       setFile(data)
+      // 只读文件不能进入编辑模式（即使设置为默认编辑）
+      if (!data.writable) setMode('preview')
       setDraft(data.raw ?? '')
       setSavedText(data.raw ?? '')
       setPreviewContent(data.content ?? '')

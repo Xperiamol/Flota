@@ -6,10 +6,11 @@ import {
   List,
   ListItem,
   Switch,
-  IconButton,
   Select,
   MenuItem,
   FormControl,
+  Button,
+  alpha,
 } from '@mui/material';
 import {
   CheckBox as TodoIcon,
@@ -23,7 +24,8 @@ import {
   AttachFile as AttachFileIcon,
   WidgetsRounded as WidgetIcon,
 } from '../common/AppIcons';
-import { iconWithColor, combo, flex, settingsRowSx, spacing } from '../../styles/commonStyles';
+import { iconWithColor, flex, settingsRowSx } from '../../styles/commonStyles';
+import PanelIconButton from '../common/PanelIconButton';
 
 const SyncRegistryView = ({ onOpenSettings }) => {
   const { showError } = useError();
@@ -389,116 +391,96 @@ const SyncRegistryView = ({ onOpenSettings }) => {
     return `${diffDays}天前`;
   };
 
+  // 所有数据类型都还没有可用的同步服务时，给一个明确的入口，而不是一排「未配置」
+  const nothingConfigured = syncRegistry.length > 0 && syncRegistry.every((item) => (
+    item.selectedProvider === 'nutcloud' ? !item.accountConfigured : !item.connected && !item.enabled
+  ));
+
   return (
-    <Box>
-      <Typography variant="h6" sx={{ mb: 0.5 }}>
-        同步总览
+    <Box sx={{ px: 1 }}>
+      {nothingConfigured && (
+        <Box sx={(theme) => ({
+          display: 'flex', alignItems: 'center', gap: 1.5, mb: 2, px: 2, py: 1.5, borderRadius: '12px',
+          bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.12 : 0.07),
+        })}>
+          <CloudOffIcon sx={{ color: 'primary.main', fontSize: 20 }} />
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>还没有配置同步服务</Typography>
+            <Typography variant="caption" color="text.secondary">配置坚果云（WebDAV）后，笔记、图片、待办等会在设备之间同步</Typography>
+          </Box>
+          <Button size="small" variant="contained" onClick={() => onOpenSettings('nutcloud')} sx={{ flexShrink: 0, borderRadius: '8px' }}>
+            配置坚果云
+          </Button>
+        </Box>
+      )}
+
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+        开关只控制各类数据是否参与同步；账号、自动同步和密码在对应服务的设置里。
       </Typography>
-      <Typography variant="body2" color="text.secondary" sx={spacing.mb3}>
-        这里的开关只控制各数据类型是否参与同步；账号启停、自动同步和密码请进入对应服务设置。
-      </Typography>
-      
+
+      {/* 一行一个数据类型，行之间用细分割线，与其他设置页一致（不再每行一块白底） */}
       <List disablePadding>
         {syncRegistry.map((item) => (
           <ListItem
             key={item.id}
+            disableGutters
             sx={(theme) => ({
               ...settingsRowSx(theme),
-              mb: 1.5,
               display: 'flex',
               alignItems: 'center',
-              gap: 2,
-              py: 2,
-              px: 2.5,
-              bgcolor: theme.palette.mode === 'dark'
-                ? 'rgba(255,255,255,0.06)'
-                : 'rgba(255,255,255,0.78)',
-              '&:hover': {
-                bgcolor: theme.palette.mode === 'dark'
-                  ? 'rgba(255,255,255,0.085)'
-                  : 'rgba(255,255,255,0.9)',
-              },
+              gap: 1.5,
+              px: 0.5,
             })}
           >
-            {/* 图标 */}
-            <Box 
-              sx={{ 
-                color: 'primary.main',
-                ...flex.row,
-                minWidth: 24,
-              }}
-            >
+            <Box sx={(theme) => ({
+              width: 32, height: 32, borderRadius: '9px', flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'primary.main', bgcolor: theme.custom?.surface?.inset,
+              '& .MuiSvgIcon-root': { fontSize: 18 },
+            })}>
               {item.icon}
             </Box>
 
-            {/* 功能模块名 */}
-            <Box sx={combo.col80}>
-              <Typography variant="body2" fontWeight="medium">
-                {item.name}
-              </Typography>
+            {/* 名称 + 状态 */}
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>{item.name}</Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.25, '& .MuiSvgIcon-root': { fontSize: 14 } }}>
+                {getStatusIcon(item)}
+                <Typography variant="caption" color="text.secondary" noWrap>{getStatusText(item)}</Typography>
+              </Box>
             </Box>
 
-            {/* 服务选择器 */}
-            <FormControl size="small" sx={combo.col160}>
-              <Select
-                value={item.selectedProvider}
-                onChange={(e) => handleProviderChange(item, e.target.value)}
-                sx={{ 
-                  fontSize: '0.875rem',
-                  '& .MuiSelect-select': {
-                    py: 0.75,
-                  }
-                }}
-              >
-                {item.availableProviders.map((provider) => (
-                  <MenuItem key={provider.id} value={provider.id}>
-                    {provider.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            {/* 状态 */}
-            <Box 
-              sx={{ 
-                ...flex.rowGap1,
-                minWidth: 120,
-                flex: 1,
-              }}
-            >
-              {getStatusIcon(item)}
-              <Typography variant="caption" color="text.secondary">
-                {getStatusText(item)}
+            {/* 服务：只有一个可选时直接显示名称 */}
+            {item.availableProviders.length > 1 ? (
+              <FormControl size="small" sx={{ width: 150, flexShrink: 0 }}>
+                <Select
+                  value={item.selectedProvider}
+                  onChange={(e) => handleProviderChange(item, e.target.value)}
+                  sx={{ fontSize: '0.8125rem', '& .MuiSelect-select': { py: 0.625 } }}
+                >
+                  {item.availableProviders.map((provider) => (
+                    <MenuItem key={provider.id} value={provider.id}>{provider.name}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            ) : (
+              <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0, minWidth: 64, textAlign: 'right' }}>
+                {item.availableProviders[0]?.name}
               </Typography>
-            </Box>
+            )}
 
-            {/* 右侧操作 */}
-            <Box 
-              sx={{ 
-                ...flex.rowGap1,
-                ml: 'auto',
-              }}
-            >
+            <Box sx={{ ...flex.rowGap1, flexShrink: 0 }}>
               {/* 数据类型同步开关，不是账号总开关 */}
               <Switch
                 checked={item.enabled}
                 onChange={() => handleToggleEnabled(item)}
                 disabled={item.controlDisabled}
+                inputProps={{ 'aria-label': `${item.name}参与同步` }}
               />
-
-              {/* 设置按钮 */}
-              <IconButton
-                size="small"
-                onClick={() => onOpenSettings(item.selectedProvider)}
-                aria-label="设置"
-                sx={{
-                  '&:hover': {
-                    bgcolor: 'action.selected',
-                  }
-                }}
-              >
-                <SettingsIcon fontSize="small" />
-              </IconButton>
+              <PanelIconButton title={`${item.availableProviders.find((p) => p.id === item.selectedProvider)?.name || ''}设置`}
+                onClick={() => onOpenSettings(item.selectedProvider)} stopDrag={false}>
+                <SettingsIcon />
+              </PanelIconButton>
             </Box>
           </ListItem>
         ))}

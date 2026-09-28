@@ -5,13 +5,9 @@ import {
   CircularProgress,
   Typography,
 } from '@mui/material';
-import { alpha, lighten, useTheme } from '@mui/material/styles';
+import { alpha, useTheme } from '@mui/material/styles';
+import WaveOrb from './WaveOrb';
 import { Refresh as RefreshIcon } from './AppIcons';
-
-const clampPercent = (value) => {
-  if (!Number.isFinite(value)) return null;
-  return Math.max(0, Math.min(100, value));
-};
 
 const UsageWaveCard = ({
   title,
@@ -30,129 +26,19 @@ const UsageWaveCard = ({
   accentColor,
 }) => {
   const theme = useTheme();
-  const resolvedPercent = clampPercent(percent);
-  const visualPercent = resolvedPercent ?? 0;
-  const displayPercent = percentLabel || (resolvedPercent == null ? '--' : `${Math.round(resolvedPercent)}%`);
-  const waveTop = `${100 - visualPercent}%`;
-  const resolvedAccentColor = accentColor || theme.palette.primary.main;
-  const textOnWater = visualPercent >= 50;
-  const containerBackground = theme.palette.mode === 'dark' ? '#161618' : '#f3f4f6';
-  const borderColor = theme.palette.mode === 'dark'
-    ? alpha(resolvedAccentColor, 0.18)
-    : alpha('#ffffff', 0.92);
-  const isDark = theme.palette.mode === 'dark';
-  // 深色底上主色偏暗，提亮一档；白色光晕在深色底上会糊成一团，深色模式改用深色投影
-  const textColor = textOnWater ? '#ffffff' : (isDark ? lighten(resolvedAccentColor, 0.28) : resolvedAccentColor);
-  const textShadow = textOnWater
-    ? '0 2px 10px rgba(0, 0, 0, 0.2)'
-    : (isDark ? '0 1px 6px rgba(0, 0, 0, 0.35)' : '0 2px 10px rgba(255, 255, 255, 0.8)');
-  const circleSize = compact ? 124 : 240;
-  const borderWidth = compact ? 5 : 8;
-  const percentFontSize = compact ? '1.85rem' : '3.5rem';
+  const circleSize = compact ? 124 : 220;
   const sectionGap = compact ? 1.25 : 3;
   const bottomSpacing = compact ? 1.25 : 3.5;
   const contentMaxWidth = compact ? 320 : 480;
   const valueVariant = compact ? 'h6' : 'h5';
-  const circleBoxSx = {
-    width: circleSize,
-    height: circleSize,
-    borderRadius: '50%',
-    position: 'relative',
-    overflow: 'hidden',
-    flexShrink: 0,
-    bgcolor: containerBackground,
-    boxShadow: 'inset 0 0 20px rgba(0,0,0,0.05), 0 10px 30px rgba(0,0,0,0.08)',
-    border: `${borderWidth}px solid`,
-    borderColor,
-  };
-  const waveLayers = (
-    <>
-      <Box
-        sx={{
-          position: 'absolute',
-          width: '200%',
-          height: '200%',
-          left: '-50%',
-          top: waveTop,
-          borderRadius: '40%',
-          background: alpha(resolvedAccentColor, 0.34),
-          animation: 'usage-wave-spin-back 6s linear infinite',
-          '@keyframes usage-wave-spin-back': {
-            '0%': { transform: 'rotate(0deg)' },
-            '100%': { transform: 'rotate(360deg)' },
-          }
-        }}
-      />
-      <Box
-        sx={{
-          position: 'absolute',
-          width: '200%',
-          height: '200%',
-          left: '-50%',
-          top: waveTop,
-          borderRadius: '42%',
-          background: alpha(resolvedAccentColor, 0.56),
-          animation: 'usage-wave-spin-middle 8s linear infinite',
-          '@keyframes usage-wave-spin-middle': {
-            '0%': { transform: 'rotate(0deg)' },
-            '100%': { transform: 'rotate(360deg)' },
-          }
-        }}
-      />
-      <Box
-        sx={{
-          position: 'absolute',
-          width: '200%',
-          height: '200%',
-          left: '-50%',
-          top: waveTop,
-          borderRadius: '39%',
-          background: `linear-gradient(180deg, ${alpha(resolvedAccentColor, 0.92)} 0%, ${alpha(resolvedAccentColor, 0.72)} 100%)`,
-          animation: 'usage-wave-spin-front 5s linear infinite',
-          '@keyframes usage-wave-spin-front': {
-            '0%': { transform: 'rotate(0deg)' },
-            '100%': { transform: 'rotate(360deg)' },
-          }
-        }}
-      />
-      <Box
-        sx={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          textAlign: 'center',
-          zIndex: 10,
-        }}
-      >
-        <Typography
-          sx={{
-            fontSize: percentFontSize,
-            fontWeight: 700,
-            lineHeight: 1,
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-            color: textColor,
-            textShadow,
-            transition: 'color 0.4s ease, text-shadow 0.4s ease',
-          }}
-        >
-          {displayPercent}
-        </Typography>
-      </Box>
-    </>
-  );
+  // 水波球与首页「待办完成率」共用同一个组件
+  const orb = <WaveOrb percent={percent} label={percentLabel || undefined} size={circleSize} accentColor={accentColor} />;
 
   if (compact) {
     return (
       <Box sx={{ py: 0.25, width: '100%' }}>
         <Box sx={{ display: 'flex', gap: 1.25, alignItems: 'center', width: '100%' }}>
-          <Box sx={circleBoxSx}>
-            {waveLayers}
-          </Box>
+          {orb}
 
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: '0.02em' }}>
@@ -187,7 +73,7 @@ const UsageWaveCard = ({
                       px: 0.9,
                       py: 0.4,
                       borderRadius: 999,
-                      bgcolor: theme.palette.mode === 'dark' ? alpha('#ffffff', 0.04) : alpha('#ffffff', 0.82),
+                      bgcolor: theme.custom?.surface?.inset,
                       border: '1px solid',
                       borderColor: theme.palette.mode === 'dark' ? alpha('#ffffff', 0.08) : alpha('#d1d1d5', 0.7),
                     }}
@@ -239,9 +125,7 @@ const UsageWaveCard = ({
       </Box>
 
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
-        <Box sx={{ ...circleBoxSx, mb: bottomSpacing }}>
-          {waveLayers}
-        </Box>
+        <Box sx={{ mb: bottomSpacing }}>{orb}</Box>
 
         <Box sx={{ width: '100%', maxWidth: contentMaxWidth, textAlign: 'center' }}>
           <Typography variant={valueVariant} sx={{ fontWeight: 700, letterSpacing: '-0.02em', mb: 0.75 }}>
@@ -275,7 +159,7 @@ const UsageWaveCard = ({
                     px: 1.5,
                     py: 1.1,
                     borderRadius: 2,
-                    bgcolor: theme.palette.mode === 'dark' ? alpha('#ffffff', 0.04) : alpha('#ffffff', 0.8),
+                    bgcolor: theme.custom?.surface?.inset,
                     border: '1px solid',
                     borderColor: theme.palette.mode === 'dark' ? alpha('#ffffff', 0.08) : alpha('#d1d1d5', 0.7),
                   }}

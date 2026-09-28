@@ -139,7 +139,6 @@ const ProxySettings = ({ showSnackbar }) => {
   return (
     <Box>
       <Box sx={settingsSectionSx}>
-        <Typography variant="h6" sx={sectionTitleSx}>网络代理</Typography>
         <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
           配置应用访问网络时使用的本地代理
         </Typography>

@@ -36,6 +36,7 @@ import {
 } from '../common/AppIcons';
 import { emptyStateSx, settingsFieldGroupSx, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../../styles/commonStyles';
 import FlotaAIIcon from '../common/FlotaAIIcon';
+import { isImeComposing } from '../../utils/imeUtils'
 
 // ─── 分层配色 ───
 const LAYER_COLORS = {
@@ -91,7 +92,7 @@ const MetricCard = ({ icon, label, value, color = 'text.secondary' }) => (
     borderRadius: '12px',
     border: '1px solid',
     borderColor: theme.palette.mode === 'dark' ? 'rgba(157,157,165,0.10)' : 'rgba(22,22,24,0.06)',
-    bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.62)',
+    bgcolor: theme.custom?.surface?.inset,
     minWidth: 72,
   })}>
     <Typography variant="body2" sx={{ color, fontWeight: 700, fontSize: 16 }}>{value}</Typography>
@@ -422,7 +423,7 @@ const Mem0Settings = () => {
                 placeholder="输入关键词或自然语言查询..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                onKeyDown={(e) => e.key === 'Enter' && !isImeComposing(e) && handleSearch()}
               />
               <Button
                 variant="contained" size="small"
