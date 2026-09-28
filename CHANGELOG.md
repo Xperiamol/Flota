@@ -2,6 +2,19 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [4.1.0] - 2026-09-28
+
+### Changed / 更新内容
+- feat: redesigned trash with auto-empty, page names in the title bar, new home cards and consistent glass on wallpapers
+- feat(settings): regrouped settings with Notes & Files and Todos pages, .txt/.log support, redesigned switches and auto-check for updates on launch
+- fix(notes): filters and search missed notes older than the latest 50; redesigned filter panel
+- feat(focus): pausing saves your focus time, and running sessions autosave every minute
+- feat(calendar): notes view shows what you wrote and edited each day; change a note's creation date by dragging it or from the info panel
+- feat(ai): live progress on running actions, one-click AI button in the title bar and a new AI settings page
+- feat(installer): Apple-style DMG window and Windows installer artwork
+- feat(clipper): tags replace categories in the web clipper, with a tag editor in the extension
+
+
 ## [4.0.2] - 2026-09-26
 
 ### Changed / 更新内容
