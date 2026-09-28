@@ -28,7 +28,7 @@ class HttpError extends Error {
  * 接口：
  *   GET  /v1/ping              探测服务，带 token 时返回是否已配对
  *   POST /v1/pair              { code, name } 用应用内显示的 6 位配对码换取 token
- *   GET  /v1/targets           可选分类与常用标签（需 token）
+ *   GET  /v1/targets           默认标签与常用标签（需 token）
  *   POST /v1/<kind>            交给对应 handler，如 /v1/clip（需 token）
  */
 class IngressService extends EventEmitter {

@@ -115,7 +115,7 @@ registerCommand({ id: 'my-plugin.receive', title: '接收', hidden: true }, asyn
 
 ```javascript
 // 保存一条剪藏：kind 为 article / selection / bookmark；图片会下载到本地，同一链接自动去重
-await runtime.clips.save({ kind: 'article', url, title, siteName, markdown, target: { category, tags } }, { aiSummary: true })
+await runtime.clips.save({ kind: 'article', url, title, siteName, markdown, target: { tags } }, { aiSummary: true })  // 用标签归类，设置里的默认标签会自动加上
 // 由 Flota 抓取网页并解析正文后保存
 await runtime.clips.clipUrl('https://example.com/post', { kind: 'bookmark' })
 ```

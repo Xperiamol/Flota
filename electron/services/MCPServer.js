@@ -493,7 +493,7 @@ class MCPServer {
           if (!this.services.clipService) throw new Error('剪藏只在 Flota 应用运行时可用（HTTP MCP）');
           result = await this.services.clipService.clipUrl(args.url, {
             kind: args.bookmark ? 'bookmark' : 'article',
-            target: { category: args.category, tags: args.tags || [] },
+            target: { tags: args.tags || [] },
             source: 'mcp',
           });
           this.services.onNotesChanged?.();
@@ -562,8 +562,7 @@ class MCPServer {
           properties: {
             url: { type: 'string', description: '网页链接（http/https）' },
             bookmark: { type: 'boolean', description: '只保存为书签，默认 false' },
-            category: { type: 'string', description: '保存到的分类，默认使用剪藏设置中的分类' },
-            tags: { type: 'array', items: { type: 'string' }, description: '标签' },
+            tags: { type: 'array', items: { type: 'string' }, description: '额外的标签；剪藏设置里的默认标签会自动加上' },
           },
           required: ['url'],
         },

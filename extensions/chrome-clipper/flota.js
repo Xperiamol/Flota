@@ -74,7 +74,7 @@ async function flotaClip(tabId, mode, options = {}) {
   if (!connection) throw Object.assign(new Error('没有检测到 Flota，请先打开 Flota 应用'), { code: 'OFFLINE' })
   if (!connection.paired) throw Object.assign(new Error('还没有与 Flota 配对'), { code: 'UNPAIRED' })
   const clip = await flotaExtract(tabId, mode)
-  clip.target = { category: options.category || undefined, tags: options.tags || [] }
+  clip.target = { tags: options.tags || [] }
   return flotaRequest(connection.port, 'POST', '/v1/clip', {
     token: connection.token,
     timeout: 180000,

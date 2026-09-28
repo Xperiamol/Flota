@@ -11,12 +11,18 @@ const getExtensionDir = () => {
   return candidates.find((dir) => fs.existsSync(path.join(dir, 'manifest.json'))) || candidates[candidates.length - 1];
 };
 
+// 剪藏按「标签」归类（「分类」已废弃）：默认给剪藏笔记打上这些标签，逗号分隔
 const SETTING_KEYS = {
-  defaultCategory: { key: 'clipper_default_category', type: 'string', fallback: '剪藏' },
+  defaultTags: { key: 'clipper_default_tags', type: 'string', fallback: '剪藏' },
   aiSummary: { key: 'clipper_ai_summary', type: 'boolean', fallback: false },
   aiTags: { key: 'clipper_ai_tags', type: 'boolean', fallback: true },
   createTodo: { key: 'clipper_create_todo', type: 'boolean', fallback: false },
 };
+
+const parseTagList = (value) => (Array.isArray(value) ? value : String(value ?? '').split(/[,，]/))
+  .map((tag) => String(tag).trim())
+  .filter(Boolean)
+  .slice(0, 10);
 
 /** 读取剪藏偏好（设置表中缺失时用默认值） */
 const readClipperSettings = (dao) => {
@@ -25,6 +31,12 @@ const readClipperSettings = (dao) => {
     const row = dao?.get(def.key);
     result[name] = row ? row.value : def.fallback;
   }
+  // 旧版本的「默认分类」：还没设置过默认标签时，把它当作默认标签沿用
+  if (!dao?.get(SETTING_KEYS.defaultTags.key)) {
+    const legacy = dao?.get('clipper_default_category')?.value;
+    if (legacy && legacy !== 'default' && legacy !== '剪藏') result.defaultTags = `剪藏,${legacy}`;
+  }
+  result.defaultTags = parseTagList(result.defaultTags);
   return result;
 };
 
@@ -58,7 +70,6 @@ const registerClipperHandlers = ({ getIngress, getClipService, getPluginManager,
 
   handle('clipper:status', async () => ({
     extensionDir: getExtensionDir(),
-    categories: (await getIngress()?.getTargets?.())?.categories || [],
     ...(getIngress()?.status() || { running: false, port: null, pairing: null, clients: [] }),
     pluginEnabled: isPluginEnabled(),
     settings: readSettings(),
@@ -85,7 +96,11 @@ const registerClipperHandlers = ({ getIngress, getClipService, getPluginManager,
     for (const [name, value] of Object.entries(patch)) {
       const def = SETTING_KEYS[name];
       if (!def) continue;
-      dao.set(def.key, def.type === 'boolean' ? Boolean(value) : String(value || def.fallback), def.type, `剪藏：${name}`);
+      // 默认标签允许清空（不打任何默认标签），其他字符串为空时回到默认值
+      const stored = def.type === 'boolean'
+        ? Boolean(value)
+        : name === 'defaultTags' ? parseTagList(value).join(',') : String(value || def.fallback);
+      dao.set(def.key, stored, def.type, `剪藏：${name}`);
     }
     return readSettings();
   });
@@ -94,7 +109,7 @@ const registerClipperHandlers = ({ getIngress, getClipService, getPluginManager,
     const settings = readSettings();
     return getClipService().clipUrl(url, {
       kind: options.kind === 'bookmark' ? 'bookmark' : 'article',
-      target: { category: options.category || settings.defaultCategory, tags: options.tags || [] },
+      target: { tags: options.tags || [] },
       aiSummary: options.aiSummary ?? settings.aiSummary,
       aiTags: options.aiTags ?? settings.aiTags,
       createTodo: options.createTodo ?? settings.createTodo,
@@ -104,4 +119,4 @@ const registerClipperHandlers = ({ getIngress, getClipService, getPluginManager,
   });
 };
 
-module.exports = { registerClipperHandlers, readClipperSettings, CLIPPER_SETTING_KEYS: SETTING_KEYS };
+module.exports = { registerClipperHandlers, readClipperSettings, parseTagList, CLIPPER_SETTING_KEYS: SETTING_KEYS };

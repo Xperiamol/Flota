@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Alert, Box, Button, Chip, IconButton, ListItemText, MenuItem, Switch, TextField, Tooltip, Typography,
+  Alert, Box, Button, Chip, IconButton, ListItemText, Switch, Tooltip, Typography,
 } from '@mui/material';
+import TagInput from '../common/TagInput';
 import { CheckCircle, DeleteOutline, FolderOpenRounded, WifiOff } from '../common/AppIcons';
 import { notifyError, notifySuccess, confirmAction, promptInput } from '../../utils/notify';
 import { settingsRowSx, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../../styles/commonStyles';
@@ -76,12 +77,10 @@ export default function ClipperSettings() {
   if (!status) return null;
   const settings = status.settings || {};
   const secondsLeft = pairing ? Math.max(0, Math.round((pairing.expiresAt - now) / 1000)) : 0;
-  const categoryNames = [...new Set([settings.defaultCategory, '剪藏', ...(status.categories || [])].filter(Boolean))];
 
   return (
     <Box>
       <Box sx={settingsSectionSx}>
-        <Typography variant="h6" sx={sectionTitleSx}>网页剪藏</Typography>
         <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
           通过 Flota 浏览器扩展，把网页全文、选中内容或书签剪藏为笔记。图片会下载到本地，同一链接不会重复保存。
         </Typography>
@@ -144,12 +143,18 @@ export default function ClipperSettings() {
         <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 1.5 }}>
           扩展中没有单独指定时，使用这里的默认设置。
         </Typography>
-        <Row primary="默认分类" secondary="剪藏的笔记放到这个分类，可以随时移动">
-          <TextField select size="small" value={settings.defaultCategory || '剪藏'} sx={{ minWidth: 160 }}
-            onChange={(event) => saveSetting({ defaultCategory: event.target.value })}>
-            {categoryNames.map((name) => <MenuItem key={name} value={name}>{name === 'default' ? '默认' : name}</MenuItem>)}
-          </TextField>
-        </Row>
+        {/* 剪藏用标签归类：每篇剪藏自动打上这些标签，在扩展弹窗里还可以再增减 */}
+        <Box sx={(theme) => ({ ...settingsRowSx(theme) })}>
+          <ListItemText primary="默认标签" secondary="每篇剪藏自动加上这些标签，在笔记列表里按标签就能筛出所有剪藏；扩展弹窗里还可以再增减"
+            slotProps={{ primary: { sx: { fontWeight: 650 } } }} sx={{ mt: 0, mb: 1 }} />
+          <TagInput
+            value={(settings.defaultTags || []).join(',')}
+            onChange={(value) => saveSetting({ defaultTags: value })}
+            placeholder="例如：剪藏、稍后读"
+            maxTags={10}
+            sx={{ width: '100%' }}
+          />
+        </Box>
         <Row primary="AI 摘要" secondary="在笔记开头生成 3–5 条要点（需要已配置 AI，会消耗额度）">
           <Switch checked={Boolean(settings.aiSummary)} onChange={(event) => saveSetting({ aiSummary: event.target.checked })} />
         </Row>

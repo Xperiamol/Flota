@@ -15,8 +15,9 @@ const notify = (title, message) => chrome.notifications.create({
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   try {
-    const { lastCategory, aiSummary, createTodo } = await flotaStorage.get(['lastCategory', 'aiSummary', 'createTodo'])
-    const options = { category: lastCategory, aiSummary, createTodo }
+    // 右键剪藏不弹窗：标签用 Flota 设置里的默认标签
+    const { aiSummary, createTodo } = await flotaStorage.get(['aiSummary', 'createTodo'])
+    const options = { aiSummary, createTodo }
     let result
     if (info.menuItemId === 'flota-clip-link') {
       // 链接由 Flota 端抓取标题与封面
@@ -25,7 +26,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       result = await flotaRequest(connection.port, 'POST', '/v1/clip', {
         token: connection.token,
         timeout: 60000,
-        body: { clip: { kind: 'bookmark', url: info.linkUrl, fetch: true, target: { category: lastCategory } }, options },
+        body: { clip: { kind: 'bookmark', url: info.linkUrl, fetch: true, target: { tags: [] } }, options },
       })
     } else {
       result = await flotaClip(tab.id, info.menuItemId === 'flota-clip-selection' ? 'selection' : 'article', options)

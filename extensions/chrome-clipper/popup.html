@@ -32,13 +32,13 @@
       <label><input type="radio" name="mode" value="selection"><span>选中内容</span></label>
       <label><input type="radio" name="mode" value="bookmark"><span>书签</span></label>
     </div>
-    <label class="field">分类
-      <select id="category" class="input"></select>
-    </label>
-    <label class="field">标签
-      <input id="tags" class="input" placeholder="用逗号分隔，可留空" list="tag-list">
-      <datalist id="tag-list"></datalist>
-    </label>
+    <div class="field">标签
+      <div id="tag-box" class="input tag-box">
+        <span id="tag-chips"></span>
+        <input id="tag-input" placeholder="添加标签，回车确认" autocomplete="off">
+      </div>
+      <div id="tag-suggest" class="tag-suggest"></div>
+    </div>
     <label class="check"><input type="checkbox" id="ai-summary"> AI 摘要（需在 Flota 中配置 AI）</label>
     <label class="check"><input type="checkbox" id="create-todo"> 同时创建“稍后阅读”待办</label>
     <button id="clip" class="btn primary">剪藏</button>

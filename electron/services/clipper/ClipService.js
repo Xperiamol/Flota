@@ -6,7 +6,7 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 20000;
 const TRACKING_PARAMS = /^(utm_\w+|spm|from|fbclid|gclid|share_source|share_medium|share_token|scene|srcid|sharer_\w+|clicktime|enterid|ref|ref_src|isappinstalled|timestamp|chksm|mpshare|sessionid)$/i;
 const IMAGE_EXT = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/jpg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp', 'image/svg+xml': '.svg', 'image/avif': '.avif' };
-const DEFAULT_CATEGORY = '剪藏';
+const DEFAULT_TAGS = ['剪藏'];
 
 // 常见站点的正文容器：Readability 在这些站点上容易丢内容，优先按选择器截取
 const SITE_RULES = [
@@ -88,14 +88,6 @@ class ClipService extends EventEmitter {
       WHERE is_deleted = 0 AND meta IS NOT NULL AND json_extract(meta, '$.source.urlKey') = ?
       ORDER BY updated_at DESC LIMIT 1
     `).get(urlKey) || null;
-  }
-
-  ensureCategory(name) {
-    if (!name || name === 'default') return 'default';
-    this.getDB().prepare(`
-      INSERT OR IGNORE INTO categories (name, color, icon, sort_order) VALUES (?, '#0ea5e9', 'bookmark', 99)
-    `).run(name);
-    return name;
   }
 
   // ==================== 抓取与解析 ====================
@@ -265,7 +257,7 @@ class ClipService extends EventEmitter {
    * @param {string} [clip.title]
    * @param {string} [clip.markdown] 扩展已转换好的 Markdown（kind 为 article/selection 时）
    * @param {string} [clip.html] 或者传正文 HTML，由这里转换
-   * @param {object} [clip.target] { category, tags }
+   * @param {object} [clip.target] { tags }（旧版扩展还会带 category，已忽略：用标签归类）
    * @param {object} [options] { aiSummary, aiTags, createTodo, allowDuplicate, source }
    */
   async saveClip(clip = {}, rawOptions = {}) {
@@ -304,16 +296,16 @@ class ClipService extends EventEmitter {
     if (kind === 'bookmark' && /^https?:/.test(cover)) cover = (await this.downloadImage(cover)) || cover;
 
     const title = String(clip.title || '').trim().slice(0, 200) || urlKey;
-    const fallbackCategory = defaults.defaultCategory || DEFAULT_CATEGORY;
-    const category = this.ensureCategory(String(clip.target?.category || fallbackCategory).trim() || fallbackCategory);
-    const tags = Array.isArray(clip.target?.tags) ? clip.target.tags.map((tag) => String(tag).trim()).filter(Boolean).slice(0, 10) : [];
+    // 标签 = 设置里的默认标签 + 这次剪藏指定的标签
+    const defaultTags = Array.isArray(defaults.defaultTags) ? defaults.defaultTags : DEFAULT_TAGS;
+    const pickedTags = Array.isArray(clip.target?.tags) ? clip.target.tags : String(clip.target?.tags || '').split(/[,，]/);
+    const tags = [...new Set([...defaultTags, ...pickedTags].map((tag) => String(tag).trim().replace(/^#/, '')).filter(Boolean))].slice(0, 10);
     const content = this.buildContent({ kind, url: clip.url, title, siteName: clip.siteName, byline: clip.byline, excerpt: clip.excerpt, cover, markdown });
 
     const result = await this.noteService.createNote({
       title,
       content,
       tags,
-      category,
       note_type: 'markdown',
       meta: {
         source: {
@@ -346,7 +338,7 @@ class ClipService extends EventEmitter {
         .catch((error) => console.warn('[Clip] AI 处理失败:', error.message));
     }
 
-    return { noteId: note.id, syncId: note.sync_id, title: note.title, category, images: imageStats };
+    return { noteId: note.id, syncId: note.sync_id, title: note.title, tags, images: imageStats };
   }
 
   async clipUrl(url, options = {}) {
@@ -431,6 +423,6 @@ class ClipService extends EventEmitter {
 }
 
 ClipService.ClipError = ClipError;
-ClipService.DEFAULT_CATEGORY = DEFAULT_CATEGORY;
+ClipService.DEFAULT_TAGS = DEFAULT_TAGS;
 
 module.exports = ClipService;

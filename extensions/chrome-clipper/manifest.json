@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Flota 网页剪藏",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "把网页全文、选中内容或书签一键剪藏到本机的 Flota 笔记。",
   "minimum_chrome_version": "110",
   "permissions": ["activeTab", "scripting", "storage", "contextMenus", "notifications"],

@@ -23,3 +23,13 @@ header { display: flex; align-items: center; gap: 8px; font-weight: 650; font-si
 .message { margin: 10px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--soft); }
 .message.error { color: #ef4444; }
 .message.success { color: #16a34a; }
+.tag-box { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 5px 6px; cursor: text; }
+.tag-box:focus-within { border-color: var(--primary); }
+#tag-chips { display: contents; }
+#tag-input { flex: 1; min-width: 80px; border: 0; outline: none; background: transparent; color: var(--text); font: inherit; padding: 2px; }
+.chip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px 1px 8px; border-radius: 6px; background: rgba(57,120,246,.1); color: var(--primary); font-size: 12px; }
+.chip button { border: 0; background: none; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; padding: 0 3px; opacity: .7; }
+.chip button:hover { opacity: 1; }
+.tag-suggest { display: flex; flex-wrap: wrap; gap: 4px; }
+.tag-suggest button { border: 1px solid var(--border); background: none; color: var(--muted); border-radius: 6px; padding: 1px 7px; font: inherit; font-size: 12px; cursor: pointer; }
+.tag-suggest button:hover { color: var(--primary); border-color: var(--primary); }
