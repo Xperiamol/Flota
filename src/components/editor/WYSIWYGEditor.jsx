@@ -155,15 +155,36 @@ const CustomUnderline = Underline.extend({
 })
 
 // 编辑区内 Tab 必须属于笔记内容，不能把焦点交给浏览器的下一个按钮。
-// 与源码模式保持一致，插入两个空格；表格中仍保留 TipTap 自带的单元格导航。
+// 列表 / 任务列表里 Tab、Shift+Tab 缩进和退回一级；其他位置与源码模式一致插入两个空格；
+// 表格中仍保留 TipTap 自带的单元格导航。
+const activeListItemType = (editor) => {
+  if (editor.isActive('taskItem')) return 'taskItem'
+  if (editor.isActive('listItem')) return 'listItem'
+  return null
+}
+
 const EditorTabIndent = Extension.create({
   name: 'editorTabIndent',
   priority: 1100,
   addKeyboardShortcuts() {
     return {
       Tab: () => {
-        if (this.editor.isActive('table')) return false
-        return this.editor.commands.insertContent('  ')
+        const editor = this.editor
+        if (editor.isActive('table')) return false
+        const listItem = activeListItemType(editor)
+        // 第一项等无法再缩进时也吞掉 Tab，焦点留在编辑器里
+        if (listItem) return editor.commands.sinkListItem(listItem) || true
+        // 直接插入文本：insertContent 会把字符串当 HTML 解析，纯空白可能被丢掉，按了没反应
+        const { state, view } = editor
+        view.dispatch(state.tr.insertText('  ').scrollIntoView())
+        return true
+      },
+      'Shift-Tab': () => {
+        const editor = this.editor
+        if (editor.isActive('table')) return false
+        const listItem = activeListItemType(editor)
+        if (listItem) return editor.commands.liftListItem(listItem) || true
+        return true
       },
     }
   },

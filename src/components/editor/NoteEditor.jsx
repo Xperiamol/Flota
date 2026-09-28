@@ -1515,8 +1515,9 @@ const NoteEditor = ({ onCollapseSidebar }) => {
 
   // 处理键盘事件
   const handleKeyDown = (e) => {
-    // 只在Markdown模式下处理特殊键盘事件
-    if (editorMode === 'markdown') {
+    // 只在Markdown模式下、且只对正文文本框处理特殊键盘事件。
+    // 标题输入框也挂了这个处理函数：不能在标题里吞掉 Tab（应跳到正文），也不能把 Ctrl+B 插进正文。
+    if (editorMode === 'markdown' && e.target?.tagName === 'TEXTAREA') {
       // 处理退格键和删除键 - 整块删除图片
       if (e.key === 'Backspace' || e.key === 'Delete') {
         const textarea = e.target
