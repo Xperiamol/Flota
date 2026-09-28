@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Box, Button, Chip, CircularProgress, Paper, Typography, alpha, useTheme } from '@mui/material'
 import { useStore } from '../../store/useStore'
 import WidgetHost from '../widgets/WidgetHost'
@@ -7,6 +7,8 @@ import { useWidgetActionProgress } from '../../utils/widgets/widgetActionProgres
 import { insertInstanceIntoNote } from '../../utils/widgets/widgetActions'
 import { askAI } from '../../utils/widgets/askAI'
 import { notifyError, notifySuccess } from '../../utils/notify'
+import { useActionSteps } from '../../utils/aiCore/actionProgress'
+import { ThinkingDots, TypewriterText, pickThinkingPhrase } from './thinking'
 
 // AI 待确认动作卡（AI 功能页与「问 AI」小窗共用）。
 //
@@ -187,10 +189,110 @@ const ActionButtons = ({ action, status, compact, confirmLabel = '确认', confi
 }
 
 // ─── 单个动作卡 ───
+// ─── 执行中：有步骤进度时显示真实进度，没有时轮换提示语（与 AI 页面的思考动画一致） ───
+
+const RUNNING_COPY = {
+  write_long_document: { verb: '正在写作' },
+  create_whiteboard: { verb: '正在画画布' },
+  update_whiteboard: { verb: '正在修改画布' },
+  create_note: { verb: '正在写笔记' },
+  edit_note: { verb: '正在修改笔记' },
+  create_todo: { verb: '正在创建待办' },
+  add_memory: { verb: '正在记住' },
+  update_memory: { verb: '正在更新记忆' },
+}
+const DEFAULT_RUNNING_COPY = { verb: '正在执行' }
+
+const formatElapsed = (seconds) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+
+const RunningActionCard = ({ action, compact }) => {
+  const theme = useTheme()
+  const copy = RUNNING_COPY[action.name] || DEFAULT_RUNNING_COPY
+  const steps = useActionSteps((state) => state.byAction[action.actionId]) || []
+  // 提示语与 AI 页面「思考中」同一张有趣的英文短语表（Accomplishing、Enchanting……）
+  const [phrase, setPhrase] = useState(() => pickThinkingPhrase())
+  const [elapsed, setElapsed] = useState(0)
+  useEffect(() => {
+    const started = Date.now()
+    const tick = window.setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000)
+    const rotate = window.setInterval(() => setPhrase(pickThinkingPhrase()), 3200)
+    return () => { window.clearInterval(tick); window.clearInterval(rotate) }
+  }, [])
+
+  // 长文写作的步骤：规划 → 第 N 章 → 归并；用章节完成数算进度
+  const root = steps.find((step) => step.stepType === 'root')
+  const sections = steps.filter((step) => step.stepType === 'section')
+  const total = root?.meta?.total || 0
+  const doneSections = sections.filter((step) => step.status === 'done').length
+  const current = [...steps].reverse().find((step) => step.status === 'running' && step.stepType !== 'root')
+  const words = current?.meta?.words
+  const progress = total > 0 ? Math.min(100, Math.round((doneSections / total) * 100)) : null
+  const currentLabel = current
+    ? `${current.title}${words ? ` · ${words.toLocaleString()} 字` : ''}`
+    : null
+
+  const primary = theme.palette.primary.main
+  const dark = theme.palette.mode === 'dark'
+  return (
+    <Paper elevation={0} aria-live="polite" sx={{
+      mt: 0.75, px: compact ? 1.25 : 1.5, py: compact ? 1 : 1.25, maxWidth: compact ? undefined : 480,
+      borderRadius: compact ? '12px' : '14px', position: 'relative', overflow: 'hidden',
+      border: `1px solid ${alpha(primary, dark ? 0.3 : 0.2)}`,
+      bgcolor: alpha(primary, dark ? 0.1 : 0.05),
+    }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+        <Typography sx={{ flex: 1, fontSize: 12, fontWeight: 700, color: 'primary.main' }}>{copy.verb}</Typography>
+        <Typography sx={{ fontSize: 11.5, color: 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>{formatElapsed(elapsed)}</Typography>
+      </Box>
+      <Typography sx={{ mt: 0.5, fontSize: compact ? 13 : 13.5, fontWeight: 650, lineHeight: 1.45, wordBreak: 'break-word' }}>
+        {getDetail(action)}
+      </Typography>
+
+      {/* 进度条：有章节数时是真实进度，否则是来回流动的不定进度 */}
+      <Box sx={{ mt: 1, height: 4, borderRadius: 99, overflow: 'hidden', position: 'relative', bgcolor: alpha(primary, dark ? 0.18 : 0.12) }}>
+        {progress != null ? (
+          <Box sx={{
+            height: '100%', width: `${Math.max(progress, 4)}%`, borderRadius: 99, position: 'relative', overflow: 'hidden',
+            bgcolor: 'primary.main', transition: 'width 600ms cubic-bezier(0.22, 1, 0.36, 1)',
+            '&::after': {
+              content: '""', position: 'absolute', inset: 0,
+              background: `linear-gradient(90deg, transparent, ${alpha('#fff', 0.45)}, transparent)`,
+              animation: 'flotaActionShimmer 1.6s ease-in-out infinite',
+            },
+          }} />
+        ) : (
+          <Box sx={{
+            position: 'absolute', top: 0, bottom: 0, width: '36%', borderRadius: 99,
+            background: `linear-gradient(90deg, ${alpha(primary, 0)}, ${primary}, ${alpha(primary, 0)})`,
+            animation: 'flotaActionSweep 1.6s ease-in-out infinite',
+          }} />
+        )}
+        <Box sx={{
+          '@keyframes flotaActionShimmer': { from: { transform: 'translateX(-100%)' }, to: { transform: 'translateX(100%)' } },
+          '@keyframes flotaActionSweep': { from: { left: '-36%' }, to: { left: '100%' } },
+        }} />
+      </Box>
+
+      {/* 进行中的真实步骤（长文写作的当前章节与字数） */}
+      {currentLabel && (
+        <Typography sx={{ mt: 0.75, fontSize: 12, color: 'text.secondary' }} noWrap>{currentLabel}</Typography>
+      )}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: currentLabel ? 0.25 : 0.75, minHeight: 18, color: 'primary.main' }}>
+        <ThinkingDots dotSize={3.5} />
+        <Box sx={{ flex: 1, minWidth: 0 }}><TypewriterText text={phrase} /></Box>
+        {total > 0 && (
+          <Typography sx={{ fontSize: 11.5, color: 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>{doneSections} / {total} 章</Typography>
+        )}
+      </Box>
+    </Paper>
+  )
+}
+
 const SimpleActionCard = ({ action, executing, onExecute, onDismiss, compact }) => {
   const theme = useTheme()
   const status = getStatus(action, executing)
   if (!STATUS_META[status].palette) return <InactiveActionRow action={action} status={status} />
+  if (status === 'running') return <RunningActionCard action={action} compact={compact} />
 
   const paletteKey = STATUS_META[status].palette
   const isFinished = status === 'done' || status === 'failed'

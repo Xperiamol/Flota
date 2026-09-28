@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Avatar,
   Box,
+  ButtonBase,
   Chip,
   IconButton,
   Paper,
+  Popover,
   TextField,
   Typography,
   alpha
@@ -23,7 +25,13 @@ import {
   MenuBook as ReadIcon,
   Edit as EditIcon,
   Psychology as MemoryIcon,
-  CalendarToday as CalendarIcon
+  CalendarToday as CalendarIcon,
+  KeyboardArrowDownRounded as ArrowDownIcon,
+  HistoryRounded as HistoryIcon,
+  ContentCopyRounded as CopyIcon,
+  RefreshRounded as RetryIcon,
+  CheckRounded as CopiedIcon,
+  OpenInFullRounded as OpenFullIcon
 } from '../common/AppIcons'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -48,6 +56,7 @@ import usePendingActionExecution from '../../hooks/usePendingActionExecution'
 import logger from '../../utils/logger'
 import { notifyAINoteIdsUpdated } from '../../utils/aiCore/noteRefresh'
 import PanelIconButton from '../common/PanelIconButton'
+import { ThinkingDots, TypewriterText, pickThinkingPhrase } from './thinking'
 
 const QUICK_PROMPTS = [
   { id: 'summarize', label: '总结当前笔记', prompt: '请总结当前笔记，输出：核心要点、关键结论。' },
@@ -199,6 +208,8 @@ const AICommandCenter = ({
     aiUpdateConv,
     aiCommandRequest,
     aiClearCommandRequest,
+    aiSwitchConv,
+    setCurrentView,
     createNote,
     deleteNote,
     updateNote: storeUpdateNote,
@@ -217,6 +228,8 @@ const AICommandCenter = ({
     aiUpdateConv: state.aiUpdateConv,
     aiCommandRequest: state.aiCommandRequest,
     aiClearCommandRequest: state.aiClearCommandRequest,
+    aiSwitchConv: state.aiSwitchConv,
+    setCurrentView: state.setCurrentView,
     createNote: state.createNote,
     deleteNote: state.deleteNote,
     updateNote: state.updateNote,
@@ -431,14 +444,46 @@ const AICommandCenter = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
+  // 是否停在底部：上滑查看历史时不自动跟随，改为在右下角显示「回到底部」按钮
+  const [atBottom, setAtBottom] = useState(true)
+  const [hasNewBelow, setHasNewBelow] = useState(false)
+  const atBottomRef = useRef(true)
+  const handleMessagesScroll = useCallback(() => {
+    const node = scrollRef.current
+    if (!node) return
+    const near = node.scrollHeight - node.scrollTop - node.clientHeight <= 80
+    if (near !== atBottomRef.current) {
+      atBottomRef.current = near
+      setAtBottom(near)
+    }
+    if (near) setHasNewBelow(false)
+  }, [])
+  const scrollToBottom = useCallback((behavior = 'auto') => {
+    const node = scrollRef.current
+    if (!node) return
+    node.scrollTo({ top: node.scrollHeight, behavior })
+    atBottomRef.current = true
+    setAtBottom(true)
+    setHasNewBelow(false)
+  }, [])
+
   useEffect(() => {
     if (!open) return
     const node = scrollRef.current
     if (!node) return
-    // 只在用户已经接近底部时才自动跟随，避免强行把上滑查看的用户拽回底部
-    const distance = node.scrollHeight - node.scrollTop - node.clientHeight
-    if (distance <= 80) node.scrollTop = node.scrollHeight
+    if (atBottomRef.current) {
+      node.scrollTop = node.scrollHeight
+    } else if (messages.length || streamContent) {
+      setHasNewBelow(true)
+    }
   }, [messages, streamContent, open])
+
+  // 切换对话或重新打开小窗：直接看到最新一条
+  useEffect(() => {
+    if (!open) return undefined
+    const frame = window.requestAnimationFrame(() => scrollToBottom())
+    return () => window.cancelAnimationFrame(frame)
+  }, [currentConversationId, open, scrollToBottom])
 
   const handleCancel = useCallback(() => {
     if (loading) cancel()
@@ -506,6 +551,8 @@ const AICommandCenter = ({
     setMessages(nextMessages)
     setInput('')
     setStreamContent('')
+    // 自己发出的消息总要看得到：回到底部并恢复自动跟随
+    window.requestAnimationFrame(() => scrollToBottom())
     setThinkingPhrase(pickThinkingPhrase())
     setLoading(true)
     persistConversation(conversationId, nextMessages)
@@ -620,7 +667,28 @@ const AICommandCenter = ({
       setLoading(false)
       if (isActiveView()) window.setTimeout(() => inputRef.current?.focus(), 30)
     }
-  }, [aiEnsureNoteChat, aiNewChat, aiSetActiveConv, clearActiveTool, currentConversationId, currentNote, handleExecuteAction, input, loadNotes, loading, noteScope, notes, persistConversation, runStream, selectedNoteId, showActiveTool])
+  }, [aiEnsureNoteChat, aiNewChat, aiSetActiveConv, clearActiveTool, currentConversationId, currentNote, handleExecuteAction, input, loadNotes, loading, noteScope, notes, persistConversation, runStream, scrollToBottom, selectedNoteId, showActiveTool])
+
+  // 重新生成最后一条回复：去掉最后一轮的回复，用同一个问题再问一次
+  const handleRetry = useCallback(() => {
+    if (loading) return
+    const list = messagesRef.current || []
+    let lastUserIndex = -1
+    for (let i = list.length - 1; i >= 0; i -= 1) {
+      if (list[i].role === 'user') { lastUserIndex = i; break }
+    }
+    if (lastUserIndex < 0) return
+    const lastUser = list[lastUserIndex]
+    const text = Array.isArray(lastUser.content)
+      ? lastUser.content.filter((part) => part?.type === 'text').map((part) => part.text || '').join('\n')
+      : String(lastUser.content || '')
+    if (!text.trim()) return
+    const trimmed = list.slice(0, lastUserIndex)
+    messagesRef.current = trimmed
+    setMessages(trimmed)
+    if (currentConversationId) persistConversation(currentConversationId, trimmed)
+    handleSend(text)
+  }, [currentConversationId, handleSend, loading, persistConversation])
 
   useEffect(() => {
     if (!open || !aiCommandRequest?.prompt) return
@@ -639,8 +707,22 @@ const AICommandCenter = ({
   }, [aiClearCommandRequest, aiCommandRequest, handleSend, loading, open])
 
   const handleKeyDown = (event) => {
+    // 输入法组字时的回车是确认候选词，不能当成发送
+    if (event.nativeEvent?.isComposing || event.keyCode === 229) return
     if (event.key === 'Escape') {
       event.currentTarget.blur()
+      return
+    }
+    // 输入框为空时按 ↑ 取回上一条自己发的内容，方便改一改再问
+    if (event.key === 'ArrowUp' && !input) {
+      const lastUser = [...messages].reverse().find((message) => message.role === 'user')
+      const text = Array.isArray(lastUser?.content)
+        ? lastUser.content.filter((part) => part?.type === 'text').map((part) => part.text || '').join('\n')
+        : lastUser?.content
+      if (text) {
+        event.preventDefault()
+        setInput(String(text))
+      }
       return
     }
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -648,6 +730,22 @@ const AICommandCenter = ({
       handleSend()
     }
   }
+
+  // 历史对话：只列当前范围（当前笔记的对话，或没选笔记时的通用对话）
+  const [historyAnchor, setHistoryAnchor] = useState(null)
+  const scopedConversations = useMemo(() => aiConversations
+    .filter((conversation) => (selectedNoteId == null
+      ? conversation.noteId == null
+      : String(conversation.noteId) === String(selectedNoteId)))
+    .filter((conversation) => conversation.messages?.length > 0 || conversation.id === currentConversationId)
+    .slice()
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+    .slice(0, 30), [aiConversations, currentConversationId, selectedNoteId])
+  const lastAssistantIndex = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) if (messages[i].role === 'assistant') return i
+    return -1
+  }, [messages])
+  const longConversation = messages.length >= 24
 
   const showQuickPrompts = messages.length === 0 && !loading && !streamContent
   const compactEmptyState = panelSize.height < 430
@@ -716,7 +814,10 @@ const AICommandCenter = ({
           />
         )}
         <Box sx={{ flex: 1 }} />
-        <PanelIconButton title="新建对话" onClick={handleNewChat} disabled={loading} sx={{ mr: 0.25 }}>
+        <PanelIconButton title="历史对话" onClick={(event) => setHistoryAnchor(event.currentTarget)} disabled={loading} sx={{ mr: 0.25 }}>
+          <HistoryIcon />
+        </PanelIconButton>
+        <PanelIconButton title="新建对话" onClick={handleNewChat} disabled={loading || messages.length === 0} sx={{ mr: 0.25 }}>
           <AddIcon />
         </PanelIconButton>
         <PanelIconButton title="关闭" onClick={onClose}>
@@ -724,8 +825,10 @@ const AICommandCenter = ({
         </PanelIconButton>
       </Box>
 
+      <Box sx={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <Box
         ref={scrollRef}
+        onScroll={handleMessagesScroll}
         sx={(theme) => ({
           flex: 1,
           minHeight: 0,
@@ -816,6 +919,9 @@ const AICommandCenter = ({
             executingActionIds={executingActionIds}
             onExecuteAction={handleExecuteAction}
             onDismissAction={handleDismissAction}
+            isLastAssistant={index === lastAssistantIndex && !loading}
+            onRetry={handleRetry}
+            onContinue={() => handleSend('继续')}
           />
         ))}
 
@@ -852,8 +958,57 @@ const AICommandCenter = ({
         )}
       </Box>
 
+        {/* 回到底部：上滑查看历史、下面又有新内容时出现；毛玻璃圆钮 */}
+        <ButtonBase
+          aria-label={hasNewBelow ? '有新内容，回到底部' : '回到底部'}
+          onClick={() => scrollToBottom('smooth')}
+          tabIndex={atBottom ? -1 : 0}
+          sx={(theme) => {
+            const dark = theme.palette.mode === 'dark'
+            return {
+              position: 'absolute',
+              right: 12,
+              bottom: 10,
+              zIndex: 3,
+              width: 32,
+              height: 32,
+              borderRadius: '50%',
+              color: 'text.primary',
+              backgroundColor: dark ? 'rgba(44,44,50,0.55)' : 'rgba(255,255,255,0.6)',
+              backgroundImage: dark
+                ? 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0))'
+                : 'linear-gradient(180deg, rgba(255,255,255,0.75), rgba(255,255,255,0.15))',
+              backdropFilter: 'blur(16px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+              border: `1px solid ${dark ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.8)'}`,
+              boxShadow: dark
+                ? '0 6px 18px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1)'
+                : '0 6px 18px rgba(22,22,24,0.12), inset 0 1px 0 rgba(255,255,255,0.9)',
+              opacity: atBottom ? 0 : 1,
+              transform: atBottom ? 'translateY(6px) scale(0.9)' : 'translateY(0) scale(1)',
+              pointerEvents: atBottom ? 'none' : 'auto',
+              transition: 'opacity 180ms ease, transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), background-color 150ms ease',
+              '&:hover': { backgroundColor: dark ? 'rgba(60,60,68,0.7)' : 'rgba(255,255,255,0.85)' },
+            }
+          }}
+        >
+          <ArrowDownIcon sx={{ fontSize: 20 }} />
+          {hasNewBelow && (
+            <Box sx={{ position: 'absolute', top: 2, right: 2, width: 8, height: 8, borderRadius: '50%', bgcolor: 'primary.main', boxShadow: (theme) => `0 0 0 2px ${theme.palette.background.paper}` }} />
+          )}
+        </ButtonBase>
+      </Box>
+
+      {/* 对话很长时提示开新对话：上下文越长，回答越慢、越容易跑题 */}
+      {longConversation && !loading && (
+        <Box sx={{ mx: 1.5, mt: 0.75, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography sx={{ flex: 1, fontSize: 11.5, color: 'text.secondary' }}>对话已经很长了，换个话题时新建对话，回答会更快更准</Typography>
+          <ButtonBase onClick={handleNewChat} sx={{ fontSize: 12, fontWeight: 600, color: 'primary.main', borderRadius: 1, px: 0.5 }}>新建对话</ButtonBase>
+        </Box>
+      )}
+
       {/* 输入区：一个圆角输入框，发送按钮放在框内右下角 */}
-      <Box sx={{ px: 1.25, pt: 0.5, pb: 1.25 }}>
+      <Box sx={{ px: 1.25, pt: 0.75, pb: 1.25 }}>
       <Box sx={(theme) => {
         const dark = theme.palette.mode === 'dark'
         return {
@@ -930,6 +1085,50 @@ const AICommandCenter = ({
       </Box>
       </Box>
 
+      <Popover
+        open={Boolean(historyAnchor)}
+        anchorEl={historyAnchor}
+        onClose={() => setHistoryAnchor(null)}
+        container={portalContainer || undefined}
+        // AI 小窗本身在 1340 层，弹出的历史列表要在它上面
+        sx={{ zIndex: 1400 }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        slotProps={{ paper: { sx: { mt: 0.5, width: 280, maxHeight: 360, p: 0.75, borderRadius: '12px', display: 'flex', flexDirection: 'column' } } }}
+      >
+        <Typography sx={{ px: 1, pt: 0.5, pb: 0.75, fontSize: 12, fontWeight: 600, color: 'text.secondary' }}>
+          {currentNote ? `「${truncateText(currentNote.title || '未命名', 14)}」的对话` : '最近的对话'}
+        </Typography>
+        <Box sx={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
+          {scopedConversations.length === 0 && (
+            <Typography sx={{ px: 1, py: 1.5, fontSize: 13, color: 'text.secondary' }}>还没有历史对话</Typography>
+          )}
+          {scopedConversations.map((conversation) => {
+            const active = conversation.id === currentConversationId
+            return (
+              <ButtonBase key={conversation.id}
+                onClick={() => { setHistoryAnchor(null); if (!active) aiSwitchConv(conversation.id) }}
+                sx={(theme) => ({
+                  width: '100%', justifyContent: 'flex-start', gap: 1, px: 1, py: 0.75, borderRadius: '8px', textAlign: 'left',
+                  bgcolor: active ? alpha(theme.palette.primary.main, 0.1) : 'transparent',
+                  '&:hover': { bgcolor: active ? alpha(theme.palette.primary.main, 0.14) : 'action.hover' },
+                })}>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography noWrap sx={{ fontSize: 13, fontWeight: active ? 600 : 500 }}>{conversation.title || '新对话'}</Typography>
+                  <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>
+                    {formatConversationTime(conversation.updatedAt)} · {conversation.messages?.length || 0} 条消息
+                  </Typography>
+                </Box>
+              </ButtonBase>
+            )
+          })}
+        </Box>
+        <ButtonBase onClick={() => { setHistoryAnchor(null); onClose?.(); setCurrentView('ai') }}
+          sx={(theme) => ({ mt: 0.5, pt: 0.75, pb: 0.25, gap: 0.5, fontSize: 12.5, color: 'primary.main', borderTop: `1px solid ${theme.palette.divider}`, borderRadius: 0 })}>
+          <OpenFullIcon sx={{ fontSize: 14 }} />在 AI 页面查看全部对话
+        </ButtonBase>
+      </Popover>
+
       <Box
         role="separator"
         aria-label="拖拽调整 AI 小窗大小"
@@ -966,9 +1165,45 @@ const AICommandCenter = ({
   )
 }
 
-const ChatBubble = ({ msg, userAvatar, executingActionIds, onExecuteAction, onDismissAction }) => {
+const formatConversationTime = (value) => {
+  if (!value) return ''
+  const date = new Date(value)
+  const now = new Date()
+  if (date.toDateString() === now.toDateString()) return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+  if (date.toDateString() === yesterday.toDateString()) return '昨天'
+  return `${date.getMonth() + 1}/${date.getDate()}`
+}
+
+const messageText = (content) => (Array.isArray(content)
+  ? content.filter((part) => part?.type === 'text').map((part) => part.text || '').join('\n')
+  : String(content || ''))
+
+// 回复被截断 / 手动停止时，给一个「继续」的快捷入口
+const looksUnfinished = (msg) => msg.stopped || /回复达到.*(上限|限制)/.test(messageText(msg.content))
+const looksFailed = (msg) => /^❌/.test(messageText(msg.content).trim())
+
+// 与小窗标题栏的新建 / 关闭按钮同一个组件：圆角方形，涟漪裁切在按钮内
+const MessageAction = ({ title, onClick, children }) => (
+  <PanelIconButton title={title} size="sm" onClick={onClick} stopDrag={false}>
+    {children}
+  </PanelIconButton>
+)
+
+const ChatBubble = ({ msg, userAvatar, executingActionIds, onExecuteAction, onDismissAction, isLastAssistant, onRetry, onContinue }) => {
   const isUser = msg.role === 'user'
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(messageText(msg.content))
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1400)
+    } catch (_) {
+      // 剪贴板不可用时忽略
+    }
+  }
   return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', '&:hover .aicc-msg-actions': { opacity: 1 } }}>
     <Box sx={{
       display: 'flex',
       gap: 1,
@@ -985,7 +1220,12 @@ const ChatBubble = ({ msg, userAvatar, executingActionIds, onExecuteAction, onDi
           color: isUser ? theme.palette.text.primary : theme.palette.primary.main
         })}
       >
-        {isUser ? (userAvatar ? null : '我') : <FlotaAIIcon sx={{ fontSize: 16 }} />}
+        {isUser
+          ? (userAvatar ? null : '我')
+          // 确认后的动作还在执行：头像显示与「思考中」相同的跳动点
+          : getMessagePendingActions(msg).some((action) => executingActionIds.has(action.actionId))
+            ? <LoadingAvatarContent />
+            : <FlotaAIIcon sx={{ fontSize: 16 }} />}
       </Avatar>
       <Paper elevation={0} sx={(theme) => ({
         maxWidth: 'calc(100% - 36px)',
@@ -1003,7 +1243,8 @@ const ChatBubble = ({ msg, userAvatar, executingActionIds, onExecuteAction, onDi
         fontSize: 13,
         lineHeight: 1.65,
         wordBreak: 'break-word',
-        whiteSpace: 'pre-wrap',
+        // 只有用户原文需要保留换行；AI 回复是 Markdown，pre-wrap 会把列表项之间的换行渲染成大段空白
+        whiteSpace: isUser ? 'pre-wrap' : 'normal',
         userSelect: 'text'
       })}>
         {(() => {
@@ -1041,48 +1282,32 @@ const ChatBubble = ({ msg, userAvatar, executingActionIds, onExecuteAction, onDi
           )
         })()}
       </Paper>
+      {/* 消息操作：悬停出现；最后一条回复常驻「重新生成」，被截断时给「继续」 */}
+      </Box>
+      {!isUser && (
+      <Box className="aicc-msg-actions" sx={{
+        display: 'flex', alignItems: 'center', gap: 0.25, mt: 0.25,
+        // 与气泡对齐：让出头像的宽度
+        justifyContent: isUser ? 'flex-end' : 'flex-start', pl: isUser ? 0 : '32px', pr: isUser ? '32px' : 0,
+        opacity: isLastAssistant ? 1 : 0, transition: 'opacity 140ms ease',
+        '&:focus-within': { opacity: 1 },
+      }}>
+        <MessageAction title={copied ? '已复制' : '复制'} onClick={copy}>{copied ? <CopiedIcon /> : <CopyIcon />}</MessageAction>
+        {!isUser && isLastAssistant && <MessageAction title="重新生成" onClick={onRetry}><RetryIcon /></MessageAction>}
+        {!isUser && isLastAssistant && looksUnfinished(msg) && (
+          <ButtonBase onClick={onContinue} sx={(theme) => ({ ml: 0.5, height: 22, px: 1, borderRadius: '7px', fontSize: 12, fontWeight: 600, color: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.1) })}>
+            继续
+          </ButtonBase>
+        )}
+        {!isUser && isLastAssistant && looksFailed(msg) && (
+          <ButtonBase onClick={onRetry} sx={(theme) => ({ ml: 0.5, height: 22, px: 1, borderRadius: '7px', fontSize: 12, fontWeight: 600, color: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.1) })}>
+            重试
+          </ButtonBase>
+        )}
+      </Box>
+      )}
     </Box>
   )
-}
-
-const THINKING_PHRASES = [
-  'Absorbing', 'Aggregating', 'Aligning', 'Analyzing', 'Assembling',
-  'Baking', 'Blending', 'Brewing', 'Building', 'Bundling',
-  'Calculating', 'Churning', 'Clustering', 'Coalescing', 'Composing',
-  'Compressing', 'Computing', 'Crunching', 'Smooshing',
-  'Decoding', 'Decomposing', 'Diagnosing', 'Digesting',
-  'Encoding', 'Evaluating', 'Exploring', 'Extracting',
-  'Filtering', 'Formatting', 'Formulating',
-  'Generating', 'Gathering', 'Grokking',
-  'Hashing', 'Harvesting',
-  'Indexing', 'Inferring', 'Initializing', 'Integrating', 'Iterating',
-  'Joining', 'Judging',
-  'Loading', 'Linking', 'Layering',
-  'Mapping', 'Matching', 'Merging', 'Mining', 'Modelling',
-  'Normalizing', 'Narrowing',
-  'Optimizing', 'Organizing',
-  'Parsing', 'Processing', 'Polishing', 'Programming', 'Projecting',
-  'Quantizing', 'Querying', 'Queueing',
-  'Rendering', 'Refactoring', 'Retrieving', 'Routing',
-  'Sampling', 'Scraping', 'Searching', 'Sorting', 'Synthesizing', 'Solving',
-  'Translating', 'Traversing', 'Tracing', 'Trimming',
-  'Updating', 'Unifying',
-  'Validating', 'Vectorizing', 'Verifying',
-  'Weaving', 'Wrangling',
-]
-
-const recentThinkingPhrases = []
-const RECENT_PHRASE_MEMORY = 8
-const pickThinkingPhrase = () => {
-  if (THINKING_PHRASES.length <= 1) return THINKING_PHRASES[0] || ''
-  const memory = Math.min(RECENT_PHRASE_MEMORY, THINKING_PHRASES.length - 1)
-  let next
-  do {
-    next = THINKING_PHRASES[Math.floor(Math.random() * THINKING_PHRASES.length)]
-  } while (recentThinkingPhrases.includes(next))
-  recentThinkingPhrases.push(next)
-  while (recentThinkingPhrases.length > memory) recentThinkingPhrases.shift()
-  return next
 }
 
 const TOOL_AVATAR_ICON = {
@@ -1105,68 +1330,6 @@ const TOOL_AVATAR_ICON = {
   update_memory: MemoryIcon,
   list_memories: MemoryIcon,
 }
-
-// 切换短语时直接换内容并伴随淡入动画，避免中间整段透明导致的"空白"
-const TypewriterText = ({ text }) => {
-  const [display, setDisplay] = useState(text || '')
-  const [animKey, setAnimKey] = useState(0)
-  useEffect(() => {
-    const next = text || ''
-    if (next === display) return
-    setDisplay(next)
-    setAnimKey((k) => k + 1)
-  }, [text, display])
-  return (
-    <Typography
-      key={animKey}
-      component="span"
-      variant="caption"
-      sx={(theme) => ({
-        fontSize: 12,
-        lineHeight: 1.4,
-        color: alpha(theme.palette.text.primary, 0.7),
-        animation: 'aicc-phrase-fade 280ms ease',
-        '@keyframes aicc-phrase-fade': {
-          '0%': { opacity: 0, transform: 'translateY(2px)' },
-          '100%': { opacity: 1, transform: 'translateY(0)' }
-        }
-      })}
-    >
-      {display}
-      <Box component="span" sx={{ opacity: 0.5, ml: 0.25 }}>…</Box>
-    </Typography>
-  )
-}
-
-const ThinkingDots = ({ dotSize = 4, gap = 3 }) => (
-  <Box
-    sx={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: `${gap}px`,
-      '@keyframes aicc-thinking-dot': {
-        '0%, 80%, 100%': { opacity: 0.35, transform: 'translateY(0) scale(0.92)' },
-        '40%': { opacity: 1, transform: 'translateY(-1.5px) scale(1)' }
-      }
-    }}
-  >
-    {[0, 1, 2].map((i) => (
-      <Box
-        key={i}
-        component="span"
-        sx={{
-          width: dotSize,
-          height: dotSize,
-          borderRadius: '50%',
-          bgcolor: 'currentColor',
-          animation: 'aicc-thinking-dot 1.2s ease-in-out infinite',
-          animationDelay: `${i * 0.16}s`
-        }}
-      />
-    ))}
-  </Box>
-)
 
 // 头像内容根据 activeTool 在「三点动画」与「对应工具图标」之间淡入切换
 const LoadingAvatarContent = ({ activeTool }) => {

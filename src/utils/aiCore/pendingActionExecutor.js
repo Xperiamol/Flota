@@ -17,6 +17,7 @@ import {
 
 import { runWidgetGeneration } from '../widgets/widgetGeneration'
 import { useWidgetActionProgress } from '../widgets/widgetActionProgress'
+import { ensureActionProgressSubscription, useActionSteps } from './actionProgress'
 
 const WHITEBOARD_ACTIONS = new Set(['create_whiteboard', 'update_whiteboard'])
 // 组件生成 / 修改：在渲染层执行（生成 → 沙箱预跑 → 自动修复 → 保存），进度显示在确认卡片里
@@ -132,12 +133,16 @@ export const runPendingAction = async ({ action, overrides = null, deps = {} }) 
     return { success: false, error: '待确认操作无效', finalAction: action, message: '', reloadNotes: false, reloadTodos: false }
   }
 
+  // 长文写作等耗时动作：执行期间接收主进程推来的步骤进度，卡片上实时显示
+  ensureActionProgressSubscription()
   try {
     const result = WHITEBOARD_ACTIONS.has(action.name)
       ? await executeWhiteboardAction(action, overrides, deps)
       : WIDGET_ACTIONS.has(action.name)
         ? await executeWidgetAction(action)
         : await window.electronAPI?.ai?.executePendingAction?.(action.actionId, overrides, buildFallback(action))
+    // 步骤进度只在执行期间显示，完成后由结果卡片接管
+    useActionSteps.getState().clear(action.actionId)
 
     const finalAction = result?.action || action
     const success = Boolean(result?.success)

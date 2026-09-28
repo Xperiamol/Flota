@@ -187,7 +187,10 @@ class AIChatService {
     return this._pendingActions.take(actionId) || this._rebuildPendingAction(actionId, fallback);
   }
 
-  async executePendingAction(actionId, overrides = null, fallback = null) {
+  /**
+   * @param {object} [runtime] { onChunk }：长文档等耗时动作的步骤进度（规划 / 第 N 章 / 归并）
+   */
+  async executePendingAction(actionId, overrides = null, fallback = null, runtime = {}) {
     const action = this._takePendingAction(actionId, fallback);
     if (!action) return { success: false, error: '待确认操作不存在或已过期' };
 
@@ -199,7 +202,10 @@ class AIChatService {
     const finalAction = finalArgs === action.args ? action : { ...action, args: finalArgs };
 
     try {
-      const result = await this._executeTool(action.name, finalArgs, { requireConfirmation: false });
+      const result = await this._executeTool(action.name, finalArgs, {
+        requireConfirmation: false,
+        onChunk: typeof runtime.onChunk === 'function' ? runtime.onChunk : null,
+      });
       const parsed = safeJsonParse(result);
       const success = !(parsed?.error || parsed?.success === false);
       return {

@@ -13,7 +13,6 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  Alert,
   Slider,
   CircularProgress,
   Link,
@@ -21,15 +20,20 @@ import {
 } from '@mui/material';
 import {
   Check as CheckIcon,
-  ExpandMore as ExpandMoreIcon,
-  Info as InfoIcon
+  ExpandMore as ExpandMoreIcon
 } from '../common/AppIcons';
 import { settingsFieldGroupSx, settingsRowSx, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../../styles/commonStyles';
+import { AgentHero, CapabilityGrid } from './AIAgentShowcase';
+import { useHomeStore } from '../../store/useHomeStore';
+import shortcutManager from '../../utils/ShortcutManager';
+import { formatShortcut } from '../layout/TitleBarAIButton';
 
 const isEnabledSetting = (value) => value === true || value === 'true' || value === 1 || value === '1';
 
 const AISettings = ({ showSnackbar }) => {
   const { t } = useTranslation();
+  const aiBarHidden = useHomeStore((state) => state.aiBarHidden);
+  const aiShortcut = formatShortcut(shortcutManager.shortcuts?.['panels.aiCommandCenter']?.currentKey || 'CmdOrCtrl+K');
   const [config, setConfig] = useState({
     enabled: false,
     provider: 'openai',
@@ -222,57 +226,35 @@ const AISettings = ({ showSnackbar }) => {
     return links[providerId] || null;
   };
 
+  const ready = Boolean(config.enabled && (config.apiKey || (config.provider === 'custom' && config.apiUrl)));
+  const scrollToModel = () => document.getElementById('ai-settings-model')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const disabledSx = { opacity: config.enabled ? 1 : 0.45, transition: 'opacity 160ms ease' };
+
   return (
     <Box>
-      <Box sx={settingsSectionSx}>
-        <Typography variant="h6" sx={sectionTitleSx}>AI 助手</Typography>
-        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
-          管理 AI 功能开关、模型服务和生成参数
-        </Typography>
-        <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2 })}>
-          <ListItemText
-            primary={t('ai.enableAI')}
-            secondary={t('ai.enableAIDesc')}
-            slotProps={{ primary: { sx: { fontWeight: 650 } } }}
-          />
-          <Switch
-            checked={config.enabled}
-            onChange={(e) => handleConfigChange('enabled', e.target.checked)}
-            color="primary"
-          />
-        </Box>
-        <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2, mt: 1, opacity: config.enabled ? 1 : 0.45 })}>
-          <ListItemText
-            primary="自动 AI 标题"
-            secondary="切换笔记时，仅当笔记标题为空（或为「未命名」）时调用 AI 自动生成简洁标题。"
-            slotProps={{ primary: { sx: { fontWeight: 650 } } }}
-          />
-          <Switch
-            checked={isEnabledSetting(config.autoTitleEnabled)}
-            onChange={(e) => handleConfigChange('autoTitleEnabled', e.target.checked)}
-            color="primary"
-            disabled={!config.enabled}
-          />
-        </Box>
-        <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2, mt: 1, opacity: config.enabled ? 1 : 0.45 })}>
-          <ListItemText
-            primary="自动 AI 标签"
-            secondary="切换笔记时，AI 根据正文推荐标签；保留你已有的标签，只追加新建议供你点击采纳。"
-            slotProps={{ primary: { sx: { fontWeight: 650 } } }}
-          />
-          <Switch
-            checked={isEnabledSetting(config.autoTagsEnabled)}
-            onChange={(e) => handleConfigChange('autoTagsEnabled', e.target.checked)}
-            color="primary"
-            disabled={!config.enabled}
-          />
-        </Box>
+      {/* 主视觉：它是谁、现在连着哪个模型、能看到多少东西 */}
+      <AgentHero
+        enabled={Boolean(config.enabled)}
+        ready={ready}
+        providerName={selectedProvider?.name || providers.find((provider) => provider.id === config.provider)?.name}
+        model={config.model}
+        onToggle={(value) => handleConfigChange('enabled', value)}
+        onConfigure={scrollToModel}
+      />
+
+      {/* 能力：每一项都对应真实的工具，需要额外配置的直接在卡片上开关 */}
+      <Box sx={disabledSx}>
+        <CapabilityGrid
+          ready={ready}
+          toggles={{ webSearchEnabled: isEnabledSetting(config.webSearchEnabled), visionEnabled: isEnabledSetting(config.visionEnabled) }}
+          onToggle={(field, value) => handleConfigChange(field, value)}
+        />
       </Box>
 
-      <Box sx={settingsSectionSx}>
-        <Typography variant="subtitle1" sx={sectionTitleSx}>服务配置</Typography>
+      <Box id="ai-settings-model" sx={{ ...settingsSectionSx(), scrollMarginTop: 16 }}>
+        <Typography variant="h6" sx={sectionTitleSx}>模型服务</Typography>
         <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
-          选择模型服务，并填写访问凭据
+          选择模型服务并填写访问凭据；所有能力都通过这里的模型完成
         </Typography>
         <Box sx={settingsFieldGroupSx}>
           <FormControl fullWidth size="small">
@@ -363,107 +345,136 @@ const AISettings = ({ showSnackbar }) => {
         </Box>
       </Box>
 
-      <Box sx={settingsSectionSx}>
-        <Typography variant="subtitle1" sx={sectionTitleSx}>联网搜索</Typography>
-        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
-          开启后，AI 对话与长文档生成可调用联网搜索获取实时信息
-        </Typography>
-        <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2, mb: 2 })}>
-          <ListItemText
-            primary="启用联网搜索"
-            secondary="需要配置搜索服务的 API 密钥后生效"
-            slotProps={{ primary: { sx: { fontWeight: 650 } } }}
-          />
-          <Switch
-            checked={isEnabledSetting(config.webSearchEnabled)}
-            onChange={(e) => handleConfigChange('webSearchEnabled', e.target.checked)}
-            color="primary"
-          />
-        </Box>
-        <Box sx={{ ...settingsFieldGroupSx, opacity: isEnabledSetting(config.webSearchEnabled) ? 1 : 0.45 }}>
-          <FormControl fullWidth size="small">
-            <InputLabel>搜索服务商</InputLabel>
-            <Select
-              value={config.webSearchProvider || 'feedcoop'}
-              label="搜索服务商"
-              onChange={(e) => handleConfigChange('webSearchProvider', e.target.value)}
-              disabled={!isEnabledSetting(config.webSearchEnabled)}
-            >
-              <MenuItem value="feedcoop">官方联网搜索</MenuItem>
-              <MenuItem value="custom">自定义端点</MenuItem>
-            </Select>
-          </FormControl>
-        </Box>
-        <Box sx={{ ...settingsFieldGroupSx, opacity: isEnabledSetting(config.webSearchEnabled) ? 1 : 0.45 }}>
-          <TextField
-            fullWidth
-            size="small"
-            label="搜索 API 密钥"
-            type="password"
-            value={config.webSearchApiKey || ''}
-            onChange={(e) => handleConfigChange('webSearchApiKey', e.target.value)}
-            onBlur={handleTextBlur}
-            placeholder="填写联网搜索服务的 API Key"
-            disabled={!isEnabledSetting(config.webSearchEnabled)}
-          />
-        </Box>
-        {config.webSearchProvider === 'custom' && (
-          <Box sx={{ ...settingsFieldGroupSx, opacity: isEnabledSetting(config.webSearchEnabled) ? 1 : 0.45 }}>
+      {/* 联网搜索：常驻显示（关闭时也能先填好密钥），开关与上面能力卡片上的是同一个设置 */}
+      <Box id="ai-settings-web" sx={{ ...settingsSectionSx(), scrollMarginTop: 16 }}>
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="h6" sx={sectionTitleSx}>联网搜索</Typography>
+              <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
+                对话与长文写作需要实时信息时会调用这里的搜索服务
+              </Typography>
+            </Box>
+            <Switch
+              checked={isEnabledSetting(config.webSearchEnabled)}
+              onChange={(e) => handleConfigChange('webSearchEnabled', e.target.checked)}
+              inputProps={{ 'aria-label': '启用联网搜索' }}
+            />
+          </Box>
+          <Box sx={{ opacity: isEnabledSetting(config.webSearchEnabled) ? 1 : 0.5, transition: 'opacity 160ms ease' }}>
+          <Box sx={settingsFieldGroupSx}>
+            <FormControl fullWidth size="small">
+              <InputLabel>搜索服务商</InputLabel>
+              <Select
+                value={config.webSearchProvider || 'feedcoop'}
+                label="搜索服务商"
+                onChange={(e) => handleConfigChange('webSearchProvider', e.target.value)}
+              >
+                <MenuItem value="feedcoop">官方联网搜索</MenuItem>
+                <MenuItem value="custom">自定义端点</MenuItem>
+              </Select>
+            </FormControl>
+          </Box>
+          <Box sx={settingsFieldGroupSx}>
             <TextField
               fullWidth
               size="small"
-              label="自定义搜索端点"
-              value={config.webSearchApiUrl || ''}
-              onChange={(e) => handleConfigChange('webSearchApiUrl', e.target.value)}
+              label="搜索 API 密钥"
+              type="password"
+              value={config.webSearchApiKey || ''}
+              onChange={(e) => handleConfigChange('webSearchApiKey', e.target.value)}
               onBlur={handleTextBlur}
-              placeholder="https://.../web-search"
-              helperText="需兼容官方联网搜索接口的请求/响应结构"
-              disabled={!isEnabledSetting(config.webSearchEnabled)}
+              placeholder="填写联网搜索服务的 API Key"
             />
           </Box>
-        )}
-        <Box sx={{ ...settingsFieldGroupSx, opacity: isEnabledSetting(config.webSearchEnabled) ? 1 : 0.45 }}>
-          <Typography variant="body2" color="text.secondary" gutterBottom>
-            单次返回结果数：{typeof config.webSearchCount === 'number' && !isNaN(config.webSearchCount) ? config.webSearchCount : 5}
-          </Typography>
-          <Slider
-            value={typeof config.webSearchCount === 'number' && !isNaN(config.webSearchCount) ? config.webSearchCount : 5}
-            onChange={(_, value) => handleConfigChange('webSearchCount', value)}
-            min={1}
-            max={20}
-            step={1}
-            marks={[{ value: 1, label: '1' }, { value: 10, label: '10' }, { value: 20, label: '20' }]}
-            valueLabelDisplay="auto"
-            disabled={!isEnabledSetting(config.webSearchEnabled)}
+          {config.webSearchProvider === 'custom' && (
+            <Box sx={settingsFieldGroupSx}>
+              <TextField
+                fullWidth
+                size="small"
+                label="自定义搜索端点"
+                value={config.webSearchApiUrl || ''}
+                onChange={(e) => handleConfigChange('webSearchApiUrl', e.target.value)}
+                onBlur={handleTextBlur}
+                placeholder="https://.../web-search"
+                helperText="需兼容官方联网搜索接口的请求/响应结构"
+              />
+            </Box>
+          )}
+          <Box sx={settingsFieldGroupSx}>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              单次返回结果数：{typeof config.webSearchCount === 'number' && !isNaN(config.webSearchCount) ? config.webSearchCount : 5}
+            </Typography>
+            <Slider
+              value={typeof config.webSearchCount === 'number' && !isNaN(config.webSearchCount) ? config.webSearchCount : 5}
+              onChange={(_, value) => handleConfigChange('webSearchCount', value)}
+              min={1}
+              max={20}
+              step={1}
+              marks={[{ value: 1, label: '1' }, { value: 10, label: '10' }, { value: 20, label: '20' }]}
+              valueLabelDisplay="auto"
+            />
+          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', pt: 1 }}>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={handleTestWebSearch}
+              disabled={!config.webSearchApiKey || testingWebSearch}
+              startIcon={testingWebSearch ? <CircularProgress size={16} /> : <CheckIcon />}
+            >
+              {testingWebSearch ? '测试中...' : '测试联网搜索'}
+            </Button>
+          </Box>
+          </Box>
+        </Box>
+
+      <Box sx={settingsSectionSx}>
+        <Typography variant="h6" sx={sectionTitleSx}>自动整理</Typography>
+        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 1 }}>
+          不用开口，切换笔记时 AI 在后台帮你补上标题和标签
+        </Typography>
+        <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2, ...disabledSx })}>
+          <ListItemText
+            primary="自动 AI 标题"
+            secondary="仅当笔记标题为空（或为「未命名」）时生成简洁标题"
+            slotProps={{ primary: { sx: { fontWeight: 650 } } }}
+          />
+          <Switch
+            checked={isEnabledSetting(config.autoTitleEnabled)}
+            onChange={(e) => handleConfigChange('autoTitleEnabled', e.target.checked)}
+            color="primary"
+            disabled={!config.enabled}
           />
         </Box>
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', pt: 1 }}>
-          <Button
-            variant="outlined"
-            size="small"
-            onClick={handleTestWebSearch}
-            disabled={!isEnabledSetting(config.webSearchEnabled) || !config.webSearchApiKey || testingWebSearch}
-            startIcon={testingWebSearch ? <CircularProgress size={16} /> : <CheckIcon />}
-          >
-            {testingWebSearch ? '测试中...' : '测试联网搜索'}
-          </Button>
+        <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2, ...disabledSx })}>
+          <ListItemText
+            primary="自动 AI 标签"
+            secondary="根据正文推荐标签；保留你已有的标签，只追加建议供你点击采纳"
+            slotProps={{ primary: { sx: { fontWeight: 650 } } }}
+          />
+          <Switch
+            checked={isEnabledSetting(config.autoTagsEnabled)}
+            onChange={(e) => handleConfigChange('autoTagsEnabled', e.target.checked)}
+            color="primary"
+            disabled={!config.enabled}
+          />
         </Box>
       </Box>
 
       <Box sx={settingsSectionSx}>
-        <Typography variant="subtitle1" sx={sectionTitleSx}>图片理解</Typography>
-        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
-          开启后 AI 可读取笔记内图片，聊天框也支持粘贴/拖拽图片
+        <Typography variant="h6" sx={sectionTitleSx}>入口</Typography>
+        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 1 }}>
+          标题栏右上角的 AI 按钮和 {aiShortcut} 随时可以打开 AI 小窗
         </Typography>
         <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2 })}>
           <ListItemText
-            primary="启用图片理解（多模态）"
-            secondary="开启后聊天框可粘贴或拖拽图片发送给模型；请确保所选模型支持视觉输入。"
+            primary="首页显示「问 FlotaAI」输入框"
+            secondary="在首页直接提问；也可以在首页点输入框右侧的 × 隐藏"
             slotProps={{ primary: { sx: { fontWeight: 650 } } }}
           />
           <Switch
-            checked={isEnabledSetting(config.visionEnabled)}
-            onChange={(e) => handleConfigChange('visionEnabled', e.target.checked)}
+            checked={!aiBarHidden}
+            onChange={(e) => useHomeStore.getState().setAiBarHidden(!e.target.checked)}
             color="primary"
           />
         </Box>
@@ -537,21 +548,6 @@ const AISettings = ({ showSnackbar }) => {
           </AccordionDetails>
         </Accordion>
       </Box>
-
-      <Alert severity="info" icon={<InfoIcon />} sx={{ mt: 3 }}>
-        <Typography variant="body2" gutterBottom>
-          <strong>{t('ai.usageInstructions')}：</strong>
-        </Typography>
-        <Typography variant="body2" component="div">
-          <Box component="ul" sx={{ m: 0, pl: 3 }}>
-            {t('ai.usageInstructionsList', { returnObjects: true }).map((item, index) => (
-              <Box component="li" key={index}>
-                {item}
-              </Box>
-            ))}
-          </Box>
-        </Typography>
-      </Alert>
     </Box>
   );
 };

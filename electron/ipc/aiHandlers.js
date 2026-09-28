@@ -33,12 +33,18 @@ const registerAIHandlers = (services, activeAIStreams) => {
     },
     {
       channel: 'ai:execute-pending-action',
-      handler: async (_event, actionId, overrides, fallback) => {
+      handler: async (event, actionId, overrides, fallback) => {
         try {
           if (!services.aiChatService) {
             return { success: false, error: 'AI助手服务尚未初始化，请稍后重试' };
           }
-          const result = await services.aiChatService.executePendingAction(actionId, overrides, fallback);
+          // 确认后执行的动作（如长文写作）把步骤进度推给发起确认的窗口，卡片上实时显示
+          const sender = event.sender;
+          const onChunk = (chunk) => {
+            if (!chunk || typeof chunk.type !== 'string' || !chunk.type.startsWith('step_')) return;
+            if (!sender.isDestroyed()) sender.send('ai:action-progress', { actionId, chunk });
+          };
+          const result = await services.aiChatService.executePendingAction(actionId, overrides, fallback, { onChunk });
           logger.info('AIChatService', 'execute-pending-action', {
             actionId,
             name: result?.action?.name,
