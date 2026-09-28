@@ -1,34 +1,67 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Box, Typography, Chip, Button, alpha } from '@mui/material';
-import {
-  Close as CloseIcon,
-  FilterList as FilterIcon,
-  DragIndicator as DragIcon
-} from '../common/AppIcons';
+import { Box, Button, Typography, alpha } from '@mui/material';
+import { Close as CloseIcon } from '../common/AppIcons';
 import FloatingGlassSurface from '../common/FloatingGlassSurface';
-import useDraggableFloatingPanel from '../../hooks/useDraggableFloatingPanel';
 import PanelIconButton from '../common/PanelIconButton';
+import useDraggableFloatingPanel from '../../hooks/useDraggableFloatingPanel';
 
-const PANEL_WIDTH = 320;
-const PANEL_GAP = 8;
-const VIEWPORT_MARGIN = 12;
-const ESTIMATED_HEIGHT = 360;
-
-const computeAnchorPosition = (anchorRef, width = PANEL_WIDTH, estimatedHeight = ESTIMATED_HEIGHT) => {
-  const node = anchorRef?.current;
-  if (!node || typeof node.getBoundingClientRect !== 'function') {
-    return { x: window.innerWidth - width - VIEWPORT_MARGIN, y: VIEWPORT_MARGIN };
-  }
-  const rect = node.getBoundingClientRect();
-  let x = rect.right - width;
-  let y = rect.bottom + PANEL_GAP;
-  x = Math.min(Math.max(VIEWPORT_MARGIN, x), window.innerWidth - width - VIEWPORT_MARGIN);
-  if (y + estimatedHeight > window.innerHeight - VIEWPORT_MARGIN) {
-    y = Math.max(VIEWPORT_MARGIN, rect.top - estimatedHeight - PANEL_GAP);
-  }
-  return { x, y };
+// 只记住用户拖过的位置；没拖过就一直贴在搜索框下面
+const DRAG_POSITION_KEY = 'flota.filterPopover.dragPosition';
+const readDragged = () => {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(DRAG_POSITION_KEY) || 'null');
+    return Number.isFinite(value?.x) && Number.isFinite(value?.y) ? value : null;
+  } catch { return null; }
+};
+const writeDragged = (value) => {
+  try {
+    if (value) window.localStorage.setItem(DRAG_POSITION_KEY, JSON.stringify(value));
+    else window.localStorage.removeItem(DRAG_POSITION_KEY);
+  } catch { /* 存不了就只在本次生效 */ }
 };
 
+/** 毛玻璃：半透明底 + 背景模糊，透出后面的列表和壁纸 */
+const frostedSx = (theme) => {
+  const dark = theme.palette.mode === 'dark';
+  return {
+    bgcolor: dark ? alpha('#26262a', 0.62) : alpha('#ffffff', 0.58),
+    backdropFilter: 'blur(28px) saturate(180%)',
+    WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+    border: `1px solid ${dark ? alpha('#ffffff', 0.12) : alpha('#ffffff', 0.7)}`,
+    boxShadow: dark ? '0 10px 30px rgba(0,0,0,0.32)' : '0 10px 30px rgba(20,20,24,0.10)',
+  };
+};
+
+const MIN_WIDTH = 272;
+const MAX_WIDTH = 340;
+const PANEL_GAP = 6;
+const VIEWPORT_MARGIN = 12;
+const ESTIMATED_HEIGHT = 380;
+
+/**
+ * 面板贴在搜索框正下方、和搜索框左右对齐（搜索框太窄时按最小宽度、右对齐）。
+ * anchor 是搜索框里的筛选按钮，向上找到整个输入框作为对齐基准。
+ */
+const computeLayout = (anchorRef) => {
+  const node = anchorRef?.current;
+  if (!node || typeof node.getBoundingClientRect !== 'function') {
+    return { x: window.innerWidth - MIN_WIDTH - VIEWPORT_MARGIN, y: VIEWPORT_MARGIN, width: MIN_WIDTH };
+  }
+  const base = (node.closest?.('.MuiInputBase-root') || node).getBoundingClientRect();
+  const width = Math.round(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, base.width)));
+  let x = base.right - width;
+  let y = base.bottom + PANEL_GAP;
+  x = Math.min(Math.max(VIEWPORT_MARGIN, x), window.innerWidth - width - VIEWPORT_MARGIN);
+  if (y + ESTIMATED_HEIGHT > window.innerHeight - VIEWPORT_MARGIN) {
+    y = Math.max(VIEWPORT_MARGIN, window.innerHeight - ESTIMATED_HEIGHT - VIEWPORT_MARGIN);
+  }
+  return { x, y, width };
+};
+
+/**
+ * 笔记 / 待办共用的筛选面板：标题 + 关闭，中间是各个分组，底部是结果数和「全部清除」。
+ * 拖标题栏可以移动（位置会记住），双击标题栏回到搜索框下面；按 Esc 或再点一次筛选按钮收起。
+ */
 const FilterPopover = ({
   open,
   anchorRef,
@@ -36,46 +69,46 @@ const FilterPopover = ({
   title = '筛选',
   totalSelected = 0,
   onClearAll,
-  width = PANEL_WIDTH,
-  maxHeight = 'min(440px, calc(100vh - 96px))',
+  resultText,
+  maxHeight = 'min(480px, calc(100vh - 120px))',
   portalContainer,
-  persistKey = 'flota.filterPopover.position',
   children
 }) => {
   const panelRef = useRef(null);
-  const [position, setPosition] = useState(null);
+  const [layout, setLayout] = useState(null);
+  const [dragPosition, setDragPosition] = useState(() => readDragged());
 
-  const { dragging, handleDragStart, restorePosition } = useDraggableFloatingPanel({
+  const { dragging, handleDragStart, clampPosition } = useDraggableFloatingPanel({
     panelRef,
-    position,
-    setPosition,
-    estimatedWidth: width,
+    position: dragPosition,
+    setPosition: setDragPosition,
+    estimatedWidth: MAX_WIDTH,
     estimatedHeight: ESTIMATED_HEIGHT,
-    persistKey
   });
 
-  // 打开时初始化位置：优先取持久化的位置，否则按 anchor 计算
+  // 拖完才记住位置
+  const wasDraggingRef = useRef(false);
+  useEffect(() => {
+    if (wasDraggingRef.current && !dragging) writeDragged(dragPosition);
+    wasDraggingRef.current = dragging;
+  }, [dragging, dragPosition]);
+
   useLayoutEffect(() => {
-    if (!open) return;
-    const fallback = computeAnchorPosition(anchorRef, width);
-    setPosition((prev) => prev || restorePosition(fallback));
-  }, [open, anchorRef, width, restorePosition]);
+    if (!open) return undefined;
+    const update = () => setLayout(computeLayout(anchorRef));
+    update();
+    setDragPosition((prev) => (prev ? clampPosition(prev.x, prev.y) : prev));
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [open, anchorRef, clampPosition]);
 
-  // anchor 移动 / 视口变化时仅在用户尚未手动拖过的情况下才跟随 anchor
-  // 一旦用户拖动过，由 useDraggableFloatingPanel 的 resize 监听负责夹回视口内
-  useEffect(() => {
-    if (!open) return;
-    const handleScroll = () => {
-      // 滚动只在 anchor 视口内的常规位置场景使用，不强行覆盖用户的拖拽位置
-    };
-    window.addEventListener('scroll', handleScroll, true);
-    return () => {
-      window.removeEventListener('scroll', handleScroll, true);
-    };
-  }, [open]);
+  const resetPosition = () => {
+    setDragPosition(null);
+    writeDragged(null);
+  };
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) return undefined;
     const handleKey = (event) => {
       if (event.key === 'Escape') onClose?.();
     };
@@ -83,98 +116,65 @@ const FilterPopover = ({
     return () => window.removeEventListener('keydown', handleKey);
   }, [open, onClose]);
 
+  const current = layout || computeLayout(anchorRef);
+  const position = dragPosition || current;
+  const showFooter = Boolean(resultText) || (totalSelected > 0 && onClearAll);
+
   return (
     <FloatingGlassSurface
       ref={panelRef}
       open={open}
       layer="selectionPanel"
       ariaLabel={title}
-      position={position || computeAnchorPosition(anchorRef, width)}
-      width={width}
+      position={position}
+      width={current.width}
       maxHeight={maxHeight}
       density="compact"
       portalContainer={portalContainer}
-      sx={{ display: 'flex', flexDirection: 'column' }}
+      sx={(theme) => ({ display: 'flex', flexDirection: 'column', borderRadius: '14px', ...frostedSx(theme) })}
     >
       <Box
         onMouseDown={handleDragStart}
-        sx={(theme) => ({
-          px: 1.25,
-          py: 0.75,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 0.75,
-          boxShadow: `inset 0 -1px 0 ${alpha(theme.palette.common.white, theme.palette.mode === 'dark' ? 0.03 : 0.32)}`,
-          cursor: dragging ? 'grabbing' : 'grab',
-          userSelect: 'none',
-          bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.08 : 0.1)
-        })}
+        onDoubleClick={resetPosition}
+        sx={{
+          display: 'flex', alignItems: 'center', gap: 1, pl: 1.75, pr: 0.75, pt: 0.875, pb: 0.25,
+          cursor: dragging ? 'grabbing' : 'grab', userSelect: 'none',
+        }}
       >
-        <DragIcon sx={{ fontSize: 15, color: 'text.disabled', opacity: 0.55 }} />
-        <FilterIcon sx={{ fontSize: 15, color: 'primary.main' }} />
-        <Typography sx={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>{title}</Typography>
-        {totalSelected > 0 && (
-          <Chip
-            size="small"
-            label={totalSelected}
-            sx={(theme) => ({
-              height: 18,
-              fontSize: 10.5,
-              fontWeight: 600,
-              bgcolor: theme.palette.primary.main,
-              color: theme.palette.primary.contrastText,
-              '& .MuiChip-label': { px: 0.75 }
-            })}
-          />
-        )}
-        <Box sx={{ flex: 1 }} />
-        {totalSelected > 0 && onClearAll && (
-          <Button
-            size="small"
-            onClick={onClearAll}
-            onMouseDown={(event) => event.stopPropagation()}
-            aria-label="清空筛选"
-            disableRipple
-            sx={(theme) => ({
-              minWidth: 0,
-              height: 22,
-              px: 0.875,
-              fontSize: 11.5,
-              fontWeight: 500,
-              lineHeight: 1.2,
-              borderRadius: 1,
-              color: 'text.secondary',
-              textTransform: 'none',
-              '&:hover': {
-                color: 'error.main',
-                bgcolor: alpha(theme.palette.error.main, 0.08)
-              }
-            })}
-          >
-            清空
-          </Button>
-        )}
+        <Typography sx={{ flex: 1, fontSize: 14, fontWeight: 650 }}>{title}</Typography>
         <PanelIconButton title="关闭" onClick={onClose}>
           <CloseIcon />
         </PanelIconButton>
       </Box>
 
       <Box
-        onMouseDown={(event) => event.stopPropagation()}
-        sx={(theme) => ({
+        sx={{
           flex: 1,
           minHeight: 0,
           overflowY: 'auto',
-          px: 1.25,
-          py: 0.75,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 1,
-          bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.03 : 0.04)
-        })}
+          px: 1.75,
+          pt: 0.75,
+          pb: showFooter ? 1.25 : 1.75,
+        }}
       >
         {children}
       </Box>
+
+      {showFooter && (
+        <Box sx={{
+          display: 'flex', alignItems: 'center', gap: 1, pl: 1.75, pr: 1, py: 0.75,
+          borderTop: 1, borderColor: 'divider',
+        }}>
+          <Typography sx={{ flex: 1, fontSize: 12, color: 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>
+            {resultText}
+          </Typography>
+          {totalSelected > 0 && onClearAll && (
+            <Button size="small" onClick={onClearAll} sx={{ minWidth: 0, height: 28, px: 1.25, fontSize: 12.5 }}>
+              全部清除
+            </Button>
+          )}
+        </Box>
+      )}
     </FloatingGlassSurface>
   );
 };

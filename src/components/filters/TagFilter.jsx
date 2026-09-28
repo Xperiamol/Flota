@@ -15,6 +15,9 @@ import {
 } from '../common/AppIcons';
 import { getTagColor } from '../../utils/tagUtils';
 import BaseFilter from './BaseFilter';
+import { thinScrollbarSx } from '../../styles/commonStyles';
+
+const TAG_SEARCH_THRESHOLD = 12;
 import FilterChip from './FilterChip';
 
 /**
@@ -144,43 +147,43 @@ const TagFilter = ({
 
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-        {/* 标签搜索框 */}
-        <TextField
-          size="small"
-          variant="outlined"
-          value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
-          placeholder="搜索标签…"
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-              </InputAdornment>
-            ),
-            endAdornment: keyword ? (
-              <InputAdornment position="end">
-                <IconButton
-                  size="small"
-                  onClick={() => setKeyword('')}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  sx={{ p: 0.25 }}
-                >
-                  <ClearIcon sx={{ fontSize: 14 }} />
-                </IconButton>
-              </InputAdornment>
-            ) : null,
-            sx: (theme) => ({
-              fontSize: 12,
-              borderRadius: 1.25,
-              bgcolor: alpha(theme.palette.text.primary, 0.04),
-              '& fieldset': { borderColor: 'transparent' },
-              '&:hover fieldset': { borderColor: alpha(theme.palette.text.primary, 0.12) },
-              '&.Mui-focused fieldset': { borderColor: theme.palette.primary.main }
-            })
-          }}
-        />
+        {/* 标签多了才需要搜索 */}
+        {orderedTags.length > TAG_SEARCH_THRESHOLD && (
+          <TextField
+            size="small"
+            variant="outlined"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            placeholder="搜索标签"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                  </InputAdornment>
+                ),
+                endAdornment: keyword ? (
+                  <InputAdornment position="end">
+                    <IconButton size="small" onClick={() => setKeyword('')} aria-label="清除标签搜索" sx={{ p: 0.25 }}>
+                      <ClearIcon sx={{ fontSize: 14 }} />
+                    </IconButton>
+                  </InputAdornment>
+                ) : null,
+                sx: (theme) => ({
+                  height: 30,
+                  fontSize: 12.5,
+                  borderRadius: '8px',
+                  bgcolor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.09 : 0.06),
+                  '& fieldset': { borderColor: 'transparent' },
+                  '&:hover fieldset': { borderColor: 'transparent' },
+                  '&.Mui-focused fieldset': { borderColor: theme.palette.primary.main, borderWidth: 1 }
+                })
+              }
+            }}
+          />
+        )}
 
         {/* 瀑布流标签 */}
         {filteredTags.length === 0 ? (
@@ -188,7 +191,7 @@ const TagFilter = ({
             没有匹配的标签
           </Typography>
         ) : (
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, alignItems: 'center', maxHeight: 132, ...thinScrollbarSx, scrollbarGutter: 'auto' }}>
             {filteredTags.map((tag) => {
               if (tag.isVirtual) {
                 // 虚拟根：仅作为视觉锚点的纯文字标记，不可点击
@@ -213,7 +216,7 @@ const TagFilter = ({
               return (
                 <FilterChip
                   key={tag.name}
-                  label={tag.depth === 1 ? `↳ ${showLabel}` : showLabel}
+                  label={tag.depth === 1 ? `/${showLabel}` : showLabel}
                   value={tag.name}
                   isSelected={selectedTags.includes(tag.name)}
                   onClick={toggleTag}

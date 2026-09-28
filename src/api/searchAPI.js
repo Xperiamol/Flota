@@ -18,7 +18,8 @@ export const searchNotesAPI = async (query) => {
       throw new Error('Notes search API not available');
     }
 
-    const result = await window.electronAPI.notes.search(query);
+    // 列表里的搜索要看到全部命中（后端默认只返回 50 条）
+    const result = await window.electronAPI.notes.search(query, { limit: 2000 });
 
     if (result?.success) {
       // 使用tagUtils标准化笔记数据格式

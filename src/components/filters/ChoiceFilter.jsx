@@ -34,7 +34,7 @@ const ChoiceFilter = ({
       onClearAll={handleClearAll}
       sx={sx}
     >
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
         {options.map((opt) => (
           <FilterChip
             key={opt.key}

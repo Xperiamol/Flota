@@ -3,7 +3,7 @@ import { Box } from '@mui/material';
 import { Flag as FlagIcon } from '../common/AppIcons';
 import BaseFilter from './BaseFilter';
 import FilterChip from './FilterChip';
-import { getAllPriorities, getPriorityIcon } from '../../utils/priorityUtils';
+import { getAllPriorities } from '../../utils/priorityUtils';
 
 /**
  * 优先级筛选组件
@@ -70,7 +70,7 @@ const PriorityFilter = ({
   // 渲染优先级芯片
   const renderPriorityChips = () => {
     return (
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
         {priorities.map(priority => (
           <FilterChip
             key={priority.key}
@@ -79,7 +79,6 @@ const PriorityFilter = ({
             isSelected={selectedPriorities.includes(priority.key)}
             onClick={togglePriority}
             color={priority.color}
-            icon={getPriorityIcon(priority.key, { fontSize: 14 })}
             count={priority.count}
           />
         ))}

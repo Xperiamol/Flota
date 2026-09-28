@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import { IconButton, Tooltip, Badge } from '@mui/material';
+import { IconButton, Tooltip, Badge, alpha } from '@mui/material';
 import { FilterList as FilterIcon } from '../common/AppIcons';
 import zhCN from '../../locales/zh-CN';
 
@@ -44,16 +44,16 @@ const FilterToggleButton = forwardRef(function FilterToggleButton(
           size={size}
           onClick={onToggle}
           disabled={disabled}
-          sx={{
-            color: filtersVisible ? 'primary.contrastText' : 'text.secondary',
-            backgroundColor: filtersVisible ? 'primary.main' : 'transparent',
+          aria-pressed={filtersVisible}
+          sx={(theme) => ({
+            color: filtersVisible || selectedCount ? 'primary.main' : 'text.secondary',
+            backgroundColor: filtersVisible ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.22 : 0.12) : 'transparent',
             transition: 'color 0.2s ease, background-color 0.2s ease',
             '&:hover': {
-              color: filtersVisible ? 'primary.contrastText' : 'text.primary',
-              backgroundColor: filtersVisible ? 'primary.dark' : 'action.hover'
-            },
-            '&:active': { opacity: 0.7 }
-          }}
+              color: filtersVisible || selectedCount ? 'primary.main' : 'text.primary',
+              backgroundColor: filtersVisible ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.3 : 0.18) : 'action.hover'
+            }
+          })}
         >
           <FilterIcon />
         </IconButton>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Divider } from '@mui/material';
+import { Box } from '@mui/material';
 import TagFilter from './TagFilter';
 import PriorityFilter from './PriorityFilter';
 
@@ -53,13 +53,8 @@ const FilterContainer = ({
   if (groups.length === 0) return null;
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, ...sx }}>
-      {groups.map((group, index) => (
-        <React.Fragment key={group.key ?? `group-${index}`}>
-          {index > 0 && <Divider flexItem sx={{ opacity: 0.4 }} />}
-          {group}
-        </React.Fragment>
-      ))}
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, ...sx }}>
+      {groups}
     </Box>
   );
 };

@@ -1,84 +1,62 @@
-import React from 'react';
-import { Chip } from '@mui/material';
+import { Box, ButtonBase, alpha } from '@mui/material';
 
 /**
- * 通用筛选芯片组件
- * 提供统一的筛选芯片样式和交互
- * 支持自定义颜色、图标和选中状态
+ * 筛选芯片：未选中是浅底，选中是主题色浅底 + 主题色文字。
+ * color（标签色、优先级色）只画成前面的小圆点，不再把整颗芯片染色，避免一面板花花绿绿。
  */
 const FilterChip = ({
-  // 基础属性
   label,
   value,
   isSelected = false,
   onClick,
-  
-  // 样式属性
   color,
   icon,
   count,
-  
-  // 其他属性
   disabled = false,
-  size = 'small',
-  variant = 'outlined',
-  ...props
-}) => {
-  const handleClick = () => {
-    if (!disabled && onClick) {
-      onClick(value);
-    }
-  };
-
-  // 构建标签文本
-  const chipLabel = count !== undefined ? `${label} (${count})` : label;
-
-  return (
-    <Chip
-      label={chipLabel}
-      icon={icon}
-      size={size}
-      variant={isSelected ? 'filled' : variant}
-      onClick={handleClick}
-      disabled={disabled}
-      sx={{
-        cursor: disabled ? 'default' : 'pointer',
-        transition: 'background-color 0.2s ease-in-out, color 0.2s ease-in-out, box-shadow 0.2s ease-in-out, border-color 0.2s ease-in-out',
-        
-        // 选中状态样式
-        ...(isSelected && {
-          backgroundColor: color || 'primary.main',
-          color: 'white',
-          '& .MuiChip-icon': {
-            color: 'white'
-          },
-          '&:hover': {
-            backgroundColor: color || 'primary.dark'
-          }
-        }),
-        
-        // 未选中状态样式
-        ...(!isSelected && {
-          borderColor: color || 'divider',
-          color: color || 'text.primary',
-          '& .MuiChip-icon': {
-            color: color || 'text.secondary'
-          },
-          '&:hover': {
-            backgroundColor: color ? `${color}20` : 'action.hover',
-            borderColor: color || 'primary.main'
-          }
-        }),
-        
-        // 禁用状态样式
-        ...(disabled && {
-          opacity: 0.5,
-          cursor: 'not-allowed'
-        })
-      }}
-      {...props}
-    />
-  );
-};
+}) => (
+  <ButtonBase
+    onClick={() => { if (!disabled) onClick?.(value); }}
+    disabled={disabled}
+    aria-pressed={isSelected}
+    sx={(theme) => {
+      const accent = theme.palette.primary.main;
+      return {
+        height: 28,
+        px: 1.125,
+        gap: 0.625,
+        borderRadius: '8px',
+        fontSize: 12.5,
+        fontWeight: isSelected ? 600 : 500,
+        lineHeight: 1,
+        whiteSpace: 'nowrap',
+        color: isSelected ? accent : 'text.primary',
+        bgcolor: isSelected
+          ? alpha(accent, theme.palette.mode === 'dark' ? 0.24 : 0.13)
+          : alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.09 : 0.06),
+        boxShadow: isSelected ? `inset 0 0 0 1px ${alpha(accent, 0.35)}` : 'none',
+        transition: 'background-color 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 120ms ease',
+        '&:hover': {
+          bgcolor: isSelected
+            ? alpha(accent, theme.palette.mode === 'dark' ? 0.3 : 0.18)
+            : alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.14 : 0.1),
+        },
+        '&:active': { transform: 'scale(0.96)' },
+        '&.Mui-disabled': { opacity: 0.5 },
+        '& .MuiSvgIcon-root': { fontSize: 15, color: isSelected ? accent : 'text.secondary' },
+      };
+    }}
+  >
+    {color && (
+      <Box component="span" sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: color, flexShrink: 0 }} />
+    )}
+    {icon}
+    <span>{label}</span>
+    {count !== undefined && (
+      <Box component="span" sx={{ fontSize: 11.5, fontWeight: 500, opacity: 0.55, fontVariantNumeric: 'tabular-nums' }}>
+        {count}
+      </Box>
+    )}
+  </ButtonBase>
+);
 
 export default FilterChip;

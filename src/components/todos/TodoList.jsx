@@ -750,20 +750,13 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
   );
 
   return (
-    <Box sx={(theme) => ({
+    <Box sx={{
       height: '100%',
       display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden',
-      // 当作为外部数据源（如 MyDayPanel）的子组件时，不添加背景，避免效果叠加
-      ...(isExternalData ? {} : {
-        backgroundColor: theme.palette.mode === 'dark'
-          ? 'rgba(31,31,34, 0.85)'
-          : 'rgba(255, 255, 255, 0.85)',
-        backdropFilter: 'blur(12px) saturate(150%)',
-        WebkitBackdropFilter: 'blur(12px) saturate(150%)'
-      })
-    })}>
+      // 列表放在二级侧栏的玻璃面板里，不再单独铺底色，与笔记、日历视图保持同一透明度
+    }}>
       {/* 搜索框和筛选区域 */}
       <Box
         sx={{
@@ -862,6 +855,7 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
           title="筛选待办"
           totalSelected={selectedTags.length + selectedPriorities.length + selectedStatusFilters.length + selectedDueFilters.length}
           onClearAll={() => { setSelectedTags([]); setSelectedPriorities([]); setSelectedStatusFilters([]); setSelectedDueFilters([]); }}
+          resultText={`${(selectedTags.length + selectedPriorities.length + selectedStatusFilters.length + selectedDueFilters.length) > 0 ? '找到' : '共'} ${todos.length} 项`}
         >
           <FilterContainer
             showTagFilter={true}
@@ -875,7 +869,6 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
               <ChoiceFilter
                 key="status"
                 title="完成状态"
-                icon={<CheckCircleIcon />}
                 options={[
                   { key: 'completed', label: '已完成' },
                   { key: 'pending', label: '未完成' }
@@ -886,7 +879,6 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
               <ChoiceFilter
                 key="due"
                 title="截止日"
-                icon={<ScheduleIcon />}
                 options={[
                   { key: 'overdue', label: '已逾期' },
                   { key: 'today', label: '今天' },

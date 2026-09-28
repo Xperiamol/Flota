@@ -51,7 +51,6 @@ import FilterContainer from '../filters/FilterContainer'
 import FilterPopover from '../filters/FilterPopover'
 import FilterToggleButton from '../filters/FilterToggleButton'
 import ChoiceFilter from '../filters/ChoiceFilter'
-import { Image as ImageIcon, AccessTime as AccessTimeIcon, Description as MarkdownIcon, Category as CategoryIcon, BookmarkBorder } from '../common/AppIcons'
 import zhCN from '../../locales/zh-CN'
 
 const {
@@ -61,7 +60,8 @@ import MultiSelectToolbar from '../layout/MultiSelectToolbar'
 import { useDragAnimation } from '../../hooks/useDragAnimation'
 import { useError } from '../common/ErrorProvider'
 import logger from '../../utils/logger'
-import { formatRelativeNoteTime } from '../../utils/noteDateUtils'
+import { formatRelativeNoteTime, parseNoteDate } from '../../utils/noteDateUtils'
+import { usePrefsStore } from '../../store/usePrefsStore'
 import { stripMarkdownToPreviewText } from '../../utils/markdownTextUtils'
 import { rowActionRevealSx } from '../../styles/commonStyles'
 import { alpha } from '@mui/material/styles'
@@ -69,6 +69,7 @@ import { alpha } from '@mui/material/styles'
 const NOTE_LIST_GUTTER = '10px'
 const NOTE_SCROLLBAR_COMPENSATION = '8px'
 const NOTE_ITEM_RADIUS = '12px'
+const RENDER_BATCH = 150
 
 const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefChange }) => {
   const { t } = useTranslation()
@@ -207,8 +208,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
 
       // 时间范围（OR 命中：任一窗口内即通过）
       if (selectedTimeFilters.length > 0) {
-        const ts = note.updated_at || note.created_at;
-        const t = ts ? new Date(ts).getTime() : 0;
+        const t = (parseNoteDate(note.updated_at) || parseNoteDate(note.created_at))?.getTime() || 0;
         if (!t) return false;
         const passed = selectedTimeFilters.some((key) => {
           const win = TIME_WINDOW[key];
@@ -221,13 +221,34 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
       // 笔记类型（“剪藏”按来源识别，与 Markdown/白板并列）
       if (selectedTypeFilters.length > 0) {
         const type = note.note_type || 'markdown';
-        const isClip = typeof note.meta === 'string' && note.meta.includes('"type":"clip"');
+        let isClip = false;
+        try {
+          const meta = typeof note.meta === 'string' ? JSON.parse(note.meta) : note.meta;
+          isClip = meta?.source?.type === 'clip';
+        } catch { /* meta 不是 JSON，按普通笔记处理 */ }
         if (!selectedTypeFilters.includes(type) && !(isClip && selectedTypeFilters.includes('clip'))) return false;
       }
 
       return true;
     })
   }, [notes, showDeleted, selectedTagFilters, selectedPinFilters, selectedImageFilters, selectedTimeFilters, selectedTypeFilters])
+
+  // 笔记很多时分批渲染：先画 RENDER_BATCH 条，滚到底再多画一批
+  const [renderLimit, setRenderLimit] = useState(RENDER_BATCH)
+  const loadMoreRef = useRef(null)
+  const visibleNotes = useMemo(() => filteredNotes.slice(0, renderLimit), [filteredNotes, renderLimit])
+  useEffect(() => {
+    setRenderLimit(RENDER_BATCH)
+  }, [showDeleted, selectedTagFilters, selectedPinFilters, selectedImageFilters, selectedTimeFilters, selectedTypeFilters])
+  useEffect(() => {
+    const node = loadMoreRef.current
+    if (!node) return undefined
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) setRenderLimit((limit) => limit + RENDER_BATCH)
+    }, { rootMargin: '600px' })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [renderLimit, filteredNotes.length])
 
   const totalSelectedFilters =
     selectedTagFilters.length +
@@ -553,7 +574,19 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
     setLocalSearchQuery('')
   }, [setLocalSearchQuery])
 
+  // 设置 → 笔记与文件：列表里的时间显示为「3 分钟前」或具体日期
+  const noteListTime = usePrefsStore((state) => state.noteListTime)
+  const noteListPreview = usePrefsStore((state) => state.noteListPreview)
   const formatDate = (value) => {
+    if (noteListTime === 'absolute') {
+      const date = parseNoteDate(value)
+      if (!date) return t('notes.unknownTime')
+      const now = new Date()
+      const hm = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+      if (date.toDateString() === now.toDateString()) return hm
+      if (date.getFullYear() === now.getFullYear()) return `${date.getMonth() + 1}月${date.getDate()}日 ${hm}`
+      return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`
+    }
     return formatRelativeNoteTime(value, {
       locale: dateFnsZhCN,
       unknownText: t('notes.unknownTime')
@@ -679,11 +712,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
       flexDirection: 'column',
       overflow: 'hidden',
       minHeight: 0,
-      backgroundColor: theme.palette.mode === 'dark'
-        ? 'rgba(31,31,34, 0.85)'
-        : 'rgba(255, 255, 255, 0.85)',
-      backdropFilter: 'blur(12px) saturate(150%)',
-      WebkitBackdropFilter: 'blur(12px) saturate(150%)'
+      // 列表放在二级侧栏的玻璃面板里，不再单独铺底色（否则设了壁纸时与日历等视图的透明度不一致）
     })}>
       {/* 搜索框 */}
       <Box
@@ -755,6 +784,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
           title="筛选笔记"
           totalSelected={totalSelectedFilters}
           onClearAll={clearAllFilters}
+          resultText={totalSelectedFilters > 0 ? `找到 ${filteredNotes.length} 篇` : `共 ${filteredNotes.length} 篇`}
         >
           <FilterContainer
             showTagFilter={true}
@@ -763,13 +793,23 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
             showDeleted={showDeleted}
             extraGroups={[
               <ChoiceFilter
+                key="time"
+                title="修改时间"
+                options={[
+                  { key: 'today', label: '今天' },
+                  { key: '7d', label: '7 天内' },
+                  { key: '30d', label: '30 天内' }
+                ]}
+                selectedKeys={selectedTimeFilters}
+                onChange={setSelectedTimeFilters}
+              />,
+              <ChoiceFilter
                 key="type"
                 title="类型"
-                icon={<CategoryIcon />}
                 options={[
-                  { key: 'markdown', label: 'Markdown', icon: <MarkdownIcon sx={{ fontSize: 14 }} /> },
-                  { key: 'whiteboard', label: '白板', icon: <WhiteboardIcon sx={{ fontSize: 14 }} /> },
-                  { key: 'clip', label: '来源：剪藏', icon: <BookmarkBorder sx={{ fontSize: 14 }} /> }
+                  { key: 'markdown', label: '笔记' },
+                  { key: 'whiteboard', label: '画布' },
+                  { key: 'clip', label: '网页剪藏' }
                 ]}
                 selectedKeys={selectedTypeFilters}
                 onChange={setSelectedTypeFilters}
@@ -777,7 +817,6 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
               <ChoiceFilter
                 key="pin"
                 title="置顶"
-                icon={<PinIcon />}
                 options={[
                   { key: 'pinned', label: '已置顶' },
                   { key: 'unpinned', label: '未置顶' }
@@ -788,25 +827,12 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
               <ChoiceFilter
                 key="image"
                 title="图片"
-                icon={<ImageIcon />}
                 options={[
-                  { key: 'has', label: '含图片' },
-                  { key: 'none', label: '无图片' }
+                  { key: 'has', label: '有图片' },
+                  { key: 'none', label: '没有图片' }
                 ]}
                 selectedKeys={selectedImageFilters}
                 onChange={setSelectedImageFilters}
-              />,
-              <ChoiceFilter
-                key="time"
-                title="时间范围"
-                icon={<AccessTimeIcon />}
-                options={[
-                  { key: 'today', label: '今天' },
-                  { key: '7d', label: '7 天内' },
-                  { key: '30d', label: '30 天内' }
-                ]}
-                selectedKeys={selectedTimeFilters}
-                onChange={setSelectedTimeFilters}
               />
             ]}
           />
@@ -888,7 +914,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
               </Box>
             ) : (
               <List sx={{ py: 0, px: NOTE_LIST_GUTTER }}>
-                {filteredNotes.map((note) => (
+                {visibleNotes.map((note) => (
                   <React.Fragment key={note.id}>
                     <ListItem
                       disablePadding
@@ -994,7 +1020,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                           }
                           secondary={
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0, mt: 0.25 }}>
-                              {getNotePreviewText(note) && (
+                              {noteListPreview && getNotePreviewText(note) && (
                                 <Typography
                                   component="span"
                                   variant="body2"
@@ -1023,7 +1049,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                                   fontSize: '0.7rem',
                                   fontVariantNumeric: 'tabular-nums',
                                   lineHeight: 1.35,
-                                  ml: getNotePreviewText(note) ? 0 : 'auto',
+                                  ml: noteListPreview && getNotePreviewText(note) ? 0 : 'auto',
                                 }}
                               >
                                 {formatDate(note.updated_at || note.created_at)}
@@ -1062,6 +1088,9 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                   </React.Fragment>
                 ))}
               </List>
+            )}
+            {filteredNotes.length > renderLimit && (
+              <Box ref={loadMoreRef} sx={{ height: 24 }} />
             )}
           </Box>
         </Fade>
