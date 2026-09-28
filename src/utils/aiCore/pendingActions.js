@@ -66,6 +66,25 @@ export const isExplicitPendingActionConfirmation = (text) => {
   return /^(可以|好|好的|确认|确定|同意|执行|开始|开始吧|就这样|按这个来|ok|okay|yes)$/.test(normalized)
 }
 
+// 回复里声称“已生成确认卡”的说法（与主进程 aichat/index.js 的判定保持一致）。
+const CONFIRMATION_CLAIM_RE = /确认卡|确认执行|点(?:击)?确认/
+
+// 发送给模型的历史只有 role + content，模型看不到哪一轮真的调用了写入工具，
+// 会照着之前“已准备好，请确认执行”的文字继续空口声称发起了操作。
+// 这里把每条 assistant 消息实际产生的确认卡（或没有产生）写回文本里。
+export const toApiMessages = (messages) => (Array.isArray(messages) ? messages : []).map((msg) => {
+  const apiMessage = { role: msg.role, content: msg.content }
+  if (msg.role !== 'assistant' || typeof msg.content !== 'string') return apiMessage
+  const actions = getMessagePendingActions(msg)
+  if (actions.length > 0) {
+    const labels = actions.map((action) => `${action.summary || action.name}（${action.status || 'pending'}）`)
+    apiMessage.content = `${msg.content}\n\n[本条回复实际生成的确认卡：${labels.join('；')}]`
+  } else if (CONFIRMATION_CLAIM_RE.test(msg.content)) {
+    apiMessage.content = `${msg.content}\n\n[注意：本条回复没有调用任何写入工具，并未生成确认卡，用户看不到卡片]`
+  }
+  return apiMessage
+})
+
 export const getLatestConfirmableAction = (messages) => {
   if (!Array.isArray(messages)) return null
   const message = messages[messages.length - 1]

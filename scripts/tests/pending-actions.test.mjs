@@ -6,7 +6,7 @@ import test from 'node:test'
 const source = await readFile(new URL('../../src/utils/aiCore/pendingActions.js', import.meta.url), 'utf8')
 const {
   dismissConversationAction, executeConversationAction, getLatestConfirmableAction,
-  isExplicitPendingActionConfirmation, supersedeStalePendingActions,
+  isExplicitPendingActionConfirmation, supersedeStalePendingActions, toApiMessages,
 } =
   await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
 
@@ -129,4 +129,17 @@ test('AI 给出新方案时旧的待确认卡片被替代，已完成的不受�
   // 最新一条没有新卡片时不做任何改动
   const plain = [...messages.slice(0, 3), { role: 'assistant', content: '好的' }]
   assert.equal(supersedeStalePendingActions(plain), plain)
+})
+
+test('发给模型的历史标出每条回复实际生成的确认卡，空口声称的回复被标注', () => {
+  const api = toApiMessages([
+    { role: 'user', content: '美化组件' },
+    { role: 'assistant', content: '已准备好，请确认执行', actions: [{ actionId: 'w1', name: 'update_widget', summary: '修改组件：美化', status: 'done' }] },
+    { role: 'assistant', content: '我重新发起了，请查看确认卡' },
+    { role: 'assistant', content: '普通回答', metadata: { x: 1 } },
+  ])
+  assert.deepEqual(api[0], { role: 'user', content: '美化组件' })
+  assert.match(api[1].content, /实际生成的确认卡：修改组件：美化（done）/)
+  assert.match(api[2].content, /并未生成确认卡/)
+  assert.deepEqual(api[3], { role: 'assistant', content: '普通回答' })
 })

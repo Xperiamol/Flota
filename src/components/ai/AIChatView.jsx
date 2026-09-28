@@ -33,6 +33,7 @@ import {
   getMessagePendingActions,
   isExplicitPendingActionConfirmation,
   supersedeStalePendingActions,
+  toApiMessages,
 } from '../../utils/aiCore/pendingActions'
 import PendingActionCard from './PendingActionCard'
 import { buildMessageMetadata, createUserMessage, createAssistantMessage, extractPendingActions } from '../../utils/aiCore/messageModel'
@@ -758,8 +759,8 @@ export default function AIChatView({ onTodoUpdated }) {
     const readLatestMessages = () => useStore.getState().aiConversations.find(c => c.id === currentId)?.messages
 
     try {
-      // 构建发送给 API 的消息（只含 role + content；多模态 content array 原样透传）
-      const apiMessages = newMessages.map(m => ({ role: m.role, content: m.content }))
+      // 构建发送给 API 的消息（只含 role + content，assistant 附带实际生成的确认卡；多模态 content array 原样透传）
+      const apiMessages = toApiMessages(newMessages)
       const contextPackage = await buildContext({ notes, selectedNoteId, query: text, contextEnabled })
 
       let currentToolCalls = []

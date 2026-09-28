@@ -180,4 +180,4 @@ const handleToolCalls = async ({
   };
 };
 
-module.exports = { handleToolCalls };
+module.exports = { handleToolCalls, MAX_DEPTH };

@@ -49,6 +49,7 @@ import {
   getMessagePendingActions,
   isExplicitPendingActionConfirmation,
   supersedeStalePendingActions,
+  toApiMessages,
 } from '../../utils/aiCore/pendingActions'
 import PendingActionCard from './PendingActionCard'
 import { buildMessageMetadata, createUserMessage, createAssistantMessage } from '../../utils/aiCore/messageModel'
@@ -562,7 +563,7 @@ const AICommandCenter = ({
     const pendingActions = []
 
     try {
-      const apiMessages = nextMessages.map(m => ({ role: m.role, content: m.content }))
+      const apiMessages = toApiMessages(nextMessages)
       const contextPackage = await buildContext({ notes, selectedNoteId, query: text, contextEnabled: CONTEXT_PROFILES.floating_panel })
 
       const { result, content, cancelledByUser, requestId } = await runStream({

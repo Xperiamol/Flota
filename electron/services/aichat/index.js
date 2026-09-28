@@ -25,7 +25,7 @@ const { dispatchTool } = require('./tools/dispatcher');
 const { getSystemPrompt, buildContextSection } = require('./systemPrompt');
 const { enrichContextPackageWithMemories } = require('./memoryContext');
 const { streamRequest } = require('./stream/streamRequest');
-const { handleToolCalls } = require('./stream/toolLoop');
+const { handleToolCalls, MAX_DEPTH: MAX_TOOL_DEPTH } = require('./stream/toolLoop');
 const PendingActionStore = require('./PendingActionStore');
 
 const isContentBlockedError = (error) => /blocked|content.*blocked|machine outputted|安全|拦截|审核|风控/i.test(String(error?.message || error || ''));
@@ -41,6 +41,12 @@ const normalizeChatErrorMessage = (error) => {
 
 const isToolDisabled = (options, name) =>
   Array.isArray(options?.disabledTools) && options.disabledTools.includes(name);
+
+// 模型有时只在文字里说“已准备好，请确认执行”却没有调用写入工具，前端没有确认卡可显示，
+// 用户反复重试也只会得到同样的空话。本次请求没产生待确认动作、回复却声称有确认卡时追加一轮纠正。
+// 判定与渲染层 utils/aiCore/pendingActions.js 的 toApiMessages 保持一致。
+const CONFIRMATION_CLAIM_RE = /确认卡|确认执行|点(?:击)?确认/;
+const PHANTOM_CONFIRMATION_NUDGE = '（系统提示）你刚才的回复声称已准备好确认卡，但本轮没有调用任何写入工具，用户看不到确认卡。现在直接调用对应的写入工具（如 update_widget、create_todo），不要再调用只读工具，也不要先输出说明文字。';
 
 class AIChatService {
   constructor(aiService, noteDAO, todoDAO, mem0Service, webSearchService = null) {
@@ -228,9 +234,13 @@ class AIChatService {
   /** 流式聊天，支持工具调用 */
   async chatStream(messages, onChunk, options = {}) {
     let accumulatedContent = '';
+    let pendingActionCreated = false;
     const wrappedOnChunk = (chunk) => {
       if (chunk && chunk.type === 'content' && typeof chunk.content === 'string') {
         accumulatedContent += chunk.content;
+      }
+      if (chunk && chunk.type === 'tool_end' && safeJsonParse(chunk.result)?.requiresConfirmation) {
+        pendingActionCreated = true;
       }
       return onChunk(chunk);
     };
@@ -273,51 +283,75 @@ class AIChatService {
       ];
 
       const stream = (cfg, msgs, t, mt, oc, ab, opts) => streamRequest(cfg, msgs, t, mt, oc, ab, opts, this.aiService);
-      const result = await stream(config, fullMessages, temp, maxTk, wrappedOnChunk, options.abortSignal, options);
+      const runToolLoop = (prevResult, depth, chunkHandler) => handleToolCalls({
+        config,
+        messages: fullMessages,
+        prevResult,
+        onChunk: chunkHandler,
+        temp,
+        maxTk,
+        depth,
+        abortSignal: options.abortSignal,
+        options,
+        streamRequest: stream,
+        executeTool: (name, args, opts) => this._executeTool(name, args, opts),
+        logger: this.logger
+      });
+      const toFinalResult = (streamResult) => ({
+        success: true,
+        fullContent: streamResult.content,
+        usage: streamResult.usage,
+        finishReason: streamResult.finishReason,
+        truncated: streamResult.finishReason === 'length',
+        outputLimitApplied: userOutputLimitApplied
+      });
 
-      if (result.toolCalls && result.toolCalls.length > 0) {
-        const toolResult = await handleToolCalls({
-          config,
-          messages: fullMessages,
-          prevResult: result,
-          onChunk: wrappedOnChunk,
-          temp,
-          maxTk,
-          depth: 0,
-          abortSignal: options.abortSignal,
-          options,
-          streamRequest: stream,
-          executeTool: (name, args, opts) => this._executeTool(name, args, opts),
-          logger: this.logger
-        });
-        const finalContent = accumulatedContent || toolResult.fullContent;
-        this.logger.info('AIChatService', 'Stream chat result', {
+      const result = await stream(config, fullMessages, temp, maxTk, wrappedOnChunk, options.abortSignal, options);
+      const path = result.toolCalls && result.toolCalls.length > 0 ? 'toolLoop' : 'direct';
+      let finalResult = path === 'toolLoop'
+        ? await runToolLoop(result, 0, wrappedOnChunk)
+        : toFinalResult(result);
+
+      const claimedText = String(finalResult.fullContent || '');
+      if (!pendingActionCreated
+        && options.requireConfirmation !== false
+        && options.disableTools !== true
+        && CONFIRMATION_CLAIM_RE.test(claimedText)) {
+        this.logger.warn('AIChatService', 'Phantom confirmation claim, retrying', {
           requestId: options.requestId || null,
           conversationId: options.conversationId || null,
-          path: 'toolLoop',
-          finishReason: toolResult.finishReason || null,
-          maxTk: maxTk ?? null,
-          contentLen: String(finalContent || '').length,
+          path,
         });
-        return { ...toolResult, fullContent: finalContent };
+        fullMessages.push(
+          { role: 'assistant', content: claimedText },
+          { role: 'user', content: PHANTOM_CONFIRMATION_NUDGE }
+        );
+        // 纠正轮的文字接在上一段之后，首段内容前补一个空行分隔
+        let separated = false;
+        const retryOnChunk = (chunk) => {
+          if (!separated && chunk?.type === 'content' && chunk.content) {
+            separated = true;
+            wrappedOnChunk({ type: 'content', content: '\n\n' });
+          }
+          return wrappedOnChunk(chunk);
+        };
+        const retry = await stream(config, fullMessages, temp, maxTk, retryOnChunk, options.abortSignal, options);
+        finalResult = retry.toolCalls && retry.toolCalls.length > 0
+          ? await runToolLoop(retry, MAX_TOOL_DEPTH - 1, retryOnChunk)
+          : toFinalResult(retry);
       }
 
+      const finalContent = accumulatedContent || finalResult.fullContent;
       this.logger.info('AIChatService', 'Stream chat result', {
         requestId: options.requestId || null,
         conversationId: options.conversationId || null,
-        path: 'direct',
-        finishReason: result.finishReason || null,
+        path,
+        finishReason: finalResult.finishReason || null,
         maxTk: maxTk ?? null,
-        contentLen: String(accumulatedContent || result.content || '').length,
+        contentLen: String(finalContent || '').length,
+        pendingActionCreated,
       });
-      return {
-        success: true,
-        fullContent: accumulatedContent || result.content,
-        usage: result.usage,
-        finishReason: result.finishReason,
-        truncated: result.finishReason === 'length',
-        outputLimitApplied: userOutputLimitApplied
-      };
+      return { ...finalResult, fullContent: finalContent };
     } catch (error) {
       if (error?.name === 'AbortError' || /aborted|取消|cancel/i.test(error?.message || '')) {
         return { success: false, cancelled: true, error: '已取消生成', fullContent: accumulatedContent };
