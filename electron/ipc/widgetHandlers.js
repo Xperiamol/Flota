@@ -56,7 +56,7 @@ const registerWidgetHandlers = (getWidgetService, getWidgetGenerator, getPluginM
     const widgetId = payload.widgetId || draft?.widgetId || null;
     // 继续修草稿时以草稿代码为基础；修改已有组件时以组件当前代码为基础
     const baseCode = draft?.code || (widgetId ? service.getWidget(widgetId, { withCode: true }).code : '');
-    const { code, explanation } = await generator.generate({
+    const { code, sizes, explanation } = await generator.generate({
       instruction: payload.instruction || '',
       baseCode,
       widgetId,
@@ -71,7 +71,7 @@ const registerWidgetHandlers = (getWidgetService, getWidgetGenerator, getPluginM
     const draftId = draft
       ? service.updateDraft(payload.draftId, code)
       : service.createDraft(code, { widgetId, cloneDataFrom: payload.instanceId || undefined });
-    return { code, draftId, explanation };
+    return { code, draftId, sizes, explanation };
   }, { withEvent: true });
   handle('widget:generate-cancel', (service, requestId) => getWidgetGenerator?.()?.cancel(requestId) || false);
   handle('widget:save-draft', (service, draftId, options) => service.saveDraft(draftId, options || {}));

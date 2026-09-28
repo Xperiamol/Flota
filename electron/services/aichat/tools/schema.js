@@ -227,11 +227,11 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'create_widget',
-      description: '为用户生成一个新组件（可交互的小应用，如看板、闪卡、习惯打卡、记账、倒数日、统计卡片）。当用户想要一个“工具/模板/面板/追踪器”而不是一篇笔记时使用。确认后由专门的生成流程编写代码、在沙箱中预跑并自动修复，完成后固定到侧边栏并创建第一个实例。你只需要把需求写清楚，不要自己写代码。',
+      description: '为用户生成一个新组件（可交互的小应用，如看板、闪卡、习惯打卡、记账、倒数日、统计卡片）。当用户想要一个“工具/模板/面板/追踪器”而不是一篇笔记时使用。确认后由专门的生成流程编写代码、在沙箱中预跑并自动修复，完成后固定到侧边栏并创建第一个实例。你只需要把需求写清楚，不要自己写代码。组件有三种显示位置：首页卡片 / 主页面板（compact，紧凑，可放一两个一键操作）、笔记里和桌面小窗（medium）、组件主页（full，完整功能）。',
       parameters: {
         type: 'object',
         properties: {
-          instruction: { type: 'string', description: '完整、具体的组件需求：要记录哪些数据、如何展示、有哪些操作，以及用户提到的偏好。用用户的语言书写。' },
+          instruction: { type: 'string', description: '完整、具体的组件需求：要记录哪些数据、如何展示、有哪些操作，以及用户提到的偏好（含风格）。先原样引用用户的原话，再补充你的理解；涉及首页/主页面板、笔记内、组件主页等具体位置时写明对应尺寸（compact / medium / full）。用用户的语言书写。' },
           instance_name: { type: 'string', description: '第一个实例的名称（可选），如「英语单词」' }
         },
         required: ['instruction']
@@ -242,12 +242,12 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'update_widget',
-      description: '修改已有组件的功能或外观。修改会作用于该组件的所有实例，实例数据会保留。确认后同样经过预跑与自动修复。',
+      description: '修改已有组件的功能或外观，包括只改某个显示位置（如“在主页面板加一键打卡按钮”）。修改会作用于该组件的所有实例，实例数据会保留。确认后同样经过预跑与自动修复。组件有三种显示位置：首页卡片 / 主页面板（compact，紧凑，可放一两个一键操作）、笔记里和桌面小窗（medium）、组件主页（full，完整功能）。',
       parameters: {
         type: 'object',
         properties: {
           id: { type: 'string', description: '要修改的组件 id' },
-          instruction: { type: 'string', description: '具体的修改要求' },
+          instruction: { type: 'string', description: '具体的修改要求：先原样引用用户的原话，再补充你的理解；只改某个位置时写明对应尺寸（首页卡片/主页面板 = compact，笔记/小窗 = medium，组件主页 = full），并说明其他位置保持不变。' },
           instance_id: { type: 'string', description: '用于预览的实例 id（可选，默认第一个实例）' }
         },
         required: ['id', 'instruction']

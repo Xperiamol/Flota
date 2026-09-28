@@ -8,12 +8,14 @@ const PROBE_SETTLE_MS = 900
 let enqueue = null
 
 /**
- * 在不可见的沙箱里运行一次组件草稿，收集报错与渲染情况，供 AI 自动修复。
+ * 在不可见的沙箱里按指定尺寸运行一次组件草稿，收集报错与渲染情况，供 AI 自动修复。
+ * @param {string} draftId
+ * @param {'compact'|'medium'|'full'} [size]
  * @returns {Promise<{ errors: Array<{message: string, stack?: string}>, health: object | null, skipped?: boolean }>}
  */
-export const probeWidget = (draftId) => new Promise((resolve) => {
+export const probeWidget = (draftId, size = 'full') => new Promise((resolve) => {
   if (!enqueue) return resolve({ errors: [], health: null, skipped: true })
-  enqueue({ id: `${draftId}-${Date.now()}`, draftId, resolve })
+  enqueue({ id: `${draftId}-${size}-${Date.now()}`, draftId, size, resolve })
 })
 
 /** 由预跑结果得出需要修复的问题 */
@@ -51,7 +53,10 @@ function Probe({ request, onDone }) {
       state.timer = setTimeout(finish, PROBE_SETTLE_MS)
     }
   }
-  return <WidgetHost instanceId={request.draftId} size="full" surface="probe" onEvent={onEvent} showErrors={false} sx={{ height: 600 }} />
+  // full 占满固定高度；其他尺寸按首页卡片 / 笔记里的真实上限随内容撑开
+  return request.size === 'full'
+    ? <WidgetHost instanceId={request.draftId} size="full" surface="probe" onEvent={onEvent} showErrors={false} sx={{ height: 600 }} />
+    : <WidgetHost instanceId={request.draftId} size={request.size} surface="probe" onEvent={onEvent} showErrors={false} minHeight={48} maxHeight={request.size === 'compact' ? 320 : 600} />
 }
 
 /** 全局挂载一次：在屏幕外运行预跑用的沙箱 */

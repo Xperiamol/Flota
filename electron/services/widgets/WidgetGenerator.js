@@ -3,6 +3,9 @@ const { parseManifest } = require('./manifest');
 
 const MAX_EXISTING_WIDGETS = 20;
 const MAX_ERROR_CHARS = 4000;
+// 从零新建时放开一些，让设计更多样；修改已有代码、修复报错时保持保守，避免改坏
+const CREATE_TEMPERATURE = 0.6;
+const EDIT_TEMPERATURE = 0.3;
 
 /** 从模型输出中取出完整 HTML：优先 ```html 代码块，其次裸露的 <!doctype ... </html> */
 const extractHtml = (text) => {
@@ -67,7 +70,7 @@ class WidgetGenerator {
       '## 用户已有的其他组件（避免做出重复的组件）',
       this.describeExistingWidgets(widgetId),
       '',
-      '## 参考示例（展示了推荐的写法，不要照搬功能）',
+      '## 参考示例（展示 SDK 与尺寸分支的推荐写法；不要照搬它们的功能和外观）',
       this.buildExamples(),
     ].join('\n');
   }
@@ -118,25 +121,26 @@ class WidgetGenerator {
     const controller = new AbortController();
     this.running.set(requestId, controller);
     try {
-      const content = await this.complete(messages, { abortSignal: controller.signal, onProgress });
+      const temperature = baseCode || errors?.length ? EDIT_TEMPERATURE : CREATE_TEMPERATURE;
+      const content = await this.complete(messages, { abortSignal: controller.signal, onProgress, temperature });
       const code = extractHtml(content);
       if (!code) throw Object.assign(new Error('AI 没有输出完整的 HTML 代码，请重试或换个说法'), { code: 'NO_HTML', raw: content.slice(0, 500) });
-      const { found, error } = parseManifest(code);
+      const { manifest, found, error } = parseManifest(code);
       if (!found) throw Object.assign(new Error('生成的代码缺少组件清单'), { code: 'NO_MANIFEST' });
       if (error) throw Object.assign(new Error(error), { code: 'INVALID_MANIFEST' });
-      return { code, explanation: content.replace(/```[\s\S]*?```/g, '').trim().slice(0, 500) };
+      return { code, sizes: manifest.sizes, explanation: content.replace(/```[\s\S]*?```/g, '').trim().slice(0, 500) };
     } finally {
       this.running.delete(requestId);
     }
   }
 
-  async complete(messages, { abortSignal, onProgress }) {
+  async complete(messages, { abortSignal, onProgress, temperature = EDIT_TEMPERATURE }) {
     const chatService = this.getChatService?.();
     if (chatService?._generatePlainText) {
       let chars = 0;
       let lastReport = 0;
       const result = await chatService._generatePlainText(messages, {
-        temperature: 0.3,
+        temperature,
         abortSignal,
         timeoutMs: 10 * 60 * 1000,
         onToken: (token) => {
@@ -150,7 +154,7 @@ class WidgetGenerator {
       if (result.truncated) throw Object.assign(new Error('生成内容超出模型输出长度上限，请简化需求或在设置中调高输出上限'), { code: 'TRUNCATED' });
       return String(result.content || '');
     }
-    const result = await this.aiService.chat(messages, { temperature: 0.3, bypassTokenLimit: true, timeoutMs: 300000 });
+    const result = await this.aiService.chat(messages, { temperature, bypassTokenLimit: true, timeoutMs: 300000 });
     if (!result?.success) throw new Error(result?.error || 'AI 调用失败');
     return String(result.data?.content || '');
   }
