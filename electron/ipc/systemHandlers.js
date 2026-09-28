@@ -46,8 +46,32 @@ const resolveLatestReleaseRedirect = (url, headers = {}) => new Promise((resolve
   request.end()
 })
 
+// 从 Microsoft Store 安装时由商店负责更新：不去 GitHub 检查，也不引导用户下载安装包（商店政策要求）
+// 开发时可用 FLOTA_SIMULATE_STORE=1 预览商店版界面
+const isStoreBuild = () => Boolean(process.windowsStore) || (!app.isPackaged && process.env.FLOTA_SIMULATE_STORE === '1')
+
+// 只允许打开这几个系统页面（system:open-external 只放行 http/https）
+const SYSTEM_PAGES = {
+  'store-updates': 'ms-windows-store://downloadsandupdates',
+  'startup-apps': 'ms-settings:startupapps',
+}
+
 async function checkForAppUpdates() {
   const currentVersion = app.getVersion()
+  if (isStoreBuild()) {
+    return {
+      success: true,
+      data: {
+        currentVersion,
+        latestVersion: currentVersion,
+        hasUpdate: false,
+        managedByStore: true,
+        downloadUrl: '',
+        publishedAt: '',
+        source: 'microsoft-store',
+      },
+    }
+  }
   const headers = {
     Accept: 'application/vnd.github+json',
     'User-Agent': `Flota/${currentVersion}`,
@@ -114,6 +138,16 @@ const registerSystemHandlers = ({ isDev }) => {
   registerIpcHandlers([
     { channel: 'system:get-platform', handler: async () => process.platform },
     { channel: 'system:get-version', handler: async () => app.getVersion() },
+    { channel: 'system:get-distribution', handler: async () => (isStoreBuild() ? 'microsoft-store' : 'direct') },
+    {
+      channel: 'system:open-system-page',
+      handler: async (event, page) => {
+        const target = SYSTEM_PAGES[page]
+        if (!target) return { success: false, error: '不支持的系统页面' }
+        await shell.openExternal(target)
+        return { success: true }
+      }
+    },
     { channel: 'system:check-for-updates', handler: async () => checkForAppUpdates() },
     { channel: 'system:get-path', handler: async (event, name) => app.getPath(name) },
     {

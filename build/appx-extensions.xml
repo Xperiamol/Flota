@@ -1,0 +1,3 @@
+        <desktop:Extension Category="windows.startupTask" Executable="app\Flota.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="FlotaStartup" Enabled="false" DisplayName="Flota" />
+        </desktop:Extension>

@@ -80,9 +80,34 @@ jobs:
         run: npm run package-mcp
 
       # electron-builder 打包（--publish never 禁止它自己上传，由下面统一发布）
+      # Windows：NSIS 安装包；配置了商店身份（仓库变量 MS_STORE_*）时同时打 Microsoft Store 用的 .appx。
+      # appx 不签名，上传到 Partner Center 后由商店签名。
       - name: Package (Windows)
         if: matrix.os == 'windows-latest'
-        run: npx electron-builder --win --publish never
+        shell: bash
+        env:
+          MS_STORE_IDENTITY_NAME: ${{ vars.MS_STORE_IDENTITY_NAME }}
+          MS_STORE_PUBLISHER: ${{ vars.MS_STORE_PUBLISHER }}
+          MS_STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.MS_STORE_PUBLISHER_DISPLAY_NAME }}
+        run: |
+          if [[ -n "$MS_STORE_IDENTITY_NAME" && -n "$MS_STORE_PUBLISHER" && -n "$MS_STORE_PUBLISHER_DISPLAY_NAME" ]]; then
+            npx electron-builder --win nsis appx --publish never \
+              -c.appx.identityName="$MS_STORE_IDENTITY_NAME" \
+              -c.appx.publisher="$MS_STORE_PUBLISHER" \
+              -c.appx.publisherDisplayName="$MS_STORE_PUBLISHER_DISPLAY_NAME"
+          else
+            echo "::notice::没有配置 Microsoft Store 身份（仓库变量 MS_STORE_IDENTITY_NAME / MS_STORE_PUBLISHER / MS_STORE_PUBLISHER_DISPLAY_NAME），只打 NSIS 安装包"
+            npx electron-builder --win --publish never
+          fi
+
+      # 商店包单独存一份，方便下载后上传到 Partner Center（不放进 GitHub Release：未签名的 appx 用户装不了）
+      - name: Upload Microsoft Store package
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Flota-microsoft-store-${{ github.ref_name }}
+          path: dist-electron/*.appx
+          if-no-files-found: ignore
 
       - name: Package (macOS)
         if: matrix.os == 'macos-latest'

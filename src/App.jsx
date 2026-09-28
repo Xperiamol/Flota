@@ -683,10 +683,13 @@ function App() {
         try {
           const version = await window.electronAPI?.system?.getVersion?.()
           if (version) setAppVersion(version)
+          const distribution = await window.electronAPI?.system?.getDistribution?.()
+          if (distribution) useStore.getState().setAppDistribution(distribution)
         } catch (error) {
           logger.warn('[App] 获取应用版本失败:', error)
         }
-        if (usePrefsStore.getState().autoCheckUpdates !== false) {
+        // 商店版由 Microsoft Store 更新，不自己检查
+        if (useStore.getState().appDistribution !== 'microsoft-store' && usePrefsStore.getState().autoCheckUpdates !== false) {
           checkForUpdates({ silent: true }).then((result) => {
             const info = result?.data
             if (!info?.hasUpdate) return

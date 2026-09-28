@@ -579,6 +579,7 @@ const Settings = () => {
     const settingsTabValue = useStore((state) => state.settingsTabValue);
     const appVersion = useStore((state) => state.appVersion);
     const updateInfo = useStore((state) => state.appUpdateInfo);
+    const isStoreBuild = useStore((state) => state.appDistribution === 'microsoft-store');
     const checkForUpdates = useStore((state) => state.checkForUpdates);
     const prefs = usePrefsStore();
     const [closeToTray, setCloseToTray] = useState(true);
@@ -1203,16 +1204,29 @@ const Settings = () => {
                     </Typography>
                     <List disablePadding>
                         <SettingGroupLabel first>启动</SettingGroupLabel>
-                        <SettingRow
-                            primary={t('settings.autoLaunch')}
-                            secondary={t('settings.autoLaunchDesc')}
-                            action={(
-                                <Switch
-                                    checked={settings.autoLaunch}
-                                    onChange={(e) => handleSettingChange('autoLaunch', e.target.checked)}
-                                />
-                            )}
-                        />
+                        {isStoreBuild ? (
+                            <SettingRow
+                                primary={t('settings.autoLaunch')}
+                                secondary="在 Windows 设置的「启动应用」里开关"
+                                action={(
+                                    <Button variant="outlined" size="small"
+                                        onClick={() => window.electronAPI?.system?.openSystemPage?.('startup-apps')}>
+                                        打开设置
+                                    </Button>
+                                )}
+                            />
+                        ) : (
+                            <SettingRow
+                                primary={t('settings.autoLaunch')}
+                                secondary={t('settings.autoLaunchDesc')}
+                                action={(
+                                    <Switch
+                                        checked={settings.autoLaunch}
+                                        onChange={(e) => handleSettingChange('autoLaunch', e.target.checked)}
+                                    />
+                                )}
+                            />
+                        )}
                         <SettingRow
                             primary="启动时打开"
                             secondary="打开 Flota 后先进入的页面"
@@ -1232,6 +1246,7 @@ const Settings = () => {
                             )}
                         />
 
+                        {!isStoreBuild && (
                         <SettingRow
                             primary="自动检查更新"
                             secondary="每次启动时看看有没有新版本，有的话提醒你，不会自动下载"
@@ -1243,6 +1258,7 @@ const Settings = () => {
                                 />
                             )}
                         />
+                        )}
 
                         <SettingGroupLabel>窗口</SettingGroupLabel>
                         <SettingRow
@@ -2060,6 +2076,7 @@ const Settings = () => {
                             autoCheck={prefs.autoCheckUpdates !== false}
                             onAutoCheckChange={(on) => savePref('autoCheckUpdates', on)}
                             onCheck={handleCheckForUpdates}
+                            managedByStore={isStoreBuild}
                         />
 
                         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1.5, flexWrap: 'wrap' }}>

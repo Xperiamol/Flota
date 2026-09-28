@@ -177,6 +177,8 @@ const useStore = create(
                 // 设置页面相关状态
                 settingsTabValue: 0, // 设置页面当前选中的标签页
                 appVersion: '',
+                // 'direct'（官网 / GitHub 安装包）| 'microsoft-store'（商店负责更新和开机自启）
+                appDistribution: 'direct',
                 appUpdateInfo: DEFAULT_APP_UPDATE_INFO,
 
                 // 筛选器相关设置
@@ -1040,6 +1042,7 @@ const useStore = create(
                 },
 
                 setAppVersion: (version) => set({ appVersion: String(version || '') }),
+                setAppDistribution: (distribution) => set({ appDistribution: distribution === 'microsoft-store' ? 'microsoft-store' : 'direct' }),
 
                 checkForUpdates: async ({ silent = false } = {}) => {
                     if (!window.electronAPI?.system?.checkForUpdates) return null
@@ -1064,6 +1067,7 @@ const useStore = create(
                                 latestVersion: result.data.latestVersion,
                                 downloadUrl: result.data.downloadUrl || DEFAULT_APP_UPDATE_INFO.downloadUrl,
                                 hasUpdate: Boolean(result.data.hasUpdate),
+                                managedByStore: Boolean(result.data.managedByStore),
                                 error: '',
                             }
                         })

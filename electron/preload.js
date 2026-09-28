@@ -268,6 +268,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getPlatform: inv('system:get-platform'),
     getVersion: inv('system:get-version'),
     checkForUpdates: inv('system:check-for-updates'),
+    getDistribution: inv('system:get-distribution'),
+    openSystemPage: inv('system:open-system-page'),
     getPath: inv('system:get-path'),
     getStorageUsage: inv('system:get-storage-usage'),
     showOpenDialog: inv('system:show-open-dialog'),

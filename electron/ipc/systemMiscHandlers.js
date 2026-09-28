@@ -30,6 +30,8 @@ const registerSystemMiscHandlers = (services, getLogger) => {
   // setting auto-launch
   ipcMain.handle('setting:set-auto-launch', async (event, enabled) => {
     try {
+      // 商店版的开机自启是清单里的 StartupTask，只能由用户在 Windows 设置里开关
+      if (process.windowsStore) return { success: false, error: '请在 Windows 设置的「启动应用」里开关', managedBySystem: true }
       app.setLoginItemSettings({ openAtLogin: enabled, path: process.execPath })
       await services.settingsService.setSetting('autoLaunch', enabled, 'boolean', '开机自启')
       return { success: true }

@@ -275,6 +275,18 @@
       "installerHeader": "build/installerHeader.bmp",
       "runAfterFinish": true
     },
+    "appx": {
+      "applicationId": "Flota",
+      "displayName": "Flota",
+      "backgroundColor": "transparent",
+      "languages": [
+        "zh-CN",
+        "en-US"
+      ],
+      "addAutoLaunchExtension": false,
+      "customExtensionsPath": "build/appx-extensions.xml",
+      "artifactName": "Flota.Store.${version}.${ext}"
+    },
     "mac": {
       "icon": "build/logo.icns",
       "target": [
