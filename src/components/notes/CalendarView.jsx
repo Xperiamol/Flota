@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from '../../utils/i18n';
 import {
   Box,
@@ -7,14 +7,16 @@ import {
   Chip,
   Tooltip,
   Fade,
-  IconButton
+  IconButton,
+  alpha
 } from '@mui/material';
 import {
   CheckCircle as CheckCircleIcon,
   RadioButtonUnchecked as RadioButtonUncheckedIcon,
   OpenInNew as OpenInNewIcon,
   Close as CloseIcon,
-  Schedule as ScheduleIcon
+  Schedule as ScheduleIcon,
+  EditNoteOutlined
 } from '../common/AppIcons';
 import {
   Dialog,
@@ -35,6 +37,8 @@ import '@excalidraw/excalidraw/index.css';
 import { useError } from '../common/ErrorProvider';
 import { isTodoCompleted, isFutureRecurringTodo, isTodoInDateInstance, isTodoCompletedOnDate, toListResult } from '../../utils/todoDisplayUtils';
 import { stripMarkdownToPreviewText } from '../../utils/markdownTextUtils'
+import { parseNoteDate } from '../../utils/noteDateUtils';
+import { buildNoteDayIndex, dayKey, formatClock, moveNoteToDay, noteCreatedDate, useNoteActivity } from '../../utils/noteCalendar'
 
 // 画布预览组件 - 只读模式
 const WhiteboardPreview = ({ content, theme }) => {
@@ -164,6 +168,14 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
   }
 
   // 格式化专注时长（秒 -> 小时分钟）
+  // 格子里的短格式：数字 + 单位（45 分 / 1.5 小时），数字大、单位小
+  const formatFocusShort = (seconds) => {
+    const minutes = Math.round((Number(seconds) || 0) / 60);
+    if (minutes < 60) return { value: String(minutes), unit: '分' };
+    const hours = Math.round((minutes / 60) * 10) / 10;
+    return { value: Number.isInteger(hours) ? String(hours) : hours.toFixed(1), unit: '小时' };
+  };
+
   const formatFocusTime = (seconds) => {
     if (!seconds || seconds <= 0) return '0分钟';
     const hours = Math.floor(seconds / 3600);
@@ -181,10 +193,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
   const handleFocusBoxClick = useCallback((date, itemsData) => {
     // 获取当天的笔记和待办详情
     const dateStr = date.toDateString();
-    const dayNotes = notes.filter(note => {
-      const noteDate = new Date(note.created_at || note.updated_at);
-      return noteDate.toDateString() === dateStr;
-    });
+    const dayNotes = (noteDayIndex[dayKey(date)]?.created) || [];
 
     const dayTodos = todos.filter(todo => {
       if (!todo.due_date) return false;
@@ -205,6 +214,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
   }, [notes, todos]);
   const [celebratingTodos, setCelebratingTodos] = useState(new Set());
   const [previewNote, setPreviewNote] = useState(null); // 预览的笔记
+  const draggedNoteRef = useRef(null); // 正在拖动的笔记（拖到别的日子 = 修改创建日期）
   const [dayDetailsOpen, setDayDetailsOpen] = useState(false); // 控制日详情对话框
   const [selectedDayData, setSelectedDayData] = useState(null); // 选中日期的详细数据
 
@@ -394,28 +404,22 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
     return todos.filter(todo => isTodoInDateInstance(todo, date));
   };
 
-  // 获取指定日期的笔记（根据 updated_at 或 created_at）
-  const getNotesForDate = (date) => {
-    if (!notes || !notes.length) return [];
-
-    const filtered = notes.filter(note => {
-      if (!note.updated_at && !note.created_at) return false;
-
-      const noteDate = new Date(note.updated_at || note.created_at);
-      return noteDate.getFullYear() === date.getFullYear() &&
-        noteDate.getMonth() === date.getMonth() &&
-        noteDate.getDate() === date.getDate();
-    });
-
-    return filtered;
-  };
+  // 笔记按「哪天写的」归类，另附「那天改过的」（规则见 utils/noteCalendar）
+  const noteActivity = useNoteActivity((state) => state.byDay);
+  const noteDayIndex = useMemo(() => buildNoteDayIndex(notes || [], noteActivity), [notes, noteActivity]);
+  const getNoteDay = (date) => noteDayIndex[dayKey(date)] || { created: [], edited: [] };
+  const getNotesForDate = (date) => getNoteDay(date).created;
 
   // 根据 viewMode 获取指定日期的内容
   const getItemsForDate = (date) => {
     if (viewMode === 'todos') {
       return getTodosForDate(date);
     } else if (viewMode === 'notes') {
-      return getNotesForDate(date);
+      const day = getNoteDay(date);
+      return [
+        ...day.created.map((note) => ({ note, kind: 'created' })),
+        ...day.edited.map((note) => ({ note, kind: 'edited' })),
+      ];
     } else if (viewMode === 'focus') {
       // 返回专注视图数据：当日的专注时长和待办统计
       const dayNotes = getNotesForDate(date);
@@ -454,6 +458,16 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
   };
 
   const calendarDays = getCalendarDays();
+  const focusMaxSeconds = viewMode === 'focus'
+    ? Math.max(1, ...calendarDays.map((day) => getItemsForDate(day.date)?.focusTimeSeconds || 0))
+    : 1;
+  // 可见日期范围内「改过的」笔记：翻月或回到日历时刷新
+  const visibleStart = calendarDays.length ? dayKey(calendarDays[0].date) : '';
+  const visibleEnd = calendarDays.length ? dayKey(calendarDays[calendarDays.length - 1].date) : '';
+  const loadNoteActivity = useNoteActivity((state) => state.load);
+  useEffect(() => {
+    if (viewMode === 'notes' && visibleStart) loadNoteActivity(visibleStart, visibleEnd, { force: true });
+  }, [viewMode, visibleStart, visibleEnd, loadNoteActivity]);
   const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
 
   return (
@@ -489,9 +503,8 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
             borderRadius: '8px',
             overflow: 'hidden',
             minWidth: '560px',
-            backgroundColor: muiTheme.palette.mode === 'dark'
-              ? 'rgba(31,31,34, 0.9)'
-              : 'rgba(255, 255, 255, 0.94)'
+            // 与下方日期格同一材质：面板内的分组底色，设了壁纸时不会变成一条白块
+            backgroundColor: muiTheme.custom?.surface?.inset
           })}
         >
           {weekDays.map((day, index) => (
@@ -523,6 +536,8 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
             border: `1px solid ${theme.palette.divider}`,
             borderRadius: '8px',
             overflow: 'hidden',
+            // 有壁纸时与首页卡片同一种分组底色，壁纸里的暗块不会透到日期格上
+            backgroundColor: theme.custom?.onWallpaper ? theme.custom.surface.inset : 'transparent',
             flex: 1,
             display: 'flex',
             flexDirection: 'column',
@@ -540,6 +555,10 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
             }}
           >
             {calendarDays.map((dayInfo, index) => {
+              // 专注视图：格子底色按当天专注时长相对本月最多的一天加深（像热力图）
+              const focusRatio = viewMode === 'focus'
+                ? Math.min(1, (getItemsForDate(dayInfo.date)?.focusTimeSeconds || 0) / focusMaxSeconds)
+                : 0;
               // 根据 viewMode 获取不同的数据
               const items = getItemsForDate(dayInfo.date);
               const dayTodos = (viewMode === 'todos' || viewMode === 'focus') ? (viewMode === 'todos' ? items : getTodosForDate(dayInfo.date)) : getTodosForDate(dayInfo.date);
@@ -563,13 +582,30 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                   // 供跨组件拖拽命中：左侧「我的一天」等待办列表用鼠标坐标拖拽（DragManager），
                   // 不是这里的原生 HTML5 dragover/drop，需要靠这个属性让 DragManager 认出日期格
                   data-calendar-day={formatDateOnly(dayInfo.date)}
+                  onClick={viewMode === 'focus' && items?.type === 'focus' && (items.focusTimeSeconds > 0 || items.todosTotal > 0)
+                    ? () => handleFocusBoxClick(dayInfo.date, items)
+                    : undefined}
                   onDragOver={(e) => handleDragOver(e, dayInfo.date)}
                   onDragLeave={handleDragLeave}
-                  onDrop={(e) => handleDropDate(e, dayInfo.date)}
+                  onDrop={(e) => {
+                    // 拖的是笔记：修改它的创建日期；否则按待办处理
+                    if (draggedNoteRef.current) {
+                      e.preventDefault();
+                      const note = draggedNoteRef.current;
+                      draggedNoteRef.current = null;
+                      handleDragLeave(e);
+                      moveNoteToDay(note, dayInfo.date);
+                      return;
+                    }
+                    handleDropDate(e, dayInfo.date);
+                  }}
                   sx={{
                     borderRight: index % 7 < 6 ? `1px solid ${theme.palette.divider}` : 'none',
                     borderBottom: index < calendarDays.length - 7 ? `1px solid ${theme.palette.divider}` : 'none',
-                    backgroundColor: dayInfo.isCurrentMonth ? 'transparent' : theme.palette.action.hover,
+                    backgroundColor: focusRatio > 0
+                      ? alpha(theme.palette.primary.main, (theme.palette.mode === 'dark' ? 0.1 : 0.06) + focusRatio * (theme.palette.mode === 'dark' ? 0.3 : 0.2))
+                      : dayInfo.isCurrentMonth ? 'transparent' : theme.palette.action.hover,
+                    cursor: viewMode === 'focus' ? 'pointer' : undefined,
                     minHeight: '100px',
                     position: 'relative',
                     overflow: 'hidden', // 防止内容溢出
@@ -671,9 +707,8 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
 
                       {/* 显示数量指示器 */}
                       {((viewMode === 'todos' && itemsToDisplay.length > 0) ||
-                        (viewMode === 'notes' && itemsToDisplay.length > 0) ||
-                        (viewMode === 'focus' && itemsToDisplay?.type === 'focus' &&
-                          (itemsToDisplay.notesCount > 0 || itemsToDisplay.todosTotal > 0))) && (
+
+                        false) && (
                           <Box
                             sx={{
                               minWidth: 22,
@@ -693,7 +728,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                             {viewMode === 'todos'
                               ? (showCompleted ? `${pendingTodosCount}/${totalTodosCount}` : pendingTodosCount)
                               : viewMode === 'notes'
-                                ? itemsToDisplay.length
+                                ? itemsToDisplay.filter((item) => item.kind === 'created').length || '✎'
                                 : (itemsToDisplay.notesCount + itemsToDisplay.todosTotal)}
                           </Box>
                         )}
@@ -703,12 +738,13 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                     <Box
                       sx={{
                         flex: 1,
-                        overflowY: 'auto',
+                        // 笔记视图只放两条 + 一行汇总，不需要滚动条
+                        overflowY: viewMode === 'notes' ? 'hidden' : 'auto',
                         overflowX: 'hidden',
                         minWidth: 0,
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: 0.5,
+                        gap: viewMode === 'notes' ? 0.375 : 0.5,
                         maxHeight: '72px', // 3行 * 24px高度
                         pr: 0.5
                       }}
@@ -845,252 +881,83 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                         </Fade>
                       ))}
 
-                      {/* 笔记视图 */}
-                      {viewMode === 'notes' && Array.isArray(itemsToDisplay) && itemsToDisplay.map((note) => {
-                        const isWhiteboard = note.note_type === 'whiteboard';
-                        const bgColor = isWhiteboard
-                          ? (theme.palette.mode === 'dark' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(236, 72, 153, 0.08)')
-                          : (theme.palette.mode === 'dark' ? 'rgba(120,120,128, 0.15)' : 'rgba(120,120,128, 0.08)');
-                        const borderColor = isWhiteboard
-                          ? (theme.palette.mode === 'dark' ? 'rgba(236, 72, 153, 0.3)' : 'rgba(236, 72, 153, 0.2)')
-                          : (theme.palette.mode === 'dark' ? 'rgba(120,120,128, 0.3)' : 'rgba(120,120,128, 0.2)');
-                        const hoverBgColor = isWhiteboard
-                          ? (theme.palette.mode === 'dark' ? 'rgba(236, 72, 153, 0.25)' : 'rgba(236, 72, 153, 0.15)')
-                          : (theme.palette.mode === 'dark' ? 'rgba(120,120,128, 0.25)' : 'rgba(120,120,128, 0.15)');
-
+                      {/* 笔记视图：只放标题——这天写的最多两条（可拖到别的日子改创建日期），其余与「改过的」汇成一行小字；
+                          具体时间和完整清单在左侧栏 */}
+                      {viewMode === 'notes' && Array.isArray(itemsToDisplay) && (() => {
+                        const createdNotes = itemsToDisplay.filter((item) => item.kind === 'created').map((item) => item.note);
+                        const editedCount = itemsToDisplay.length - createdNotes.length;
+                        const shown = createdNotes.slice(0, 2);
+                        const more = createdNotes.length - shown.length;
+                        const dark = theme.palette.mode === 'dark';
                         return (
-                          <Fade key={note.id} in timeout={200}>
-                            <Tooltip title={`${isWhiteboard ? '画布' : 'Markdown'}: ${getNoteDisplayTitle(note)}`} placement="top">
-                              <Box
-                                onClick={() => {
-                                  setPreviewNote(note);
-                                }}
-                                sx={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  p: 0.5,
-                                  borderRadius: 1,
-                                  backgroundColor: bgColor,
-                                  border: `1px solid ${borderColor}`,
-                                  cursor: 'pointer',
-                                  transition: createTransitionString(ANIMATIONS.listItem),
-                                  minHeight: '22px',
-                                  '&:hover': {
-                                    backgroundColor: hoverBgColor,
-                                  },
-                                }}
-                              >
-                                <Typography
-                                  variant="caption"
-                                  sx={{
-                                    display: 'block',
-                                    whiteSpace: 'nowrap',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    fontSize: '0.65rem',
-                                    lineHeight: 1.1,
-                                    color: theme.palette.text.primary,
-                                    flex: 1
-                                  }}
-                                >
-                                  {getNoteDisplayTitle(note)}
-                                </Typography>
-                              </Box>
-                            </Tooltip>
-                          </Fade>
+                          <>
+                            {shown.map((note) => {
+                              const tint = note.note_type === 'whiteboard' ? '236, 72, 153' : '120,120,128';
+                              return (
+                                <Tooltip key={note.id} placement="top" disableInteractive
+                                  title={`${getNoteDisplayTitle(note)} · ${formatClock(noteCreatedDate(note))}`}>
+                                  <Box
+                                    draggable
+                                    onDragStart={(e) => {
+                                      draggedNoteRef.current = note;
+                                      e.dataTransfer.effectAllowed = 'move';
+                                      e.dataTransfer.setData('text/plain', String(note.id));
+                                    }}
+                                    onDragEnd={() => { draggedNoteRef.current = null; }}
+                                    onClick={() => setPreviewNote(note)}
+                                    sx={{
+                                      px: 0.625, minHeight: 18, flexShrink: 0, display: 'flex', alignItems: 'center', borderRadius: '6px', cursor: 'grab',
+                                      backgroundColor: `rgba(${tint}, ${dark ? 0.16 : 0.09})`,
+                                      transition: createTransitionString(ANIMATIONS.listItem),
+                                      '&:hover': { backgroundColor: `rgba(${tint}, ${dark ? 0.26 : 0.16})` },
+                                      '&:active': { cursor: 'grabbing' },
+                                    }}
+                                  >
+                                    <Typography variant="caption" noWrap sx={{ fontSize: '0.68rem', lineHeight: 1.2, color: 'text.primary' }}>
+                                      {getNoteDisplayTitle(note)}
+                                    </Typography>
+                                  </Box>
+                                </Tooltip>
+                              );
+                            })}
+                            {(more > 0 || editedCount > 0) && (
+                              <Tooltip placement="top" disableInteractive
+                                title={[more > 0 && `还写了 ${more} 篇`, editedCount > 0 && `这天还改过 ${editedCount} 篇`].filter(Boolean).join('，')}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, px: 0.25, flexShrink: 0, fontSize: '0.66rem', color: 'text.secondary', lineHeight: 1.3 }}>
+                                  {more > 0 && <span>+{more}</span>}
+                                  {editedCount > 0 && (
+                                    <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.25, color: 'text.disabled' }}>
+                                      <EditNoteOutlined sx={{ fontSize: 12 }} />{editedCount}
+                                    </Box>
+                                  )}
+                                </Box>
+                              </Tooltip>
+                            )}
+                          </>
                         );
-                      })}
+                      })()}
 
-                      {/* 专注视图 - 显示当日统计 */}
-                      {viewMode === 'focus' && itemsToDisplay?.type === 'focus' && (
-                        <Box
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleFocusBoxClick(dayInfo.date, itemsToDisplay);
-                          }}
-                          sx={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 0.5,
-                            p: 0.75,
-                            borderRadius: 1,
-                            cursor: 'pointer',
-                            backgroundColor: itemsToDisplay.focusTimeSeconds > 0
-                              ? theme.palette.mode === 'dark'
-                                ? 'rgba(139, 92, 246, 0.14)'
-                                : 'rgba(139, 92, 246, 0.09)'
-                              : theme.palette.mode === 'dark'
-                                ? 'rgba(110,110,118, 0.15)'
-                                : 'rgba(110,110,118, 0.08)',
-                            border: `1px solid ${itemsToDisplay.focusTimeSeconds > 0
-                              ? theme.palette.mode === 'dark'
-                                ? 'rgba(168, 85, 247, 0.3)'
-                                : 'rgba(168, 85, 247, 0.2)'
-                              : theme.palette.mode === 'dark'
-                                ? 'rgba(110,110,118, 0.3)'
-                                : 'rgba(110,110,118, 0.2)'
-                              }`,
-                            transition: createTransitionString(ANIMATIONS.listItem),
-                            '&:hover': {
-                              backgroundColor: itemsToDisplay.focusTimeSeconds > 0
-                                ? theme.palette.mode === 'dark'
-                                  ? 'rgba(139, 92, 246, 0.22)'
-                                  : 'rgba(139, 92, 246, 0.14)'
-                                : theme.palette.mode === 'dark'
-                                  ? 'rgba(110,110,118, 0.25)'
-                                  : 'rgba(110,110,118, 0.15)'
-                            },
-                            '&:active': {
-                              backgroundColor: itemsToDisplay.focusTimeSeconds > 0
-                                ? theme.palette.mode === 'dark'
-                                  ? 'rgba(139, 92, 246, 0.28)'
-                                  : 'rgba(139, 92, 246, 0.19)'
-                                : theme.palette.mode === 'dark'
-                                  ? 'rgba(110,110,118, 0.35)'
-                                  : 'rgba(110,110,118, 0.25)'
-                            }
-                          }}
-                        >
-                          {/* 专注时长 - 主要信息，大号显示 */}
-                          {itemsToDisplay.focusTimeSeconds > 0 ? (
-                            <Box sx={{
-                              display: 'flex',
-                              flexDirection: 'column',
-                              alignItems: 'center',
-                              gap: 0.25
+                      {/* 专注视图：只写一个简短的时长，下面一行待办完成数；没有数据的日子什么都不画 */}
+                      {viewMode === 'focus' && itemsToDisplay?.type === 'focus' && (itemsToDisplay.focusTimeSeconds > 0 || itemsToDisplay.todosTotal > 0) && (
+                        <Box sx={{ px: 0.25, pt: 0.25 }}>
+                          {itemsToDisplay.focusTimeSeconds > 0 && (
+                            <Typography sx={{
+                              fontSize: '1.05rem', fontWeight: 650, lineHeight: 1.2, letterSpacing: '-0.01em',
+                              fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+                              color: theme.palette.mode === 'dark' ? theme.palette.primary.light : theme.palette.primary.dark,
                             }}>
-                              <Typography
-                                sx={{
-                                  fontSize: '0.95rem',
-                                  fontWeight: 700,
-                                  color: theme.palette.secondary.main,
-                                  lineHeight: 1.2,
-                                  textAlign: 'center'
-                                }}
-                              >
-                                {formatFocusTime(itemsToDisplay.focusTimeSeconds)}
-                              </Typography>
-                              <Typography
-                                sx={{
-                                  fontSize: '0.5rem',
-                                  color: theme.palette.text.secondary,
-                                  textTransform: 'uppercase',
-                                  letterSpacing: '0.5px',
-                                  opacity: 0.8
-                                }}
-                              >
-                                专注时长
-                              </Typography>
-                            </Box>
-                          ) : (
-                            <Typography
-                              sx={{
-                                fontSize: '0.55rem',
-                                color: theme.palette.text.disabled,
-                                textAlign: 'center',
-                                py: 0.5
-                              }}
-                            >
-                              暂无专注
+                              {formatFocusShort(itemsToDisplay.focusTimeSeconds).value}
+                              <Box component="span" sx={{ fontSize: '0.62rem', fontWeight: 500, ml: 0.25, opacity: 0.8 }}>
+                                {formatFocusShort(itemsToDisplay.focusTimeSeconds).unit}
+                              </Box>
                             </Typography>
                           )}
-
-                          {/* 次要信息：待办和笔记 */}
-                          {(itemsToDisplay.todosTotal > 0 || itemsToDisplay.notesCount > 0) && (
-                            <Box
-                              sx={{
-                                display: 'flex',
-                                justifyContent: 'center',
-                                gap: 0.75,
-                                pt: 0.25,
-                                borderTop: itemsToDisplay.focusTimeSeconds > 0
-                                  ? `1px solid ${theme.palette.mode === 'dark' ? 'rgba(168, 85, 247, 0.2)' : 'rgba(168, 85, 247, 0.15)'}`
-                                  : 'none'
-                              }}
-                            >
-                              {itemsToDisplay.todosTotal > 0 && (
-                                <Box
-                                  sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 0.25,
-                                    px: 0.5,
-                                    py: 0.15,
-                                    borderRadius: 0.5,
-                                    backgroundColor: itemsToDisplay.todosCompleted === itemsToDisplay.todosTotal
-                                      ? theme.palette.mode === 'dark'
-                                        ? 'rgba(34, 197, 94, 0.2)'
-                                        : 'rgba(34, 197, 94, 0.15)'
-                                      : 'transparent'
-                                  }}
-                                >
-                                  <Box
-                                    sx={{
-                                      width: 4,
-                                      height: 4,
-                                      borderRadius: '50%',
-                                      backgroundColor: itemsToDisplay.todosCompleted === itemsToDisplay.todosTotal
-                                        ? 'rgb(34, 197, 94)'
-                                        : theme.palette.text.secondary
-                                    }}
-                                  />
-                                  <Typography
-                                    sx={{
-                                      fontSize: '0.55rem',
-                                      fontWeight: 500,
-                                      color: itemsToDisplay.todosCompleted === itemsToDisplay.todosTotal
-                                        ? 'rgb(34, 197, 94)'
-                                        : theme.palette.text.secondary
-                                    }}
-                                  >
-                                    {itemsToDisplay.todosCompleted}/{itemsToDisplay.todosTotal}
-                                  </Typography>
-                                </Box>
-                              )}
-                              {itemsToDisplay.notesCount > 0 && (
-                                <Box
-                                  sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 0.25,
-                                    px: 0.5,
-                                    py: 0.15,
-                                    borderRadius: 0.5
-                                  }}
-                                >
-                                  <Box
-                                    sx={{
-                                      width: 4,
-                                      height: 4,
-                                      borderRadius: '50%',
-                                      backgroundColor: 'rgb(120,120,128)'
-                                    }}
-                                  />
-                                  <Typography
-                                    sx={{
-                                      fontSize: '0.55rem',
-                                      fontWeight: 500,
-                                      color: theme.palette.text.secondary
-                                    }}
-                                  >
-                                    {itemsToDisplay.notesCount}
-                                  </Typography>
-                                </Box>
-                              )}
-                            </Box>
-                          )}
-
-                          {/* 完全无活动 */}
-                          {itemsToDisplay.focusTimeSeconds === 0 && itemsToDisplay.notesCount === 0 && itemsToDisplay.todosTotal === 0 && (
-                            <Typography
-                              sx={{
-                                fontSize: '0.55rem',
-                                color: theme.palette.text.disabled,
-                                fontStyle: 'italic',
-                                textAlign: 'center'
-                              }}
-                            >
-                              无活动
+                          {itemsToDisplay.todosTotal > 0 && (
+                            <Typography sx={{
+                              mt: 0.25, fontSize: '0.66rem', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums',
+                              color: itemsToDisplay.todosCompleted === itemsToDisplay.todosTotal ? 'success.main' : 'text.secondary',
+                            }}>
+                              {itemsToDisplay.todosCompleted === itemsToDisplay.todosTotal ? '✓ ' : ''}完成 {itemsToDisplay.todosCompleted}/{itemsToDisplay.todosTotal}
                             </Typography>
                           )}
                         </Box>
@@ -1228,9 +1095,9 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
                             note.type === 'wysiwyg' ? '富文本' :
                               note.type === 'whiteboard' ? '画布' : '笔记'}
                           {' · '}
-                          {new Date(note.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                          {(parseNoteDate(note.created_at) || new Date(NaN)).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
                           {note.updated_at && note.updated_at !== note.created_at && (
-                            <> (更新于 {new Date(note.updated_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })})</>
+                            <> (更新于 {(parseNoteDate(note.updated_at) || new Date(NaN)).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })})</>
                           )}
                         </Typography>
                       </Paper>
@@ -1344,10 +1211,10 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
         <DialogContent sx={{ pt: 3 }}>
           <Box sx={{ mb: 2 }}>
             <Typography variant="caption" color="text.secondary">
-              创建时间: {previewNote?.created_at ? new Date(previewNote.created_at).toLocaleString('zh-CN') : '未知'}
+              创建时间: {previewNote?.created_at ? (parseNoteDate(previewNote.created_at) || new Date(NaN)).toLocaleString('zh-CN') : '未知'}
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
-              更新时间: {previewNote?.updated_at ? new Date(previewNote.updated_at).toLocaleString('zh-CN') : '未知'}
+              更新时间: {previewNote?.updated_at ? (parseNoteDate(previewNote.updated_at) || new Date(NaN)).toLocaleString('zh-CN') : '未知'}
             </Typography>
           </Box>
           {previewNote?.tags && typeof previewNote.tags === 'string' && previewNote.tags.trim() && (

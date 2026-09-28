@@ -151,6 +151,19 @@ class ChangeLogDAO {
    * @param {number} days - 统计最近天数
    * @returns {Object} { 'YYYY-MM-DD': count, ... }
    */
+  /** 指定日期范围内（本地日期，含两端）每天改动过的实体：[{ day, entity_id }] */
+  getEntityActivity(entityType, startDay, endDay) {
+    const db = this.getDB();
+    return db.prepare(`
+      SELECT date(created_at, 'localtime') AS day, entity_id
+      FROM changes
+      WHERE entity_type = ?
+        AND operation IN ('update', 'restore')
+        AND date(created_at, 'localtime') BETWEEN ? AND ?
+      GROUP BY day, entity_id
+    `).all(entityType, String(startDay), String(endDay));
+  }
+
   getDailyActivityCounts(entityType, days = 90) {
     const db = this.getDB();
     const stmt = db.prepare(`

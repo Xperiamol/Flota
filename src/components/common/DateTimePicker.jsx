@@ -407,6 +407,9 @@ const DateTimePicker = ({
   dateLabel = '截止日期',
   timeLabel = '截止时间',
   disableDate = false,
+  // dense：紧凑一行（弹层里用，不显示上方标签）；clearable：是否显示清除按钮
+  dense = false,
+  clearable = true,
   sx = {} 
 }) => {
   const theme = useTheme();
@@ -451,12 +454,14 @@ const DateTimePicker = ({
   };
 
   return (
-    <Box sx={{ display: 'flex', gap: 2, ...sx }}>
+    <Box sx={{ display: 'flex', gap: dense ? 1 : 2, ...sx }}>
       {/* 日期选择按钮 */}
-      <Box sx={{ flex: 1 }}>
-        <Typography variant="body2" sx={{ mb: 1, color: theme.palette.text.secondary }}>
-          {dateLabel}
-        </Typography>
+      <Box sx={{ flex: dense ? 3 : 1, minWidth: 0 }}>
+        {!dense && (
+          <Typography variant="body2" sx={{ mb: 1, color: theme.palette.text.secondary }}>
+            {dateLabel}
+          </Typography>
+        )}
         <Box sx={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
           <Button
             ref={dateButtonRef}
@@ -468,10 +473,12 @@ const DateTimePicker = ({
               width: '100%',
               justifyContent: 'flex-start',
               textTransform: 'none',
-              borderRadius: '12px',
-              py: 1.5,
-              px: 2,
-              pr: dateValue ? 6 : 2,
+              borderRadius: dense ? '10px' : '12px',
+              py: dense ? 0.625 : 1.5,
+              px: dense ? 1.25 : 2,
+              pr: dateValue && clearable ? 6 : (dense ? 1.25 : 2),
+              fontSize: dense ? 13 : undefined,
+              whiteSpace: 'nowrap',
               color: dateValue ? theme.palette.text.primary : theme.palette.text.secondary,
               borderColor: theme.palette.divider,
               backgroundColor: theme.custom?.surface?.control,
@@ -489,7 +496,7 @@ const DateTimePicker = ({
           >
             {formatDisplayDate(dateValue)}
           </Button>
-          {dateValue && !disableDate && (
+          {dateValue && !disableDate && clearable && (
             <IconButton
               size="small"
               onClick={(e) => {
@@ -517,10 +524,12 @@ const DateTimePicker = ({
       </Box>
 
       {/* 时间选择按钮 */}
-      <Box sx={{ flex: 1 }}>
-        <Typography variant="body2" sx={{ mb: 1, color: theme.palette.text.secondary }}>
-          {timeLabel}
-        </Typography>
+      <Box sx={{ flex: dense ? 2 : 1, minWidth: 0 }}>
+        {!dense && (
+          <Typography variant="body2" sx={{ mb: 1, color: theme.palette.text.secondary }}>
+            {timeLabel}
+          </Typography>
+        )}
         <Box sx={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
           <Button
             ref={timeButtonRef}
@@ -532,10 +541,12 @@ const DateTimePicker = ({
               width: '100%',
               justifyContent: 'flex-start',
               textTransform: 'none',
-              borderRadius: '12px',
-              py: 1.5,
-              px: 2,
-              pr: timeValue ? 6 : 2,
+              borderRadius: dense ? '10px' : '12px',
+              py: dense ? 0.625 : 1.5,
+              px: dense ? 1.25 : 2,
+              pr: timeValue && clearable ? 6 : (dense ? 1.25 : 2),
+              fontSize: dense ? 13 : undefined,
+              whiteSpace: 'nowrap',
               color: timeValue ? theme.palette.text.primary : theme.palette.text.secondary,
               borderColor: theme.palette.divider,
               backgroundColor: theme.custom?.surface?.control,
@@ -553,7 +564,7 @@ const DateTimePicker = ({
           >
             {formatDisplayTime(timeValue)}
           </Button>
-          {timeValue && (
+          {timeValue && clearable && (
             <IconButton
               size="small"
               onClick={(e) => {
