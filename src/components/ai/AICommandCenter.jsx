@@ -758,6 +758,7 @@ const AICommandCenter = ({
       open={open}
       layer="aiPanel"
       ariaLabel="问 AI"
+      material="frosted"
       position={resolvedPosition}
       width={panelSize.width}
       minWidth={PANEL_MIN_WIDTH}

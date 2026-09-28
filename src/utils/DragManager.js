@@ -69,12 +69,17 @@ class DragManager {
    * @param {MouseEvent} event 鼠标事件
    * @param {Object} item 被拖拽的项目
    * @param {string} itemType 项目类型 ('note' | 'todo')
+   * @param {Element} [sourceElement] 被拖的那一行；不传时取事件所在行
    */
-  startDrag(event, item, itemType) {
+  startDrag(event, item, itemType, sourceElement) {
     if (this.dragState.isDragging) {
       return;
     }
 
+    // 记下源行及其位置：预览从这一行“拿起来”，取消时飞回这里
+    const source = sourceElement || event.target?.closest?.('[data-todo-id]') || event.currentTarget || null;
+    this.dragState.sourceElement = source;
+    this.dragState.sourceRect = source?.getBoundingClientRect?.() || null;
     this.dragState.draggedItem = item;
     this.dragState.draggedItemType = itemType;
     this.dragState.startPosition = {
@@ -121,7 +126,9 @@ class DragManager {
         this.callbacks.onDragStart({
           item: this.dragState.draggedItem,
           itemType: this.dragState.draggedItemType,
-          startPosition: this.dragState.startPosition
+          startPosition: this.dragState.startPosition,
+          sourceElement: this.dragState.sourceElement,
+          sourceRect: this.dragState.sourceRect
         });
       }
     }
@@ -233,7 +240,7 @@ class DragManager {
       this.lastBoundaryState.isNearBoundary !== isNearBoundary ||
       this.lastBoundaryState.boundaryPosition !== boundaryPosition;
 
-    if (stateChanged || !this.boundaryCheckThrottle) {
+    if (stateChanged) {
       // 清除之前的节流
       if (this.boundaryCheckThrottle) {
         clearTimeout(this.boundaryCheckThrottle);
@@ -322,6 +329,8 @@ class DragManager {
     this.dragState.isDragging = false;
     this.dragState.draggedItem = null;
     this.dragState.draggedItemType = null;
+    this.dragState.sourceElement = null;
+    this.dragState.sourceRect = null;
 
     // 重置边界状态
     this.lastBoundaryState = {

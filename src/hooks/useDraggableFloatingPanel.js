@@ -55,25 +55,56 @@ export const useDraggableFloatingPanel = ({
     const rect = panelRef.current?.getBoundingClientRect()
     if (!rect) return
     event.preventDefault()
+    // 尺寸在按下时量一次，拖动中不再读布局
     dragStateRef.current = {
       offsetX: event.clientX - rect.left,
-      offsetY: event.clientY - rect.top
+      offsetY: event.clientY - rect.top,
+      width: rect.width,
+      height: rect.height,
+      next: { x: rect.left, y: rect.top },
+      frame: null
     }
     setDragging(true)
     setPosition({ x: rect.left, y: rect.top })
   }, [panelRef, setPosition])
 
+  // 拖动中每帧直接改面板的 left/top，松手才写回 state：
+  // 每次 mousemove 都 setPosition 会让整个面板（AI 小窗含整段对话）跟着重渲染。
   useEffect(() => {
     if (!dragging) return undefined
 
     const handleMove = (event) => {
       const state = dragStateRef.current
       if (!state) return
-      setPosition(clampPosition(event.clientX - state.offsetX, event.clientY - state.offsetY))
+      const maxX = Math.max(margin, window.innerWidth - state.width - margin)
+      const maxY = Math.max(margin, window.innerHeight - state.height - margin)
+      state.next = {
+        x: Math.min(Math.max(margin, event.clientX - state.offsetX), maxX),
+        y: Math.min(Math.max(margin, event.clientY - state.offsetY), maxY)
+      }
+      if (state.frame) return
+      state.frame = window.requestAnimationFrame(() => {
+        state.frame = null
+        const panel = panelRef.current
+        if (!panel) return
+        panel.style.left = `${state.next.x}px`
+        panel.style.top = `${state.next.y}px`
+      })
     }
 
     const handleUp = () => {
+      const state = dragStateRef.current
       dragStateRef.current = null
+      if (state) {
+        if (state.frame) window.cancelAnimationFrame(state.frame)
+        // 先落到 DOM：最终位置若与按下时相同，React 不会重写样式
+        const panel = panelRef.current
+        if (panel) {
+          panel.style.left = `${state.next.x}px`
+          panel.style.top = `${state.next.y}px`
+        }
+        setPosition(state.next)
+      }
       setDragging(false)
     }
 
@@ -82,8 +113,10 @@ export const useDraggableFloatingPanel = ({
     return () => {
       window.removeEventListener('mousemove', handleMove)
       window.removeEventListener('mouseup', handleUp)
+      const state = dragStateRef.current
+      if (state?.frame) window.cancelAnimationFrame(state.frame)
     }
-  }, [clampPosition, dragging, setPosition])
+  }, [dragging, margin, panelRef, setPosition])
 
   useEffect(() => {
     if (!position) return

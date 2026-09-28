@@ -29,6 +29,19 @@ const getGlassSx = (theme, density = 'regular') => {
   }
 }
 
+/** 毛玻璃：半透明底 + 背景模糊，透出后面的列表和壁纸（筛选器、AI 小窗等可拖动浮窗共用） */
+export const getFrostedSx = (theme) => {
+  const dark = theme.palette.mode === 'dark'
+  return {
+    bgcolor: dark ? alpha('#26262a', 0.62) : alpha('#ffffff', 0.58),
+    backgroundImage: 'none',
+    backdropFilter: 'blur(28px) saturate(180%)',
+    WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+    border: `1px solid ${dark ? alpha('#ffffff', 0.12) : alpha('#ffffff', 0.7)}`,
+    boxShadow: dark ? '0 10px 30px rgba(0,0,0,0.32)' : '0 10px 30px rgba(20,20,24,0.10)',
+  }
+}
+
 const FloatingGlassSurface = forwardRef(function FloatingGlassSurface({
   open = true,
   children,
@@ -39,6 +52,8 @@ const FloatingGlassSurface = forwardRef(function FloatingGlassSurface({
   maxHeight,
   layer = 'selectionPanel',
   density = 'regular',
+  // solid：跟随主题的菜单/对话框材质；frosted：毛玻璃
+  material = 'solid',
   pointerPassthrough = true,
   onClickAway,
   clickAwayDisabled = false,
@@ -53,16 +68,17 @@ const FloatingGlassSurface = forwardRef(function FloatingGlassSurface({
         role={ariaLabel ? 'dialog' : undefined}
         aria-label={ariaLabel}
         elevation={0}
+        // 位置走内联样式：放进 sx 会让拖动时每个像素都生成一个新的样式类
+        style={{ left: position?.x, top: position?.y }}
         sx={(theme) => ({
           position: 'fixed',
-          left: position?.x,
-          top: position?.y,
           width,
           minWidth,
           maxWidth,
           maxHeight,
           pointerEvents: 'auto',
           ...getGlassSx(theme, density),
+          ...(material === 'frosted' ? getFrostedSx(theme) : null),
           ...(typeof sx === 'function' ? sx(theme) : sx)
         })}
       >

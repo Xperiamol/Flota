@@ -1,48 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useLayoutEffect } from 'react';
 import { Box, Typography } from '@mui/material';
-import { keyframes, useTheme } from '@mui/material/styles';
+import { alpha, useTheme } from '@mui/material/styles';
 import { Note as NoteIcon } from './AppIcons';
 import { Checklist as ChecklistIcon } from './AppIcons';
 import { Launch as LaunchIcon } from './AppIcons';
 import { CenterFocusStrong as FocusIcon } from './AppIcons';
+import { getFrostedSx } from './FloatingGlassSurface';
 import { useStore } from '../../store/useStore';
 import { isPlaceholderOnlyPreview, stripMarkdownToPreviewText } from '../../utils/markdownTextUtils'
 
-// 优雅的浮动动画 - 更轻柔的幅度
-const elegantFloat = keyframes`
-  0%, 100% {
-    transform: translate(-50%, -50%) translateY(0px) scale(1);
-  }
-  50% {
-    transform: translate(-50%, -50%) translateY(-3px) scale(1.01);
-  }
-`;
-
-// 呼吸光晕动画 - 用于边界提示
-const glowPulse = keyframes`
-  0%, 100% {
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 0 0 0 var(--glow-color);
-  }
-  50% {
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.16), 0 0 24px 4px var(--glow-color);
-  }
-`;
-
-// 图标弹跳动画
-const iconBounce = keyframes`
-  0%, 100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.15);
-  }
-`;
-
-/**
- * 拖拽预览组件
- * 显示拖拽过程中的视觉反馈和动画效果
- * 采用毛玻璃风格，与应用整体设计语言一致
- */
 // 四象限文案，与待办页四象限视图（TodoView）的标题保持一致
 const QUADRANT_DROP_LABELS = {
   urgent_important: '重要且紧急',
@@ -58,330 +24,284 @@ const formatCalendarDayLabel = (isoDate) => {
   return month && day ? `${Number(month)}月${Number(day)}日` : '';
 };
 
-const DragPreview = ({
-  isDragging,
-  draggedItem,
-  draggedItemType,
-  currentPosition,
-  isNearBoundary,
-  boundaryPosition,
-  hoverTarget,
-  previewRef
-}) => {
-  const primaryColor = useStore((state) => state.primaryColor);
-  const muiTheme = useTheme();
-  const isDarkMode = muiTheme.palette.mode === 'dark';
-  const [showPreview, setShowPreview] = useState(false);
+const hasRealTitle = (note) => note.title && note.title !== '无标题' && note.title !== 'Untitled';
+
+const getItemTitle = (item, type) => {
+  if (type === 'note') {
+    if (hasRealTitle(item)) return item.title;
+    if (item.content) {
+      if (item.note_type === 'whiteboard') return '画布笔记';
+      const clean = stripMarkdownToPreviewText(item.content)
+      if (isPlaceholderOnlyPreview(clean)) return '';
+      if (clean) return clean.substring(0, 9) + (clean.length > 9 ? '...' : '');
+    }
+    return '';
+  }
+  if (type === 'todo') {
+    if (Array.isArray(item)) return `多选待办 (${item.length}项)`;
+    return item.content || item.title || '未命名待办';
+  }
+  return '未知项目';
+};
+
+const getItemSubtitle = (item, type) => {
+  if (type === 'note') {
+    const content = item.content || '';
+    if (item.note_type === 'whiteboard') {
+      try {
+        const count = JSON.parse(content).elements?.filter(e => !e.isDeleted)?.length || 0;
+        return count > 0 ? `画布笔记 · ${count} 个元素` : '画布笔记';
+      } catch {
+        return '画布笔记';
+      }
+    }
+    let clean = stripMarkdownToPreviewText(content)
+    // 没有标题时标题就是正文开头，副标题跳过这部分
+    if (!hasRealTitle(item)) clean = clean.substring(9).trim();
+    return clean ? clean.substring(0, 50) + (clean.length > 50 ? '...' : '') : '';
+  }
+  if (type === 'todo') {
+    if (Array.isArray(item)) return '拖拽选中项...';
+    return item.description ? item.description.substring(0, 30) : '';
+  }
+  return '';
+};
+
+// 提示文案跟着鼠标当前悬停的落点变化：
+// 待办依次判断"边缘专注" > "悬停在象限上" > "悬停在日历日期格上" > 默认引导语
+const getDropHint = (type, isNearBoundary, hoverTarget) => {
+  if (type === 'todo') {
+    if (isNearBoundary) return '释放并开始专注';
+    if (hoverTarget?.quadrant) return `释放设为${QUADRANT_DROP_LABELS[hoverTarget.quadrant] || ''}`;
+    if (hoverTarget?.calendarDay) {
+      const dayLabel = formatCalendarDayLabel(hoverTarget.calendarDay)
+      return dayLabel ? `释放移到 ${dayLabel}` : '释放以更改日期';
+    }
+    return '拖到象限调整优先级';
+  }
+  return isNearBoundary ? '释放创建独立窗口' : '拖动到屏幕边缘创建独立窗口';
+};
+
+const PRIORITY_LABELS = { high: '高优先级', medium: '中优先级', low: '低优先级' };
+const EASE_OUT = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
+
+const prefersReducedMotion = () => {
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * 拖拽预览：从源行拿起（放大、微倾、加深投影）→ 跟随鼠标 → 放到落点时缩小淡出，没放到落点时飞回源行。
+ * 位置由 DragAnimationProvider 每帧直接写外层的 transform；这里只负责卡片本身的外观与状态动画。
+ */
+const DragPreview = ({ state, previewRef }) => {
+  const {
+    isDragging, phase, draggedItem, draggedItemType, origin, width, grabOffset,
+    isNearBoundary, boundaryPosition, hoverTarget,
+  } = state;
+  const primaryColor = useStore((s) => s.primaryColor);
+  const theme = useTheme();
+  const isDarkMode = theme.palette.mode === 'dark';
+  const [lifted, setLifted] = useState(false);
+  const [reducedMotion] = useState(prefersReducedMotion);
   const [showBoundaryIndicator, setShowBoundaryIndicator] = useState(false);
 
+  // 挂载时卡片盖在源行上，下一帧再“拿起”，让放大和倾斜有过渡
   useEffect(() => {
-    if (isDragging) {
-      setShowPreview(true);
-    } else {
-      const timer = setTimeout(() => setShowPreview(false), 250);
-      return () => clearTimeout(timer);
+    if (phase !== 'dragging') return undefined;
+    setLifted(false);
+    const frame = requestAnimationFrame(() => setLifted(true));
+    return () => cancelAnimationFrame(frame);
+  }, [phase, draggedItem]);
+
+  // 外层位置不写进 style prop，避免重渲染时覆盖拖动中逐帧写入的 transform
+  useLayoutEffect(() => {
+    const node = previewRef.current;
+    if (!node) return;
+    const toOrigin = `translate3d(${origin.x}px, ${origin.y}px, 0)`;
+    if (phase === 'dragging') {
+      node.style.transition = 'none';
+      node.style.transform = toOrigin;
+    } else if (phase === 'returning') {
+      node.style.transition = reducedMotion ? 'none' : `transform 240ms ${EASE_OUT}`;
+      node.style.transform = toOrigin;
     }
-  }, [isDragging, draggedItem]);
+  }, [phase, draggedItem, origin, previewRef, reducedMotion]);
 
   useEffect(() => {
     if (isNearBoundary) {
       setShowBoundaryIndicator(true);
-    } else {
-      const timer = setTimeout(() => setShowBoundaryIndicator(false), 350);
-      return () => clearTimeout(timer);
+      return undefined;
     }
+    const timer = setTimeout(() => setShowBoundaryIndicator(false), 350);
+    return () => clearTimeout(timer);
   }, [isNearBoundary]);
 
-  if (!showPreview || !draggedItem) {
-    return null;
+  if (!isDragging || !draggedItem) return null;
+
+  const overTarget = isNearBoundary || Boolean(hoverTarget?.quadrant) || Boolean(hoverTarget?.calendarDay);
+  const isSingleTodo = draggedItemType === 'todo' && !Array.isArray(draggedItem);
+  const itemTitle = getItemTitle(draggedItem, draggedItemType);
+  const itemSubtitle = getItemSubtitle(draggedItem, draggedItemType);
+
+  let cardTransform = 'none';
+  let cardOpacity = 1;
+  if (!reducedMotion) {
+    if (phase === 'dropped') cardTransform = 'scale(0.88)';
+    else if (phase === 'dragging' && lifted) cardTransform = overTarget ? 'scale(0.97)' : 'scale(1.03) rotate(-1.2deg)';
   }
+  if (phase === 'dropped' || phase === 'returning') cardOpacity = 0;
 
-  const getItemIcon = () => {
-    const iconStyle = {
-      fontSize: 20,
-      color: primaryColor,
-      animation: isNearBoundary ? `${iconBounce} 0.6s ease-in-out infinite` : 'none',
-      transition: 'color 0.3s ease'
-    };
-    
-    switch (draggedItemType) {
-      case 'note':
-        return <NoteIcon sx={iconStyle} />;
-      case 'todo':
-        return <ChecklistIcon sx={iconStyle} />;
-      default:
-        return <NoteIcon sx={iconStyle} />;
-    }
-  };
-
-  const getItemTitle = () => {
-    if (draggedItemType === 'note') {
-      if (draggedItem.title && draggedItem.title !== '无标题' && draggedItem.title !== 'Untitled') {
-        return draggedItem.title;
-      }
-      if (draggedItem.content) {
-        if (draggedItem.note_type === 'whiteboard') return '画布笔记';
-        const clean = stripMarkdownToPreviewText(draggedItem.content)
-        if (isPlaceholderOnlyPreview(clean)) return '';
-        if (clean) return clean.substring(0, 9) + (clean.length > 9 ? '...' : '');
-      }
-      return '';
-    } else if (draggedItemType === 'todo') {
-      if (Array.isArray(draggedItem)) {
-        return `多选待办 (${draggedItem.length}项)`;
-      } else {
-        return draggedItem.content || draggedItem.title || '未命名待办';
-      }
-    }
-    return '未知项目';
-  };
-
-  const getItemSubtitle = () => {
-    if (draggedItemType === 'note') {
-      const content = draggedItem.content || '';
-      
-      if (draggedItem.note_type === 'whiteboard') {
-        try {
-          const wData = JSON.parse(content);
-          const count = wData.elements?.filter(e => !e.isDeleted)?.length || 0;
-          return count > 0 ? `画布笔记 · ${count} 个元素` : '画布笔记';
-        } catch { 
-           return '画布笔记'; 
-        }
-      }
-
-      // Simple markdown stripper logic identical to NoteList
-      let clean = stripMarkdownToPreviewText(content)
-      
-      // If the title is just the start of the content, skip the first 9 chars for the subtitle
-      const hasRealTitle = draggedItem.title && draggedItem.title !== '无标题' && draggedItem.title !== 'Untitled';
-      const skipChars = hasRealTitle ? 0 : 9;
-      if (skipChars > 0) {
-         clean = clean.substring(skipChars).trim();
-      }
-      return clean ? clean.substring(0, 50) + (clean.length > 50 ? '...' : '') : '';
-
-    } else if (draggedItemType === 'todo') {
-      if (Array.isArray(draggedItem)) {
-        return '拖拽选中项...';
-      }
-      return draggedItem.description ? draggedItem.description.substring(0, 30) : '';
-    }
-    return '';
-  };
-
-  const itemTitle = getItemTitle();
-  const itemSubtitle = getItemSubtitle();
+  const liftedShadow = isDarkMode
+    ? '0 18px 40px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3)'
+    : '0 18px 40px rgba(20,20,24,0.16), 0 2px 8px rgba(20,20,24,0.06)';
 
   return (
     <>
-      {/* 拖拽预览卡片 - 毛玻璃风格 */}
       <div
         ref={previewRef}
         style={{
-          '--glow-color': `${primaryColor}40`,
           position: 'fixed',
-          left: currentPosition.x,
-          top: currentPosition.y,
-          transform: 'translate(-50%, -50%)',
+          left: 0,
+          top: 0,
+          width,
           pointerEvents: 'none',
           zIndex: 99999,
-          opacity: isDragging ? 1 : 0,
-          transition: 'opacity 0.24s cubic-bezier(0.32, 0.72, 0, 1), background-color 0.24s cubic-bezier(0.32, 0.72, 0, 1), box-shadow 0.24s cubic-bezier(0.32, 0.72, 0, 1)',
-          padding: draggedItemType === 'note' ? '8px 16px' : '10px 16px',
-          minWidth: '240px',
-          maxWidth: '320px',
-          // 毛玻璃背景
-          backgroundColor: isDarkMode 
-            ? (isNearBoundary ? `${primaryColor}18` : 'rgba(31,31,34, 0.95)')
-            : (isNearBoundary ? `${primaryColor}12` : 'rgba(255, 255, 255, 0.98)'),
-          backdropFilter: 'blur(16px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(16px) saturate(180%)',
-          // 边框
-          border: isNearBoundary 
-            ? `1.5px solid ${primaryColor}` 
-            : `1px solid ${isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)'}`,
-          borderRadius: '12px',
-          // 阴影
-          boxShadow: isNearBoundary
-            ? `0 12px 40px rgba(0, 0, 0, ${isDarkMode ? '0.3' : '0.15'}), 0 0 20px ${primaryColor}30`
-            : `0 8px 32px rgba(0, 0, 0, ${isDarkMode ? '0.25' : '0.1'})`,
-          // 动画
-          animation: isDragging 
-            ? (isNearBoundary ? `${glowPulse} 1.5s ease-in-out infinite` : `${elegantFloat} 2.5s ease-in-out infinite`)
-            : 'none',
-          willChange: 'left, top, transform',
+          willChange: 'transform',
         }}
       >
-        {/* 内容区域 */}
-        <Box sx={{ 
-          display: 'flex', 
-          alignItems: (draggedItemType === 'todo' && !Array.isArray(draggedItem)) ? 'flex-start' : 'center', 
-          gap: 1.5 
-        }}>
-          {/* 图标/前缀指示器 */}
-          {(draggedItemType === 'todo' && !Array.isArray(draggedItem)) ? (
-            <Box sx={{ mt: 0.2, display: 'flex', alignItems: 'center' }}>
-              <Box sx={{ 
-                width: 18, 
-                height: 18, 
-                borderRadius: '50%', 
-                border: `2px solid ${isDarkMode ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'}`,
-                animation: isNearBoundary ? `${iconBounce} 0.6s ease-in-out infinite` : 'none'
-              }} />
-            </Box>
-          ) : Array.isArray(draggedItem) ? (
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 32,
-                height: 32,
-                borderRadius: '8px',
-                backgroundColor: `${primaryColor}15`,
+        <Box
+          sx={(t) => ({
+            ...getFrostedSx(t),
+            borderRadius: '12px',
+            px: 1.75,
+            py: 1.25,
+            transformOrigin: `${grabOffset.x}px ${grabOffset.y}px`,
+            transform: cardTransform,
+            opacity: cardOpacity,
+            boxShadow: lifted ? liftedShadow : getFrostedSx(t).boxShadow,
+            borderColor: overTarget ? alpha(primaryColor, 0.9) : undefined,
+            transition: reducedMotion
+              ? 'opacity 120ms linear'
+              : [
+                `transform ${phase === 'dropped' ? 180 : 200}ms ${EASE_OUT}`,
+                `box-shadow 200ms ${EASE_OUT}`,
+                'border-color 160ms ease',
+                // 飞回时先走一段再淡出，能看出回到了哪一行
+                `opacity ${phase === 'returning' ? '160ms ease 90ms' : '180ms ease'}`,
+              ].join(', '),
+          })}
+        >
+          <Box sx={{ display: 'flex', alignItems: isSingleTodo ? 'flex-start' : 'center', gap: 1.25 }}>
+            {isSingleTodo ? (
+              <Box sx={{
+                mt: '2px',
+                width: 16,
+                height: 16,
                 flexShrink: 0,
-                ...(isNearBoundary && { backgroundColor: `${primaryColor}25` })
-              }}
-            >
-              {getItemIcon()}
-            </Box>
-          ) : null}
-          
-          {/* 文字内容 */}
-          <Box sx={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-               {draggedItemType === 'note' && draggedItem?.note_type === 'whiteboard' && (
-                 <NoteIcon sx={{ fontSize: 13, color: 'text.disabled', flexShrink: 0 }} />
-               )}
-               {itemTitle && (
-                 <Typography 
-                   variant={draggedItemType === 'note' ? "subtitle2" : "body2"} 
-                   sx={{ 
-                     fontWeight: draggedItemType === 'note' ? 500 : 400,
-                     fontSize: draggedItemType === 'note' ? '0.875rem' : '0.875rem',
-                     color: isDarkMode ? 'rgba(255, 255, 255, 0.95)' : 'rgba(0, 0, 0, 0.87)',
-                     overflow: 'hidden',
-                     textOverflow: 'ellipsis',
-                     whiteSpace: 'nowrap',
-                     lineHeight: 1.3,
-                     flex: 1
-                   }}
-                 >
-                   {itemTitle}
-                 </Typography>
-               )}
-            </Box>
-            
-            {(draggedItemType === 'note' || Array.isArray(draggedItem)) ? (
-              <Typography 
-                variant="body2" 
-                sx={{
-                  display: 'block',
-                  fontSize: '0.85rem',
-                  color: isDarkMode ? 'rgba(255, 255, 255, 0.6)' : 'rgba(0, 0, 0, 0.5)',
+                borderRadius: '50%',
+                border: `1.5px solid ${alpha(theme.palette.text.primary, 0.3)}`,
+              }} />
+            ) : Array.isArray(draggedItem) ? (
+              <Box sx={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 28, height: 28, borderRadius: '8px', flexShrink: 0,
+                bgcolor: alpha(primaryColor, 0.12),
+              }}>
+                <ChecklistIcon sx={{ fontSize: 18, color: primaryColor }} />
+              </Box>
+            ) : null}
+
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                {draggedItemType === 'note' && draggedItem?.note_type === 'whiteboard' && (
+                  <NoteIcon sx={{ fontSize: 13, color: 'text.disabled', flexShrink: 0 }} />
+                )}
+                {itemTitle && (
+                  <Typography sx={{
+                    flex: 1,
+                    fontSize: '0.875rem',
+                    fontWeight: draggedItemType === 'note' ? 500 : 400,
+                    lineHeight: 1.3,
+                    color: 'text.primary',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {itemTitle}
+                  </Typography>
+                )}
+              </Box>
+
+              {isSingleTodo ? (
+                (draggedItem.priority || itemSubtitle) && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5, overflow: 'hidden' }}>
+                    {draggedItem.priority && (
+                      <Box sx={{
+                        px: 0.75, py: 0.125, borderRadius: '4px', whiteSpace: 'nowrap',
+                        fontSize: '0.7rem', color: primaryColor, bgcolor: alpha(primaryColor, 0.1),
+                      }}>
+                        {PRIORITY_LABELS[draggedItem.priority] || '优先级'}
+                      </Box>
+                    )}
+                    {itemSubtitle && (
+                      <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {itemSubtitle}
+                      </Typography>
+                    )}
+                  </Box>
+                )
+              ) : itemSubtitle && (
+                <Typography sx={{
+                  mt: 0.375,
+                  fontSize: '0.8125rem',
+                  lineHeight: 1.4,
+                  color: 'text.secondary',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
-                  lineHeight: 1.4,
-                  mt: 0.5,
-                }}
-              >
-                {itemSubtitle}
-              </Typography>
-            ) : (
-               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5, flexWrap: 'nowrap', overflow: 'hidden' }}>
-                  {draggedItem?.priority && (
-                     <Box sx={{ 
-                       px: 0.8, py: 0.2, 
-                       borderRadius: '4px', 
-                       backgroundColor: `${primaryColor}15`, 
-                       color: primaryColor, 
-                       fontSize: '0.7rem',
-                       whiteSpace: 'nowrap'
-                     }}>
-                       {draggedItem.priority === 'high' ? '高优先级' : 
-                        draggedItem.priority === 'medium' ? '中优先级' : 
-                        draggedItem.priority === 'low' ? '低优先级' : '优先级'}
-                     </Box>
-                  )}
-                  {itemSubtitle && (
-                     <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {itemSubtitle}
-                     </Typography>
-                  )}
-               </Box>
+                }}>
+                  {itemSubtitle}
+                </Typography>
+              )}
+            </Box>
+
+            {isNearBoundary && (
+              <Box sx={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 26, height: 26, borderRadius: '7px', flexShrink: 0,
+                bgcolor: alpha(primaryColor, 0.14),
+              }}>
+                {draggedItemType === 'todo'
+                  ? <FocusIcon sx={{ fontSize: 16, color: primaryColor }} />
+                  : <LaunchIcon sx={{ fontSize: 16, color: primaryColor }} />}
+              </Box>
             )}
           </Box>
-          
-          {/* 独立窗口图标 */}
-          {isNearBoundary && (
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 28,
-                height: 28,
-                borderRadius: '8px',
-                backgroundColor: `${primaryColor}20`,
-                animation: `${iconBounce} 0.8s ease-in-out infinite`,
-                flexShrink: 0
-              }}
-            >
-              {draggedItemType === 'todo'
-                ? <FocusIcon sx={{ fontSize: 16, color: primaryColor }} />
-                : <LaunchIcon sx={{ fontSize: 16, color: primaryColor }} />}
-            </Box>
-          )}
-        </Box>
-        
-        {/* 释放提示 */}
-        <Box
-          sx={{
-            mt: 1.5,
-            pt: 1,
-            borderTop: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-            textAlign: 'center',
-            transition: 'all 0.3s ease'
-          }}
-        >
-          {(() => {
-            // 提示文案要跟着鼠标当前悬停的落点动态变化，不能全程显示同一句话：
-            // 待办拖拽时依次判断"边缘专注" > "悬停在象限上" > "悬停在日历日期格上" > 默认引导语
-            let text
-            if (draggedItemType === 'todo') {
-              if (isNearBoundary) text = '释放并开始专注'
-              else if (hoverTarget?.quadrant) text = `释放设为${QUADRANT_DROP_LABELS[hoverTarget.quadrant] || ''}`
-              else if (hoverTarget?.calendarDay) {
-                const dayLabel = formatCalendarDayLabel(hoverTarget.calendarDay)
-                text = dayLabel ? `释放移到 ${dayLabel}` : '释放以更改日期'
-              } else text = '拖到象限调整优先级'
-            } else {
-              text = isNearBoundary ? '释放创建独立窗口' : '拖动到屏幕边缘创建独立窗口'
-            }
-            const isActiveTarget = isNearBoundary || Boolean(hoverTarget?.quadrant) || Boolean(hoverTarget?.calendarDay)
-            return (
-              <Typography
-                variant="caption"
-                sx={{
-                  fontWeight: isActiveTarget ? 600 : 500,
-                  fontSize: '0.7rem',
-                  color: isActiveTarget ? primaryColor : 'text.secondary',
-                  letterSpacing: '0.02em',
-                  textTransform: 'uppercase',
-                  transition: 'color 0.3s ease, font-weight 0.3s ease'
-                }}
-              >
-                {text}
-              </Typography>
-            )
-          })()}
+
+          {/* 释放提示 */}
+          <Box sx={{
+            mt: 1,
+            pt: 0.75,
+            borderTop: `1px solid ${alpha(theme.palette.text.primary, isDarkMode ? 0.1 : 0.07)}`,
+          }}>
+            <Typography sx={{
+              fontSize: '0.7rem',
+              fontWeight: overTarget ? 600 : 500,
+              color: overTarget ? primaryColor : 'text.secondary',
+              transition: 'color 160ms ease',
+            }}>
+              {getDropHint(draggedItemType, isNearBoundary, hoverTarget)}
+            </Typography>
+          </Box>
         </Box>
       </div>
 
       {/* 边界光晕指示器 */}
-      {showBoundaryIndicator && boundaryPosition && (
+      {showBoundaryIndicator && boundaryPosition && phase === 'dragging' && (
         <div
           style={{
             position: 'fixed',

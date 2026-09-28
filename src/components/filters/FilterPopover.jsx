@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Box, Button, Typography, alpha } from '@mui/material';
+import { Box, Button, Typography } from '@mui/material';
 import { Close as CloseIcon } from '../common/AppIcons';
 import FloatingGlassSurface from '../common/FloatingGlassSurface';
 import PanelIconButton from '../common/PanelIconButton';
@@ -18,18 +18,6 @@ const writeDragged = (value) => {
     if (value) window.localStorage.setItem(DRAG_POSITION_KEY, JSON.stringify(value));
     else window.localStorage.removeItem(DRAG_POSITION_KEY);
   } catch { /* 存不了就只在本次生效 */ }
-};
-
-/** 毛玻璃：半透明底 + 背景模糊，透出后面的列表和壁纸 */
-const frostedSx = (theme) => {
-  const dark = theme.palette.mode === 'dark';
-  return {
-    bgcolor: dark ? alpha('#26262a', 0.62) : alpha('#ffffff', 0.58),
-    backdropFilter: 'blur(28px) saturate(180%)',
-    WebkitBackdropFilter: 'blur(28px) saturate(180%)',
-    border: `1px solid ${dark ? alpha('#ffffff', 0.12) : alpha('#ffffff', 0.7)}`,
-    boxShadow: dark ? '0 10px 30px rgba(0,0,0,0.32)' : '0 10px 30px rgba(20,20,24,0.10)',
-  };
 };
 
 const MIN_WIDTH = 272;
@@ -131,7 +119,8 @@ const FilterPopover = ({
       maxHeight={maxHeight}
       density="compact"
       portalContainer={portalContainer}
-      sx={(theme) => ({ display: 'flex', flexDirection: 'column', borderRadius: '14px', ...frostedSx(theme) })}
+      material="frosted"
+      sx={{ display: 'flex', flexDirection: 'column', borderRadius: '14px' }}
     >
       <Box
         onMouseDown={handleDragStart}
