@@ -119,8 +119,10 @@ export const MathAwareText = Node.create({
   group: 'inline',
   addStorage() {
     return { markdown: {
-      serialize(state, node) {
+      serialize(state, node, parent, index) {
         state.options.escapeExtraCharacters = /\$/g
+        // 紧跟在段内换行后面的文字就在行首：`- `、`# `、`1. ` 要转义，否则重开后变成列表 / 标题
+        if (index > 0 && parent?.child(index - 1).type.name === 'hardBreak') state.atBlockStart = true
         state.text(state.inAutolink ? node.text : escapeHtmlLikeText(node.text), !state.inAutolink)
       },
       parse: {},

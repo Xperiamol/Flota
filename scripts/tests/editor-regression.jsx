@@ -91,6 +91,43 @@ $$
     await mountNote(ref.current.getMarkdown())
     equal(editor.state.doc.textContent, text)
   })
+  await test('段内单个换行保存重开后保持（不再并成一行）', async () => {
+    const stable = [
+      '第一行\n第二行\n第三行',
+      '> 引用一\n> 引用二',
+      '> [!note] 提示\n> 内容',
+      '- 项目\n  续行\n- 第二项',
+      '诗句一，\n诗句二。\n\n下一段',
+      '连续\\\n\\\n两个换行',
+      '| a | b |\n| --- | --- |\n| 1<br>2 | 3 |',
+      '```\n代码 1\n代码 2\n```',
+    ]
+    for (const source of stable) {
+      await mountNote(source)
+      const stored = ref.current.getMarkdown()
+      equal(stored.trim(), source)
+      await mountNote(stored)
+      equal(ref.current.getMarkdown(), stored)
+    }
+    // 旧笔记里的 `\` 续行照样读成换行，存成普通换行
+    await mountNote('旧写法\\\n下一行')
+    equal(ref.current.getMarkdown().trim(), '旧写法\n下一行')
+  })
+  await test('换行后以 - # 1. 开头的文字重开后不变成列表或标题', async () => {
+    for (const line of ['- 不是列表', '# 不是标题', '1. 不是编号', '> 不是引用']) {
+      await mountNote('开头')
+      editor.chain().focus('end').setHardBreak().insertContent({ type: 'text', text: line }).run()
+      const stored = ref.current.getMarkdown()
+      await mountNote(stored)
+      equal(types().filter(type => type !== 'text'), ['paragraph', 'hardBreak'])
+      equal(editor.state.doc.textContent, `开头${line}`)
+    }
+  })
+  await test('Shift+Enter 换行保存为普通换行', async () => {
+    await mountNote('甲')
+    editor.chain().focus('end').setHardBreak().insertContent('乙').run()
+    equal(ref.current.getMarkdown().trim(), '甲\n乙')
+  })
   await test('公式加载、序列化和重开保持 LaTeX', async () => {
     const source = '公式 $a_1 + b^2$。\n\n$$\n\\begin{aligned}\na &= b + c \\\\\n\n  d &= \\frac{1}{2}\n\\end{aligned}\n$$'
     await mountNote(source)
