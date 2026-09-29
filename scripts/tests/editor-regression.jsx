@@ -76,6 +76,21 @@ $$
     assert(html.includes('<math'), 'MathML lost')
     assert(!/onerror|onclick/.test(html), 'event handler survived')
   })
+  await test('同一段多个双链（别名、章节）保存后不变成乱码', async () => {
+    const source = '[[B]] 与 [[B|别名]] 和 ![[B]]，见 [[B#章节]]。'
+    await mountNote(source)
+    const stored = ref.current.getMarkdown()
+    assert(!stored.includes('native code'), `garbage: ${stored}`)
+    assert(stored.includes(source), `wiki links changed: ${stored}`)
+  })
+  await test('正文里的 <div>、&lt; 字面文字重开两次后仍在', async () => {
+    const source = '手打 &lt;div&gt; 与 &lt;/think&gt; 和 &amp;lt; 以及 a < b'
+    await mountNote(source)
+    const text = editor.state.doc.textContent
+    await mountNote(ref.current.getMarkdown())
+    await mountNote(ref.current.getMarkdown())
+    equal(editor.state.doc.textContent, text)
+  })
   await test('公式加载、序列化和重开保持 LaTeX', async () => {
     const source = '公式 $a_1 + b^2$。\n\n$$\n\\begin{aligned}\na &= b + c \\\\\n\n  d &= \\frac{1}{2}\n\\end{aligned}\n$$'
     await mountNote(source)
