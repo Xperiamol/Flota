@@ -213,8 +213,8 @@ const TextColor = Mark.create({
         serialize: {
           open(_, mark) { return `<span style="color:${rgbToHex(mark.attrs.color)}">` },
           close() { return '</span>' },
+          // 不开 expelEnclosingWhitespace：tiptap-markdown 会把函数形式的 open 当分隔符拼进正文，写出乱码
           mixable: true,
-          expelEnclosingWhitespace: true,
         },
         parse: {},
       },
