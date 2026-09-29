@@ -2,6 +2,7 @@ const { EventEmitter } = require('events');
 const fs = require('fs').promises;
 const path = require('path');
 const { dialog, app } = require('electron');
+const { getFileTimes } = require('../utils/fileTimes');
 
 // 导入新的导入导出器
 const ObsidianImporter = require('./importers/ObsidianImporter');
@@ -208,6 +209,12 @@ class DataImportService extends EventEmitter {
 
       if (!parsedData.success) {
         return parsedData;
+      }
+
+      // 单个 Markdown / 文本文件：用文件原来的创建、修改时间，而不是导入的这一刻
+      if (detectedFormat === 'md' || detectedFormat === 'txt') {
+        const times = await getFileTimes(importPath);
+        parsedData.data.notes.forEach(note => Object.assign(note, times));
       }
 
       // 检查是否是V1格式的完整导入
@@ -667,7 +674,9 @@ class DataImportService extends EventEmitter {
           title: note.title || note.标题 || `导入笔记 ${i}`,
           content: note.content || note.内容 || '',
           tags: note.tags || note.标签 || '',
-          category: note.category || note.分类 || 'default'
+          category: note.category || note.分类 || 'default',
+          created_at: note.created_at || note.创建时间 || undefined,
+          updated_at: note.updated_at || note.更新时间 || undefined
         });
       }
 

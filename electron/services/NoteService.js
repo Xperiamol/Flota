@@ -3,6 +3,7 @@ const TagService = require('./TagService');
 const { EventEmitter } = require('events');
 const path = require('path');
 const fs = require('fs');
+const { toStoredTime } = require('../utils/fileTimes');
 
 class NoteService extends EventEmitter {
   constructor() {
@@ -30,12 +31,17 @@ class NoteService extends EventEmitter {
       // 使用TagService规范化标签
       const tagsString = TagService.formatTags(safeNoteData.tags);
 
+      // 导入时带上原来的时间，笔记才会落在日历上它真正写成的那天；无效或晚于现在的时间忽略
+      const createdAt = toStoredTime(noteData?.created_at);
+      const updatedAt = createdAt ? toStoredTime(noteData?.updated_at) : null;
+
       const notePayload = {
         title: safeNoteData.title,
         content: safeNoteData.content,
         tags: tagsString,
         category: safeNoteData.category,
         note_type: safeNoteData.note_type,
+        ...(createdAt ? { created_at: createdAt, updated_at: updatedAt && updatedAt > createdAt ? updatedAt : createdAt } : {}),
         ...(noteData?.meta ? { meta: noteData.meta } : {})
       };
 
@@ -715,12 +721,15 @@ class NoteService extends EventEmitter {
       
       for (const noteData of data.notes) {
         try {
-          await this.createNote({
+          const result = await this.createNote({
             title: noteData.title || '',
             content: noteData.content || '',
             tags: noteData.tags || '',
-            category: noteData.category || 'default'
+            category: noteData.category || 'default',
+            created_at: noteData.created_at || noteData.createdAt,
+            updated_at: noteData.updated_at || noteData.updatedAt
           });
+          if (!result?.success) throw new Error(result?.error || '创建失败');
           successCount++;
         } catch (error) {
           errorCount++;

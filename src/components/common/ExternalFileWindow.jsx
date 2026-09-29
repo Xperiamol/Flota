@@ -256,6 +256,9 @@ export default function ExternalFileWindow({ filePath }) {
           content: await replaceDataImagesInMarkdown(content || '')
         }
       }
+      // 笔记落在文件原来写成的那天（front-matter 的 created/date 优先）；主进程会忽略无效时间
+      payload.created_at = file.frontMatterCreated || (file.createdAt > 0 ? new Date(file.createdAt).toISOString() : undefined)
+      payload.updated_at = file.modifiedAt > 0 ? new Date(file.modifiedAt).toISOString() : undefined
       const result = await window.electronAPI?.notes?.create?.(payload)
       if (!result?.success) throw new Error(result?.error || '导入失败')
       await api()?.showNote?.(result.data.id)

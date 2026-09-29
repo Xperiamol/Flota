@@ -53,9 +53,12 @@ export default function OpenNoteButton() {
             if (!Array.isArray(data.elements)) throw new Error('画布格式无效')
           }
           if (/\.html?$/i.test(file.name)) content = sanitizeMarkdownHtml(content)
+          // 用文件的修改时间作为创建时间，批量导入的笔记按原来的日子分布在日历上，而不是全堆在今天
+          const fileTime = file.lastModified > 0 ? new Date(file.lastModified).toISOString() : undefined
           const result = await useStore.getState().createNote({
             title: file.name.replace(/\.[^.]+$/, ''), content,
             note_type: whiteboard ? 'whiteboard' : 'markdown',
+            created_at: fileTime, updated_at: fileTime,
             selectAfterCreate: false,
           })
           if (!result?.success) throw new Error(result?.error || '保存失败')

@@ -1,6 +1,7 @@
 const BaseImporter = require('./BaseImporter');
 const path = require('path');
 const fs = require('fs').promises;
+const { getFileTimes } = require('../../utils/fileTimes');
 
 /**
  * Obsidian 导入器
@@ -184,14 +185,16 @@ class ObsidianImporter extends BaseImporter {
         }
       };
 
+      // 时间：Front-matter 里写了就用它，否则用文件原来的创建 / 修改时间。
+      // 写错的日期不再让整篇笔记解析失败，交给 createNote 忽略后退回文件时间
+      const fileTimes = await getFileTimes(filePath);
+      const created = frontMatter?.created || frontMatter?.date;
+      const updated = frontMatter?.updated || frontMatter?.modified;
+      noteData.created_at = created && !Number.isNaN(new Date(created).getTime()) ? String(created) : fileTimes.created_at;
+      noteData.updated_at = updated && !Number.isNaN(new Date(updated).getTime()) ? String(updated) : fileTimes.updated_at;
+
       // 从 Front-matter 中提取额外信息
       if (frontMatter) {
-        if (frontMatter.created) {
-          noteData.created_at = new Date(frontMatter.created).toISOString();
-        }
-        if (frontMatter.updated || frontMatter.modified) {
-          noteData.updated_at = new Date(frontMatter.updated || frontMatter.modified).toISOString();
-        }
         if (frontMatter.category) {
           noteData.category = frontMatter.category;
         }
@@ -277,7 +280,7 @@ class ObsidianImporter extends BaseImporter {
       return titleMatch[1].trim();
     }
     
-    return this.extractTitleFromPath(filePath);
+    return path.basename(filePath, path.extname(filePath));
   }
 
   /**

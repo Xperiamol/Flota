@@ -106,7 +106,7 @@ const decodeText = (buffer) => {
   }
 }
 
-// 简单 YAML front-matter：只取 title / tags，其他字段原样保留在正文中不处理
+// 简单 YAML front-matter：只取 title / tags / created（或 date），其他字段原样保留在正文中不处理
 const parseFrontMatter = (text) => {
   const match = text.match(/^---[ \t]*\n([\s\S]*?)\n---[ \t]*(?:\n|$)/)
   if (!match) return { frontMatter: null, body: text }
@@ -132,6 +132,9 @@ const parseFrontMatter = (text) => {
       meta.tags = tags.map((t) => t.trim().replace(/^['"#]|['"]$/g, '')).filter(Boolean)
     } else if (key === 'title') {
       meta.title = value.replace(/^['"]|['"]$/g, '')
+    } else if ((key === 'created' || key === 'date') && !meta.created) {
+      const created = value.replace(/^['"]|['"]$/g, '')
+      if (created && !Number.isNaN(new Date(created).getTime())) meta.created = created
     }
   }
   return { frontMatter: meta, body: text.slice(match[0].length) }
@@ -296,6 +299,8 @@ class ExternalFileService {
       format,
       size: stat.size,
       modifiedAt: stat.mtimeMs,
+      // 复制过的文件创建时间是复制那一刻，修改时间通常保留，取较早的那个
+      createdAt: stat.birthtimeMs > 0 ? Math.min(stat.birthtimeMs, stat.mtimeMs) : stat.mtimeMs,
       encoding,
       eol,
       writable,
@@ -315,6 +320,7 @@ class ExternalFileService {
       ...base,
       title: frontMatter?.title || base.title,
       tags: frontMatter?.tags || [],
+      frontMatterCreated: frontMatter?.created || null,
       raw: text,
       content,
       missingImages
