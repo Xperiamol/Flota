@@ -191,7 +191,14 @@ const NoteEditor = ({ onCollapseSidebar }) => {
   const [showSaveSuccess, setShowSaveSuccess] = useState(false)
   const [showSaveError, setShowSaveError] = useState(false)
   const [saveErrorMessage, setSaveErrorMessage] = useState('')
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [hasUnsavedChanges, setHasUnsavedChangesState] = useState(false)
+  // 切换笔记时靠这个 ref 判断旧笔记要不要先保存，必须与 state 同步写入：
+  // 编辑器在切换瞬间才冲刷最后一段输入，等 effect 再同步就晚了，旧笔记会被当成"没有改动"
+  const hasUnsavedChangesRef = useRef(false)
+  const setHasUnsavedChanges = useCallback((value) => {
+    hasUnsavedChangesRef.current = value
+    setHasUnsavedChangesState(value)
+  }, [])
   const [viewMode, setViewMode] = useState('edit') // 'edit', 'preview', 'split'
   const [conversionDialogOpen, setConversionDialogOpen] = useState(false)
   const [pendingNoteType, setPendingNoteType] = useState(null)
@@ -254,7 +261,6 @@ const NoteEditor = ({ onCollapseSidebar }) => {
   const selectedNoteIdRef = useRef(selectedNoteId)
   const prevNoteIdRef = useRef(null)
   const prevStateRef = useRef({ title: '', content: '', tags: '', noteType: 'markdown' })
-  const hasUnsavedChangesRef = useRef(false)
 
   // 切换笔记时按设置自动 AI 生成空标题/标签「建议」（不再静默覆盖标题）
   useAIAutoAnnotate({
@@ -324,6 +330,9 @@ const NoteEditor = ({ onCollapseSidebar }) => {
   const performSave = async (retries = 3) => {
     const noteId = selectedNoteId
     if (!noteId) return
+    // 防抖计时器里可能是切换前的旧闭包：此时 prevStateRef 和编辑器里已经是新笔记的内容，
+    // 写回旧 id 会把旧笔记整篇替换掉。旧笔记的未保存内容由切换笔记时的保存负责。
+    if (String(selectedNoteIdRef.current) !== String(noteId)) return
 
     refreshActiveWysiwygSnapshot()
     const stateToSave = createSavePayload({ ...prevStateRef.current })
@@ -374,11 +383,6 @@ const NoteEditor = ({ onCollapseSidebar }) => {
 
   // 使用防抖保存 Hook（3秒延迟，避免频繁保存）
   const { debouncedSave, saveNow, cancelSave } = useDebouncedSave(performSave, 3000)
-
-  // 同步 hasUnsavedChanges 到 ref
-  useEffect(() => {
-    hasUnsavedChangesRef.current = hasUnsavedChanges
-  }, [hasUnsavedChanges])
 
   useEffect(() => {
     selectedNoteIdRef.current = selectedNoteId
