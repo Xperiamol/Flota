@@ -91,11 +91,8 @@ class BaseImporter extends BaseProcessor {
         return null;
       }
 
-      const imageData = await fs.readFile(fullImagePath);
-      const ext = path.extname(fullImagePath);
-      const result = await this.imageStorageService.saveImage(imageData, ext);
-      
-      return result.success ? result.data.url : null;
+      // ImageService 把图片存进应用的 images/ 目录，返回可直接写进 Markdown 的相对路径
+      return await this.imageStorageService.saveImageFromPath(fullImagePath, path.basename(fullImagePath));
     } catch (error) {
       this.addError(`处理图片失败: ${imagePath}`, error.message);
       return null;
