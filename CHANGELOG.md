@@ -2,6 +2,20 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [4.1.3] - 2026-09-29
+
+### Changed / 更新内容
+- chore: list @tiptap/extension-hard-break in package-lock root dependencies
+- fix(editor): single line breaks survive editing in rich-text mode instead of being merged into one line
+- test(editor): regressions for [[link]] garbage and literal <tag> text lost on reload
+- fix(editor): text like <div> or <think> typed in a note is no longer deleted after reopening and editing it
+- fix(editor): notes with several [[links]] in one paragraph no longer turn into "function () { [native code] }" garbage when edited
+- fix(obsidian): images in imported Obsidian notes are copied into Flota instead of being left as broken links
+- feat(import): imported notes keep the file's original date instead of all landing on today
+- fix(notes): switching notes right after typing (e.g. clicking a [[link]]) no longer overwrites the previous note with the new note's title and content
+- fix: CVE-2026-39244 security vulnerability
+
+
 ## [4.1.2] - 2026-09-28
 
 ### Changed / 更新内容
