@@ -106,6 +106,12 @@ const createMathNode = (display) => Node.create({
 export const InlineMath = createMathNode(false)
 export const BlockMath = createMathNode(true)
 
+// 正文里的 `<div>`、`&lt;` 这类字面文字：存成 Markdown 后下次加载会被当成 HTML 标签 / 实体，
+// 标签整个消失、实体被解码。只转义会被这样解析的写法，`a < b` 保持原样，源码模式里仍然好读。
+const escapeHtmlLikeText = (text) => text
+  .replace(/&(?=#?[a-z0-9]+;)/gi, '&amp;')
+  .replace(/<(?=[a-z/!?])/gi, '&lt;')
+
 // Literal dollars (plain paste, escaped Markdown, logs) must remain literal
 // after saving and reopening; math nodes write their own delimiters directly.
 export const MathAwareText = Node.create({
@@ -113,9 +119,11 @@ export const MathAwareText = Node.create({
   group: 'inline',
   addStorage() {
     return { markdown: {
-      serialize(state, node) {
+      serialize(state, node, parent, index) {
         state.options.escapeExtraCharacters = /\$/g
-        state.text(node.text, !state.inAutolink)
+        // 紧跟在段内换行后面的文字就在行首：`- `、`# `、`1. ` 要转义，否则重开后变成列表 / 标题
+        if (index > 0 && parent?.child(index - 1).type.name === 'hardBreak') state.atBlockStart = true
+        state.text(state.inAutolink ? node.text : escapeHtmlLikeText(node.text), !state.inAutolink)
       },
       parse: {},
     } }

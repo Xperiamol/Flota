@@ -5,6 +5,7 @@ import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { Fragment, Slice } from '@tiptap/pm/model'
 import StarterKit from '@tiptap/starter-kit'
+import HardBreak from '@tiptap/extension-hard-break'
 import Placeholder from '@tiptap/extension-placeholder'
 import Highlight from '@tiptap/extension-highlight'
 import Underline from '@tiptap/extension-underline'
@@ -125,6 +126,33 @@ const postprocessMarkdown = (md) => {
   return finalizeMarkdownForStorage(normalizeHtmlTablesInMarkdown(out))
 }
 
+// ─── 段内换行 ─────────────────────────────────────────────────────────────────
+// 单个换行按换行读进来（Markdown 配置 breaks: true），保存时写回普通的 `\n`：
+// 与预览、Obsidian 的显示一致，导入的 .txt、诗句、地址编辑后不会被并成一行。
+// 连续多个换行仍写 `\` 续行，否则两个 `\n` 会变成分段。
+const LineBreak = HardBreak.extend({
+  addStorage() {
+    return {
+      markdown: {
+        serialize(state, node, parent, index) {
+          let hasContentAfter = false
+          for (let i = index + 1; i < parent.childCount; i += 1) {
+            if (parent.child(i).type !== node.type) { hasContentAfter = true; break }
+          }
+          // 段尾的换行没有意义，和 tiptap-markdown 一样不写
+          if (!hasContentAfter) return
+          if (state.inTable) { state.write('<br>'); return }
+          const nextToBreak = (index > 0 && parent.child(index - 1).type === node.type)
+            || parent.child(index + 1).type === node.type
+          // 下一行的 `- `、`# `、`1. ` 由 MathAwareText 按行首转义，重开后不会变成列表 / 标题
+          state.write(nextToBreak ? '\\\n' : '\n')
+        },
+        parse: {},
+      },
+    }
+  },
+})
+
 // ─── Highlight / Underline 扩展序列化 ─────────────────────────────────────────
 const CustomHighlight = Highlight.extend({
   addStorage() {
@@ -213,8 +241,8 @@ const TextColor = Mark.create({
         serialize: {
           open(_, mark) { return `<span style="color:${rgbToHex(mark.attrs.color)}">` },
           close() { return '</span>' },
+          // 不开 expelEnclosingWhitespace：tiptap-markdown 会把函数形式的 open 当分隔符拼进正文，写出乱码
           mixable: true,
-          expelEnclosingWhitespace: true,
         },
         parse: {},
       },
@@ -2598,10 +2626,12 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
         link: false,
         underline: false,
         text: false,
+        hardBreak: false, // 由 LineBreak 接管（保存成普通换行）
         // 行内代码关闭拼写检查（避免代码标识符被划红线）
         code: { HTMLAttributes: { spellcheck: 'false' } },
       }),
       Placeholder.configure({ placeholder }),
+      LineBreak,
       CustomHighlight.configure({ multicolor: true }),
       TextColor,
       CustomUnderline,
@@ -2657,10 +2687,11 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
         tightLists: true,
         tightListClass: 'tight',
         bulletListMarker: '-',
-        // 关闭 linkify / breaks / 粘贴文本二次解析：避免日志/代码类纯文本
-        // 在序列化时被反向 autolink、追加行尾续行符 \、或被识别成 emphasis。
+        // 关闭 linkify / 粘贴文本二次解析：避免日志/代码类纯文本
+        // 在序列化时被反向 autolink、或被识别成 emphasis。
+        // breaks 打开：段内单个换行读成换行（LineBreak 保存时写回普通换行，不会追加行尾 \）
         linkify: false,
-        breaks: false,
+        breaks: true,
         transformPastedText: false,
         transformCopiedText: true,
       }),

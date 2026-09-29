@@ -703,9 +703,10 @@ async function initializeServices() {
     services.todoService = new TodoService()
     services.tagService = new TagService()
     services.conversationService = new ConversationService()
-    services.dataImportService = new DataImportService(services.noteService, services.settingsService, services.imageStorageService)
-    services.backupService = new BackupService()
     services.imageService = new ImageService()
+    // 导入 Obsidian 时把笔记图片存进 images/ 目录（以前传的是从未赋值的 imageStorageService，图片全部丢失）
+    services.dataImportService = new DataImportService(services.noteService, services.settingsService, services.imageService)
+    services.backupService = new BackupService()
 
     // 暴露 DAO 供插件使用
     const NoteDAO = require('./dao/NoteDAO')

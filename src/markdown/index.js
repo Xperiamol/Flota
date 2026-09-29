@@ -137,6 +137,9 @@ const decodeRichTextBlankLines = (markdown) => String(markdown)
 const encodeRichTextSpaces = (markdown) => {
   const lines = String(markdown).split('\n')
   let inFence = false
+  // 列表里缩进的续行（`- 项目` 下一行的 `  续行`）是列表结构，行首空格不能冻结成文字，
+  // 否则每保存一次缩进都会变
+  let inList = false
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i]
     if (/^\s{0,3}(```|~~~)/.test(line)) {
@@ -153,7 +156,11 @@ const encodeRichTextSpaces = (markdown) => {
     const match = line.match(/^([ \t]*)([\s\S]*?)([ \t]*)$/)
     if (!match) continue
     const [, leading, body, trailing] = match
-    const isStructuralLine = /^(?:[-+*]|\d{1,9}[.)])(?:\s|$)|^>\s?|^#{1,6}(?:\s|$)|^\|/.test(body) ||
+    const isListItem = /^(?:[-+*]|\d{1,9}[.)])(?:\s|$)/.test(body)
+    if (isListItem) inList = true
+    else if (!leading && body) inList = false
+    const isStructuralLine = isListItem || (inList && Boolean(leading)) ||
+      /^>\s?|^#{1,6}(?:\s|$)|^\|/.test(body) ||
       /^(?:-{3,}|\*{3,}|_{3,})\s*$/.test(body) ||
       /^\[[^\]]+]:/.test(body)
     const encodedLeading = isStructuralLine ? leading : leading.replace(/ /g, RICH_TEXT_SPACE_SENTINEL)

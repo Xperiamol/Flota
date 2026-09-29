@@ -47,7 +47,8 @@ export const stripMarkdownToPreviewText = (content = '') => stripMarkdownInline(
     .replace(/<\/?[a-zA-Z][^>]*>/g, ' ')
     .replace(/<\/?[a-zA-Z][^<\n]*?(?=<|$)/g, ' ')
     .replace(/&nbsp;/g, ' ')
-    .replace(/&(?:amp|lt|gt|quot|#39);/g, ' ')
+    // 编辑器把正文里的 `<div>` 存成 `&lt;div>`，预览要还原成原来的字符（一次替换，避免 &amp;lt; 被解码两次）
+    .replace(/&(amp|lt|gt|quot|#39);/g, (_, name) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" })[name])
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
 )
   .replace(/[ \t]+\n/g, '\n')

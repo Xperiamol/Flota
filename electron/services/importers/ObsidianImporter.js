@@ -1,6 +1,7 @@
 const BaseImporter = require('./BaseImporter');
 const path = require('path');
 const fs = require('fs').promises;
+const { getFileTimes } = require('../../utils/fileTimes');
 
 /**
  * Obsidian 导入器
@@ -72,7 +73,11 @@ class ObsidianImporter extends BaseImporter {
         vaultPath: folderPath 
       });
 
-      // 第一阶段：导入所有笔记
+      // Obsidian 默认按文件名在整个库里找附件（![[pic.png]] 不带路径），先建一份文件名索引；
+      // 同一张图被多篇笔记引用时只复制一次
+      this.imageIndex = importAttachments ? await this.buildImageIndex(folderPath) : new Map();
+      this.importedImages = new Map();
+
       const noteResults = [];
       for (let i = 0; i < files.length; i++) {
         const filePath = files[i];
@@ -93,17 +98,25 @@ class ObsidianImporter extends BaseImporter {
               noteData.category = this.extractCategory(filePath, folderPath);
             }
 
+            // 图片在保存前就复制进应用图片目录并改写引用：保存后再 updateNote 会把修改时间改成现在
+            if (importAttachments) {
+              noteData.content = await this.importNoteImages(noteData.content, filePath, folderPath);
+            }
+
             const result = await this.saveNote(noteData);
+            if (!result?.success || !result.data) {
+              throw new Error(result?.error || '保存笔记失败');
+            }
             
             // 记录文件名到笔记ID的映射
             const fileName = path.basename(filePath, path.extname(filePath));
-            this.linkMap.set(fileName, result.id);
+            this.linkMap.set(fileName, result.data.id);
             
             noteResults.push({ 
               filePath, 
-              noteId: result.id, 
+              noteId: result.data.id, 
               success: true, 
-              data: result 
+              data: result.data 
             });
             this.stats.successCount++;
           } else {
@@ -114,12 +127,6 @@ class ObsidianImporter extends BaseImporter {
           this.addError(filePath, error.message);
           noteResults.push({ filePath, success: false, error: error.message });
         }
-      }
-
-      // 第二阶段：处理附件和更新链接
-      if (importAttachments) {
-        this.emit('phase-changed', { phase: 'processing-attachments' });
-        await this.processAttachments(noteResults, folderPath);
       }
 
       this.emit('import-completed', this.stats);
@@ -166,9 +173,6 @@ class ObsidianImporter extends BaseImporter {
         processedContent = this.convertWikiLinks(processedContent);
       }
       
-      // 标记需要处理的图片（实际处理在第二阶段）
-      const imageReferences = this.extractImageReferences(processedContent);
-      
       // 构建笔记数据
       const noteData = {
         title,
@@ -179,19 +183,20 @@ class ObsidianImporter extends BaseImporter {
         metadata: {
           source: 'obsidian',
           originalPath: filePath,
-          frontMatter: this.config.preserveFrontMatter ? frontMatter : null,
-          imageReferences
+          frontMatter: this.config.preserveFrontMatter ? frontMatter : null
         }
       };
 
+      // 时间：Front-matter 里写了就用它，否则用文件原来的创建 / 修改时间。
+      // 写错的日期不再让整篇笔记解析失败，交给 createNote 忽略后退回文件时间
+      const fileTimes = await getFileTimes(filePath);
+      const created = frontMatter?.created || frontMatter?.date;
+      const updated = frontMatter?.updated || frontMatter?.modified;
+      noteData.created_at = created && !Number.isNaN(new Date(created).getTime()) ? String(created) : fileTimes.created_at;
+      noteData.updated_at = updated && !Number.isNaN(new Date(updated).getTime()) ? String(updated) : fileTimes.updated_at;
+
       // 从 Front-matter 中提取额外信息
       if (frontMatter) {
-        if (frontMatter.created) {
-          noteData.created_at = new Date(frontMatter.created).toISOString();
-        }
-        if (frontMatter.updated || frontMatter.modified) {
-          noteData.updated_at = new Date(frontMatter.updated || frontMatter.modified).toISOString();
-        }
         if (frontMatter.category) {
           noteData.category = frontMatter.category;
         }
@@ -277,7 +282,7 @@ class ObsidianImporter extends BaseImporter {
       return titleMatch[1].trim();
     }
     
-    return this.extractTitleFromPath(filePath);
+    return path.basename(filePath, path.extname(filePath));
   }
 
   /**
@@ -315,7 +320,8 @@ class ObsidianImporter extends BaseImporter {
     // 转换 [[link|display]] 为 [display](link)
     // 转换 [[link#heading]] 为 [link](link#heading)
     
-    return content.replace(/\[\[([^\]|#]+)(?:#([^\]|]+))?(?:\|([^\]]+))?\]\]/g, (match, link, heading, display) => {
+    // 跳过 ![[...]] 嵌入：图片由导入时统一处理，其余嵌入保留原样
+    return content.replace(/(?<!!)\[\[([^\]|#]+)(?:#([^\]|]+))?(?:\|([^\]]+))?\]\]/g, (match, link, heading, display) => {
       const displayText = display || link;
       const linkTarget = heading ? `${link}#${heading}` : link;
       
@@ -325,100 +331,86 @@ class ObsidianImporter extends BaseImporter {
   }
 
   /**
-   * 提取图片引用
+   * 提取图片引用（只认图片扩展名；网络图片、data URI 和已在应用图片目录里的跳过）
    * @param {string} content - 内容
-   * @returns {Array<object>} 图片引用列表
+   * @returns {Array<object>} 图片引用列表：{ type, original, path, alt }
    */
   extractImageReferences(content) {
     const images = [];
+    const isImage = (target) => this.config.imageExtensions.includes(path.extname(target).toLowerCase());
     
-    // 提取 ![[image.png]] 格式
+    // ![[image.png]]、![[image.png|300]]、![[folder/image.png#x]]
     const wikiImageRegex = /!\[\[([^\]]+)\]\]/g;
     let match;
     while ((match = wikiImageRegex.exec(content)) !== null) {
-      images.push({
-        type: 'wiki',
-        original: match[0],
-        path: match[1]
-      });
+      const target = match[1].split('|')[0].split('#')[0].trim();
+      if (target && isImage(target)) {
+        images.push({ type: 'wiki', original: match[0], path: target, alt: path.basename(target, path.extname(target)) });
+      }
     }
     
-    // 提取标准 Markdown ![alt](path) 格式
-    const mdImageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+    // ![alt](path)、![alt](<path with spaces>)、![alt](path "title")
+    const mdImageRegex = /!\[([^\]]*)\]\(\s*(<[^>]+>|[^)\s]+)(?:\s+["'][^)]*["'])?\s*\)/g;
     while ((match = mdImageRegex.exec(content)) !== null) {
-      images.push({
-        type: 'markdown',
-        original: match[0],
-        alt: match[1],
-        path: match[2]
-      });
+      let target = match[2].replace(/^<|>$/g, '').trim();
+      if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(target) || /^images\//i.test(target)) continue;
+      try { target = decodeURI(target); } catch { /* 保留原样 */ }
+      if (target && isImage(target)) {
+        images.push({ type: 'markdown', original: match[0], path: target, alt: match[1] });
+      }
     }
     
     return images;
   }
 
   /**
-   * 处理附件（第二阶段）
-   * @param {Array} noteResults - 笔记导入结果
-   * @param {string} vaultPath - Vault 路径
+   * 把笔记里引用的本地图片复制进应用图片目录，并把引用改写成 ![alt](images/xxx)
+   * @param {string} content - 笔记内容
+   * @param {string} notePath - 笔记文件路径
+   * @param {string} vaultPath - Vault 根路径
+   * @returns {Promise<string>} 改写后的内容
    */
-  async processAttachments(noteResults, vaultPath) {
-    for (const result of noteResults) {
-      if (!result.success || !result.data.metadata || !result.data.metadata.imageReferences) {
+  async importNoteImages(content, notePath, vaultPath) {
+    let result = content;
+    for (const imageRef of this.extractImageReferences(content)) {
+      const source = this.resolveImagePath(imageRef.path, notePath, vaultPath);
+      if (!source) {
+        this.addWarning(imageRef.path, `找不到图片（${path.basename(notePath)}）`);
         continue;
       }
-
-      const { noteId, data } = result;
-      const { imageReferences, originalPath } = data.metadata;
-      
-      if (imageReferences.length === 0) {
-        continue;
+      let stored = this.importedImages?.get(source);
+      if (!stored) {
+        stored = await this.processImage(source, vaultPath);
+        if (!stored) continue;
+        this.importedImages?.set(source, stored);
       }
-
-      try {
-        // 读取当前笔记内容
-        let noteContent = data.content;
-        let contentChanged = false;
-
-        // 处理每个图片引用
-        for (const imageRef of imageReferences) {
-          try {
-            // 解析图片路径
-            const imagePath = this.resolveImagePath(imageRef.path, originalPath, vaultPath);
-            
-            if (!imagePath) {
-              this.addWarning(imageRef.path, '无法解析图片路径');
-              continue;
-            }
-
-            // 导入图片到 ImageStorageService
-            const newImagePath = await this.processImage(imagePath, vaultPath);
-            
-            // 更新内容中的图片引用
-            if (newImagePath) {
-              if (imageRef.type === 'wiki') {
-                // 将 ![[image.png]] 转换为标准 Markdown
-                const markdownImage = `![${path.basename(newImagePath)}](${newImagePath})`;
-                noteContent = noteContent.replace(imageRef.original, markdownImage);
-              } else {
-                // 替换路径
-                noteContent = noteContent.replace(imageRef.path, newImagePath);
-              }
-              contentChanged = true;
-            }
-          } catch (error) {
-            this.addError(`处理图片失败: ${imageRef.path}`, error.message);
-          }
-        }
-
-        // 如果内容有变化，更新笔记
-        if (contentChanged) {
-          await this.noteService.updateNote(noteId, { content: noteContent });
-        }
-      } catch (error) {
-        this.addError(`处理附件失败: ${noteId}`, error.message);
-      }
+      result = result.split(imageRef.original).join(`![${imageRef.alt}](${stored})`);
     }
+    return result;
+  }
+
+  /**
+   * 建立 vault 内图片的文件名索引（小写文件名 -> 绝对路径，重名时取先找到的）
+   * @param {string} vaultPath - Vault 根路径
+   * @returns {Promise<Map<string, string>>}
+   */
+  async buildImageIndex(vaultPath) {
+    const index = new Map();
+    const walk = async (dir) => {
+      let entries;
+      try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return; }
+      for (const entry of entries) {
+        if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) await walk(fullPath);
+        else if (entry.isFile() && this.config.imageExtensions.includes(path.extname(entry.name).toLowerCase())) {
+          const key = entry.name.toLowerCase();
+          if (!index.has(key)) index.set(key, fullPath);
+        }
+      }
+    };
+    await walk(vaultPath);
+    return index;
   }
 
   /**
@@ -450,8 +442,11 @@ class ObsidianImporter extends BaseImporter {
     // 策略3：在 vault 根目录查找
     const rootPath = path.join(vaultPath, imagePath);
 
+    // 策略4：按文件名在整个 vault 里找（Obsidian 默认的"尽可能短的路径"写法）
+    const indexed = this.imageIndex?.get(path.basename(imagePath).toLowerCase());
+
     // 返回第一个存在的路径
-    const candidates = [relativeToNote, ...attachmentPaths, rootPath];
+    const candidates = [relativeToNote, ...attachmentPaths, rootPath, indexed].filter(Boolean);
     
     for (const candidate of candidates) {
       try {

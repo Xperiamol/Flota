@@ -72,14 +72,15 @@ export const WikiLinkMark = Mark.create({
 
   // tiptap-markdown 的存储钩子：mark open/close 都为空字符串，
   // 让序列化输出 mark 包裹文本本身（即 `[[xxx]]`），不污染 markdown 存储格式。
+  // 不能开 expelEnclosingWhitespace：tiptap-markdown 会把 open 当成 `**` 那样的分隔符在正文里挪动，
+  // 同一段里有多个双链时会把函数源码 "function () { [native code] }" 写进笔记（用户看到的乱码）
   addStorage() {
     return {
       markdown: {
         serialize: {
-          open: () => '',
-          close: () => '',
+          open: '',
+          close: '',
           mixable: true,
-          expelEnclosingWhitespace: true,
         },
         parse: {},
       },
