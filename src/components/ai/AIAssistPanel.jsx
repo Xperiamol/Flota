@@ -321,6 +321,8 @@ const AIAssistPanel = ({ editor, textareaRef, onInsert, onOpenAI }) => {
       open={visible}
       layer="selectionPanel"
       density="compact"
+      // 与 AI 小窗、筛选器等可拖动浮窗同一种毛玻璃
+      material="frosted"
       position={position}
       minWidth={240}
       maxWidth={420}
