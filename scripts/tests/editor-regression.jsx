@@ -10,12 +10,13 @@ import { useStore } from '../../src/store/useStore'
 import { createMarkdownRenderer, prepareMarkdownForDisplay } from '../../src/markdown/index'
 import { sanitizeMarkdownHtml } from '../../src/markdown/sanitizeHtml'
 import { normalizeLinkUrl } from '../../src/utils/linkUtils'
-import { pasteEditorText, getClipboardLink, normalizePastedHtml } from '../../src/utils/editorClipboard'
+import { pasteEditorText, getClipboardLink, normalizePastedHtml, looksLikeMarkdown } from '../../src/utils/editorClipboard'
 import { htmlFragmentToMarkdown } from '../../src/utils/clipboardConversion'
 import { getLocalPathFromFileUrl } from '../../src/utils/fileUrl'
 import { chooseWhiteboardPanelPosition } from '../../src/utils/whiteboardPanelLayout'
 import { buildExportHtml } from '../../src/utils/noteExport'
 import { requestLinkEditor } from '../../src/components/editor/LinkEditorDialog'
+import { subscribeNotify } from '../../src/utils/notify'
 import { createSvgAsset } from '../../src/utils/diagrams/svgAsset'
 
 const root = createRoot(document.getElementById('root'))
@@ -127,6 +128,58 @@ $$
     await mountNote('甲')
     editor.chain().focus('end').setHardBreak().insertContent('乙').run()
     equal(ref.current.getMarkdown().trim(), '甲\n乙')
+  })
+  const clipboardEvent = (type, data = {}) => {
+    const transfer = new DataTransfer()
+    Object.entries(data).forEach(([format, value]) => transfer.setData(format, value))
+    editor.view.dom.dispatchEvent(new ClipboardEvent(type, { clipboardData: transfer, bubbles: true, cancelable: true }))
+    return transfer
+  }
+  await test('全选复制出去的纯文本是干净的 Markdown，公式带源码', async () => {
+    await mountNote('见 [[笔记B|别名]]，路径 ~/a，[注]\n\n\n\n> [!note] 提示\n> 内容\n\n公式 $E=mc^2$')
+    editor.commands.focus(); editor.commands.selectAll()
+    const copied = clipboardEvent('copy')
+    const plain = copied.getData('text/plain')
+    assert(!/[\u200B\u00A0]/.test(plain), `hidden characters: ${JSON.stringify(plain)}`)
+    equal(plain, '见 [[笔记B|别名]]，路径 ~/a，[注]\n\n\n\n> [!note] 提示\n> 内容\n\n公式 $E=mc^2$')
+    assert(copied.getData('text/html').includes('$E=mc^2$'), 'formula missing from copied HTML')
+  })
+  await test('粘贴多行纯文本保留换行与空行，保存与原文一致', async () => {
+    await mountNote('')
+    clipboardEvent('paste', { 'text/plain': '第一行\n第二行\n\n\n\n隔了多行\n结尾 $5' })
+    equal(ref.current.getMarkdown().trim(), '第一行\n第二行\n\n\n\n隔了多行\n结尾 \\$5')
+  })
+  await test('AI 回答等明显的 Markdown 按格式粘贴，普通文本和脚本保持原样', async () => {
+    assert(!looksLikeMarkdown('#!/bin/bash\n# 安装依赖\nnpm i'), 'shell script treated as Markdown')
+    assert(!looksLikeMarkdown('2*3*4\n价格 $5'), 'plain text treated as Markdown')
+    await mountNote('')
+    clipboardEvent('paste', { 'text/plain': '# 标题\n\n这是**重点**\n\n- 一\n- 二' })
+    equal(ref.current.getMarkdown().trim(), '# 标题\n\n这是**重点**\n\n- 一\n- 二')
+    // 提示里的「保持原文」：撤掉格式化，按原样文字插入
+    await mountNote('')
+    let action = null
+    const unsubscribe = subscribeNotify(payload => { if (payload.action) action = payload.action })
+    clipboardEvent('paste', { 'text/plain': '# 标题\n\n- 一\n- 二' })
+    unsubscribe()
+    assert(action, 'no keep-original action offered')
+    action.onClick()
+    equal(types().filter(type => type === 'heading' || type === 'bulletList').length, 0)
+    assert(editor.state.doc.textContent.includes('# 标题'), editor.state.doc.textContent)
+    await mountNote('```\ncode\n```')
+    editor.commands.setTextSelection(3)
+    clipboardEvent('paste', { 'text/plain': '# 标题\n\n- 一\n- 二' })
+    equal(types().filter(type => type === 'heading').length, 0)
+  })
+  await test('VS Code 复制的代码粘成代码块，背景色不存成 color:null', async () => {
+    await mountNote('')
+    clipboardEvent('paste', {
+      'text/plain': 'const a = 1\n  go()',
+      'text/html': '<div style="color: #d4d4d4;font-family: Consolas, monospace;white-space: pre;"><div><span style="color: #569cd6;">const</span> a = 1</div><div>&nbsp; go()</div></div>',
+    })
+    equal(ref.current.getMarkdown().trim(), '```\nconst a = 1\n  go()\n```')
+    await mountNote('')
+    clipboardEvent('paste', { 'text/plain': '注意', 'text/html': '<p><span style="background-color:yellow">注意</span></p>' })
+    assert(!ref.current.getMarkdown().includes('color:null'), ref.current.getMarkdown())
   })
   await test('公式加载、序列化和重开保持 LaTeX', async () => {
     const source = '公式 $a_1 + b^2$。\n\n$$\n\\begin{aligned}\na &= b + c \\\\\n\n  d &= \\frac{1}{2}\n\\end{aligned}\n$$'

@@ -503,6 +503,8 @@ const NoteNavigator = ({
       open={open}
       layer="aiPanel"
       ariaLabel="笔记导航/书签"
+      // 与 AI 小窗、筛选器等可拖动浮窗同一种毛玻璃
+      material="frosted"
       position={resolvedPosition}
       width={PANEL_WIDTH}
       maxWidth={`calc(100vw - ${PANEL_RIGHT_OFFSET * 2}px)`}
