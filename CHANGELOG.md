@@ -2,9 +2,11 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
-## [4.1.3] - 2026-09-29
+## [4.1.3] - 2026-09-30
 
 ### Changed / 更新内容
+- fix(ui): the bookmarks window and the selection AI panel use the same frosted glass as the AI mini window
+- fix(editor): cleaner copy and paste between notes and other apps
 - chore: list @tiptap/extension-hard-break in package-lock root dependencies
 - fix(editor): single line breaks survive editing in rich-text mode instead of being merged into one line
 - test(editor): regressions for [[link]] garbage and literal <tag> text lost on reload
