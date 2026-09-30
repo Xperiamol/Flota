@@ -67,8 +67,11 @@ const createMathNode = (display) => Node.create({
   draggable: display,
   addAttributes: () => ({ latex: { default: '', parseHTML: element => element.getAttribute('data-latex'), renderHTML: attrs => ({ 'data-latex': attrs.latex }) } }),
   parseHTML: () => [{ tag: `[data-type="${display ? 'math-block' : 'math-inline'}"][data-latex]` }],
-  renderHTML({ HTMLAttributes }) {
-    return [display ? 'div' : 'span', mergeAttributes(HTMLAttributes, { 'data-type': display ? 'math-block' : 'math-inline', class: display ? 'math-block' : 'math-inline' })]
+  // 编辑器里由 MathView 显示；这里的 HTML 只用于复制到 Word、飞书等处，带上 LaTeX 源码，否则粘过去是空的。
+  // 粘回 Flota 时按 data-latex 解析，里面的文字不会重复。
+  renderHTML({ node, HTMLAttributes }) {
+    const source = display ? `$$${node.attrs.latex}$$` : `$${node.attrs.latex}$`
+    return [display ? 'div' : 'span', mergeAttributes(HTMLAttributes, { 'data-type': display ? 'math-block' : 'math-inline', class: display ? 'math-block' : 'math-inline' }), source]
   },
   addNodeView: () => ReactNodeViewRenderer(MathView),
   addStorage() {

@@ -26,8 +26,8 @@ import { WikiLinkSuggestion } from './extensions/WikiLinkSuggestion'
 import { InlineMath, BlockMath, MathAwareText } from './extensions/Math'
 import { WhiteboardEmbed } from './extensions/WhiteboardEmbed'
 import { WidgetEmbed } from './extensions/WidgetEmbed'
-import { getClipboardLink, normalizePastedHtml, pasteEditorText } from '../../utils/editorClipboard'
-import { notifyError, promptInput } from '../../utils/notify'
+import { getClipboardLink, normalizePastedHtml, pasteEditorText, looksLikeMarkdown, isCodeEditorHtml } from '../../utils/editorClipboard'
+import { notifyError, notifyWithAction, promptInput } from '../../utils/notify'
 import { normalizeLinkUrl, markdownLinkDestination, openNoteLink } from '../../utils/linkUtils'
 import { transformOutsideMath } from '../../markdown/plugins/math'
 import LinkEditorDialog, { requestLinkEditor } from './LinkEditorDialog'
@@ -124,6 +124,20 @@ const postprocessMarkdown = (md) => {
   // 还原嵌入：![[xxx]] → \!\[\[xxx\]\] / !\[\[xxx\]\] 都还原
   out = out.replace(/(!?)\\\[\\\[([^\]\n]+?)\\\]\\\]/g, (_m, bang, inner) => `${bang}[[${inner}]]`)
   return finalizeMarkdownForStorage(normalizeHtmlTablesInMarkdown(out))
+}
+
+// 复制出去的纯文本里去掉在别处也用不着的转义：单个 ~ 构不成删除线，
+// 后面不跟 ( 或 [ 的 [文字] 构不成链接。\$ 保留：`$5 和 $10` 在 Flota / Obsidian 里会被当成公式。
+const simplifyClipboardEscapes = (markdown) => {
+  const lines = markdown.split('\n')
+  let inFence = false
+  return lines.map((line) => {
+    if (/^\s{0,3}(```|~~~)/.test(line)) { inFence = !inFence; return line }
+    if (inFence) return line
+    return line
+      .replace(/(^|[^\\~])\\~(?!~)/g, '$1~')
+      .replace(/\\\[([^\]\n]*?)\\\](?![([:])/g, '[$1]')
+  }).join('\n')
 }
 
 // ─── 段内换行 ─────────────────────────────────────────────────────────────────
@@ -230,7 +244,8 @@ const TextColor = Mark.create({
     }
   },
   parseHTML() {
-    return [{ tag: 'span[style*="color"]' }]
+    // style*="color" 也会命中 background-color：没有文字颜色的 span 不算，否则存成 color:null
+    return [{ tag: 'span[style*="color"]', getAttrs: el => (el.style.color ? null : false) }]
   },
   renderHTML({ HTMLAttributes }) {
     return ['span', HTMLAttributes, 0]
@@ -2715,6 +2730,13 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       // 默认开启拼写检查（更现代）；代码块/行内代码已通过节点配置关闭
       attributes: { class: 'wysiwyg-editor-content', spellcheck: 'true' },
       transformPastedHTML: normalizePastedHtml,
+      // 复制到外面的纯文本（微信、记事本、终端、VS Code 用它）：和笔记存储、源码模式看到的 Markdown 一致，
+      // 不带编辑器内部的零宽占位符和 \[\[ 这类转义
+      clipboardTextSerializer: (slice) => {
+        const ed = editorRef.current
+        if (!ed) return ''
+        return simplifyClipboardEscapes(postprocessMarkdown(ed.storage.markdown.serializer.serialize(slice.content)).replace(/\s+$/, ''))
+      },
 
       // ── 拦截图片粘贴 ──────────────────────────────────────────────────────────
       handlePaste: (view, event) => {
@@ -2751,10 +2773,40 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
           return true
         }
 
-        // 2) 纯文本（无 HTML 富文本）：以原样字面量插入，绕开 markdown 二次解析。
-        //    避免 [], *, _, {color}, URL 等被识别后在保存时反向转义/包裹。
+        const inCode = view.state.selection.$from.parent.type.spec.code
+          || view.state.selection.$from.marks().some(mark => mark.type.name === 'code')
+
+        // 1.8) VS Code 等编辑器复制的代码：整体作为代码块，而不是一行一个带颜色的段落
+        if (plainText && isCodeEditorHtml(htmlText)) {
+          event.preventDefault()
+          if (inCode || !view.state.schema.nodes.codeBlock) return pasteEditorText(view, plainText)
+          const { state } = view
+          const code = plainText.replace(/\r\n?/g, '\n').replace(/\n+$/, '')
+          view.dispatch(state.tr.replaceSelectionWith(state.schema.nodes.codeBlock.create(null, code ? state.schema.text(code) : null)).scrollIntoView())
+          return true
+        }
+
+        // 2) 纯文本（无 HTML 富文本）：默认以原样字面量插入，绕开 markdown 二次解析，
+        //    避免日志、代码里的 [], *, _, {color}, URL 等被识别后在保存时反向转义/包裹。
+        //    明显是 Markdown 的（AI 对话「复制」出来的回答、README）按格式粘贴，并提供一键退回原文。
         if (plainText && !htmlText.trim()) {
           event.preventDefault()
+          const ed = editorRef.current
+          if (!inCode && ed && looksLikeMarkdown(plainText)) {
+            ed.chain().focus().insertContent(preprocessMarkdown(plainText.replace(/\r\n?/g, '\n'))).run()
+            const pastedDoc = ed.state.doc
+            notifyWithAction('已按 Markdown 格式粘贴', {
+              label: '保持原文',
+              onClick: () => {
+                const current = editorRef.current
+                // 粘贴之后又改过就不动，免得撤掉用户后来的输入
+                if (!current || current.isDestroyed || current.state.doc !== pastedDoc) return
+                current.commands.undo()
+                pasteEditorText(current.view, plainText)
+              },
+            }, 'info')
+            return true
+          }
           return pasteEditorText(view, plainText)
         }
 

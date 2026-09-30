@@ -97,20 +97,82 @@ export const pasteEditorText = (view, text, { plain = false } = {}) => {
   const lines = normalized.split('\n')
   const blocks = new Map(tokens.filter(token => token.type === 'flota_math_block').map(token => [token.map[0], token]))
   const codeLines = new Set(tokens.filter(token => ['fence', 'code_block'].includes(token.type)).flatMap(token => Array.from({ length: token.map[1] - token.map[0] }, (_, i) => token.map[0] + i)))
+  // 与笔记存储一致：相邻的行是同一段里的换行，空行分段，多出来的空行保留为空段落。
+  // 以前每一行都单独成段，粘贴后行距变大，保存出来也和原文不一样。
+  const hardBreak = schema.nodes.hardBreak
   const nodes = []
+  let current = null
+  let blankLines = 0
+  const closeParagraph = () => {
+    if (current) nodes.push(schema.nodes.paragraph.create(null, current))
+    current = null
+  }
+  const startBlock = () => {
+    if (nodes.length) for (let i = 1; i < blankLines; i += 1) nodes.push(schema.nodes.paragraph.create())
+    blankLines = 0
+  }
   for (let line = 0; line < lines.length; line += 1) {
     const math = blocks.get(line)
+    const isCode = codeLines.has(line)
     if (math && schema.nodes.blockMath) {
+      closeParagraph()
+      startBlock()
       nodes.push(schema.nodes.blockMath.create({ latex: math.content }))
       line = math.map[1] - 1
+    } else if (!isCode && !lines[line].trim()) {
+      if (current) closeParagraph()
+      blankLines += 1
     } else {
-      const content = codeLines.has(line) ? (lines[line] ? [schema.text(lines[line], marks)] : []) : inlineNodes(schema, lines[line], marks)
-      nodes.push(schema.nodes.paragraph.create(null, content))
+      const content = isCode ? (lines[line] ? [schema.text(lines[line], marks)] : []) : inlineNodes(schema, lines[line], marks)
+      if (current && hardBreak) {
+        current.push(hardBreak.create(), ...content)
+      } else {
+        closeParagraph()
+        startBlock()
+        current = content
+      }
     }
   }
+  closeParagraph()
+  if (!nodes.length) nodes.push(schema.nodes.paragraph.create())
   const slice = new Slice(Fragment.fromArray(nodes), nodes[0].isTextblock ? 1 : 0, nodes.at(-1).isTextblock ? 1 : 0)
   view.dispatch(state.tr.replaceSelection(slice).setMeta('preventAutolink', true).scrollIntoView())
   return true
+}
+
+/**
+ * 纯文本是不是一段 Markdown（AI 对话的「复制」按钮、README、别的笔记软件的源码）。
+ * 只看明显的结构，至少两处信号才算：日志、代码、带 # 注释的脚本不会被误判。
+ */
+export const looksLikeMarkdown = (text) => {
+  const value = String(text || '').replace(/\r\n?/g, '\n')
+  if (!value.includes('\n')) return false
+  const lines = value.split('\n')
+  const has = (re) => lines.some(line => re.test(line))
+  let score = 0
+  if (has(/^\s{0,3}(?:```|~~~)/)) score += 2
+  if (has(/^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/)) score += 2
+  if (has(/^#{1,6}\s+\S/)) score += 1
+  if (lines.filter(line => /^\s*(?:[-*+]|\d{1,3}[.)])\s+\S/.test(line)).length >= 2) score += 1
+  if (has(/^>\s?\S/)) score += 1
+  if (/\*\*[^*\n]+\*\*/.test(value)) score += 1
+  if (/\[[^\]\n]+\]\((?:https?:\/\/|\.{0,2}\/)[^)\s]*\)/.test(value)) score += 1
+  if (/(?:^|[^`])`[^`\n]+`(?!`)/.test(value)) score += 1
+  return score >= 2
+}
+
+/**
+ * VS Code、Cursor 等编辑器复制出来的代码：外层是 white-space: pre 的等宽字体 div，
+ * 每行一个 div、关键字各自带颜色。按 HTML 粘贴会变成一堆带颜色的段落。
+ */
+export const isCodeEditorHtml = (html) => {
+  if (!html || !/white-space:\s*pre/i.test(html)) return false
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  const root = [...doc.body.children].find(element => element.tagName !== 'META')
+  if (!root || root.tagName === 'PRE') return false
+  const style = root.getAttribute('style') || ''
+  return /white-space:\s*pre/i.test(style)
+    && /font-family:[^;]*(?:consolas|menlo|monaco|courier|mono|code|fira|cascadia)/i.test(style)
 }
 
 export const normalizePastedHtml = (html) => {
