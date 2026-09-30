@@ -250,7 +250,9 @@ jobs:
           import os
           import sys
           from pathlib import Path
+          import hashlib
           import mimetypes
+          import time
           import oss2
 
           bucket_name = os.environ.get("OSS_BUCKET", "")
@@ -264,22 +266,59 @@ jobs:
               sys.exit(1)
 
           auth = oss2.Auth(access_key_id, access_key_secret)
-          bucket = oss2.Bucket(auth, endpoint, bucket_name)
+          # GitHub 的机器在海外，传到 OSS 很慢：以前整个安装包一次 PUT、60 秒读超时、不重试，
+          # 一次超时整个发布就失败（v4.1.2）。现在大文件分片、断点续传，每个文件最多重试 3 次。
+          bucket = oss2.Bucket(auth, endpoint, bucket_name, connect_timeout=120)
+          resume_store = oss2.ResumableStore(root="/tmp/oss-resume")
+
+          def upload(object_key, path, headers):
+              for attempt in range(1, 4):
+                  try:
+                      oss2.resumable_upload(
+                          bucket, object_key, str(path), store=resume_store, headers=headers,
+                          multipart_threshold=8 * 1024 * 1024, part_size=4 * 1024 * 1024, num_threads=4,
+                      )
+                      return
+                  except (oss2.exceptions.RequestError, oss2.exceptions.ServerError) as error:
+                      if attempt == 3:
+                          raise
+                      print(f"[publish-oss] retry {attempt} for {object_key}: {error}")
+                      time.sleep(15 * attempt)
+
+          def file_digest(path):
+              digest = hashlib.sha256()
+              with open(path, "rb") as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          # 先传带版本号的文件，再传 latest/（同一个安装包在 OSS 内部复制，不再从这里传第二遍），
+          # 最后才更新 release-manifest.json：客户端看到新版本时，安装包一定已经在了
+          def order(path):
+              key = path.as_posix()
+              if key.endswith("release-manifest.json"):
+                  return (2, key)
+              return (1 if "/latest/" in key else 0, key)
 
           uploaded = 0
-          for local_path in source_root.rglob("*"):
-              if not local_path.is_file():
-                  continue
-
+          uploaded_by_digest = {}
+          for local_path in sorted((p for p in source_root.rglob("*") if p.is_file()), key=order):
               object_key = local_path.as_posix().replace("oss-staging/", "", 1)
               content_type, _ = mimetypes.guess_type(str(local_path))
               headers = {}
               if content_type:
                   headers["Content-Type"] = content_type
 
-              bucket.put_object_from_file(object_key, str(local_path), headers=headers)
+              digest = file_digest(local_path)
+              source_key = uploaded_by_digest.get(digest)
+              if source_key:
+                  bucket.copy_object(bucket_name, source_key, object_key)
+                  print(f"[publish-oss] copied: {source_key} -> {object_key}")
+              else:
+                  upload(object_key, local_path, headers)
+                  uploaded_by_digest[digest] = object_key
+                  print(f"[publish-oss] uploaded: {object_key}")
               uploaded += 1
-              print(f"[publish-oss] uploaded: {object_key}")
 
           print(f"[publish-oss] upload complete, total files: {uploaded}")
           PY
