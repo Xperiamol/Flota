@@ -1,33 +1,40 @@
 /**
- * Mem0 知识管理服务 - v3 (四层架构)
- * 
+ * Mem0 知识管理服务 - v4
+ *
  * 架构:
- * ┌─ 写入层 (Gatekeeper)  → 去重、价值判定、分类路由
- * ├─ 存储层 (Store)       → BLOB 向量 + FTS5 关键词 + 替代链
- * ├─ 检索层 (Retrieval)   → 混合召回(向量+关键词) + 多因子重排
- * └─ 治理层 (Governance)  → TTL 衰减、冷存归档、膨胀监控
- * 
+ * ┌─ 写入层 (Gatekeeper)  → 价值判定、保守去重（近乎同文才合并）、来源绑定 upsert
+ * ├─ 存储层 (Store)       → BLOB 向量（记录生成它的模型）+ 替代链 / 软删除
+ * ├─ 检索层 (Retrieval)   → 全量向量 + 中文二元组关键词，有界打分，按层过滤
+ * └─ 治理层 (Governance)  → TTL 衰减、替代链清理、孤儿（已删笔记 / 待办）清理
+ *
  * 记忆分层:
  *   profile   → 用户稳定偏好与约束 (语言、风格、习惯)
- *   semantic  → 事实和知识片段 (项目规则、术语、笔记知识)
- *   episodic  → 任务过程与阶段结论 (发布踩坑、修复路径)
- *   artifact  → 笔记/待办/画布的结构化抽取
- * 
+ *   semantic  → 事实和知识片段 (项目、术语、背景)
+ *   episodic  → 一段时间内的状况与阶段结论 (正在备考、发布踩坑)
+ *   artifact  → 笔记 / 待办的索引（按 source_key 一一对应，随原文更新）
+ *
+ * 向量模型:
+ *   默认用随包的 all-MiniLM-L6-v2（英文模型，中文区分度很差：
+ *   「喜欢喝咖啡」和「喜欢跑步」相似度 0.98）。设置里可下载多语言模型，
+ *   切换后后台把已有记忆重新向量化；每行记录 embedding_model，模型不一致的行
+ *   在重算完成前只参与关键词召回，不和新模型的向量比较。
+ *
  * 技术栈：
  * - @xenova/transformers: 纯 JS 向量化模型 (384维)
- * - better-sqlite3: SQLite + FTS5
+ * - better-sqlite3
  */
 
 const { EventEmitter } = require('events');
 const path = require('path');
 const fs = require('fs');
+const Module = require('module');
 
 // ── 记忆分层配置 ──────────────────────────────────
 const MEMORY_LAYERS = {
   profile:  { maxCount: 50,   maxContentLen: 500,  ttlDays: null,   importance: 1.0 },
-  semantic: { maxCount: 1000, maxContentLen: 1000,  ttlDays: null,   importance: 0.8 },
-  episodic: { maxCount: 300,  maxContentLen: 500,   ttlDays: 180,    importance: 0.6 },
-  artifact: { maxCount: 2000, maxContentLen: 1000,  ttlDays: 365,    importance: 0.7 },
+  semantic: { maxCount: 1000, maxContentLen: 1000, ttlDays: null,   importance: 0.8 },
+  episodic: { maxCount: 300,  maxContentLen: 500,  ttlDays: 180,    importance: 0.6 },
+  artifact: { maxCount: 2000, maxContentLen: 1000, ttlDays: 365,    importance: 0.7 },
 };
 
 // 旧分类到新分层的映射（向后兼容）
@@ -41,40 +48,155 @@ const CATEGORY_TO_LAYER = {
 const DEFAULT_LAYER = 'semantic';
 
 // 写入层 - 守门器参数
-const DEDUP_THRESHOLD   = 0.90;  // 去重：向量相似度阈值
-const MIN_CONTENT_LEN   = 5;     // 价值判定：最短有效内容
-const MAX_SEARCH_CANDS  = 500;   // 检索层：向量候选集上限
-const FTS_BOOST         = 0.15;  // 检索层：关键词命中加分
+const MIN_CONTENT_LEN = 5;      // 价值判定：最短有效内容
+// 去重：向量相似 + 字面重合都要够高才算同一条。只看向量会把同句式的不同事实
+// （「住在杭州」/「住在上海」）当成重复；只看字面又认不出语序调整。
+const DEDUP_VECTOR_MIN = 0.90;
+const DEDUP_BIGRAM_MIN = 0.60;
+const MAX_SEARCH_CANDS = 5000;  // 检索层：候选上限（全量扫描的保险）
+const DEFAULT_MIN_RELEVANCE = 0.15;
 
-// 重排权重
+// 重排权重（相关度占大头；其余因子只用于同等相关时排序）
 const RANK_WEIGHTS = {
-  relevance:  0.50,  // 向量相似度
-  freshness:  0.20,  // 新鲜度
-  importance: 0.15,  // 分层重要度
-  credibility: 0.15, // 来源可信度
+  relevance:   0.70,
+  freshness:   0.10,
+  importance:  0.10,
+  credibility: 0.10,
 };
 
 // 来源可信度评分
 const SOURCE_CREDIBILITY = {
-  user_manual: 1.0,     // 用户手动添加
-  ai_extract:  0.8,     // AI 工具萃取
-  user_note:   0.7,     // 笔记迁移
-  user_todo:   0.6,     // 待办迁移
-  historical_analysis: 0.5, // 历史分析
+  user_manual: 1.0,          // 用户手动添加
+  ai_auto:     0.85,         // 对话后自动提取
+  ai_extract:  0.8,          // AI 工具写入（用户确认过）
+  user_note:   0.7,          // 笔记索引
+  user_todo:   0.6,          // 待办索引
+  historical_analysis: 0.5,  // 旧版历史分析（已不再生成）
 };
 
 // 治理层 - 衰减参数
-const DECAY_HALF_LIFE_DAYS = 90; // 半衰期：90天新鲜度减半
+const DECAY_HALF_LIFE_DAYS = 90;
+const CHAIN_RETENTION_DAYS = 30; // 被替代 / 软删除的记忆保留多久，期间可撤销
+
+// 软删除标记：superseded_by = -1。所有读取都只看 superseded_by IS NULL。
+const SOFT_DELETED = -1;
+
+// ── 向量模型 ──────────────────────────────────────
+const LEGACY_MODEL = 'Xenova/all-MiniLM-L6-v2';
+const EMBEDDING_MODELS = {
+  [LEGACY_MODEL]: {
+    label: '基础模型',
+    description: '适合英文',
+    bundled: true,
+    sizeMB: 23,
+    // 余弦相似度低于这个值视为噪声（中文无关句子在该模型上普遍有 0.3~0.5）
+    vecFloor: 0.5,
+    // 中文向量不可信：中文查询时向量分减半，主要靠关键词
+    cjkReliable: false,
+  },
+  'Xenova/paraphrase-multilingual-MiniLM-L12-v2': {
+    label: '多语言模型',
+    description: '中文推荐',
+    bundled: false,
+    sizeMB: 130,
+    vecFloor: 0.3,
+    cjkReliable: true,
+    files: ['config.json', 'tokenizer_config.json', 'tokenizer.json', 'onnx/model_quantized.onnx'],
+  },
+};
+const MODEL_HOSTS = ['https://huggingface.co', 'https://hf-mirror.com'];
+const DOWNLOAD_HEADER_TIMEOUT_MS = 15000;
+
+const REINDEX_BATCH = 16;
+
+// ── 小工具 ────────────────────────────────────────
+
+const normalizeText = (text) => String(text || '')
+  .toLowerCase()
+  .replace(/[\s\p{P}\p{S}]+/gu, '');
+
+// 关键词：拉丁词（≥2 字符）+ 中日韩连续字的二元组；单个汉字的片段保留单字
+const keywordTerms = (text) => {
+  const lower = String(text || '').toLowerCase();
+  const terms = new Set();
+  for (const word of lower.match(/[a-z0-9][a-z0-9_.-]+/g) || []) terms.add(word);
+  for (const run of lower.match(/[㐀-鿿豈-﫿]+/g) || []) {
+    if (run.length === 1) terms.add(run);
+    for (let i = 0; i < run.length - 1; i++) terms.add(run.slice(i, i + 2));
+  }
+  return [...terms].slice(0, 48);
+};
+
+const bigramSet = (text) => {
+  const s = normalizeText(text);
+  const set = new Set();
+  if (s.length === 1) set.add(s);
+  for (let i = 0; i < s.length - 1; i++) set.add(s.slice(i, i + 2));
+  return set;
+};
+
+const jaccard = (a, b) => {
+  if (a.size === 0 || b.size === 0) return 0;
+  let inter = 0;
+  for (const x of a) if (b.has(x)) inter++;
+  return inter / (a.size + b.size - inter);
+};
+
+const clamp01 = (x) => Math.max(0, Math.min(1, x));
+
+const safeParse = (json, fallback = {}) => {
+  try { return JSON.parse(json || ''); } catch (_) { return fallback; }
+};
+
+/**
+ * @xenova/transformers 在顶层 import 了 sharp（只用于图片处理）。sharp 的原生模块
+ * 一旦缺失或架构不符，整个 transformers 都加载失败，记忆功能也就整体不可用——
+ * 而我们只用文本向量化。这里预先试加载 sharp，失败就放一个占位模块进 require 缓存，
+ * ESM 加载器会复用已缓存的 CommonJS 模块。
+ */
+const makeSharpOptional = () => {
+  try {
+    const transformersEntry = require.resolve('@xenova/transformers');
+    const sharpPath = Module.createRequire(transformersEntry).resolve('sharp');
+    try {
+      require(sharpPath);
+    } catch (error) {
+      const stub = new Module(sharpPath);
+      stub.filename = sharpPath;
+      stub.loaded = true;
+      stub.exports = function sharpUnavailable() {
+        throw new Error('sharp 不可用：当前环境不支持图片处理');
+      };
+      Module._cache[sharpPath] = stub;
+      console.warn('[Mem0] sharp 加载失败，已替换为占位模块（不影响文本向量化）:', (error.message || '').split('\n')[0]);
+    }
+  } catch (_) {
+    // 找不到 transformers / sharp 时交给后面的 import 报错
+  }
+};
 
 class Mem0Service extends EventEmitter {
-  constructor(databasePath, appDataPath) {
+  /**
+   * @param {string} databasePath
+   * @param {string} appDataPath
+   * @param {{ autoReindex?: boolean }} [options] autoReindex：换模型后是否在本进程后台重算向量
+   *   （主进程开启；独立 MCP 进程不开，避免两个进程同时重算）
+   */
+  constructor(databasePath, appDataPath, options = {}) {
     super();
     this.databasePath = databasePath;
     this.appDataPath = appDataPath;
+    this.autoReindex = !!options.autoReindex;
     this.db = null;
     this.embedder = null;
+    this.activeModel = LEGACY_MODEL;
     this.initialized = false;
     this.initializing = false;
+    this.state = 'idle'; // idle | loading | ready | failed
+    this.lastError = null;
+    this._reindex = null;   // { done, total } 进行中时有值
+    this._download = null;  // { modelId, loaded, total, abort } 进行中时有值
+    this._transformers = null;
     // 可观测指标
     this._metrics = { searches: 0, hits: 0, writes: 0, blocked: 0, deduped: 0 };
   }
@@ -86,314 +208,269 @@ class Mem0Service extends EventEmitter {
   async initialize() {
     if (this.initialized) return { success: true, message: 'Already initialized' };
     if (this.initializing) {
-      console.log('[Mem0] Already initializing...');
       return { success: false, error: 'Initialization in progress' };
     }
     this.initializing = true;
+    this._setState('loading');
     try {
-      console.log('[Mem0] Starting initialization (v3 architecture)...');
-      await this.initDatabase();
-      await this.initEmbedder();
+      console.log('[Mem0] Starting initialization (v4)...');
+      if (!this.db) await this.initDatabase();
+      this.activeModel = this._resolveStartupModel();
+      this.embedder = await this._loadEmbedder(this.activeModel);
       this.initialized = true;
       this.initializing = false;
-      console.log('[Mem0] Service initialized successfully');
+      this.lastError = null;
+      this._setState('ready');
+      console.log('[Mem0] Service initialized with', this.activeModel);
+      if (this.autoReindex) this._startReindex();
       return { success: true };
     } catch (error) {
       this.initializing = false;
+      // 有些原生模块错误的 message 是空串，退回到 toString，至少让日志里看得见原因
+      this.lastError = (error && (error.message || String(error))) || '未知错误';
+      this._setState('failed');
       console.error('[Mem0] Initialization failed:', error);
-      return { success: false, error: error.message };
+      return { success: false, error: this.lastError };
     }
   }
 
   async initDatabase() {
-    try {
-      const Database = require('better-sqlite3');
-      if (!fs.existsSync(this.databasePath)) {
-        throw new Error(`Database not found: ${this.databasePath}`);
-      }
-      this.db = new Database(this.databasePath);
-      console.log('[Mem0] Database connected:', this.databasePath);
-
-      // 主表（保留旧结构兼容）
-      this.db.exec(`
-        CREATE TABLE IF NOT EXISTS mem0_memories (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          user_id TEXT NOT NULL,
-          content TEXT NOT NULL,
-          embedding TEXT,
-          metadata TEXT,
-          category TEXT,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL
-        )
-      `);
-
-      // v3 Schema 迁移
-      this._migrateSchemaV3();
-
-      // 索引
-      this.db.exec(`
-        CREATE INDEX IF NOT EXISTS idx_mem0_user_id ON mem0_memories(user_id);
-        CREATE INDEX IF NOT EXISTS idx_mem0_category ON mem0_memories(category);
-        CREATE INDEX IF NOT EXISTS idx_mem0_created_at ON mem0_memories(created_at);
-        CREATE INDEX IF NOT EXISTS idx_mem0_user_category_time
-          ON mem0_memories(user_id, category, created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_mem0_user_type
-          ON mem0_memories(user_id, memory_type);
-        CREATE INDEX IF NOT EXISTS idx_mem0_user_layer
-          ON mem0_memories(user_id, memory_layer, created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_mem0_superseded
-          ON mem0_memories(superseded_by);
-      `);
-
-      // FTS5 全文搜索索引（v3 新增）
-      this._initFts();
-
-      // 后台迁移旧的 JSON embedding → BLOB
-      this._backfillBlobEmbeddings();
-
-      console.log('[Mem0] Database tables initialized (v3)');
-
-    } catch (error) {
-      console.error('[Mem0] Database initialization failed:', error);
-      throw error;
+    const Database = require('better-sqlite3');
+    if (!fs.existsSync(this.databasePath)) {
+      throw new Error(`Database not found: ${this.databasePath}`);
     }
+    this.db = new Database(this.databasePath);
+    console.log('[Mem0] Database connected:', this.databasePath);
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS mem0_memories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        content TEXT NOT NULL,
+        embedding TEXT,
+        metadata TEXT,
+        category TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS mem0_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      );
+    `);
+
+    this._migrateSchema();
+
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_mem0_user_id ON mem0_memories(user_id);
+      CREATE INDEX IF NOT EXISTS idx_mem0_category ON mem0_memories(category);
+      CREATE INDEX IF NOT EXISTS idx_mem0_created_at ON mem0_memories(created_at);
+      CREATE INDEX IF NOT EXISTS idx_mem0_user_category_time
+        ON mem0_memories(user_id, category, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_mem0_user_type
+        ON mem0_memories(user_id, memory_type);
+      CREATE INDEX IF NOT EXISTS idx_mem0_user_layer
+        ON mem0_memories(user_id, memory_layer, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_mem0_superseded
+        ON mem0_memories(superseded_by);
+      CREATE INDEX IF NOT EXISTS idx_mem0_source_key
+        ON mem0_memories(user_id, source_key);
+    `);
+
+    // v3 的 FTS5 索引一直在维护却从未被检索用到（中文分词也不可用），删掉
+    try {
+      this.db.exec(`
+        DROP TRIGGER IF EXISTS mem0_fts_insert;
+        DROP TRIGGER IF EXISTS mem0_fts_delete;
+        DROP TRIGGER IF EXISTS mem0_fts_update;
+        DROP TABLE IF EXISTS mem0_fts;
+      `);
+    } catch (e) {
+      console.warn('[Mem0] Drop legacy FTS warning:', e.message);
+    }
+
+    this._backfillBlobEmbeddings();
+    this._backfillSourceKeys();
+    console.log('[Mem0] Database tables initialized (v4)');
   }
 
-  /**
-   * 初始化 FTS5 索引（带自动修复）
-   * 使用独立的 FTS 表（非 content-sync），避免数据不一致导致 SQLITE_CORRUPT_VTAB
-   * @private
-   */
-  _initFts() {
-    this._ftsAvailable = false;
+  /** @private */
+  _migrateSchema() {
     try {
-      // 先检查是否有旧的 content-sync FTS 表（会导致 CORRUPT_VTAB）
-      // 如果有，直接删掉重建
-      try {
-        const ftsInfo = this.db.prepare(
-          `SELECT sql FROM sqlite_master WHERE type='table' AND name='mem0_fts'`
-        ).get();
-        if (ftsInfo && ftsInfo.sql && ftsInfo.sql.includes("content='mem0_memories'")) {
-          console.log('[Mem0] Dropping old content-sync FTS table (causes CORRUPT_VTAB)...');
-          this.db.exec(`DROP TRIGGER IF EXISTS mem0_fts_insert`);
-          this.db.exec(`DROP TRIGGER IF EXISTS mem0_fts_delete`);
-          this.db.exec(`DROP TRIGGER IF EXISTS mem0_fts_update`);
-          this.db.exec(`DROP TABLE IF EXISTS mem0_fts`);
-        }
-      } catch (_) {}
-
-      // 验证现有 FTS 表是否可用
-      try {
-        const exists = this.db.prepare(
-          `SELECT name FROM sqlite_master WHERE type='table' AND name='mem0_fts'`
-        ).get();
-        if (exists) {
-          // 尝试读取，检测是否损坏
-          this.db.prepare(`SELECT COUNT(*) as c FROM mem0_fts`).get();
-          this._ftsAvailable = true;
-          console.log('[Mem0] FTS5 index OK');
-          return;
-        }
-      } catch (e) {
-        // FTS 表损坏，删掉重建
-        console.warn('[Mem0] FTS5 index corrupted, rebuilding...', e.message);
-        try {
-          this.db.exec(`DROP TRIGGER IF EXISTS mem0_fts_insert`);
-          this.db.exec(`DROP TRIGGER IF EXISTS mem0_fts_delete`);
-          this.db.exec(`DROP TRIGGER IF EXISTS mem0_fts_update`);
-          this.db.exec(`DROP TABLE IF EXISTS mem0_fts`);
-        } catch (_) {}
-      }
-
-      // 创建独立 FTS 表（不绑定 content 源，避免 CORRUPT_VTAB）
-      this.db.exec(`
-        CREATE VIRTUAL TABLE IF NOT EXISTS mem0_fts USING fts5(
-          content,
-          tokenize='unicode61'
-        )
-      `);
-
-      // 从主表填充 FTS
-      const mainCount = this.db.prepare('SELECT COUNT(*) as c FROM mem0_memories').get();
-      if (mainCount.c > 0) {
-        console.log(`[Mem0] Populating FTS index from ${mainCount.c} records...`);
-        this.db.exec(`
-          INSERT INTO mem0_fts(rowid, content)
-          SELECT id, content FROM mem0_memories
-        `);
-      }
-
-      this._ftsAvailable = true;
-      console.log('[Mem0] FTS5 index created (standalone mode)');
-    } catch (ftsErr) {
-      console.warn('[Mem0] FTS5 not available, vector-only search:', ftsErr.message);
-      this._ftsAvailable = false;
-    }
-  }
-
-  /**
-   * v3 Schema 迁移
-   * @private
-   */
-  _migrateSchemaV3() {
-    try {
-      const cols = this.db.pragma('table_info(mem0_memories)');
-      const colNames = cols.map(c => c.name);
-
+      const colNames = this.db.pragma('table_info(mem0_memories)').map(c => c.name);
       const addColumn = (name, type, defaultVal) => {
         if (!colNames.includes(name)) {
           const def = defaultVal !== undefined ? ` DEFAULT ${defaultVal}` : '';
-          console.log(`[Mem0] Schema v3: adding column ${name}`);
+          console.log(`[Mem0] Schema: adding column ${name}`);
           this.db.exec(`ALTER TABLE mem0_memories ADD COLUMN ${name} ${type}${def}`);
         }
       };
-
-      // v2 列（向后兼容）
+      // v2
       addColumn('embedding_blob', 'BLOB');
       addColumn('memory_type', 'TEXT', "'knowledge'");
       addColumn('access_count', 'INTEGER', '0');
       addColumn('last_accessed_at', 'INTEGER');
-
-      // v3 新增列
-      addColumn('memory_layer', 'TEXT', "'semantic'");   // 分层: profile/semantic/episodic/artifact
-      addColumn('source', 'TEXT', "'unknown'");           // 来源标识
-      addColumn('superseded_by', 'INTEGER');              // 替代链: 被哪条新记忆替代
-      addColumn('importance_score', 'REAL', '0.5');       // 重要度评分 [0,1]
-
+      // v3
+      addColumn('memory_layer', 'TEXT', "'semantic'");
+      addColumn('source', 'TEXT', "'unknown'");
+      addColumn('superseded_by', 'INTEGER');
+      addColumn('importance_score', 'REAL', '0.5');
+      // v4
+      addColumn('embedding_model', 'TEXT');   // 生成 embedding_blob 的模型；NULL = 旧版默认模型
+      addColumn('source_key', 'TEXT');        // 来源对象：note:12 / todo:5，一个来源只对应一条记忆
     } catch (error) {
-      console.warn('[Mem0] Schema v3 migration warning:', error.message);
+      console.warn('[Mem0] Schema migration warning:', error.message);
     }
   }
 
-  /**
-   * 将旧 JSON embedding 批量转 BLOB
-   * @private
-   */
+  /** 旧 JSON embedding → BLOB，并清掉已有 BLOB 的 JSON 副本（同一向量存了两份） @private */
   _backfillBlobEmbeddings() {
     try {
       const rows = this.db.prepare(
         `SELECT id, embedding FROM mem0_memories
-         WHERE embedding IS NOT NULL AND embedding_blob IS NULL LIMIT 200`
+         WHERE embedding IS NOT NULL AND embedding_blob IS NULL LIMIT 2000`
       ).all();
-      if (rows.length === 0) return;
-
-      console.log(`[Mem0] Backfilling ${rows.length} embeddings to BLOB...`);
-      const stmt = this.db.prepare('UPDATE mem0_memories SET embedding_blob = ? WHERE id = ?');
-      const batch = this.db.transaction(items => {
-        for (const item of items) {
-          try {
-            const blob = Buffer.from(new Float32Array(JSON.parse(item.embedding)).buffer);
-            stmt.run(blob, item.id);
-          } catch (_) {}
-        }
-      });
-      batch(rows);
-
-      const remaining = this.db.prepare(
-        `SELECT COUNT(*) as cnt FROM mem0_memories WHERE embedding IS NOT NULL AND embedding_blob IS NULL`
-      ).get();
-      if (remaining.cnt > 0) console.log(`[Mem0] ${remaining.cnt} embeddings still pending BLOB migration`);
+      if (rows.length > 0) {
+        const stmt = this.db.prepare('UPDATE mem0_memories SET embedding_blob = ? WHERE id = ?');
+        this.db.transaction(items => {
+          for (const item of items) {
+            try {
+              stmt.run(Buffer.from(new Float32Array(JSON.parse(item.embedding)).buffer), item.id);
+            } catch (_) {}
+          }
+        })(rows);
+      }
+      this.db.prepare(
+        'UPDATE mem0_memories SET embedding = NULL WHERE embedding IS NOT NULL AND embedding_blob IS NOT NULL'
+      ).run();
     } catch (error) {
       console.warn('[Mem0] BLOB backfill warning:', error.message);
     }
   }
 
-  /**
-   * 同步 FTS 索引（手动同步，因为不使用触发器）
-   * @private
-   */
-  _ftsInsert(id, content) {
-    if (!this._ftsAvailable) return;
+  /** 旧版笔记 / 待办记忆只在 metadata 里记了来源 ID，补成 source_key @private */
+  _backfillSourceKeys() {
     try {
-      this.db.prepare('INSERT INTO mem0_fts(rowid, content) VALUES (?, ?)').run(id, content);
-    } catch (_) {}
+      this.db.prepare(`
+        UPDATE mem0_memories
+        SET source_key = 'note:' || json_extract(metadata, '$.note_id')
+        WHERE source_key IS NULL AND json_extract(metadata, '$.source') = 'user_note'
+          AND json_extract(metadata, '$.note_id') IS NOT NULL
+      `).run();
+      this.db.prepare(`
+        UPDATE mem0_memories
+        SET source_key = 'todo:' || json_extract(metadata, '$.todo_id')
+        WHERE source_key IS NULL AND json_extract(metadata, '$.source') = 'user_todo'
+          AND json_extract(metadata, '$.todo_id') IS NOT NULL
+      `).run();
+    } catch (error) {
+      console.warn('[Mem0] source_key backfill warning:', error.message);
+    }
   }
 
-  _ftsDelete(id, content) {
-    if (!this._ftsAvailable) return;
+  // ═══════════════════════════════════════════════════
+  //  设置（存在 mem0_meta，主进程和 MCP 进程共享）
+  // ═══════════════════════════════════════════════════
+
+  getSetting(key, defaultValue = null) {
+    if (!this.db) return defaultValue;
     try {
-      this.db.prepare('DELETE FROM mem0_fts WHERE rowid = ?').run(id);
-    } catch (_) {}
+      const row = this.db.prepare('SELECT value FROM mem0_meta WHERE key = ?').get(key);
+      return row ? JSON.parse(row.value) : defaultValue;
+    } catch (_) {
+      return defaultValue;
+    }
   }
 
-  _ftsUpdate(id, oldContent, newContent) {
-    if (!this._ftsAvailable) return;
-    try {
-      this.db.prepare('DELETE FROM mem0_fts WHERE rowid = ?').run(id);
-      this.db.prepare('INSERT INTO mem0_fts(rowid, content) VALUES (?, ?)').run(id, newContent);
-    } catch (_) {}
+  setSetting(key, value) {
+    if (!this.db) throw new Error('Mem0 database not ready');
+    this.db.prepare(
+      'INSERT INTO mem0_meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+    ).run(key, JSON.stringify(value));
+    this._emitStatus();
   }
 
   // ═══════════════════════════════════════════════════
   //  向量化模型
   // ═══════════════════════════════════════════════════
 
-  async initEmbedder() {
+  /** 随包模型所在目录（打包 / 开发） @private */
+  _bundledModelsPath() {
+    let isPackaged = false;
     try {
-      console.log('[Mem0] Loading embedding model...');
-      const transformers = await import('@xenova/transformers');
-      const { pipeline, env } = transformers;
-
-      let modelsPath;
-      let localFilesOnly = false;
-      let isPackaged = false;
-      let isStandaloneMCP = false;
-
-      try {
-        const { app } = require('electron');
-        isPackaged = app && app.isPackaged;
-      } catch (e) {
-        isStandaloneMCP = __dirname.includes('mcp-server') && (
-          __dirname.includes(path.join('AppData', 'Roaming', 'Flota')) ||
-          __dirname.includes(path.join('Application Support', 'Flota')) ||
-          __dirname.includes(path.join('.config', 'Flota'))
-        );
-        isPackaged = __dirname.includes('app.asar') && !isStandaloneMCP;
-      }
-
-      if (isPackaged) {
-        try {
-          require('electron');
-          modelsPath = path.join(process.resourcesPath, 'app.asar.unpacked', 'models');
-        } catch (_) {
-          modelsPath = path.join(__dirname, '..', '..', 'models');
-        }
-        localFilesOnly = true;
-      } else if (isStandaloneMCP) {
-        modelsPath = path.join(this.appDataPath, 'models');
-      } else {
-        const projModels = path.join(__dirname, '..', '..', 'models');
-        if (fs.existsSync(path.join(projModels, 'Xenova', 'all-MiniLM-L6-v2'))) {
-          modelsPath = projModels;
-          localFilesOnly = true;
-        } else {
-          modelsPath = path.join(this.appDataPath, 'models');
-        }
-      }
-
-      env.cacheDir = modelsPath;
-      env.localModelPath = modelsPath;
-      env.allowRemoteModels = !localFilesOnly;
-      env.allowLocalModels = true;
-      console.log(`[Mem0] Models: ${modelsPath} (local_only=${localFilesOnly})`);
-
-      this.embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
-        local_files_only: localFilesOnly
-      });
-      console.log('[Mem0] Embedding model loaded');
-    } catch (error) {
-      console.error('[Mem0] Failed to load embedding model:', error);
-      if (error.message?.includes('local_files_only')) {
-        console.error('[Mem0] Run: npm run pre-build');
-      }
-      throw error;
+      const { app } = require('electron');
+      isPackaged = !!(app && app.isPackaged);
+    } catch (_) {
+      isPackaged = __dirname.includes('app.asar');
     }
+    if (isPackaged && process.resourcesPath) {
+      return path.join(process.resourcesPath, 'app.asar.unpacked', 'models');
+    }
+    return path.join(__dirname, '..', '..', 'models');
   }
 
-  // ═══════════════════════════════════════════════════
-  //  向量工具
-  // ═══════════════════════════════════════════════════
+  /** 用户下载的模型目录 @private */
+  _userModelsPath() {
+    return path.join(this.appDataPath, 'models');
+  }
+
+  /** 模型文件齐全的根目录；没装返回 null @private */
+  _findModelRoot(modelId) {
+    for (const root of [this._bundledModelsPath(), this._userModelsPath()]) {
+      const dir = path.join(root, modelId);
+      if (fs.existsSync(path.join(dir, 'config.json'))
+        && fs.existsSync(path.join(dir, 'onnx', 'model_quantized.onnx'))) {
+        return root;
+      }
+    }
+    return null;
+  }
+
+  /** 启动时用哪个模型：设置里选的，文件丢了就退回随包模型 @private */
+  _resolveStartupModel() {
+    const preferred = this.getSetting('embedding_model', LEGACY_MODEL);
+    if (EMBEDDING_MODELS[preferred] && this._findModelRoot(preferred)) return preferred;
+    if (preferred !== LEGACY_MODEL) {
+      console.warn(`[Mem0] Embedding model ${preferred} not installed, falling back to ${LEGACY_MODEL}`);
+    }
+    return LEGACY_MODEL;
+  }
+
+  /** @private */
+  async _getTransformers() {
+    if (!this._transformers) {
+      makeSharpOptional();
+      this._transformers = await import('@xenova/transformers');
+    }
+    return this._transformers;
+  }
+
+  /** @private */
+  async _loadEmbedder(modelId) {
+    console.log('[Mem0] Loading embedding model', modelId);
+    const { pipeline, env } = await this._getTransformers();
+    const root = this._findModelRoot(modelId);
+    if (root) {
+      env.localModelPath = root;
+      env.cacheDir = root;
+      env.allowRemoteModels = false;
+    } else if (modelId === LEGACY_MODEL) {
+      // 开发环境没预下载随包模型时，允许从网络拉一次（与旧版行为一致）
+      const userRoot = this._userModelsPath();
+      env.localModelPath = userRoot;
+      env.cacheDir = userRoot;
+      env.allowRemoteModels = true;
+    } else {
+      throw new Error(`模型 ${modelId} 尚未下载`);
+    }
+    env.allowLocalModels = true;
+    const embedder = await pipeline('feature-extraction', modelId, {
+      quantized: true,
+      local_files_only: !env.allowRemoteModels,
+    });
+    console.log('[Mem0] Embedding model loaded:', modelId);
+    return embedder;
+  }
 
   async textToVector(text) {
     if (!this.embedder) throw new Error('Embedder not initialized');
@@ -413,23 +490,217 @@ class Mem0Service extends EventEmitter {
     return d === 0 ? 0 : dot / d;
   }
 
+  /** 行的向量（只有和当前模型一致时才可比较） @private */
+  _rowVector(row) {
+    if ((row.embedding_model || LEGACY_MODEL) !== this.activeModel) return null;
+    if (row.embedding_blob) return this.blobToVector(row.embedding_blob);
+    if (row.embedding) { try { return JSON.parse(row.embedding); } catch (_) { return null; } }
+    return null;
+  }
+
+  // ── 模型下载 / 切换 ──
+
+  getModels() {
+    return Object.entries(EMBEDDING_MODELS).map(([id, cfg]) => ({
+      id,
+      label: cfg.label,
+      description: cfg.description,
+      sizeMB: cfg.sizeMB,
+      bundled: cfg.bundled,
+      installed: !!this._findModelRoot(id),
+      active: id === this.activeModel,
+    }));
+  }
+
+  /**
+   * 下载模型到用户目录。先试官方源，连不上再走镜像；文件先写 .part，全部完成后再改名。
+   */
+  async downloadModel(modelId) {
+    const cfg = EMBEDDING_MODELS[modelId];
+    if (!cfg || cfg.bundled) throw new Error('该模型无需下载');
+    if (this._findModelRoot(modelId)) return { success: true, alreadyInstalled: true };
+    if (this._download) throw new Error('已有模型正在下载');
+
+    const targetDir = path.join(this._userModelsPath(), modelId);
+    const controller = new AbortController();
+    this._download = { modelId, loaded: 0, total: cfg.sizeMB * 1024 * 1024, abort: controller };
+    this._emitStatus();
+
+    const { Readable } = require('stream');
+    const { pipeline: streamPipeline } = require('stream/promises');
+    const written = [];
+    try {
+      for (const file of cfg.files) {
+        const dest = path.join(targetDir, file);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        const res = await this._fetchModelFile(modelId, file, controller.signal);
+        const partPath = `${dest}.part`;
+        let lastEmit = 0;
+        const counter = new (require('stream').Transform)({
+          transform: (chunk, _enc, cb) => {
+            this._download.loaded += chunk.length;
+            const now = Date.now();
+            if (now - lastEmit > 300) { lastEmit = now; this._emitStatus(); }
+            cb(null, chunk);
+          },
+        });
+        await streamPipeline(Readable.fromWeb(res.body), counter, fs.createWriteStream(partPath), { signal: controller.signal });
+        written.push([partPath, dest]);
+      }
+      for (const [partPath, dest] of written) fs.renameSync(partPath, dest);
+      console.log('[Mem0] Model downloaded:', modelId);
+      return { success: true };
+    } catch (error) {
+      for (const [partPath] of written) { try { fs.unlinkSync(partPath); } catch (_) {} }
+      if (controller.signal.aborted) return { success: false, cancelled: true };
+      throw new Error(`下载失败：${error.message}`);
+    } finally {
+      this._download = null;
+      this._emitStatus();
+    }
+  }
+
+  /** @private */
+  async _fetchModelFile(modelId, file, signal) {
+    let lastError;
+    for (const host of MODEL_HOSTS) {
+      const url = `${host}/${modelId}/resolve/main/${file}`;
+      const headerTimeout = new AbortController();
+      const timer = setTimeout(() => headerTimeout.abort(), DOWNLOAD_HEADER_TIMEOUT_MS);
+      const onAbort = () => headerTimeout.abort();
+      signal.addEventListener('abort', onAbort);
+      try {
+        const res = await fetch(url, { redirect: 'follow', signal: headerTimeout.signal });
+        if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+        clearTimeout(timer);
+        return res;
+      } catch (error) {
+        lastError = error;
+        if (signal.aborted) throw error;
+        console.warn(`[Mem0] Download ${file} from ${host} failed:`, error.message);
+      } finally {
+        clearTimeout(timer);
+        signal.removeEventListener('abort', onAbort);
+      }
+    }
+    throw lastError || new Error('无法连接模型下载源');
+  }
+
+  cancelDownload() {
+    this._download?.abort?.abort();
+  }
+
+  /**
+   * 切换向量模型：加载新模型后替换，再在后台重算已有记忆的向量。
+   */
+  async setActiveModel(modelId) {
+    if (!EMBEDDING_MODELS[modelId]) throw new Error('未知模型');
+    if (!this._findModelRoot(modelId) && modelId !== LEGACY_MODEL) throw new Error('模型尚未下载');
+    if (!this.db) throw new Error('Mem0 database not ready');
+    if (modelId === this.activeModel && this.initialized) return { success: true };
+
+    const embedder = await this._loadEmbedder(modelId);
+    this.embedder = embedder;
+    this.activeModel = modelId;
+    this.setSetting('embedding_model', modelId);
+    if (!this.initialized) {
+      this.initialized = true;
+      this.lastError = null;
+      this._setState('ready');
+    }
+    this._startReindex();
+    return { success: true };
+  }
+
+  /** 把向量不是当前模型生成的记忆重新向量化（后台分批，单实例） @private */
+  _startReindex() {
+    if (this._reindexRunning || !this.db || !this.embedder) return;
+    const countStmt = this.db.prepare(
+      `SELECT COUNT(*) AS c FROM mem0_memories WHERE COALESCE(embedding_model, ?) != ?`
+    );
+    const total = countStmt.get(LEGACY_MODEL, this.activeModel).c;
+    if (total === 0) return;
+
+    this._reindexRunning = true;
+    this._reindex = { done: 0, total };
+    this._emitStatus();
+    const model = this.activeModel;
+    const select = this.db.prepare(
+      `SELECT id, content FROM mem0_memories WHERE COALESCE(embedding_model, ?) != ? LIMIT ${REINDEX_BATCH}`
+    );
+    const update = this.db.prepare(
+      'UPDATE mem0_memories SET embedding_blob = ?, embedding = NULL, embedding_model = ? WHERE id = ?'
+    );
+
+    const run = async () => {
+      try {
+        for (;;) {
+          // 模型在重算过程中又被切换：交给新一轮
+          if (this.activeModel !== model) break;
+          const rows = select.all(LEGACY_MODEL, model);
+          if (rows.length === 0) break;
+          for (const row of rows) {
+            const vec = await this.textToVector(row.content);
+            update.run(this.vectorToBlob(vec), model, row.id);
+            this._reindex.done++;
+          }
+          this._emitStatus();
+          await new Promise(resolve => setImmediate(resolve));
+        }
+        console.log(`[Mem0] Reindex done: ${this._reindex.done}/${this._reindex.total}`);
+      } catch (error) {
+        console.error('[Mem0] Reindex failed:', error);
+      } finally {
+        this._reindexRunning = false;
+        this._reindex = null;
+        this._emitStatus();
+        if (this.activeModel !== model) this._startReindex();
+      }
+    };
+    run();
+  }
+
+  // ═══════════════════════════════════════════════════
+  //  状态
+  // ═══════════════════════════════════════════════════
+
+  getStatus() {
+    return {
+      state: this.state,
+      error: this.lastError,
+      activeModel: this.activeModel,
+      models: this.db ? this.getModels() : [],
+      reindex: this._reindex ? { ...this._reindex } : null,
+      download: this._download
+        ? { modelId: this._download.modelId, loaded: this._download.loaded, total: this._download.total }
+        : null,
+      autoMemory: this.getSetting('auto_memory', true),
+      lastIndexedAt: this.getSetting('index_last_run', null),
+    };
+  }
+
+  /** @private */
+  _setState(state) {
+    this.state = state;
+    this._emitStatus();
+  }
+
+  /** @private */
+  _emitStatus() {
+    try { this.emit('status', this.getStatus()); } catch (_) {}
+  }
+
   // ═══════════════════════════════════════════════════
   //  写入层 - 守门器 (Gatekeeper)
   // ═══════════════════════════════════════════════════
 
-  /**
-   * 将 category 映射到 memory_layer
-   * @private
-   */
+  /** @private */
   _resolveLayer(category, options) {
-    if (options.memoryLayer) return options.memoryLayer;
+    if (options.memoryLayer && MEMORY_LAYERS[options.memoryLayer]) return options.memoryLayer;
     return CATEGORY_TO_LAYER[category] || DEFAULT_LAYER;
   }
 
-  /**
-   * 获取分层配置
-   * @private
-   */
+  /** @private */
   _getLayerConfig(layer) {
     return MEMORY_LAYERS[layer] || MEMORY_LAYERS.semantic;
   }
@@ -441,57 +712,46 @@ class Mem0Service extends EventEmitter {
    */
   _gateValueCheck(content) {
     if (!content || content.trim().length < MIN_CONTENT_LEN) return 'too_short';
-    // 纯标点/数字/空白
     if (/^[\s\d\p{P}]+$/u.test(content.trim())) return 'no_semantic_value';
     return null;
   }
 
-  /**
-   * 推算来源可信度
-   * @private
-   */
+  /** @private */
   _resolveSource(options) {
     if (options.source) return options.source;
     const meta = options.metadata || {};
     return meta.source || 'user_manual';
   }
 
-  /**
-   * 截断内容到分层允许的最大长度
-   * @private
-   */
+  /** @private */
   _truncateContent(content, layer) {
     const cfg = this._getLayerConfig(layer);
-    if (content.length > cfg.maxContentLen) {
-      return content.substring(0, cfg.maxContentLen) + '...';
-    }
-    return content;
+    return content.length > cfg.maxContentLen ? content.substring(0, cfg.maxContentLen) + '...' : content;
   }
 
   /**
-   * 去重检查 + 替代链构建
+   * 找同一条记忆的旧版本：字面完全相同，或向量和字面重合都很高。
+   * 同句式的不同事实（「喜欢喝咖啡」/「喜欢跑步」）字面重合低，不会被合并。
    * @private
-   * @returns {{ id, content, score } | null}
    */
-  async _findDuplicate(userId, embedding, layer, category) {
+  _findDuplicate(userId, content, embedding, layer) {
     try {
       const rows = this.db.prepare(`
-        SELECT id, content, embedding_blob, embedding
+        SELECT id, content, embedding_blob, embedding, embedding_model
         FROM mem0_memories
-        WHERE user_id = ? AND (memory_layer = ? OR category = ?)
-          AND superseded_by IS NULL
-        ORDER BY created_at DESC LIMIT 100
-      `).all(userId, layer, category);
+        WHERE user_id = ? AND memory_layer = ? AND superseded_by IS NULL AND source_key IS NULL
+        ORDER BY created_at DESC LIMIT 300
+      `).all(userId, layer);
 
+      const norm = normalizeText(content);
+      const grams = bigramSet(content);
       for (const row of rows) {
-        let vec;
-        if (row.embedding_blob) vec = this.blobToVector(row.embedding_blob);
-        else if (row.embedding) { try { vec = JSON.parse(row.embedding); } catch (_) { continue; } }
-        else continue;
-
+        if (normalizeText(row.content) === norm) return { id: row.id, content: row.content, exact: true };
+        const vec = this._rowVector(row);
+        if (!vec) continue;
         const score = this.cosineSimilarity(embedding, vec);
-        if (score >= DEDUP_THRESHOLD) {
-          return { id: row.id, content: row.content, score };
+        if (score >= DEDUP_VECTOR_MIN && jaccard(grams, bigramSet(row.content)) >= DEDUP_BIGRAM_MIN) {
+          return { id: row.id, content: row.content, score, exact: false };
         }
       }
       return null;
@@ -501,24 +761,21 @@ class Mem0Service extends EventEmitter {
     }
   }
 
-  /**
-   * 容量限制 - 淘汰最不重要的记忆
-   * @private
-   */
+  /** 容量限制：先淘汰自动生成、少被用到的；用户手动添加的最后才动 @private */
   _enforceCapacity(userId, layer) {
     const cfg = this._getLayerConfig(layer);
     try {
       const cnt = this.db.prepare(
         'SELECT COUNT(*) as c FROM mem0_memories WHERE user_id = ? AND memory_layer = ? AND superseded_by IS NULL'
       ).get(userId, layer);
-
       if (cnt.c >= cfg.maxCount) {
         const overflow = cnt.c - cfg.maxCount + 1;
         this.db.prepare(`
           DELETE FROM mem0_memories WHERE id IN (
             SELECT id FROM mem0_memories
             WHERE user_id = ? AND memory_layer = ? AND superseded_by IS NULL
-            ORDER BY importance_score ASC, access_count ASC, created_at ASC
+            ORDER BY CASE WHEN source = 'user_manual' THEN 1 ELSE 0 END ASC,
+                     importance_score ASC, access_count ASC, created_at ASC
             LIMIT ?
           )
         `).run(userId, layer, overflow);
@@ -530,317 +787,260 @@ class Mem0Service extends EventEmitter {
   }
 
   /**
-   * 添加记忆 - 主入口（经过完整守门器）
+   * 添加记忆 - 主入口（经过守门器）
+   * 近似重复时新内容替代旧内容（最新的说法为准），旧条目保留在替代链里可撤销。
    */
   async addMemory(userId, content, options = {}) {
     if (!this.initialized) throw new Error('Mem0 service not initialized');
 
-    try {
-      const category = options.category || 'general';
-      const layer = this._resolveLayer(category, options);
-      const source = this._resolveSource(options);
+    const category = options.category || 'general';
+    const layer = this._resolveLayer(category, options);
+    const source = this._resolveSource(options);
 
-      // ── 守门器 ──
-      // 1. 价值判定
-      const rejectReason = this._gateValueCheck(content);
-      if (rejectReason) {
-        console.log(`[Mem0] Write blocked (${rejectReason}):`, content.substring(0, 30));
-        this._metrics.blocked++;
-        return { success: false, blocked: true, reason: rejectReason };
-      }
+    const rejectReason = this._gateValueCheck(content);
+    if (rejectReason) {
+      this._metrics.blocked++;
+      return { success: false, blocked: true, reason: rejectReason };
+    }
 
-      // 2. 截断
-      const finalContent = this._truncateContent(content.trim(), layer);
+    const finalContent = this._truncateContent(content.trim(), layer);
+    const embedding = await this.textToVector(finalContent);
 
-      console.log('[Mem0] Adding memory:', { userId, len: finalContent.length, layer, category });
-
-      // 3. 向量化
-      const embedding = await this.textToVector(finalContent);
-      const blob = this.vectorToBlob(embedding);
-
-      // 4. 去重 + 替代链
-      const dup = await this._findDuplicate(userId, embedding, layer, category);
-      if (dup) {
-        this._metrics.deduped++;
-        console.log(`[Mem0] Duplicate (score=${(dup.score * 100).toFixed(1)}%), id=${dup.id}`);
-        // 如果新内容更优（更长/更新），创建新记忆并标记旧记忆被替代
-        if (finalContent.length > dup.content.length) {
-          const newId = this._insertMemory(userId, finalContent, embedding, blob, category, layer, source, options);
-          // 替代链：旧记忆指向新记忆
-          this.db.prepare('UPDATE mem0_memories SET superseded_by = ? WHERE id = ?').run(newId, dup.id);
-          console.log(`[Mem0] Superseded: ${dup.id} → ${newId}`);
-          return { success: true, id: newId, superseded: dup.id, embedding_dim: embedding.length };
-        }
-        // 旧记忆更优，仅更新 access 时间
+    const dup = this._findDuplicate(userId, finalContent, embedding, layer);
+    if (dup) {
+      this._metrics.deduped++;
+      if (dup.exact) {
         this.db.prepare('UPDATE mem0_memories SET last_accessed_at = ?, access_count = access_count + 1 WHERE id = ?')
           .run(Date.now(), dup.id);
         return { success: true, id: dup.id, deduplicated: true, embedding_dim: embedding.length };
       }
-
-      // 5. 容量限制
-      this._enforceCapacity(userId, layer);
-
-      // 6. 写入
-      const newId = this._insertMemory(userId, finalContent, embedding, blob, category, layer, source, options);
-      this._metrics.writes++;
-
-      return { success: true, id: newId, embedding_dim: embedding.length };
-
-    } catch (error) {
-      console.error('[Mem0] Add memory failed:', error);
-      throw error;
+      const newId = this._insertMemory(userId, finalContent, embedding, category, layer, source, options);
+      this._markSuperseded(dup.id, newId);
+      console.log(`[Mem0] Superseded: ${dup.id} → ${newId}`);
+      return { success: true, id: newId, superseded: dup.id, embedding_dim: embedding.length };
     }
+
+    this._enforceCapacity(userId, layer);
+    const newId = this._insertMemory(userId, finalContent, embedding, category, layer, source, options);
+    this._metrics.writes++;
+    return { success: true, id: newId, embedding_dim: embedding.length };
   }
 
-  /**
-   * 底层 INSERT
-   * @private
-   */
-  _insertMemory(userId, content, embedding, blob, category, layer, source, options) {
+  /** @private */
+  _insertMemory(userId, content, embedding, category, layer, source, options = {}) {
     const now = Date.now();
     const importance = this._getLayerConfig(layer).importance;
     const result = this.db.prepare(`
       INSERT INTO mem0_memories
-        (user_id, content, embedding, embedding_blob, metadata, category,
-         memory_type, memory_layer, source, importance_score,
+        (user_id, content, embedding, embedding_blob, embedding_model, metadata, category,
+         memory_type, memory_layer, source, source_key, importance_score,
          created_at, updated_at, access_count, last_accessed_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+      VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
     `).run(
-      userId, content, JSON.stringify(embedding), blob,
+      userId, content, this.vectorToBlob(embedding), this.activeModel,
       JSON.stringify(options.metadata || {}), category,
-      options.memoryType || layer, layer, source, importance,
+      options.memoryType || layer, layer, source, options.sourceKey || null, importance,
       now, now, now
     );
-    console.log('[Mem0] Memory added:', result.lastInsertRowid);
-    // 同步 FTS 索引
-    this._ftsInsert(result.lastInsertRowid, content);
-    return result.lastInsertRowid;
+    return Number(result.lastInsertRowid);
+  }
+
+  /** @private */
+  _markSuperseded(oldId, newId) {
+    this.db.prepare('UPDATE mem0_memories SET superseded_by = ?, updated_at = ? WHERE id = ?')
+      .run(newId, Date.now(), oldId);
+  }
+
+  // ── 来源绑定的记忆（笔记 / 待办索引） ──
+
+  /**
+   * 来源对象的记忆：一个 source_key 只保留一条，原文变了就原地更新。
+   * 不做语义去重——两篇内容相近的笔记仍是两条记忆。
+   */
+  async upsertSourceMemory(userId, sourceKey, content, options = {}) {
+    if (!this.initialized) throw new Error('Mem0 service not initialized');
+    const layer = this._resolveLayer(options.category || 'knowledge', { memoryLayer: options.memoryLayer || 'artifact' });
+    const finalContent = this._truncateContent(String(content || '').trim(), layer);
+    if (this._gateValueCheck(finalContent)) return { success: false, blocked: true };
+
+    const rows = this.db.prepare(
+      'SELECT id, content FROM mem0_memories WHERE user_id = ? AND source_key = ? AND superseded_by IS NULL ORDER BY updated_at DESC'
+    ).all(userId, sourceKey);
+    // 旧版同一来源可能存了多条，只留最新一条
+    if (rows.length > 1) {
+      const extra = rows.slice(1).map(r => r.id);
+      this.db.prepare(`DELETE FROM mem0_memories WHERE id IN (${extra.map(() => '?').join(',')})`).run(...extra);
+    }
+
+    const metadata = JSON.stringify(options.metadata || {});
+    const existing = rows[0];
+    if (existing) {
+      if (existing.content === finalContent) {
+        this.db.prepare('UPDATE mem0_memories SET metadata = ? WHERE id = ?').run(metadata, existing.id);
+        return { success: true, id: existing.id, unchanged: true };
+      }
+      const embedding = await this.textToVector(finalContent);
+      this.db.prepare(`
+        UPDATE mem0_memories
+        SET content = ?, embedding = NULL, embedding_blob = ?, embedding_model = ?, metadata = ?, updated_at = ?
+        WHERE id = ?
+      `).run(finalContent, this.vectorToBlob(embedding), this.activeModel, metadata, Date.now(), existing.id);
+      return { success: true, id: existing.id, updated: true };
+    }
+
+    const embedding = await this.textToVector(finalContent);
+    this._enforceCapacity(userId, layer);
+    const id = this._insertMemory(userId, finalContent, embedding, options.category || 'knowledge', layer,
+      options.source || 'unknown', { ...options, sourceKey });
+    this._metrics.writes++;
+    return { success: true, id, added: true };
+  }
+
+  /** 某类来源已建立的索引：source_key → { id, metadata, updatedAt } */
+  getSourceIndex(userId, prefix) {
+    if (!this.db) return new Map();
+    const rows = this.db.prepare(
+      `SELECT id, source_key, metadata, updated_at FROM mem0_memories
+       WHERE user_id = ? AND source_key LIKE ? AND superseded_by IS NULL`
+    ).all(userId, `${prefix}%`);
+    const map = new Map();
+    for (const row of rows) {
+      map.set(row.source_key, { id: row.id, metadata: safeParse(row.metadata), updatedAt: row.updated_at });
+    }
+    return map;
+  }
+
+  /** 只合并更新元数据，不动内容和向量 */
+  mergeMemoryMetadata(memoryId, patch) {
+    if (!this.db) return;
+    const row = this.db.prepare('SELECT metadata FROM mem0_memories WHERE id = ?').get(memoryId);
+    if (!row) return;
+    this.db.prepare('UPDATE mem0_memories SET metadata = ? WHERE id = ?')
+      .run(JSON.stringify({ ...safeParse(row.metadata), ...patch }), memoryId);
   }
 
   // ═══════════════════════════════════════════════════
-  //  检索层 - 混合召回 + 多因子重排
+  //  检索层
   // ═══════════════════════════════════════════════════
 
   /**
-   * 语义搜索（v3：混合召回 + 多因子重排 + token 预算）
+   * 语义搜索：全部有效记忆参与向量比较 + 关键词匹配，打分有上界。
+   * @param {object} options
+   *   limit / category / layers(string[]) / threshold(最低相关度 0~1) / maxTokens /
+   *   touch(是否计入访问次数，默认 true；设置页和内部检查传 false)
    */
   async searchMemories(userId, query, options = {}) {
     if (!this.initialized) throw new Error('Mem0 service not initialized');
 
-    try {
-      const topK = options.limit || 5;
-      const category = options.category;
-      const minScore = options.threshold || options.minScore || 0.3;
-      const maxTokenBudget = options.maxTokens || 2000; // token 预算
+    const topK = options.limit || 5;
+    const minRelevance = options.threshold ?? options.minScore ?? DEFAULT_MIN_RELEVANCE;
+    const maxTokenBudget = options.maxTokens || 2000;
+    const touch = options.touch !== false;
+    const modelCfg = EMBEDDING_MODELS[this.activeModel] || {};
+    const floor = modelCfg.vecFloor ?? 0.4;
+    const cjkChars = (String(query).match(/[\u3400-\u9fff]/g) || []).length;
+    const vecWeight = modelCfg.cjkReliable === false && cjkChars >= String(query).length * 0.3 ? 0.5 : 1;
 
-      this._metrics.searches++;
-      console.log('[Mem0] Searching:', { userId, query, topK, category });
+    this._metrics.searches++;
 
-      // 1. 向量化查询
-      const queryVec = await this.textToVector(query);
+    let sql = `
+      SELECT id, content, embedding_blob, embedding, embedding_model, metadata, category,
+             memory_layer, source, source_key, importance_score, access_count,
+             created_at, updated_at, last_accessed_at
+      FROM mem0_memories
+      WHERE user_id = ? AND superseded_by IS NULL
+    `;
+    const params = [userId];
+    if (options.category) { sql += ' AND category = ?'; params.push(options.category); }
+    if (Array.isArray(options.layers) && options.layers.length > 0) {
+      sql += ` AND memory_layer IN (${options.layers.map(() => '?').join(',')})`;
+      params.push(...options.layers);
+    }
+    sql += ' ORDER BY updated_at DESC LIMIT ?';
+    params.push(MAX_SEARCH_CANDS);
+    const candidates = this.db.prepare(sql).all(...params);
 
-      // 2. 向量候选集（预过滤 + LIMIT）
-      let sql = `
-        SELECT id, content, embedding_blob, embedding, metadata, category,
-               memory_layer, source, importance_score, access_count,
-               created_at, last_accessed_at
-        FROM mem0_memories
-        WHERE user_id = ? AND superseded_by IS NULL
-      `;
-      const params = [userId];
-      if (category) { sql += ' AND category = ?'; params.push(category); }
-      sql += ' ORDER BY created_at DESC LIMIT ?';
-      params.push(MAX_SEARCH_CANDS);
+    const queryVec = await this.textToVector(query);
+    const terms = keywordTerms(query);
+    const now = Date.now();
 
-      const vecCandidates = this.db.prepare(sql).all(...params);
+    const ranked = [];
+    for (const row of candidates) {
+      const vec = this._rowVector(row);
+      const cos = vec ? this.cosineSimilarity(queryVec, vec) : 0;
+      // 把模型的噪声底线以下压成 0，让不同模型的相关度可比
+      const vecRel = vec ? clamp01((cos - floor) / (1 - floor)) * vecWeight : 0;
 
-      // 3. FTS / LIKE 关键词候选集 (JS直接扫描 + DB深度兜底)
-      const hitMap = new Map(); // id -> matchCount
-      try {
-        const queryClean = query.replace(/[^\w\u4e00-\u9fff\s]/g, ' ').trim();
-        const tokens = queryClean.split(/\s+/).filter(t => t.length > 0);
-        
-        if (tokens.length > 0) {
-          // JS 强力匹配 vecCandidates (解决中文没有空格导致 FTS 分词失败的问题)
-          vecCandidates.forEach(row => {
-            let mCount = 0;
-            const contentLower = row.content ? row.content.toLowerCase() : '';
-            for (const t of tokens) {
-              if (contentLower.includes(t.toLowerCase())) {
-                mCount++;
-              }
-            }
-            if (mCount > 0) {
-              hitMap.set(row.id, mCount);
-            }
-          });
-          
-          // 如果近期 500 条一条都没命中，则进行全库深度兜底（使用 LIKE AND，因为如果用 OR 会太多）
-          // 但是如果是极短查询（只有一个词），也可以只查那一个词
-          if (hitMap.size === 0) {
-             const likeParams = [userId];
-             let likeSql = `SELECT id FROM mem0_memories WHERE user_id = ? AND superseded_by IS NULL AND (`;
-             
-             // 使用 AND 强制全部词必须出现
-             const likeClauses = tokens.map(t => {
-                likeParams.push(`%${t}%`);
-                return `content LIKE ?`;
-             });
-             likeSql += likeClauses.join(' AND ') + `)`;
-
-             if (category) { likeSql += ' AND category = ?'; likeParams.push(category); }
-             likeSql += ' LIMIT 50';
-             
-             const likeRows = this.db.prepare(likeSql).all(...likeParams);
-             likeRows.forEach(r => {
-                hitMap.set(r.id, tokens.length);
-                // 把深层找出的 row 追加到 vecCandidates 参与后续向量与打分
-                if (!vecCandidates.find(v => v.id === r.id)) {
-                   const fullRow = this.db.prepare(
-                     `SELECT id, content, embedding_blob, embedding, metadata, category,
-                             memory_layer, source, importance_score, access_count,
-                             created_at, last_accessed_at
-                      FROM mem0_memories WHERE id = ?`
-                   ).get(r.id);
-                   if (fullRow) vecCandidates.push(fullRow);
-                }
-             });
-          }
-        }
-      } catch (e) {
-        console.warn('[Mem0] Keyword search fallback warning:', e.message);
+      let kwRel = 0;
+      if (terms.length > 0) {
+        const lower = (row.content || '').toLowerCase();
+        let hit = 0;
+        for (const t of terms) if (lower.includes(t)) hit++;
+        kwRel = hit / terms.length;
       }
 
-      console.log('[Mem0] Candidates: vec=' + vecCandidates.length + ', textHit=' + hitMap.size);
+      const relevance = Math.min(1, Math.max(vecRel, kwRel) + 0.2 * Math.min(vecRel, kwRel));
+      if (relevance < minRelevance) continue;
 
-      // 4. 计算向量相似度
-      const now = Date.now();
-      const scored = vecCandidates
-        .map(row => {
-          let vec;
-          if (row.embedding_blob) vec = this.blobToVector(row.embedding_blob);
-          else if (row.embedding) { try { vec = JSON.parse(row.embedding); } catch (_) { return null; } }
-          else return null;
+      const ageDays = (now - (row.updated_at || row.created_at)) / 86400000;
+      // 偏好层是长期稳定的事实，不随时间衰减
+      const freshness = row.memory_layer === 'profile' ? 1 : Math.pow(0.5, ageDays / DECAY_HALF_LIFE_DAYS);
+      const importance = row.importance_score || MEMORY_LAYERS[row.memory_layer]?.importance || 0.5;
+      const credibility = SOURCE_CREDIBILITY[row.source] || 0.5;
 
-          const vecScore = this.cosineSimilarity(queryVec, vec);
-          const matchCount = hitMap.get(row.id) || 0;
-          const isTextHit = matchCount > 0;
-          
-          // 如果没有确切的文本匹配，且向量低于预剪枝下限(比如0.21)，抛弃
-          if (!isTextHit && vecScore < minScore * 0.7) return null; 
-
-          return { ...row, vecScore, isTextHit, matchCount, metadata: JSON.parse(row.metadata || '{}') };
-        })
-        .filter(Boolean);
-
-      // 5. 多因子重排
-      const ranked = scored.map(item => {
-        // 如果文本直接匹配，但向量匹配的分数极低（例如跨语种或分词极化），我们依然给一个基础的 relevance
-        const relevance = Math.max(item.vecScore, item.isTextHit ? 0.5 : 0);
-
-        // 新鲜度衰减 (半衰期模型)
-        const ageDays = (now - item.created_at) / (86400000);
-        const freshness = Math.pow(0.5, ageDays / DECAY_HALF_LIFE_DAYS);
-
-        // 分层重要度
-        const importance = item.importance_score || MEMORY_LAYERS[item.memory_layer]?.importance || 0.5;
-
-        // 来源可信度
-        const credibility = SOURCE_CREDIBILITY[item.source] || 0.5;
-
-        // 文本匹配极其重要，每命中一个查询词增加显著分数
-        const textBonus = item.matchCount * 0.25;
-
-        // 综合评分
-        const finalScore =
-          RANK_WEIGHTS.relevance   * relevance +
-          RANK_WEIGHTS.freshness   * freshness +
-          RANK_WEIGHTS.importance  * importance +
-          RANK_WEIGHTS.credibility * credibility +
-          textBonus;
-
-        return {
-          id: item.id,
-          content: item.content,
-          score: finalScore,
-          vecScore: relevance,
-          metadata: item.metadata,
-          category: item.category,
-          memory_layer: item.memory_layer,
-          source: item.source,
-          created_at: item.created_at
-        };
+      ranked.push({
+        id: row.id,
+        content: row.content,
+        score: RANK_WEIGHTS.relevance * relevance
+          + RANK_WEIGHTS.freshness * freshness
+          + RANK_WEIGHTS.importance * importance
+          + RANK_WEIGHTS.credibility * credibility,
+        vecScore: relevance,
+        metadata: safeParse(row.metadata),
+        category: row.category,
+        memory_layer: row.memory_layer,
+        source: row.source,
+        source_key: row.source_key,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
       });
+    }
 
-      // 6. 排序 + topK
-      ranked.sort((a, b) => b.score - a.score);
+    ranked.sort((a, b) => b.score - a.score);
 
-      // 7. Token 预算截断
-      const results = [];
-      let tokenUsed = 0;
-      for (const item of ranked) {
-        if (results.length >= topK) break;
-        const estimatedTokens = Math.ceil(item.content.length / 2); // 粗估中文2字符=1token
-        if (tokenUsed + estimatedTokens > maxTokenBudget && results.length > 0) break;
-        results.push(item);
-        tokenUsed += estimatedTokens;
-      }
+    const results = [];
+    let tokenUsed = 0;
+    for (const item of ranked) {
+      if (results.length >= topK) break;
+      const estimatedTokens = Math.ceil(item.content.length / 2);
+      if (tokenUsed + estimatedTokens > maxTokenBudget && results.length > 0) break;
+      results.push(item);
+      tokenUsed += estimatedTokens;
+    }
 
-      if (results.length > 0) {
-        this._metrics.hits++;
-        console.log('[Mem0] Top match:', {
-          score: results[0].score.toFixed(3),
-          vecScore: (results[0].vecScore * 100).toFixed(1) + '%',
-          layer: results[0].memory_layer,
-          preview: results[0].content.substring(0, 50)
-        });
-      }
-
-      // 更新访问计数
-      if (results.length > 0) {
-        const updStmt = this.db.prepare(
+    if (results.length > 0) {
+      this._metrics.hits++;
+      if (touch) {
+        const upd = this.db.prepare(
           'UPDATE mem0_memories SET access_count = access_count + 1, last_accessed_at = ? WHERE id = ?'
         );
-        for (const r of results) updStmt.run(now, r.id);
+        for (const r of results) upd.run(now, r.id);
       }
-
-      return results;
-
-    } catch (error) {
-      console.error('[Mem0] Search failed:', error);
-      throw error;
     }
+    return results;
   }
 
-  /**
-   * 构建 FTS5 查询（将自然语言转为 OR 查询）
-   * @private
-   */
-  _buildFtsQuery(query) {
-    // 按空格拆分，过滤太短的词，但对于单字（中文等）使用 LIKE 兜底，因此 FTS 提供额外加权
-    const tokens = query
-      .replace(/[^\w\u4e00-\u9fff\s]/g, ' ')
-      .split(/\s+/)
-      .filter(t => t.length >= 1);
-    
-    if (tokens.length === 0) return `"${query.replace(/"/g, '')}"`;
-    return tokens.map(t => `"${t}"`).join(' OR ');
-  }
-
-  /**
-   * 获取 Profile 层记忆（始终注入 AI 上下文）
-   */
-  async getProfileMemories(userId) {
+  /** Profile 层记忆（注入 AI 系统提示词） */
+  async getProfileMemories(userId, limit = 20) {
     if (!this.initialized) return [];
     try {
-      const rows = this.db.prepare(`
+      return this.db.prepare(`
         SELECT content, category, importance_score
         FROM mem0_memories
         WHERE user_id = ? AND memory_layer = 'profile' AND superseded_by IS NULL
-        ORDER BY importance_score DESC, created_at DESC
-        LIMIT 50
-      `).all(userId);
-      return rows;
+        ORDER BY importance_score DESC, updated_at DESC
+        LIMIT ?
+      `).all(userId, limit);
     } catch (error) {
       console.warn('[Mem0] getProfileMemories failed:', error.message);
       return [];
@@ -853,274 +1053,254 @@ class Mem0Service extends EventEmitter {
 
   async getMemories(userId, options = {}) {
     if (!this.initialized) throw new Error('Mem0 service not initialized');
-    try {
-      const limit = options.limit || 50;
-      const category = options.category;
-      let sql = 'SELECT * FROM mem0_memories WHERE user_id = ? AND superseded_by IS NULL';
-      const params = [userId];
-      if (category) { sql += ' AND category = ?'; params.push(category); }
-      sql += ' ORDER BY created_at DESC LIMIT ?';
-      params.push(limit);
-      const rows = this.db.prepare(sql).all(...params);
-      return rows.map(row => ({
-        id: row.id, content: row.content, metadata: JSON.parse(row.metadata || '{}'),
-        category: row.category, memory_type: row.memory_type || 'knowledge',
-        memory_layer: row.memory_layer || 'semantic',
-        access_count: row.access_count || 0,
-        created_at: row.created_at, updated_at: row.updated_at
-      }));
-    } catch (error) {
-      console.error('[Mem0] Get memories failed:', error);
-      throw error;
-    }
+    const limit = options.limit || 50;
+    let sql = 'SELECT * FROM mem0_memories WHERE user_id = ? AND superseded_by IS NULL';
+    const params = [userId];
+    if (options.category) { sql += ' AND category = ?'; params.push(options.category); }
+    if (options.layer) { sql += ' AND memory_layer = ?'; params.push(options.layer); }
+    sql += ' ORDER BY updated_at DESC LIMIT ? OFFSET ?';
+    params.push(limit, options.offset || 0);
+    return this.db.prepare(sql).all(...params).map(row => ({
+      id: row.id,
+      content: row.content,
+      metadata: safeParse(row.metadata),
+      category: row.category,
+      memory_type: row.memory_type || 'knowledge',
+      memory_layer: row.memory_layer || 'semantic',
+      source: row.source,
+      source_key: row.source_key,
+      access_count: row.access_count || 0,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    }));
   }
 
   async deleteMemory(memoryId) {
     if (!this.initialized) throw new Error('Mem0 service not initialized');
-    try {
-      this._ftsDelete(memoryId);
-      const result = this.db.prepare('DELETE FROM mem0_memories WHERE id = ?').run(memoryId);
-      return result.changes > 0;
-    } catch (error) {
-      console.error('[Mem0] Delete memory failed:', error);
-      throw error;
-    }
+    return this.db.prepare('DELETE FROM mem0_memories WHERE id = ?').run(memoryId).changes > 0;
   }
 
   async updateMemory(memoryId, content, options = {}) {
     if (!this.initialized) throw new Error('Mem0 service not initialized');
-    try {
-      const old = this.db.prepare('SELECT category, memory_layer, metadata FROM mem0_memories WHERE id = ?').get(memoryId);
-      if (!old) return { success: false, updated: false };
+    const old = this.db.prepare('SELECT category, memory_layer, metadata FROM mem0_memories WHERE id = ?').get(memoryId);
+    if (!old) return { success: false, updated: false };
 
-      const category = options.category || old.category;
-      const layer = this._resolveLayer(category, { ...options, memoryLayer: options.memoryLayer || old.memory_layer });
-      const metadataStr = JSON.stringify(options.metadata || JSON.parse(old.metadata || '{}'));
+    const category = options.category || old.category;
+    const layer = this._resolveLayer(category, { ...options, memoryLayer: options.memoryLayer || old.memory_layer });
+    const metadataStr = JSON.stringify(options.metadata || safeParse(old.metadata));
+    const truncated = this._truncateContent(content, layer);
+    const embedding = await this.textToVector(truncated);
+    const result = this.db.prepare(`
+      UPDATE mem0_memories
+      SET content = ?, embedding = NULL, embedding_blob = ?, embedding_model = ?,
+          metadata = ?, category = ?, memory_layer = ?, updated_at = ?
+      WHERE id = ?
+    `).run(truncated, this.vectorToBlob(embedding), this.activeModel, metadataStr, category, layer, Date.now(), memoryId);
+    return { success: true, id: memoryId, updated: result.changes > 0 };
+  }
 
-      const truncated = this._truncateContent(content, layer);
-      const embedding = await this.textToVector(truncated);
-      const blob = this.vectorToBlob(embedding);
-      const now = Date.now();
-      const result = this.db.prepare(`
-        UPDATE mem0_memories
-        SET content = ?, embedding = ?, embedding_blob = ?,
-            metadata = ?, category = ?, memory_layer = ?, updated_at = ?
-        WHERE id = ?
-      `).run(truncated, JSON.stringify(embedding), blob, metadataStr, category, layer, now, memoryId);
-      this._ftsUpdate(memoryId, null, truncated);
-      return { success: true, id: memoryId, updated: result.changes > 0 };
-    } catch (error) {
-      console.error('[Mem0] Update memory failed:', error);
-      throw error;
-    }
+  /**
+   * 用新内容替代一条记忆：旧条目进替代链（30 天内可撤销），返回新条目 ID。
+   */
+  async supersedeMemory(userId, oldId, content, options = {}) {
+    if (!this.initialized) throw new Error('Mem0 service not initialized');
+    const old = this.db.prepare(
+      'SELECT category, memory_layer, content FROM mem0_memories WHERE id = ? AND superseded_by IS NULL'
+    ).get(oldId);
+    if (!old) return null;
+    const finalContent = this._truncateContent(String(content).trim(), old.memory_layer);
+    const embedding = await this.textToVector(finalContent);
+    const newId = this._insertMemory(userId, finalContent, embedding, old.category, old.memory_layer,
+      options.source || 'ai_auto', options);
+    this._markSuperseded(oldId, newId);
+    return { id: newId, previousContent: old.content };
+  }
+
+  /** 软删除（30 天内可撤销） */
+  softDeleteMemory(memoryId) {
+    if (!this.db) throw new Error('Mem0 database not ready');
+    const row = this.db.prepare('SELECT content FROM mem0_memories WHERE id = ? AND superseded_by IS NULL').get(memoryId);
+    if (!row) return null;
+    this._markSuperseded(memoryId, SOFT_DELETED);
+    return { previousContent: row.content };
+  }
+
+  /**
+   * 撤销一组自动记忆变更（倒序执行）。
+   * changes: [{ op: 'add', id } | { op: 'update', id, previousId } | { op: 'delete', id }]
+   */
+  revertChanges(changes = []) {
+    if (!this.db) throw new Error('Mem0 database not ready');
+    const del = this.db.prepare('DELETE FROM mem0_memories WHERE id = ?');
+    const restore = this.db.prepare('UPDATE mem0_memories SET superseded_by = NULL, updated_at = ? WHERE id = ?');
+    let reverted = 0;
+    this.db.transaction(() => {
+      for (const change of [...changes].reverse()) {
+        if (change.op === 'add') {
+          reverted += del.run(change.id).changes;
+        } else if (change.op === 'update') {
+          del.run(change.id);
+          reverted += restore.run(Date.now(), change.previousId).changes;
+        } else if (change.op === 'delete') {
+          reverted += restore.run(Date.now(), change.id).changes;
+        }
+      }
+    })();
+    return { reverted };
   }
 
   async clearUserMemories(userId) {
     if (!this.initialized) throw new Error('Mem0 service not initialized');
-    try {
-      // 先清空 FTS 索引，避免 delete 触发 CORRUPT_VTAB
-      if (this._ftsAvailable) {
-        try {
-          this.db.exec(`DELETE FROM mem0_fts`);
-        } catch (e) {
-          console.warn('[Mem0] FTS clear warning:', e.message);
-        }
-      }
-      const result = this.db.prepare('DELETE FROM mem0_memories WHERE user_id = ?').run(userId);
-      console.log('[Mem0] Cleared', result.changes, 'memories');
-      return result.changes;
-    } catch (error) {
-      console.error('[Mem0] Clear memories failed:', error);
-      throw error;
-    }
+    const result = this.db.prepare('DELETE FROM mem0_memories WHERE user_id = ?').run(userId);
+    console.log('[Mem0] Cleared', result.changes, 'memories');
+    return result.changes;
   }
 
   // ═══════════════════════════════════════════════════
-  //  治理层 - 生命周期 + 质量 + 可观测
+  //  治理层
   // ═══════════════════════════════════════════════════
 
-  /**
-   * 记忆生命周期清理
-   */
   async cleanupMemories(userId) {
     if (!this.initialized) throw new Error('Mem0 service not initialized');
-    try {
-      console.log('[Mem0] Governance: starting cleanup for', userId);
-      let removed = 0;
-      const now = Date.now();
+    let removed = 0;
+    const now = Date.now();
 
-      // 1. TTL 过期清理（按分层 TTL）
-      for (const [layer, cfg] of Object.entries(MEMORY_LAYERS)) {
-        if (!cfg.ttlDays) continue;
-        const expiry = now - cfg.ttlDays * 86400000;
-        const r = this.db.prepare(`
-          DELETE FROM mem0_memories
-          WHERE user_id = ? AND memory_layer = ?
-            AND access_count < 3 AND created_at < ?
-            AND (last_accessed_at IS NULL OR last_accessed_at < ?)
-        `).run(userId, layer, expiry, expiry);
-        if (r.changes > 0) {
-          removed += r.changes;
-          console.log(`[Mem0] TTL: removed ${r.changes} expired "${layer}" memories`);
-        }
-      }
-
-      // 2. 清理被替代的旧记忆（替代链中的旧节点，保留30天后删除）
-      const chainExpiry = now - 30 * 86400000;
-      const chainResult = this.db.prepare(`
+    // 1. TTL 过期（按分层；常被用到的保留）
+    for (const [layer, cfg] of Object.entries(MEMORY_LAYERS)) {
+      if (!cfg.ttlDays) continue;
+      const expiry = now - cfg.ttlDays * 86400000;
+      removed += this.db.prepare(`
         DELETE FROM mem0_memories
-        WHERE user_id = ? AND superseded_by IS NOT NULL AND updated_at < ?
-      `).run(userId, chainExpiry);
-      removed += chainResult.changes;
-      if (chainResult.changes > 0) {
-        console.log(`[Mem0] Chain: removed ${chainResult.changes} superseded memories`);
-      }
-
-      // 3. 冷存降级：将长期未访问的记忆降低重要度
-      const coldThreshold = now - 90 * 86400000;
-      this.db.prepare(`
-        UPDATE mem0_memories
-        SET importance_score = MAX(0.1, importance_score * 0.7)
-        WHERE user_id = ? AND memory_layer != 'profile'
+        WHERE user_id = ? AND memory_layer = ?
+          AND access_count < 3 AND updated_at < ?
           AND (last_accessed_at IS NULL OR last_accessed_at < ?)
-          AND importance_score > 0.2
-      `).run(userId, coldThreshold);
-
-      // 4. 孤儿笔记记忆清理
-      try {
-        const orphanResult = this.db.prepare(`
-          DELETE FROM mem0_memories
-          WHERE user_id = ?
-            AND metadata LIKE '%"source":"user_note"%'
-            AND CAST(json_extract(metadata, '$.note_id') AS INTEGER) NOT IN (
-              SELECT id FROM notes WHERE is_deleted = 0 OR is_deleted IS NULL
-            )
-        `).run(userId);
-        removed += orphanResult.changes;
-        if (orphanResult.changes > 0) {
-          console.log(`[Mem0] Orphan: removed ${orphanResult.changes} note memories`);
-        }
-      } catch (_) {}
-
-      console.log(`[Mem0] Cleanup done: removed ${removed}`);
-      return { removed, merged: 0 };
-    } catch (error) {
-      console.error('[Mem0] Cleanup failed:', error);
-      throw error;
+      `).run(userId, layer, expiry, expiry).changes;
     }
+
+    // 2. 替代链 / 软删除：超过保留期的旧条目
+    removed += this.db.prepare(`
+      DELETE FROM mem0_memories
+      WHERE user_id = ? AND superseded_by IS NOT NULL AND updated_at < ?
+    `).run(userId, now - CHAIN_RETENTION_DAYS * 86400000).changes;
+
+    // 3. 冷存降级：长期未访问的降低重要度
+    this.db.prepare(`
+      UPDATE mem0_memories
+      SET importance_score = MAX(0.1, importance_score * 0.7)
+      WHERE user_id = ? AND memory_layer != 'profile'
+        AND (last_accessed_at IS NULL OR last_accessed_at < ?)
+        AND importance_score > 0.2
+    `).run(userId, now - 90 * 86400000);
+
+    // 4. 孤儿：原笔记 / 待办已删除
+    try {
+      removed += this.db.prepare(`
+        DELETE FROM mem0_memories
+        WHERE user_id = ? AND source_key LIKE 'note:%'
+          AND CAST(substr(source_key, 6) AS INTEGER) NOT IN (
+            SELECT id FROM notes WHERE is_deleted = 0 OR is_deleted IS NULL
+          )
+      `).run(userId).changes;
+      removed += this.db.prepare(`
+        DELETE FROM mem0_memories
+        WHERE user_id = ? AND source_key LIKE 'todo:%'
+          AND CAST(substr(source_key, 6) AS INTEGER) NOT IN (
+            SELECT id FROM todos WHERE is_deleted = 0 OR is_deleted IS NULL
+          )
+      `).run(userId).changes;
+    } catch (_) {
+      // 独立 MCP 等没有 notes/todos 表的场景
+    }
+
+    if (removed > 0) console.log(`[Mem0] Cleanup done: removed ${removed}`);
+    return { removed, merged: 0 };
   }
 
-  /**
-   * 获取统计信息 + 可观测指标
-   */
   async getStats(userId) {
     if (!this.initialized) throw new Error('Mem0 service not initialized');
-    try {
-      const total = this.db.prepare('SELECT COUNT(*) as c FROM mem0_memories WHERE user_id = ?').get(userId);
-      const activeTotal = this.db.prepare(
-        'SELECT COUNT(*) as c FROM mem0_memories WHERE user_id = ? AND superseded_by IS NULL'
-      ).get(userId);
+    const activeTotal = this.db.prepare(
+      'SELECT COUNT(*) as c FROM mem0_memories WHERE user_id = ? AND superseded_by IS NULL'
+    ).get(userId).c;
+    const total = this.db.prepare('SELECT COUNT(*) as c FROM mem0_memories WHERE user_id = ?').get(userId).c;
 
-      // 按分层统计
-      const layerRows = this.db.prepare(`
-        SELECT memory_layer, COUNT(*) as count
-        FROM mem0_memories WHERE user_id = ? AND superseded_by IS NULL
-        GROUP BY memory_layer
-      `).all(userId);
-
-      const byLayer = {};
-      for (const row of layerRows) {
-        const layer = row.memory_layer || 'semantic';
-        const cfg = MEMORY_LAYERS[layer] || MEMORY_LAYERS.semantic;
-        byLayer[layer] = {
-          count: row.count,
-          limit: cfg.maxCount,
-          usage: `${((row.count / cfg.maxCount) * 100).toFixed(0)}%`
-        };
-      }
-
-      // 按旧分类统计（向后兼容）
-      const catRows = this.db.prepare(`
-        SELECT category, COUNT(*) as count
-        FROM mem0_memories WHERE user_id = ? AND superseded_by IS NULL
-        GROUP BY category
-      `).all(userId);
-      const byCategory = {};
-      for (const row of catRows) {
-        byCategory[row.category] = { count: row.count };
-      }
-
-      // BLOB 迁移进度
-      const blobRow = this.db.prepare(`
-        SELECT COUNT(*) as total,
-          SUM(CASE WHEN embedding_blob IS NOT NULL THEN 1 ELSE 0 END) as done
-        FROM mem0_memories WHERE user_id = ?
-      `).get(userId);
-
-      // 替代链统计
-      const supersededCount = this.db.prepare(
-        'SELECT COUNT(*) as c FROM mem0_memories WHERE user_id = ? AND superseded_by IS NOT NULL'
-      ).get(userId);
-
-      return {
-        total: total.c,
-        active: activeTotal.c,
-        superseded: supersededCount.c,
-        by_layer: byLayer,
-        by_category: byCategory,
-        blob_migration: {
-          total: blobRow.total, migrated: blobRow.done,
-          progress: blobRow.total > 0 ? `${((blobRow.done / blobRow.total) * 100).toFixed(0)}%` : '100%'
-        },
-        metrics: { ...this._metrics,
-          hit_rate: this._metrics.searches > 0
-            ? `${((this._metrics.hits / this._metrics.searches) * 100).toFixed(0)}%` : 'N/A'
-        }
+    const byLayer = {};
+    for (const row of this.db.prepare(`
+      SELECT memory_layer, COUNT(*) as count
+      FROM mem0_memories WHERE user_id = ? AND superseded_by IS NULL
+      GROUP BY memory_layer
+    `).all(userId)) {
+      const layer = row.memory_layer || 'semantic';
+      const cfg = MEMORY_LAYERS[layer] || MEMORY_LAYERS.semantic;
+      byLayer[layer] = {
+        count: row.count,
+        limit: cfg.maxCount,
+        usage: `${((row.count / cfg.maxCount) * 100).toFixed(0)}%`,
       };
-    } catch (error) {
-      console.error('[Mem0] Stats failed:', error);
-      throw error;
     }
+
+    const byCategory = {};
+    for (const row of this.db.prepare(`
+      SELECT category, COUNT(*) as count
+      FROM mem0_memories WHERE user_id = ? AND superseded_by IS NULL
+      GROUP BY category
+    `).all(userId)) {
+      byCategory[row.category] = { count: row.count };
+    }
+
+    // 近 26 周每天新增的记忆数（本地日期），设置页画热力图
+    const activity = this.db.prepare(`
+      SELECT date(created_at / 1000, 'unixepoch', 'localtime') AS day, COUNT(*) AS count
+      FROM mem0_memories
+      WHERE user_id = ? AND superseded_by IS NULL AND created_at >= ?
+      GROUP BY day
+    `).all(userId, Date.now() - 26 * 7 * 86400000);
+
+    return {
+      total,
+      active: activeTotal,
+      superseded: total - activeTotal,
+      activity,
+      by_layer: byLayer,
+      by_category: byCategory,
+      metrics: {
+        ...this._metrics,
+        hit_rate: this._metrics.searches > 0
+          ? `${((this._metrics.hits / this._metrics.searches) * 100).toFixed(0)}%` : 'N/A',
+      },
+    };
   }
 
-  /**
-   * 批量补充向量
-   */
+  /** 补齐缺失的向量（兼容旧插件 API） */
   async backfillEmbeddings(userId = null) {
     if (!this.initialized) throw new Error('Mem0 service not initialized');
-    try {
-      let sql = 'SELECT id, content FROM mem0_memories WHERE embedding IS NULL';
-      const params = [];
-      if (userId) { sql += ' AND user_id = ?'; params.push(userId); }
-      const rows = this.db.prepare(sql).all(...params);
-      console.log('[Mem0] Backfilling', rows.length, 'memories');
-
-      const stmt = this.db.prepare('UPDATE mem0_memories SET embedding = ?, embedding_blob = ? WHERE id = ?');
-      let cnt = 0;
-      for (const row of rows) {
-        try {
-          const vec = await this.textToVector(row.content);
-          stmt.run(JSON.stringify(vec), this.vectorToBlob(vec), row.id);
-          cnt++;
-          if (cnt % 10 === 0) console.log('[Mem0] Backfilled', cnt, '/', rows.length);
-        } catch (_) {}
-      }
-      console.log('[Mem0] Backfill done:', cnt);
-      return cnt;
-    } catch (error) {
-      console.error('[Mem0] Backfill failed:', error);
-      throw error;
+    let sql = 'SELECT id, content FROM mem0_memories WHERE embedding_blob IS NULL AND embedding IS NULL';
+    const params = [];
+    if (userId) { sql += ' AND user_id = ?'; params.push(userId); }
+    const rows = this.db.prepare(sql).all(...params);
+    const stmt = this.db.prepare('UPDATE mem0_memories SET embedding_blob = ?, embedding_model = ? WHERE id = ?');
+    let cnt = 0;
+    for (const row of rows) {
+      try {
+        stmt.run(this.vectorToBlob(await this.textToVector(row.content)), this.activeModel, row.id);
+        cnt++;
+      } catch (_) {}
     }
+    return cnt;
   }
 
   isAvailable() { return this.initialized && this.db !== null && this.embedder !== null; }
 
   close() {
+    this.cancelDownload();
     if (this.db) { this.db.close(); this.db = null; }
     this.embedder = null;
     this.initialized = false;
     console.log('[Mem0] Service closed');
   }
 }
+
+Mem0Service.EMBEDDING_MODELS = EMBEDDING_MODELS;
+Mem0Service.LEGACY_MODEL = LEGACY_MODEL;
+Mem0Service._internals = { keywordTerms, bigramSet, jaccard, normalizeText };
 
 module.exports = Mem0Service;

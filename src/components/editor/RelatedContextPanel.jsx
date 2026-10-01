@@ -120,7 +120,7 @@ const RelatedContextPanel = ({
       window.electronAPI?.mem0?.search?.({
         userId: 'current_user',
         query: limitedQuery,
-        options: { limit: 3 }
+        options: { limit: 3, touch: false }
       })
     ]).then(([todoResult, memoryResult]) => {
       if (cancelled) return

@@ -75,7 +75,7 @@ class PendingActionStore {
     if (!this.mem0Service?.isAvailable() || !args.content?.trim()) return null;
 
     try {
-      const similar = await this.mem0Service.searchMemories('current_user', args.content.trim(), { limit: 3 });
+      const similar = await this.mem0Service.searchMemories('current_user', args.content.trim(), { limit: 3, touch: false });
       const candidates = (similar || [])
         .filter((item) => item?.content)
         .map((item) => ({

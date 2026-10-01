@@ -811,8 +811,14 @@ async function initializeServices() {
     
     const dbPath = path.join(app.getPath('userData'), 'database', 'flota.db')
     const appDataPath = app.getPath('userData')
-    services.mem0Service = new Mem0Service(dbPath, appDataPath)
+    services.mem0Service = new Mem0Service(dbPath, appDataPath, { autoReindex: true })
     services.migrationService = new HistoricalDataMigrationService(services.mem0Service, services.aiService)
+    // 引擎状态（加载 / 失败 / 下载模型 / 重算向量进度）推给设置页
+    services.mem0Service.on('status', (status) => {
+      BrowserWindow.getAllWindows().forEach((win) => {
+        if (win && !win.isDestroyed()) win.webContents.send('mem0:status-changed', status)
+      })
+    })
 
     // 并行初始化所有AI服务
     const logger = getLogger()
@@ -1494,14 +1500,11 @@ app.on('before-quit', async (event) => {
     try {
       console.log('[App] 开始应用退出流程...');
 
-      // 0. 清理托盘 + 触发记忆迁移
+      // 0. 清理托盘；记忆索引不在退出时跑（会调用 LLM 摘要，和关闭数据库抢时间），
+      //    失焦和每小时的索引已经覆盖
       if (tray) { tray.destroy(); tray = null; }
       services.ingressService?.stop()
-      if (services.migrationService) {
-        services.migrationService.triggerMigrationOnQuit().catch(err => {
-          console.error('[App] 退出前迁移失败:', err);
-        });
-      }
+      services.migrationService?.stopAutoMigration()
 
       // 1. 通知所有窗口保存数据
       const allWindows = BrowserWindow.getAllWindows();

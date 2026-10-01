@@ -454,6 +454,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     isAvailable: inv('mem0:is-available'),
     cleanup: inv('mem0:cleanup'),
     migrateHistorical: inv('mem0:migrate-historical'),
+    update: inv('mem0:update'),
+    status: inv('mem0:status'),
+    retryInit: inv('mem0:retry-init'),
+    downloadModel: inv('mem0:download-model'),
+    cancelDownload: inv('mem0:cancel-download'),
+    setModel: inv('mem0:set-model'),
+    setSetting: inv('mem0:set-setting'),
+    revertChanges: inv('mem0:revert-changes'),
+    onStatusChanged: listen('mem0:status-changed'),
+    onAutoUpdated: listen('mem0:auto-updated'),
   },
 
   // 网络状态

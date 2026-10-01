@@ -4,10 +4,11 @@
  */
 
 // 场景 → 优先召回的记忆层 + 检索条数
-// 目标：profile/semantic 是主轴；episodic/artifact 默认弱化，避免旧任务污染当前回答
+// 目标：profile/semantic 是主轴，episodic（近况）也参与对话；笔记 / 待办索引（artifact）
+// 不进对话——当前笔记和相关笔记由 contextPackage 另外注入，旧任务也不该污染当前回答
 const SCENE_LAYER_STRATEGY = {
-  chat_panel: { layers: ['profile', 'semantic'], limit: 5 },
-  floating_panel: { layers: ['profile', 'semantic'], limit: 4 },
+  chat_panel: { layers: ['profile', 'semantic', 'episodic'], limit: 5 },
+  floating_panel: { layers: ['profile', 'semantic', 'episodic'], limit: 4 },
   selection_panel: { layers: ['profile', 'semantic'], limit: 3 },
   whiteboard: { layers: ['semantic', 'artifact'], limit: 3 },
 };
@@ -22,8 +23,7 @@ const buildMemoryQuery = (query, currentNote) => {
 };
 
 /**
- * 按场景检索 memories；同时按 layer 过滤（mem0 不直接支持按 layer 查，
- * 这里先取 topN 再过滤，少量条数下成本可控）。
+ * 按场景检索 memories，按 layer 在查询里过滤。
  */
 const fetchMemoriesByScene = async (mem0Service, { query, scene, currentNote }) => {
   if (!mem0Service?.isAvailable?.()) return [];
@@ -31,14 +31,11 @@ const fetchMemoriesByScene = async (mem0Service, { query, scene, currentNote }) 
   const memQuery = buildMemoryQuery(query, currentNote);
   if (!memQuery) return [];
   try {
-    const results = await mem0Service.searchMemories('current_user', memQuery, {
-      limit: strategy.limit * 2,
+    return await mem0Service.searchMemories('current_user', memQuery, {
+      limit: strategy.limit,
+      layers: strategy.layers,
       maxTokens: 1200,
-    });
-    const allowed = new Set(strategy.layers);
-    return (results || [])
-      .filter((m) => !m.memory_layer || allowed.has(m.memory_layer))
-      .slice(0, strategy.limit);
+    }) || [];
   } catch (_) {
     return [];
   }
