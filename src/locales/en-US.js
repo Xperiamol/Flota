@@ -481,7 +481,7 @@ const enUS = {
     attachments: 'Attachments',
     settings: 'Settings',
     todos: 'Todos',
-    nutcloud: 'Nutcloud',
+    nutcloud: 'WebDAV',
     ready: 'Ready',
     error: 'Error',
     allReady: 'All Ready',

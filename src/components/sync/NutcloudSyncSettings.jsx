@@ -53,9 +53,11 @@ import {
 } from '../common/AppIcons';
 import { spacing } from '../../styles/commonStyles';
 import { useError } from '../common/ErrorProvider';
+import { NUTSTORE_BASE_URL, isNutstoreUrl, getWebdavServerLabel } from './webdavProvider';
 
-const DEFAULT_BASE_URL = 'https://dav.jianguoyun.com/dav';
+const DEFAULT_BASE_URL = NUTSTORE_BASE_URL;
 const DEFAULT_ROOT_PATH = '/Flota/';
+const NUTSTORE_HELP_URL = 'https://help.jianguoyun.com/?p=2064';
 
 const SYNC_INTERVAL_OPTIONS = [
   { value: 1, label: '每 1 分钟' },
@@ -65,7 +67,7 @@ const SYNC_INTERVAL_OPTIONS = [
   { value: 60, label: '每 1 小时' },
 ];
 
-const ERROR_HINT_MAP = {
+const NUTSTORE_ERROR_HINTS = {
   auth: {
     title: '账号或应用密码不正确',
     advice: '请确认坚果云用户名（邮箱）正确，且使用的是「应用密码」而不是登录密码。',
@@ -82,10 +84,35 @@ const ERROR_HINT_MAP = {
     title: '坚果云服务暂时不可用',
     advice: '稍后再试一次；若长时间无响应可以查看坚果云官方状态页。',
   },
-  unknown: {
-    title: '同步失败',
-    advice: '请稍后重试。如果问题持续存在，可点击「测试连接」获取更详细的诊断信息。',
+};
+
+const WEBDAV_ERROR_HINTS = {
+  auth: {
+    title: '用户名或密码不正确',
+    advice: '请核对 WebDAV 服务端配置里的用户名和密码。',
   },
+  network: {
+    title: '无法连接到 WebDAV 服务器',
+    advice: '请检查网络，以及 WebDAV 地址、域名解析和 HTTPS 证书是否正常。',
+  },
+  quota: {
+    title: 'WebDAV 服务器空间不足',
+    advice: '请清理服务器磁盘空间后再试。',
+  },
+  server: {
+    title: 'WebDAV 服务器暂时不可用',
+    advice: '稍后再试；自建服务器请确认 WebDAV 服务和反向代理都在正常运行。',
+  },
+};
+
+const UNKNOWN_ERROR_HINT = {
+  title: '同步失败',
+  advice: '请稍后重试。如果问题持续存在，可点击「测试连接」获取更详细的诊断信息。',
+};
+
+const getErrorHint = (category, baseUrl) => {
+  const hints = isNutstoreUrl(baseUrl) ? NUTSTORE_ERROR_HINTS : WEBDAV_ERROR_HINTS;
+  return hints[category] || UNKNOWN_ERROR_HINT;
 };
 
 const createEmptyDraft = () => ({
@@ -153,7 +180,7 @@ const StatusHero = ({ syncStatus, syncing, onSyncNow }) => {
 
   let palette = 'info';
   let Icon = CloudQueueIcon;
-  let title = '尚未连接坚果云';
+  let title = '尚未连接同步服务';
   let subtitle = '配置 WebDAV 账户后即可在多端同步笔记、图片、待办与设置。';
 
   if (syncing) {
@@ -246,8 +273,7 @@ const StatusHero = ({ syncStatus, syncing, onSyncNow }) => {
  * ========================================================= */
 const ErrorGuide = ({ syncStatus, onRetry }) => {
   if (!syncStatus?.lastError) return null;
-  const category = syncStatus.lastErrorCategory || 'unknown';
-  const hint = ERROR_HINT_MAP[category] || ERROR_HINT_MAP.unknown;
+  const hint = getErrorHint(syncStatus.lastErrorCategory, syncStatus.config?.baseUrl || DEFAULT_BASE_URL);
 
   return (
     <Alert
@@ -296,24 +322,24 @@ const EmptyState = ({ onStart }) => (
       <CloudQueueIcon fontSize="large" />
     </Avatar>
     <Typography variant="h6" sx={{ mb: 1 }}>
-      连接坚果云，开始多端同步
+      连接云端，开始多端同步
     </Typography>
     <Typography variant="body2" color="text.secondary" sx={{ mb: 3, maxWidth: 420, mx: 'auto' }}>
-      使用坚果云的 WebDAV 协议，把你的笔记、图片、设置和待办安全地保存在云端，
+      通过 WebDAV 协议，把你的笔记、图片、设置和待办保存到坚果云或你自己的服务器，
       并在所有设备上保持一致。
     </Typography>
     <Button variant="contained" size="large" startIcon={<PlayArrowIcon />} onClick={onStart}>
       开始配置
     </Button>
     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2 }}>
-      没有应用密码？{' '}
+      使用坚果云？{' '}
       <MuiLink
-        href="https://help.jianguoyun.com/?p=2064"
+        href={NUTSTORE_HELP_URL}
         target="_blank"
         rel="noopener noreferrer"
         underline="hover"
       >
-        查看如何在坚果云生成
+        查看如何生成应用密码
       </MuiLink>
     </Typography>
   </Paper>
@@ -328,12 +354,27 @@ const SetupWizard = ({
   testing,
   saving,
   testResult,
+  switching,
   onTest,
   onFinish,
   onCancel,
 }) => {
   const [activeStep, setActiveStep] = useState(0);
   const [showPassword, setShowPassword] = useState(false);
+  // 服务商只决定填哪些字段和文案；真正保存的始终是 draft.baseUrl
+  const [provider, setProvider] = useState(() => (isNutstoreUrl(draft.baseUrl) ? 'nutstore' : 'custom'));
+  const isNutstore = provider === 'nutstore';
+  const baseUrlValid = /^https?:\/\/[^/\s]+/i.test(draft.baseUrl.trim());
+  const insecureUrl = /^http:\/\//i.test(draft.baseUrl.trim());
+
+  const handleProviderChange = (next) => {
+    setProvider(next);
+    setDraft((d) => {
+      if (next === 'nutstore') return { ...d, baseUrl: DEFAULT_BASE_URL };
+      // 从坚果云切过来时清空地址，避免带着坚果云地址去测自建账号
+      return isNutstoreUrl(d.baseUrl) ? { ...d, baseUrl: '' } : d;
+    });
+  };
 
   // 当外部 onFinish 失败把 testResult 置为 error 时，回退到「验证连接」步
   useEffect(() => {
@@ -349,7 +390,7 @@ const SetupWizard = ({
 
   // 必须显式输入用户名 + 密码（不再有"已保存密码"的隐式兜底）
   const canNextFromAccount =
-    !!draft.username.trim() && !!draft.password;
+    !!draft.username.trim() && !!draft.password && baseUrlValid;
 
   const handleTest = async () => {
     const ok = await onTest();
@@ -373,35 +414,68 @@ const SetupWizard = ({
 
       {activeStep === 0 && (
         <Stack spacing={2}>
-          <Typography variant="body2" color="text.secondary">
-            登录{' '}
-            <MuiLink
-              href="https://www.jianguoyun.com/d/home"
-              target="_blank"
-              rel="noopener noreferrer"
-              underline="hover"
+          <FormControl size="small">
+            <RadioGroup
+              row
+              value={provider}
+              onChange={(e) => handleProviderChange(e.target.value)}
             >
-              坚果云网页版
-            </MuiLink>
-            ，进入「账户信息 → 安全选项 → 添加应用」生成一个应用密码。
-          </Typography>
+              <FormControlLabel value="nutstore" control={<Radio size="small" />} label="坚果云" />
+              <FormControlLabel value="custom" control={<Radio size="small" />} label="自建或其他 WebDAV" />
+            </RadioGroup>
+          </FormControl>
+          {isNutstore ? (
+            <Typography variant="body2" color="text.secondary">
+              登录{' '}
+              <MuiLink
+                href="https://www.jianguoyun.com/d/home"
+                target="_blank"
+                rel="noopener noreferrer"
+                underline="hover"
+              >
+                坚果云网页版
+              </MuiLink>
+              ，进入「账户信息 → 安全选项 → 添加应用」生成一个应用密码。
+            </Typography>
+          ) : (
+            <>
+              <Typography variant="body2" color="text.secondary">
+                支持自建服务器（dufs、rclone、Nginx WebDAV 等）、NAS、Nextcloud、Alist 等任何标准 WebDAV 服务。
+              </Typography>
+              <TextField
+                fullWidth
+                autoFocus
+                label="WebDAV 地址"
+                value={draft.baseUrl}
+                onChange={(e) => setDraft((d) => ({ ...d, baseUrl: e.target.value }))}
+                placeholder="https://example.com/dav"
+                helperText={insecureUrl
+                  ? '使用 http 时密码会明文传输，建议改用 https'
+                  : '服务器上 WebDAV 的根地址，例如 https://example.com/dav'}
+                error={!!draft.baseUrl.trim() && !baseUrlValid}
+                size="small"
+              />
+            </>
+          )}
           <TextField
             fullWidth
-            autoFocus
-            label="坚果云账号（邮箱）"
+            autoFocus={isNutstore}
+            label={isNutstore ? '坚果云账号（邮箱）' : '用户名'}
             value={draft.username}
             onChange={(e) => setDraft((d) => ({ ...d, username: e.target.value }))}
-            placeholder="example@domain.com"
+            placeholder={isNutstore ? 'example@domain.com' : ''}
             size="small"
           />
           <TextField
             fullWidth
-            label="应用密码"
+            label={isNutstore ? '应用密码' : '密码'}
             type={showPassword ? 'text' : 'password'}
             value={draft.password}
             onChange={(e) => setDraft((d) => ({ ...d, password: e.target.value }))}
-            placeholder="坚果云生成的应用密码"
-            helperText="首次配置或更换账号时需要输入完整的坚果云应用密码"
+            placeholder={isNutstore ? '坚果云生成的应用密码' : ''}
+            helperText={isNutstore
+              ? '首次配置或更换账号时需要输入完整的坚果云应用密码'
+              : '首次配置或更换账号时需要输入完整的密码'}
             size="small"
             slotProps={{
               input: {
@@ -425,7 +499,7 @@ const SetupWizard = ({
       {activeStep === 1 && (
         <Stack spacing={2}>
           <Typography variant="body2" color="text.secondary">
-            我们会用刚才填写的信息访问一次你的坚果云，确认账户可以正常连接。
+            我们会用刚才填写的信息访问一次{isNutstore ? '你的坚果云' : 'WebDAV 服务器'}，确认账户可以正常连接。
             此过程不会修改任何数据。
           </Typography>
           <Box sx={{ p: 2, borderRadius: 1, bgcolor: 'action.hover' }}>
@@ -446,8 +520,9 @@ const SetupWizard = ({
               {testResult.text}
               <Box sx={{ mt: 1 }}>
                 <Typography variant="caption" color="text.secondary">
-                  如果你已确认账号和应用密码无误但仍然失败，可能是之前残留的错误配置在干扰，
-                  请返回上一步重新填写完整的密码。
+                  {isNutstore
+                    ? '如果你已确认账号和应用密码无误但仍然失败，可能是之前残留的错误配置在干扰，请返回上一步重新填写完整的密码。'
+                    : '请确认地址、用户名和密码无误；自建服务器还要检查反向代理和防火墙是否放行了 PROPFIND、MKCOL、PUT、DELETE 请求。'}
                 </Typography>
               </Box>
             </Alert>
@@ -457,7 +532,7 @@ const SetupWizard = ({
             <Button
               variant="contained"
               onClick={handleTest}
-              disabled={testing || !draft.username.trim() || !draft.password}
+              disabled={testing || !canNextFromAccount}
               startIcon={testing ? <CircularProgress size={14} /> : null}
             >
               {testing ? '测试中…' : (testResult?.type === 'error' ? '重新测试连接' : '测试连接并继续')}
@@ -469,11 +544,14 @@ const SetupWizard = ({
       {activeStep === 2 && (
         <Stack spacing={2}>
           <Typography variant="body2" color="text.secondary">
-            一切就绪！点击下方按钮启用同步，Flota 会立即执行一次首轮同步，
-            随后保持自动同步。
+            {switching
+              ? `一切就绪！切换后 Flota 会立即和${isNutstore ? '坚果云' : '新的 WebDAV 服务器'}做一次完整同步，随后保持自动同步。`
+              : '一切就绪！点击下方按钮启用同步，Flota 会立即执行一次首轮同步，随后保持自动同步。'}
           </Typography>
           <Alert severity="info">
-            首轮同步可能需要较长时间，具体取决于你的笔记和图片数量。
+            {switching
+              ? '新服务器是空的时，本机数据会全部上传一遍；原服务器上的数据不会被删除。首轮同步可能需要较长时间。'
+              : '首轮同步可能需要较长时间，具体取决于你的笔记和图片数量。'}
           </Alert>
           <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
             <Button onClick={goBack}>上一步</Button>
@@ -483,7 +561,7 @@ const SetupWizard = ({
               disabled={saving}
               startIcon={saving ? <CircularProgress size={14} /> : <CloudDoneIcon />}
             >
-              {saving ? '启用中…' : '启用同步'}
+              {saving ? (switching ? '切换中…' : '启用中…') : (switching ? '切换并同步' : '启用同步')}
             </Button>
           </Box>
         </Stack>
@@ -518,6 +596,7 @@ const ManageView = ({
   const autoSync = !!syncStatus?.config?.autoSync;
   const intervalMinutes = Math.round(syncStatus?.config?.autoSyncInterval || 5);
   const savedBaseUrl = syncStatus?.config?.baseUrl || DEFAULT_BASE_URL;
+  const savedIsNutstore = isNutstoreUrl(savedBaseUrl);
   const savedRootPath = syncStatus?.config?.rootPath || DEFAULT_ROOT_PATH;
   const hasAdvancedChanges = draft.baseUrl !== savedBaseUrl || draft.rootPath !== savedRootPath || !!draft.password;
   const saveAdvancedIfChanged = () => {
@@ -681,7 +760,7 @@ const ManageView = ({
           <Box>
             <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>高级设置</Typography>
             <Typography variant="caption" color="text.secondary">
-              修改 WebDAV 地址、远程目录或更新应用密码
+              更换服务器或账号、修改远程目录或更新密码
             </Typography>
           </Box>
           {showAdvanced ? <ExpandLessIcon /> : <ExpandMoreIcon />}
@@ -702,7 +781,7 @@ const ManageView = ({
                 value={draft.baseUrl}
                 onChange={(e) => setDraft((d) => ({ ...d, baseUrl: e.target.value }))}
                 onBlur={saveAdvancedIfChanged}
-                helperText="修改后离开输入框自动保存"
+                helperText="同一账号换地址时修改，离开输入框后保存；换服务或账号请用下方按钮"
               />
               <TextField
                 fullWidth
@@ -717,16 +796,21 @@ const ManageView = ({
                 fullWidth
                 size="small"
                 type="password"
-                label="更新应用密码"
+                label={savedIsNutstore ? '更新应用密码' : '更新密码'}
                 value={draft.password}
                 onChange={(e) => setDraft((d) => ({ ...d, password: e.target.value }))}
                 onBlur={saveAdvancedIfChanged}
-                placeholder={hasSavedPassword ? '留空表示继续使用已保存密码' : '请输入完整的应用密码'}
-                helperText={hasSavedPassword ? '留空不会清除旧密码；输入新密码并离开输入框后自动更新。' : '首次配置必须填写完整的坚果云应用密码。'}
+                placeholder={hasSavedPassword ? '留空表示继续使用已保存密码' : '请输入完整的密码'}
+                helperText={hasSavedPassword
+                  ? '留空不会清除旧密码；输入新密码并离开输入框后自动更新。'
+                  : (savedIsNutstore ? '首次配置必须填写完整的坚果云应用密码。' : '首次配置必须填写完整的密码。')}
               />
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                 <Button size="small" variant="outlined" onClick={handlers.onTest} disabled={loading || testing}>
                   {testing ? '测试中…' : '测试连接'}
+                </Button>
+                <Button size="small" variant="outlined" onClick={handlers.onSwitch} disabled={loading || syncing}>
+                  更换服务器或账号
                 </Button>
               </Stack>
             </Stack>
@@ -829,7 +913,7 @@ const NutcloudSyncSettings = () => {
   const [message, setMessage] = useState(null);
   const [testResult, setTestResult] = useState(null);
 
-  // 视图模式：auto | setup
+  // 视图模式：auto | setup | switch（已配置时更换服务器或账号，复用 setup 向导）
   const [viewMode, setViewMode] = useState('auto');
 
   // 折叠区
@@ -849,7 +933,7 @@ const NutcloudSyncSettings = () => {
   const accountConfigured = !!syncStatus?.accountConfigured;
 
   const stage = useMemo(() => {
-    if (viewMode === 'setup') return 'SETUP';
+    if (viewMode === 'setup' || viewMode === 'switch') return 'SETUP';
     if (!accountConfigured) return 'EMPTY';
     return 'MANAGE';
   }, [viewMode, accountConfigured]);
@@ -906,11 +990,11 @@ const NutcloudSyncSettings = () => {
 
   const ensureFormValid = ({ allowSavedPassword = false } = {}) => {
     if (!draft.username.trim()) {
-      setMessage({ type: 'error', text: '请填写坚果云账号' });
+      setMessage({ type: 'error', text: '请填写账号' });
       return false;
     }
     if (!draft.password && !(allowSavedPassword && canReuseSavedPassword)) {
-      setMessage({ type: 'error', text: '请填写完整的应用密码' });
+      setMessage({ type: 'error', text: '请填写完整的密码' });
       return false;
     }
     return true;
@@ -919,7 +1003,7 @@ const NutcloudSyncSettings = () => {
   /* ------------- 操作 ------------- */
   const handleTest = async () => {
     if (!draft.username.trim() || (!draft.password && !canReuseSavedPassword)) {
-      const nextMessage = { type: 'error', text: '请先填写账号和完整的应用密码', scope: 'advanced' };
+      const nextMessage = { type: 'error', text: '请先填写账号和完整的密码', scope: 'advanced' };
       setTestResult(nextMessage);
       if (stage === 'MANAGE') setMessage(nextMessage);
       return false;
@@ -961,23 +1045,35 @@ const NutcloudSyncSettings = () => {
 
   const handleEnable = async () => {
     if (!ensureFormValid({ allowSavedPassword: true })) return;
+    const switching = viewMode === 'switch';
     setSaving(true);
     setLoading(true);
     setMessage(null);
     try {
       await window.electronAPI.sync.switchService('Flota-v3', buildConfigPayload(draft, canReuseSavedPassword));
-      setMessage({ type: 'success', text: '坚果云同步已恢复' });
+      setMessage({
+        type: 'success',
+        text: switching ? `已切换到 ${getWebdavServerLabel(draft.baseUrl)}` : '同步已恢复',
+      });
       setViewMode('auto');
       setTestResult(null);
       await loadStatus();
     } catch (error) {
-      setMessage({ type: 'error', text: `恢复失败：${error.message}` });
+      setMessage({ type: 'error', text: `${switching ? '切换' : '恢复'}失败：${error.message}` });
       // 恢复过程中失败（多半是密码错），把测试结果重置为错误，让 wizard 回到验证步骤
       setTestResult({ type: 'error', text: `连接被拒绝：${error.message}` });
     } finally {
       setSaving(false);
       setLoading(false);
     }
+  };
+
+  // 更换服务器或账号：带着当前地址和用户名进入向导，密码必须重新填写
+  const handleStartSwitch = () => {
+    setDraft((d) => ({ ...d, password: '' }));
+    setMessage(null);
+    setTestResult(null);
+    setViewMode('switch');
   };
 
   const handleDisable = async () => {
@@ -1140,22 +1236,24 @@ const NutcloudSyncSettings = () => {
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
         <Box>
-          <Typography variant="h6">坚果云同步</Typography>
+          <Typography variant="h6">WebDAV 同步</Typography>
           <Typography variant="caption" color="text.secondary">
-            通过 WebDAV 协议在多设备间安全同步你的数据
+            通过坚果云或自建 WebDAV 服务器在多设备间同步你的数据
           </Typography>
         </Box>
-        <Tooltip title="查看坚果云帮助">
-          <IconButton
-            size="small"
-            component="a"
-            href="https://help.jianguoyun.com/?p=2064"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <HelpOutlineIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
+        {isNutstoreUrl(syncStatus?.config?.baseUrl || draft.baseUrl) && (
+          <Tooltip title="查看坚果云帮助">
+            <IconButton
+              size="small"
+              component="a"
+              href={NUTSTORE_HELP_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <HelpOutlineIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
       </Box>
 
       {message && (
@@ -1196,7 +1294,7 @@ const NutcloudSyncSettings = () => {
 
       {stage === 'SETUP' && (
         <>
-          {accountConfigured && (
+          {accountConfigured && viewMode === 'setup' && (
             <Alert
               severity="info"
               sx={spacing.mb2}
@@ -1216,9 +1314,10 @@ const NutcloudSyncSettings = () => {
             testing={testing}
             saving={saving}
             testResult={testResult}
+            switching={viewMode === 'switch'}
             onTest={handleTest}
             onFinish={handleEnable}
-            onCancel={() => { setViewMode('auto'); setTestResult(null); }}
+            onCancel={() => { setViewMode('auto'); setTestResult(null); loadStatus(); }}
           />
         </>
       )}
@@ -1250,6 +1349,7 @@ const NutcloudSyncSettings = () => {
             onCleanup: handleCleanup,
             onTest: handleTest,
             onSave: handleSave,
+            onSwitch: handleStartSwitch,
             onClearAll: () => setClearAllDialog(true),
           }}
         />
@@ -1306,9 +1406,9 @@ const NutcloudSyncSettings = () => {
       </Dialog>
 
       <Dialog open={showDisconnectDialog} onClose={() => setShowDisconnectDialog(false)}>
-        <DialogTitle>断开坚果云账户</DialogTitle>
+        <DialogTitle>断开同步账户</DialogTitle>
         <DialogContent>
-          <Typography>断开后将停止同步并清除已保存的应用密码。</Typography>
+          <Typography>断开后将停止同步并清除已保存的密码。</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
             本地数据不会受到影响，下次仍可重新配置。
           </Typography>

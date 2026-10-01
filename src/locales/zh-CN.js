@@ -493,7 +493,7 @@ const zhCN = {
     attachments: '附件',
     settings: '设置',
     todos: '待办',
-    nutcloud: '坚果云',
+    nutcloud: 'WebDAV',
     ready: '就绪',
     error: '异常',
     allReady: '全部就绪',

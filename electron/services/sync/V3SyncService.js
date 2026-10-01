@@ -180,8 +180,9 @@ class V3SyncService extends EventEmitter {
       autoSyncInterval: typeof input.autoSyncInterval === 'number'
         ? input.autoSyncInterval
         : (current.autoSyncInterval || defaults.autoSyncInterval),
+      // 去掉结尾的 /：远程路径都以 / 开头，直接拼接，否则会变成 /dav//Flota/
       baseUrl: hasBaseUrlField && typeof input.baseUrl === 'string' && input.baseUrl.trim()
-        ? input.baseUrl.trim()
+        ? input.baseUrl.trim().replace(/\/+$/, '')
         : (current.baseUrl || defaults.baseUrl),
       rootPath: this.normalizeRootPath(
         hasRootPathField ? input.rootPath : current.rootPath,
@@ -457,6 +458,8 @@ class V3SyncService extends EventEmitter {
       this.config && this.config.rootPath && this.config.rootPath !== nextConfig.rootPath
     );
     if (identityChanged) {
+      // 对新服务器 / 账号来说是首次同步：状态显示「从未同步」，enable() 也会立即跑首轮同步
+      this.lastSyncTime = 0;
       try {
         const manifestPath = path.join(getUserDataPath(), 'sync-manifest.json');
         if (fs.existsSync(manifestPath)) {

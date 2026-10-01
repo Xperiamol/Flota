@@ -24,6 +24,28 @@ function getRateLimitStatePath() {
  */
 class WebDAVClient {
   /**
+   * 取 WebDAV 地址的主机名（小写），解析失败返回空串
+   * @param {string} baseUrl
+   * @returns {string}
+   */
+  static getHost(baseUrl) {
+    try {
+      return new URL(baseUrl).hostname.toLowerCase();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /**
+   * 是否坚果云（只有坚果云需要按其请求次数限制节流）
+   * @param {string} baseUrl
+   * @returns {boolean}
+   */
+  static isNutstoreUrl(baseUrl) {
+    return /(^|\.)jianguoyun\.com$/.test(WebDAVClient.getHost(baseUrl));
+  }
+
+  /**
    * 创建 WebDAV 客户端实例
    * @param {import('./types').WebDAVConfig} config - 配置
    */
@@ -34,14 +56,20 @@ class WebDAVClient {
     this.timeout = config.timeout || 30000;
     this.retryAttempts = config.retryAttempts || 3;
 
-    // 限流器：最大并发数为 3
-    this.limiter = new ConcurrencyLimiter(3);
+    // 节流参数按服务商区分：坚果云有 600 次 / 30 分钟的硬限制；自建或其他 WebDAV 没有，
+    // 沿用同一套节流只会让首次全量同步白白变慢。429 退避对所有服务都生效。
+    this.host = WebDAVClient.getHost(this.baseUrl);
+    this.isNutstore = WebDAVClient.isNutstoreUrl(this.baseUrl);
+
+    // 限流器：坚果云并发 3，其他服务并发 6
+    this.limiter = new ConcurrencyLimiter(this.isNutstore ? 3 : 6);
 
     // 请求计数器和冷却管理
     this.requestCount = 0;
     this.requestWindowStart = Date.now();
-    this.maxRequestsPer30Min = 600; // WebDAV 限制 600 reqs / 30min
-    this.requestDelay = 200; // 每次请求间隔 200ms
+    this.maxRequestsPer30Min = this.isNutstore ? 600 : Infinity; // 坚果云限制 600 reqs / 30min
+    this.requestDelay = this.isNutstore ? 200 : 0; // 坚果云每次请求间隔 200ms
+    this.cooldownEvery = this.isNutstore ? 50 : 0; // 坚果云每 50 个请求冷却 2s
 
     // 最后一次请求时间
     this.lastRequestTime = 0;
@@ -63,6 +91,10 @@ class WebDAVClient {
       const p = getRateLimitStatePath();
       if (!p || !fs.existsSync(p)) return;
       const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+      // 状态属于哪台服务器：换了服务器就不继承旧服务器的计数和退避。
+      // 旧版本写的文件没有 host 字段，那时只有坚果云会触发限流，按坚果云处理。
+      const savedHost = data.host || (this.isNutstore ? this.host : null);
+      if (savedHost !== this.host) return;
       const now = Date.now();
       const windowAge = now - (data.requestWindowStart || 0);
       // 仅当上次窗口未超过 30 分钟时恢复
@@ -89,6 +121,7 @@ class WebDAVClient {
       const p = getRateLimitStatePath();
       if (!p) return;
       const payload = JSON.stringify({
+        host: this.host,
         requestCount: this.requestCount,
         requestWindowStart: this.requestWindowStart,
         rateLimitedUntil: this.rateLimitedUntil,
@@ -126,7 +159,7 @@ class WebDAVClient {
 
       // 检查是否需要冷却（每 50 个请求 sleep 2s）
       this.requestCount++;
-      if (this.requestCount % 50 === 0) {
+      if (this.cooldownEvery && this.requestCount % this.cooldownEvery === 0) {
         console.log(`[WebDAV] 已发送 ${this.requestCount} 个请求，冷却 2 秒...`);
         await this.sleep(2000);
       }
@@ -146,8 +179,8 @@ class WebDAVClient {
         this.requestWindowStart = Date.now();
       }
 
-      // #N7：每次请求前持久化（保证重启后窗口能恢复）
-      this._saveRateLimitState();
+      // #N7：每次请求前持久化（保证重启后窗口能恢复）；没有请求窗口的服务不需要
+      if (this.isNutstore) this._saveRateLimitState();
 
       // 执行带重试的请求
       let lastError;
@@ -252,7 +285,9 @@ class WebDAVClient {
       } else if (status === 403) {
         return new Error(
           `WebDAV 权限不足或存储空间/流量耗尽${where}${detailSuffix}。` +
-          `坚果云常见原因：① 当月免费流量已用完（1GB/3GB）；② 应用密码未开启写权限；③ 同步盘已满或文件被锁定。`
+          (this.isNutstore
+            ? `坚果云常见原因：① 当月免费流量已用完（1GB/3GB）；② 应用密码未开启写权限；③ 同步盘已满或文件被锁定。`
+            : `请检查该账号对同步目录是否有读写权限，以及服务器前的防火墙（如宝塔 WAF）是否拦截了 PROPFIND/MKCOL/PUT 等请求。`)
         );
       } else if (status === 404) {
         return new Error(`WebDAV 资源不存在${where}${detailSuffix}`);
@@ -263,7 +298,9 @@ class WebDAVClient {
       } else if (status === 423) {
         return new Error(`WebDAV 资源被锁定 (423)${where}${detailSuffix}`);
       } else if (status === 429) {
-        return new Error(`WebDAV 请求过于频繁 (429)${where}：已达到坚果云每 30 分钟的请求次数上限${detailSuffix}`);
+        return new Error(this.isNutstore
+          ? `WebDAV 请求过于频繁 (429)${where}：已达到坚果云每 30 分钟的请求次数上限${detailSuffix}`
+          : `WebDAV 请求过于频繁 (429)${where}：服务器限制了请求频率${detailSuffix}`);
       } else if (status === 507) {
         return new Error(`WebDAV 存储空间不足${where}${detailSuffix}`);
       } else if (status >= 500) {

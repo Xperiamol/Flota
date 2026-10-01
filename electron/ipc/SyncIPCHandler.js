@@ -97,6 +97,17 @@ class SyncIPCHandler {
     // 保存配置
     // 重要：不再有任何"复用旧密码"的隐式回退。前端传什么就保存什么。
     this.safeHandle('sync:save-config', async (_event, config) => {
+      // 同步运行中改地址 / 账号 / 密码：和启用一样先验证再落盘，并用新配置重建引擎，
+      // 否则正在运行的引擎会一直连旧服务器，直到下次重启。
+      if (this.v3SyncService.isEnabled) {
+        if (this.v3SyncService.isSyncing) {
+          throw new Error('正在同步，请等本次同步结束后再修改');
+        }
+        await this.v3SyncService.testConnection(config);
+        await this.v3SyncService.saveConnectionConfig(config);
+        await this.v3SyncService.enable();
+        return this.v3SyncService.getStatus();
+      }
       return await this.v3SyncService.saveConnectionConfig(config);
     });
 
@@ -110,6 +121,10 @@ class SyncIPCHandler {
     // 启用同步（切换服务）
     // 关键：先用候选配置做连接验证，验证通过后才落盘 + enable，避免错误账户污染本地配置。
     this.safeHandle('sync:switch-service', async (_event, _serviceName, config) => {
+      // 正在同步时不能换：旧引擎跑完会把旧服务器的 manifest 写回刚清掉的本地缓存
+      if (this.v3SyncService.isSyncing) {
+        throw new Error('正在同步，请等本次同步结束后再切换');
+      }
       // 第一步：仅用候选配置测试连接（不落盘）
       await this.v3SyncService.testConnection(config);
       // 第二步：测试通过后才把账户写盘

@@ -26,6 +26,7 @@ import {
 } from '../common/AppIcons';
 import { iconWithColor, flex, settingsRowSx } from '../../styles/commonStyles';
 import PanelIconButton from '../common/PanelIconButton';
+import { NUTSTORE_BASE_URL, getWebdavProviderName } from './webdavProvider';
 
 const SyncRegistryView = ({ onOpenSettings }) => {
   const { showError } = useError();
@@ -109,6 +110,7 @@ const SyncRegistryView = ({ onOpenSettings }) => {
     const nutcloudV3 = nutcloud?.v3;
     const nutcloudServiceEnabled = !!nutcloudV3?.enabled;
     const nutcloudAccountConfigured = !!nutcloudV3?.accountConfigured;
+    const webdavName = getWebdavProviderName(nutcloudV3?.config?.baseUrl || NUTSTORE_BASE_URL);
 
     const buildNutcloudCategory = ({ id, name, icon, category }) => {
       const categoryEnabled = nutcloudV3?.config?.syncCategories?.includes(category) || false;
@@ -120,7 +122,7 @@ const SyncRegistryView = ({ onOpenSettings }) => {
         category,
         selectedProvider: 'nutcloud',
         availableProviders: [
-          { id: 'nutcloud', name: '坚果云' },
+          { id: 'nutcloud', name: webdavName },
         ],
         enabled: nutcloudServiceEnabled && categoryEnabled,
         categoryEnabled,
@@ -171,7 +173,7 @@ const SyncRegistryView = ({ onOpenSettings }) => {
         type: 'calendar',
         selectedProvider: providerSelections.todos,
         availableProviders: [
-          { id: 'nutcloud', name: '坚果云' },
+          { id: 'nutcloud', name: webdavName },
           { id: 'google-calendar', name: 'Google Calendar' },
           { id: 'caldav', name: 'CalDAV' },
         ],
@@ -356,7 +358,8 @@ const SyncRegistryView = ({ onOpenSettings }) => {
 
   const getStatusText = (item) => {
     if (item.selectedProvider === 'nutcloud' && !item.serviceEnabled) {
-      return item.accountConfigured ? '坚果云已停用' : '坚果云未配置';
+      const name = item.availableProviders?.find((p) => p.id === 'nutcloud')?.name || 'WebDAV';
+      return item.accountConfigured ? `${name}已停用` : `${name}未配置`;
     }
 
     if (!item.enabled) {
@@ -406,10 +409,10 @@ const SyncRegistryView = ({ onOpenSettings }) => {
           <CloudOffIcon sx={{ color: 'primary.main', fontSize: 20 }} />
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography variant="body2" sx={{ fontWeight: 600 }}>还没有配置同步服务</Typography>
-            <Typography variant="caption" color="text.secondary">配置坚果云（WebDAV）后，笔记、图片、待办等会在设备之间同步</Typography>
+            <Typography variant="caption" color="text.secondary">配置坚果云或自建 WebDAV 后，笔记、图片、待办等会在设备之间同步</Typography>
           </Box>
           <Button size="small" variant="contained" onClick={() => onOpenSettings('nutcloud')} sx={{ flexShrink: 0, borderRadius: '8px' }}>
-            配置坚果云
+            配置同步
           </Button>
         </Box>
       )}
