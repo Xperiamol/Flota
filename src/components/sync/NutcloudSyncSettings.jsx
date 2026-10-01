@@ -439,9 +439,6 @@ const SetupWizard = ({
             </Typography>
           ) : (
             <>
-              <Typography variant="body2" color="text.secondary">
-                支持自建服务器（dufs、rclone、Nginx WebDAV 等）、NAS、Nextcloud、Alist 等任何标准 WebDAV 服务。
-              </Typography>
               <TextField
                 fullWidth
                 autoFocus
@@ -449,9 +446,7 @@ const SetupWizard = ({
                 value={draft.baseUrl}
                 onChange={(e) => setDraft((d) => ({ ...d, baseUrl: e.target.value }))}
                 placeholder="https://example.com/dav"
-                helperText={insecureUrl
-                  ? '使用 http 时密码会明文传输，建议改用 https'
-                  : '服务器上 WebDAV 的根地址，例如 https://example.com/dav'}
+                helperText={insecureUrl ? 'http 会明文传输密码，建议用 https' : ''}
                 error={!!draft.baseUrl.trim() && !baseUrlValid}
                 size="small"
               />
@@ -522,7 +517,7 @@ const SetupWizard = ({
                 <Typography variant="caption" color="text.secondary">
                   {isNutstore
                     ? '如果你已确认账号和应用密码无误但仍然失败，可能是之前残留的错误配置在干扰，请返回上一步重新填写完整的密码。'
-                    : '请确认地址、用户名和密码无误；自建服务器还要检查反向代理和防火墙是否放行了 PROPFIND、MKCOL、PUT、DELETE 请求。'}
+                    : '请检查地址、用户名和密码。'}
                 </Typography>
               </Box>
             </Alert>
@@ -545,12 +540,12 @@ const SetupWizard = ({
         <Stack spacing={2}>
           <Typography variant="body2" color="text.secondary">
             {switching
-              ? `一切就绪！切换后 Flota 会立即和${isNutstore ? '坚果云' : '新的 WebDAV 服务器'}做一次完整同步，随后保持自动同步。`
+              ? '切换后会立即做一次完整同步。'
               : '一切就绪！点击下方按钮启用同步，Flota 会立即执行一次首轮同步，随后保持自动同步。'}
           </Typography>
           <Alert severity="info">
             {switching
-              ? '新服务器是空的时，本机数据会全部上传一遍；原服务器上的数据不会被删除。首轮同步可能需要较长时间。'
+              ? '首轮同步可能需要较长时间。'
               : '首轮同步可能需要较长时间，具体取决于你的笔记和图片数量。'}
           </Alert>
           <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -781,7 +776,7 @@ const ManageView = ({
                 value={draft.baseUrl}
                 onChange={(e) => setDraft((d) => ({ ...d, baseUrl: e.target.value }))}
                 onBlur={saveAdvancedIfChanged}
-                helperText="同一账号换地址时修改，离开输入框后保存；换服务或账号请用下方按钮"
+                helperText="离开输入框后保存"
               />
               <TextField
                 fullWidth
@@ -1238,7 +1233,7 @@ const NutcloudSyncSettings = () => {
         <Box>
           <Typography variant="h6">WebDAV 同步</Typography>
           <Typography variant="caption" color="text.secondary">
-            通过坚果云或自建 WebDAV 服务器在多设备间同步你的数据
+            坚果云或自建 WebDAV
           </Typography>
         </Box>
         {isNutstoreUrl(syncStatus?.config?.baseUrl || draft.baseUrl) && (
