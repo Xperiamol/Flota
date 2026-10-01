@@ -22,6 +22,12 @@ const getSystemPrompt = async ({ mem0Service, imageReadingEnabled = true }) => {
     : '\n- 图片理解（多模态）当前未启用，read_note_image 工具不可用。即使笔记里含本地图片，也**不要尝试调用 read_note_image**；直接基于文本内容回答，必要时说明无法查看图片。';
 
 
+  // 开启自动记忆时，每轮对话后由应用整理记忆，模型只在用户明确要求时才写，避免和自动提取重复
+  const autoMemory = !!mem0Service?.isAvailable?.() && mem0Service.getSetting?.('auto_memory', true) !== false;
+  const saveRule = autoMemory
+    ? '- 【自动整理】每轮对话结束后应用会自动提取值得长期记住的信息，你不需要主动保存；只有用户明确说“记住 / 别忘了 / 更新我的…”时才调用 add_memory 或 update_memory。'
+    : '- 【高价值才保存】只有当信息长期有效、可复用、对未来回答有明显帮助时，才调用 add_memory；临时任务、一次性上下文、当前笔记里已经明确存在的信息不要重复保存。';
+
   let profileSection = '';
   try {
     if (mem0Service?.isAvailable() && typeof mem0Service.getProfileMemories === 'function') {
@@ -59,7 +65,7 @@ const getSystemPrompt = async ({ mem0Service, imageReadingEnabled = true }) => {
 
 ## 记忆档案管理
 - 【注入即少量】「关于用户」与「相关长期记忆」只注入了少量高相关条目；不够时主动调用 search_memory，不要凭注入片段臆测。
-- 【高价值才保存】只有当信息长期有效、可复用、对未来回答有明显帮助时，才调用 add_memory；临时任务、一次性上下文、当前笔记里已经明确存在的信息不要重复保存。
+${saveRule}
 - 【先查再写】保存或更新记忆前优先用 search_memory 检查是否已有相似记忆；相似时优先 update_memory，避免重复和冲突。
 - 【多维归类】合理分配 category：如 profile(身份)、preference(偏好要求)、fact(事实结论)、habit(排版风格等习惯)。
 - 【动态刷新】当用户明确更新偏好、身份、工作流或稳定事实时，调用 update_memory 修正旧记忆；不确定时先询问用户。

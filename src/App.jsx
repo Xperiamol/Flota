@@ -33,6 +33,7 @@ import Toolbar from './components/layout/Toolbar'
 import NoteEditor from './components/editor/NoteEditor'
 import { TrashNotePreview } from './components/notes/TrashView'
 import { usePageTitle, useSyncDocumentTitle } from './utils/pageTitle'
+import { useAutoMemoryNotices } from './hooks/useAutoMemoryNotices'
 import { usePrefsStore, useApplyEditorPrefs } from './store/usePrefsStore'
 import WidgetHomeView from './components/widgets/WidgetHomeView'
 import WidgetProbeHost from './components/widgets/WidgetProbeHost'
@@ -132,6 +133,7 @@ function App() {
   const showDeleted = useStore((state) => state.noteTrashOpen)
   const setShowDeleted = useStore((state) => state.setNoteTrashOpen)
   useSyncDocumentTitle(usePageTitle())
+  useAutoMemoryNotices()
   useApplyEditorPrefs()
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [aiCommandCenterPortalContainer, setAiCommandCenterPortalContainer] = useState(null)

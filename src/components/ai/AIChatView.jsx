@@ -36,6 +36,8 @@ import {
   toApiMessages,
 } from '../../utils/aiCore/pendingActions'
 import PendingActionCard from './PendingActionCard'
+import MemoryUpdateNotice from './MemoryUpdateNotice'
+import { useUndoMemoryUpdate } from '../../hooks/useAutoMemoryNotices'
 import { buildMessageMetadata, createUserMessage, createAssistantMessage, extractPendingActions } from '../../utils/aiCore/messageModel'
 import usePendingActionExecution from '../../hooks/usePendingActionExecution'
 import useAIStream from '../../hooks/useAIStream'
@@ -263,7 +265,7 @@ const slimStepsForPersist = (steps) => {
 
 // ─── 聊天消息组件 ───
 
-const ChatMessage = React.memo(({ msg, theme, userAvatar, onExecuteAction, onDismissAction, executingActionIds, onSaveAsNote, onAskFollowUp, onOpenSource }) => {
+const ChatMessage = React.memo(({ msg, theme, userAvatar, onExecuteAction, onDismissAction, executingActionIds, onSaveAsNote, onAskFollowUp, onOpenSource, onUndoMemory }) => {
   const isUser = msg.role === 'user'
   // 兼容多模态 content：array 时拆出 text + image_url
   const isArrayContent = Array.isArray(msg.content)
@@ -386,6 +388,9 @@ const ChatMessage = React.memo(({ msg, theme, userAvatar, onExecuteAction, onDis
                 />
               ))}
             </Box>
+          )}
+          {!isUser && msg.memoryUpdates && (
+            <MemoryUpdateNotice updates={msg.memoryUpdates} onUndo={() => onUndoMemory?.(msg)} />
           )}
         </Box>
       </Box>
@@ -675,6 +680,9 @@ export default function AIChatView({ onTodoUpdated }) {
     }
     return nextMessages
   }, [aiUpdateConv])
+
+  const undoMemoryUpdate = useUndoMemoryUpdate()
+  const handleUndoMemory = useCallback((msg) => undoMemoryUpdate(conversationIdRef.current, msg), [undoMemoryUpdate])
 
   const { execute: handleExecuteAction, dismiss: handleDismissAction } = usePendingActionExecution({
     conversationIdRef, messagesRef, setMessages, onTodoUpdated,
@@ -1172,6 +1180,7 @@ export default function AIChatView({ onTodoUpdated }) {
               onSaveAsNote={handleSaveAsNote}
               onAskFollowUp={handleAskFollowUp}
               onOpenSource={handleOpenSource}
+              onUndoMemory={handleUndoMemory}
             />
             {msg.role === 'assistant' && msg.content && (
               <IconButton

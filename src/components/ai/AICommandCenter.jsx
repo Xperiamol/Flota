@@ -52,6 +52,8 @@ import {
   toApiMessages,
 } from '../../utils/aiCore/pendingActions'
 import PendingActionCard from './PendingActionCard'
+import MemoryUpdateNotice from './MemoryUpdateNotice'
+import { useUndoMemoryUpdate } from '../../hooks/useAutoMemoryNotices'
 import { buildMessageMetadata, createUserMessage, createAssistantMessage } from '../../utils/aiCore/messageModel'
 import usePendingActionExecution from '../../hooks/usePendingActionExecution'
 import logger from '../../utils/logger'
@@ -299,6 +301,8 @@ const AICommandCenter = ({
     .filter(action => action.status === 'running').map(action => action.actionId)), [messages])
 
   const { runStream, cancel } = useAIStream()
+  const undoMemoryUpdate = useUndoMemoryUpdate()
+  const handleUndoMemory = useCallback((msg) => undoMemoryUpdate(conversationIdRef.current, msg), [undoMemoryUpdate])
   const { dragging, handleDragStart, restorePosition } = useDraggableFloatingPanel({
     panelRef,
     position,
@@ -924,6 +928,7 @@ const AICommandCenter = ({
             isLastAssistant={index === lastAssistantIndex && !loading}
             onRetry={handleRetry}
             onContinue={() => handleSend('继续')}
+            onUndoMemory={handleUndoMemory}
           />
         ))}
 
@@ -1192,7 +1197,7 @@ const MessageAction = ({ title, onClick, children }) => (
   </PanelIconButton>
 )
 
-const ChatBubble = ({ msg, userAvatar, executingActionIds, onExecuteAction, onDismissAction, isLastAssistant, onRetry, onContinue }) => {
+const ChatBubble = ({ msg, userAvatar, executingActionIds, onExecuteAction, onDismissAction, isLastAssistant, onRetry, onContinue, onUndoMemory }) => {
   const isUser = msg.role === 'user'
   const [copied, setCopied] = useState(false)
   const copy = async () => {
@@ -1307,6 +1312,11 @@ const ChatBubble = ({ msg, userAvatar, executingActionIds, onExecuteAction, onDi
           </ButtonBase>
         )}
       </Box>
+      )}
+      {!isUser && msg.memoryUpdates && (
+        <Box sx={{ pl: '32px', minWidth: 0 }}>
+          <MemoryUpdateNotice variant="pill" updates={msg.memoryUpdates} onUndo={() => onUndoMemory?.(msg)} />
+        </Box>
       )}
     </Box>
   )

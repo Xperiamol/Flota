@@ -27,6 +27,10 @@ const { enrichContextPackageWithMemories } = require('./memoryContext');
 const { streamRequest } = require('./stream/streamRequest');
 const { handleToolCalls, MAX_DEPTH: MAX_TOOL_DEPTH } = require('./stream/toolLoop');
 const PendingActionStore = require('./PendingActionStore');
+const { MemoryExtractor } = require('./memoryExtractor');
+
+// 本轮已经由模型显式调用过记忆工具时，不再做对话后自动提取，避免同一信息写两遍
+const MEMORY_TOOLS = new Set(['add_memory', 'update_memory']);
 
 const isContentBlockedError = (error) => /blocked|content.*blocked|machine outputted|安全|拦截|审核|风控/i.test(String(error?.message || error || ''));
 const isGatewayError = (error) => /请求失败 \((?:429|502|503|504)\)|\b(?:429|502|503|504)\b|bad gateway|gateway timeout|service unavailable|too many requests|rate limit/i.test(String(error?.message || error || ''));
@@ -59,6 +63,18 @@ class AIChatService {
     this._currentNoteGetter = null; // 由 main.js 注入
     this._pendingActions = new PendingActionStore({ mem0Service });
     this._longDocPipeline = null;
+    this._memoryExtractor = new MemoryExtractor({
+      mem0Service,
+      generate: (messages, opts) => this._generatePlainText(messages, opts),
+      logger: this.logger,
+    });
+  }
+
+  /**
+   * 对话后自动记忆：返回实际发生的记忆变更（未开启 / 无变化时为空数组）
+   */
+  processTurnMemories({ conversationId, messages, assistantText }) {
+    return this._memoryExtractor.processTurn({ conversationId, messages, assistantText });
   }
 
   setCurrentNoteGetter(fn) {
@@ -235,9 +251,13 @@ class AIChatService {
   async chatStream(messages, onChunk, options = {}) {
     let accumulatedContent = '';
     let pendingActionCreated = false;
+    let memoryToolUsed = false;
     const wrappedOnChunk = (chunk) => {
       if (chunk && chunk.type === 'content' && typeof chunk.content === 'string') {
         accumulatedContent += chunk.content;
+      }
+      if (chunk && chunk.type === 'tool_start' && MEMORY_TOOLS.has(chunk.name)) {
+        memoryToolUsed = true;
       }
       if (chunk && chunk.type === 'tool_end' && safeJsonParse(chunk.result)?.requiresConfirmation) {
         pendingActionCreated = true;
@@ -351,7 +371,7 @@ class AIChatService {
         contentLen: String(finalContent || '').length,
         pendingActionCreated,
       });
-      return { ...finalResult, fullContent: finalContent };
+      return { ...finalResult, fullContent: finalContent, memoryToolUsed };
     } catch (error) {
       if (error?.name === 'AbortError' || /aborted|取消|cancel/i.test(error?.message || '')) {
         return { success: false, cancelled: true, error: '已取消生成', fullContent: accumulatedContent };

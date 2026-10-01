@@ -9,6 +9,9 @@ const { BrowserWindow } = require('electron');
 const { registerIpcHandlers, createTryCatchHandler } = require('./helpers');
 const { getInstance: getLogger } = require('../services/LoggerService');
 
+// 只有完整对话入口做对话后自动记忆；划词面板是一次性操作，不算对话
+const AUTO_MEMORY_SCENES = new Set(['chat_panel', 'floating_panel']);
+
 const registerAIHandlers = (services, activeAIStreams) => {
   const logger = getLogger();
   registerIpcHandlers([
@@ -123,6 +126,21 @@ const registerAIHandlers = (services, activeAIStreams) => {
             durationMs: Date.now() - startedAt,
             truncated: result?.truncated,
           });
+
+          // 对话后自动记忆：不阻塞本次回复，有变更时单独通知界面（带 requestId 便于挂到对应消息上）
+          if (result?.success && !result.memoryToolUsed && AUTO_MEMORY_SCENES.has(options?.scene)) {
+            services.aiChatService.processTurnMemories({
+              conversationId,
+              messages,
+              assistantText: result.fullContent,
+            }).then((changes) => {
+              if (changes.length > 0 && win && !win.isDestroyed()) {
+                win.webContents.send('mem0:auto-updated', { requestId, conversationId, changes });
+              }
+            }).catch((error) => {
+              logger.warn('AIChatService', 'auto memory failed', { requestId, error: error.message });
+            });
+          }
           return { ...result, requestId };
         } catch (error) {
           if (abortController.signal.aborted) {
