@@ -2,6 +2,16 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [4.2.0] - 2026-10-01
+
+### Changed / 更新内容
+- chore(sync): shorter wording in the WebDAV sync settings
+- feat(settings): redesigned memory page - activity heatmap, memory breakdown, editable memory list, and a downloadable multilingual model for much better Chinese matching
+- feat(memory): after each chat Flota remembers your preferences, background and recent plans on its own, with a notice under the reply and one-click undo
+- fix(memory): memory works again when the image library fails to load, Chinese facts like "likes coffee" and "likes running" are no longer merged into one, note and todo memories follow edits and deletions, and chat now draws on your preferences and recent context
+- feat(sync): self-hosted WebDAV servers work as well as Nutstore - pick the server in setup, switch server or account from settings, and syncing to your own server is no longer slowed by Nutstore's rate limits
+
+
 ## [4.1.3] - 2026-09-30
 
 ### Changed / 更新内容
