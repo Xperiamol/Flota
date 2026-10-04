@@ -31,6 +31,7 @@ const WebDAVClient = require('./webdavClient');
 const StorageAdapter = require('./StorageAdapter');
 const WidgetSync = require('./WidgetSync');
 const { getInstance: getDeviceIdManager } = require('../../utils/DeviceIdManager');
+const { collectReferencedImageNames, isImageReferenced } = require('../imageReferences');
 
 /**
  * 同步引擎类
@@ -880,6 +881,7 @@ class SyncEngine extends EventEmitter {
 
     // 3. 扫描本地实时数据（根据启用的类别过滤）
     const enabledCategories = this.config.syncCategories || [];
+    this._purgedNoteIds = enabledCategories.includes('notes') ? this.storage.getPurgedNoteIds() : new Set();
     const localNotes = enabledCategories.includes('notes') ? await this.storage.getAllNotes(true) : {};
     const localTodos = enabledCategories.includes('todos') ? await this.storage.getAllTodos(true) : {};
     // 同时拿到 settings 的逐 key 时间戳，便于上传时使用 kv-ts 新格式
@@ -895,6 +897,7 @@ class SyncEngine extends EventEmitter {
 
     // 5. 三向合并：remoteManifest vs cachedManifest vs localManifest
     const tasks = await this.computeSyncTasks(remoteManifest, cachedManifest, localManifest, {
+      purgedNoteIds: this._purgedNoteIds,
       localNotes,
       localTodos,
       localSettings,
@@ -987,6 +990,20 @@ class SyncEngine extends EventEmitter {
         this.log(`[Decide] ${fileId}: 仅远程存在且已删除，跳过`);
         return { operation: 'skip', fileId, remotePath };
       }
+      // 本机永久删除过（清空回收站/自动清理，有删除记录为证），且之后云端没被别的设备改过：把删除推到云端。
+      // 以前当成"别的设备新建"下载回来，删掉的笔记复活。
+      // 只认删除记录，不能用"本地没有而同步缓存里有"推断：下载失败的笔记也是这种状态，会被误删到所有设备
+      if (localData?.purgedNoteIds?.has(fileId)) {
+        if (!cachedEntry || cachedEntry.h === remoteEntry.h) {
+          this.log(`[Decide] ${fileId}: 本机已永久删除且云端未改动 → upload-delete`);
+          return {
+            operation: 'upload-delete', fileId, remotePath, purged: true,
+            tombstone: { ...remoteEntry, d: 1, t: Math.max(Date.now(), (remoteEntry.t || 0) + 1), dev: this.deviceId },
+          };
+        }
+        this.log(`[Decide] ${fileId}: 本机永久删除后另一台设备又改了它 → 下载保留对方的修改`);
+        return { operation: 'download', fileId, remotePath, remoteEntry, purged: true };
+      }
       // 下载
       this.log(`[Decide] ${fileId}: 仅远程存在，下载`);
       return {
@@ -1043,7 +1060,11 @@ class SyncEngine extends EventEmitter {
       // 情况 a：本地从未同步过 (cachedEntry 不存在) 或缓存也是已删除 → 本地从未"恢复"过，应执行删除
       // 情况 b：本地缓存为未删除，但远端 t > 缓存 t → 远端是新的删除，应同步到本地
       // 情况 c：本地缓存为未删除，但本端 localEntry.t > remoteEntry.t → 本地有新修改，恢复本地（推送恢复）
-      if (!cachedEntry || cachedDeleted || remoteEntry.t >= localEntry.t) {
+      // 情况 d：删除早已同步（缓存也是已删除），本地之后又被恢复（localEntry.t 晚于缓存和远端）→ 推送恢复。
+      //        以前缓存已删除一律删本地，从回收站恢复的笔记下次同步又被删掉。手机端用同一规则。
+      const restoredLocally = cachedEntry && localEntry.t > remoteEntry.t &&
+        (!cachedDeleted || localEntry.t > cachedEntry.t);
+      if (!restoredLocally) {
         this.log(`[Delete Sync] 远程已删除，同步删除本地: ${fileId}`);
         return { operation: 'delete-local', fileId, remotePath, remoteEntry };
       } else {
@@ -1133,11 +1154,7 @@ class SyncEngine extends EventEmitter {
       // 注意：保持 hash 协议不变，避免与手机端旧客户端不兼容；meta 同步走"以本地为准上传"策略。
       const isNoteFile = fileId !== 'global_todos' && fileId !== 'global_settings';
       if (isNoteFile) {
-        const metaSig = (e) => {
-          if (!e || !e.meta) return '';
-          const m = e.meta;
-          return [m.title || '', m.tags || '', m.category || '', m.is_pinned || 0, m.is_favorite || 0, m.note_type || ''].join('|');
-        };
+        const metaSig = (e) => this.noteMetaSignature(e);
         const localMetaSig = metaSig(localEntry);
         const remoteMetaSig = metaSig(remoteEntry);
         const cachedMetaSig = metaSig(cachedEntry);
@@ -1203,7 +1220,31 @@ class SyncEngine extends EventEmitter {
       }
     }
 
-    // ── global_settings 及笔记：原有逻辑保留 ──
+    // ── 笔记：只有一端相对上次同步改了内容 → 以改动的那端为准，不看时间戳 ──
+    // 以前直接按时间戳仲裁：本机只是"碰过"笔记（无改动的自动保存、置顶、改标签都会刷新 updated_at）
+    // 或本机时钟偏快时，本机旧内容会盖掉另一台设备的新编辑（"同步把笔记改回去了"）。手机端一直是这套规则。
+    if (fileId !== 'global_settings' && cachedEntry) {
+      if (remoteChanged && !localChanged) {
+        // 本机只改了标题/标签/置顶这类元数据：下载正文但保留本机元数据，下一轮再把元数据推上去
+        const keepLocalMeta = this.noteMetaSignature(localEntry) !== this.noteMetaSignature(cachedEntry)
+          && this.noteMetaSignature(remoteEntry) === this.noteMetaSignature(cachedEntry);
+        this.log(`[Decide] ${fileId}: 只有远端改了内容 → download${keepLocalMeta ? '（保留本地元数据）' : ''}`);
+        return { operation: 'download', fileId, remotePath, remoteEntry, ...(keepLocalMeta ? { keepLocalMeta: true } : {}) };
+      }
+      if (localChanged && !remoteChanged) {
+        // 反过来：另一台只改了标题/置顶等元数据 → 上传本机正文时沿用远端元数据
+        const adoptRemoteMeta = this.noteMetaSignature(remoteEntry) !== this.noteMetaSignature(cachedEntry)
+          && this.noteMetaSignature(localEntry) === this.noteMetaSignature(cachedEntry);
+        this.log(`[Decide] ${fileId}: 只有本地改了内容 → upload${adoptRemoteMeta ? '（沿用远端元数据）' : ''}`);
+        return {
+          operation: 'upload', fileId, remotePath, localEntry,
+          data: this.getLocalData(fileId, localData),
+          ...(adoptRemoteMeta ? { adoptRemoteMeta: remoteEntry.meta } : {}),
+        };
+      }
+    }
+
+    // ── global_settings 及双端都改了的笔记：冲突处理 / 时间戳仲裁 ──
     const isGlobalData = fileId === 'global_settings';
 
     // 首次同步（无 cachedEntry）一律按 LWW 自动仲裁，不弹冲突 dialog —— 否则 N 个文件会狂弹 N 次
@@ -1292,6 +1333,13 @@ class SyncEngine extends EventEmitter {
         data: this.getLocalData(fileId, localData),
       };
     }
+  }
+
+  /** 笔记元数据签名（标题/标签/分类/置顶/收藏/类型），用于判断元数据是哪一端改的 */
+  noteMetaSignature(entry) {
+    if (!entry || !entry.meta) return '';
+    const m = entry.meta;
+    return [m.title || '', m.tags || '', m.category || '', m.is_pinned || 0, m.is_favorite || 0, m.note_type || ''].join('|');
   }
 
   /**
@@ -1468,6 +1516,19 @@ class SyncEngine extends EventEmitter {
         }
 
         await this.client.uploadText(task.remotePath, note.content);
+
+        if (task.adoptRemoteMeta) {
+          // 本地笔记换成远端的元数据；task.localEntry 就是 commit 要写进 manifest 的条目
+          const remoteMeta = task.adoptRemoteMeta;
+          await this.storage.updateNoteMeta(task.fileId, {
+            title: typeof remoteMeta.title === 'string' ? remoteMeta.title : note.title,
+            tags: remoteMeta.tags || '',
+            category: remoteMeta.category || '',
+            is_pinned: remoteMeta.is_pinned || 0,
+            is_favorite: remoteMeta.is_favorite || 0,
+          });
+          task.localEntry.meta = { ...task.localEntry.meta, ...remoteMeta };
+        }
 
         const enabledCategories = this.config.syncCategories || [];
         if (enabledCategories.includes('images')) {
@@ -1746,6 +1807,19 @@ class SyncEngine extends EventEmitter {
         created_at: task.remoteEntry.c || task.remoteEntry.t || null,
         updated_at: task.remoteEntry.t || task.remoteEntry.c || null,
       };
+
+      if (task.keepLocalMeta) {
+        const localNote = await this.storage.getNoteById(task.fileId, true);
+        if (localNote) {
+          Object.assign(noteData, {
+            title: localNote.title,
+            tags: localNote.tags,
+            category: localNote.category,
+            is_pinned: localNote.is_pinned,
+            is_favorite: localNote.is_favorite,
+          });
+        }
+      }
 
       this.log(`[Download] 笔记元数据: created_at=${noteData.created_at}, title=${noteData.title}`);
       await this.storage.upsertNote(noteData, true);
@@ -2167,6 +2241,7 @@ class SyncEngine extends EventEmitter {
    */
   async commit(localManifest, remoteManifest, tasks, executeResult = null) {
     this.log('[Commit] 生成新 manifest...');
+    const previousCache = this.loadLocalManifest();
 
     const successfulTaskKeys = new Set(executeResult?.successfulTaskKeys || []);
     const danglingFileIds = new Set(executeResult?.danglingFileIds || []);
@@ -2174,6 +2249,9 @@ class SyncEngine extends EventEmitter {
     const setUploadedFileEntry = (task) => {
       if (localManifest.files[task.fileId]) {
         newFiles[task.fileId] = localManifest.files[task.fileId];
+      } else if (task.tombstone) {
+        // 本机已永久删除：写入删除标记，其他设备据此删除
+        newFiles[task.fileId] = task.tombstone;
       }
     };
 
@@ -2331,7 +2409,26 @@ class SyncEngine extends EventEmitter {
 
     // 上传成功，写入正式 cached（去掉 _pendingCommit）
     delete newManifest._pendingCommit;
-    this.saveLocalManifest(newManifest);
+    // 本机缓存要反映"本机实际同步到的版本"：没下载成功的条目保留上一次的缓存，
+    // 否则下次会把本机旧内容误判为本地修改，推上去盖掉另一台设备的新版本
+    const localCache = { ...newManifest, files: { ...newManifest.files } };
+    for (const task of tasks || []) {
+      if ((task.operation === 'download' || task.operation === 'merge-todos') && !isSuccessfulTask(task)) {
+        if (previousCache?.files?.[task.fileId]) localCache.files[task.fileId] = previousCache.files[task.fileId];
+        else delete localCache.files[task.fileId];
+      }
+    }
+    this.saveLocalManifest(localCache);
+
+    // 永久删除记录：删除已推到云端（或云端已经没有/已是删除状态）的不再需要
+    try {
+      const purged = this._purgedNoteIds || new Set();
+      const settled = [...purged].filter((id) => !newManifest.files[id] || newManifest.files[id].d === 1
+        || (tasks || []).some((task) => task.fileId === id && task.purged && isSuccessfulTask(task)));
+      if (settled.length) this.storage.clearPurgedNoteIds(settled);
+    } catch (e) {
+      this.logError('[Commit] 清理永久删除记录失败', e);
+    }
 
     // 孤儿图片清理：在每次 commit 之后异步触发（不阻塞同步主流程）
     // 仅当本地 manifest 与远端都同意"某图片不再被任何 active 笔记引用"时清理
@@ -2350,8 +2447,7 @@ class SyncEngine extends EventEmitter {
     try {
       // 仅当启用 images 类别时才清理云端
       const enabledCategories = this.config.syncCategories || [];
-      const allNotes = await this.storage.getAllNotes(false); // 仅 active
-      const allNotesIncludingDeleted = await this.storage.getAllNotes(true);
+            const allNotesIncludingDeleted = await this.storage.getAllNotes(true);
 
       // 安全防御 #J：如果本地笔记数量异常少（疑似数据被意外清空），跳过 GC，
       // 防止"本地清空 → 云端图片全删"的灾难性副作用。
@@ -2364,13 +2460,13 @@ class SyncEngine extends EventEmitter {
         this.log(`[GC Images] 本地笔记异常少 (local=${localTotal}, manifest=${manifestNotesCount})，跳过云端 GC 防止误删`);
       }
 
-      // 收集所有引用的图片相对路径
-      const referencedRefs = new Set();
-      for (const note of Object.values(allNotes)) {
-        if (!note.content) continue;
-        const refs = this.extractImageReferences(note.content, note.note_type || 'markdown');
-        refs.forEach((r) => referencedRefs.add(r));
-      }
+      // 收集被引用的图片：回收站里的笔记也算（恢复后还要用），按文件名在正文里查找，
+      // 不靠图片语法正则——`![](<images/x.png>)`、带标题、%20 编码等写法以前认不出，正在用的图片被当孤儿删掉
+      const referenced = collectReferencedImageNames(
+        Object.values(allNotesIncludingDeleted || {}).map((note) => note.content)
+      );
+      // 只开了图片同步、没开笔记同步时，本机看不到其他设备的笔记，不能替它们判断云端图片没人用
+      const canDeleteCloud = !skipCloudGc && enabledCategories.includes('images') && enabledCategories.includes('notes');
 
       // 本地 images 目录
       const localImagesDir = path.join(getUserDataPath(), 'images');
@@ -2388,7 +2484,7 @@ class SyncEngine extends EventEmitter {
           } else {
             const rel = path.relative(baseDir, full).replace(/\\/g, '/');
             const normalized = `images/${rel}`;
-            if (referencedRefs.has(normalized)) continue;
+            if (isImageReferenced(ent.name, referenced)) continue;
             // 跳过画布预览图（由画布自身管理）
             if (normalized.startsWith('images/whiteboard-preview/')) continue;
             try {
@@ -2397,7 +2493,7 @@ class SyncEngine extends EventEmitter {
               fs.unlinkSync(full);
               this.log(`[GC Images] 删除本地孤儿图片: ${normalized}`);
               // 同步删除云端（除非触发安全防御）
-              if (!skipCloudGc && enabledCategories.includes('images')) {
+              if (canDeleteCloud) {
                 this.client.delete(this.config.rootPath + normalized).catch(() => {});
               }
             } catch (_) { /* 忽略单个失败 */ }

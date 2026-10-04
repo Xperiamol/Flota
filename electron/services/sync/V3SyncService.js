@@ -991,7 +991,8 @@ class V3SyncService extends EventEmitter {
       const localResult = await cleanupService.cleanupImages(files);
 
       // 3. 删除云端图片（如果同步已启用）
-      if (this.engine && this.isEnabled) {
+      // 没开笔记同步时本机看不到其他设备的笔记，无法确认云端图片没人用，只清本地
+      if (this.engine && this.isEnabled && (this.engine.config.syncCategories || []).includes('notes')) {
         console.log('[V3图片清理] 同步已启用，开始删除云端图片');
         for (const file of files) {
           const remotePath = `${this.config.rootPath}${file.relativePath}`;

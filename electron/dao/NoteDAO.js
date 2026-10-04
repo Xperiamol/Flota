@@ -325,10 +325,38 @@ class NoteDAO {
    */
   hardDelete(id, options = {}) {
     const db = this.getDB();
+    // 记下被永久删除的 sync_id：同步据此把删除推到云端，否则会把云端那份当成别的设备新建的笔记下载回来。
+    // 不能靠"本地没有、同步缓存里有"来推断——下载失败的笔记也是这种状态，会被误删到所有设备
+    const row = db.prepare('SELECT sync_id FROM notes WHERE id = ?').get(id);
+    if (row?.sync_id) NoteDAO.recordPurge(db, row.sync_id);
     const stmt = db.prepare('DELETE FROM notes WHERE id = ?');
     const result = stmt.run(id).changes > 0;
     if (result && !options.skipTagSync) this.syncTagUsage();
     return result;
+  }
+
+  static ensurePurgeTable(db) {
+    db.exec('CREATE TABLE IF NOT EXISTS note_purges (sync_id TEXT PRIMARY KEY, purged_at INTEGER NOT NULL)');
+  }
+
+  static recordPurge(db, syncId) {
+    NoteDAO.ensurePurgeTable(db);
+    db.prepare('INSERT OR REPLACE INTO note_purges (sync_id, purged_at) VALUES (?, ?)').run(String(syncId), Date.now());
+  }
+
+  /** 本机永久删除过、删除还没同步出去的笔记 sync_id */
+  getPurgedSyncIds() {
+    const db = this.getDB();
+    NoteDAO.ensurePurgeTable(db);
+    return new Set(db.prepare('SELECT sync_id FROM note_purges').all().map((row) => row.sync_id));
+  }
+
+  clearPurges(syncIds) {
+    if (!syncIds?.length) return;
+    const db = this.getDB();
+    NoteDAO.ensurePurgeTable(db);
+    const del = db.prepare('DELETE FROM note_purges WHERE sync_id = ?');
+    db.transaction(() => { for (const id of syncIds) del.run(String(id)); })();
   }
 
   /** 回收站里所有笔记的 id */

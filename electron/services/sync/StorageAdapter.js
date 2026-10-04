@@ -28,6 +28,22 @@ const DEVICE_LOCAL_SETTING_KEYS = new Set([
   'caldav_password',
   'google_calendar_access_token',
   'google_calendar_refresh_token',
+  // 只对本机有意义：代理地址同步到没开代理的设备后，那台设备连同步本身都走不通（axios 读 HTTPS_PROXY），
+  // 也就收不到改回来的设置
+  'proxy_enabled',
+  'proxy_protocol',
+  'proxy_host',
+  'proxy_port',
+  'proxy_username',
+  'window_x',
+  'window_y',
+  'window_width',
+  'window_height',
+  'autolaunch',
+  'mcpenabled',
+  'trash_retention_since',
+  'google_calendar_expiry_date',
+  'google_calendar_last_sync',
 ]);
 
 const isDeviceLocalSettingKey = (key) => {
@@ -217,6 +233,28 @@ class StorageAdapter {
         { skipChangeLog }
       );
     }
+  }
+
+  /** 本机永久删除过的笔记 sync_id（删除还没推到云端） */
+  getPurgedNoteIds() {
+    return this.noteDAO.getPurgedSyncIds();
+  }
+
+  clearPurgedNoteIds(syncIds) {
+    this.noteDAO.clearPurges(syncIds);
+  }
+
+  /**
+   * 只更新笔记的元数据（标题、标签、置顶等），不改正文和 updated_at
+   *
+   * @param {string} syncId - sync_id
+   * @param {{title?: string, tags?: string, category?: string, is_pinned?: number, is_favorite?: number}} meta
+   * @returns {Promise<void>}
+   */
+  async updateNoteMeta(syncId, meta) {
+    const existing = await this.getNoteById(syncId, true);
+    if (!existing) return;
+    await this.noteDAO.update(existing.db_id || existing.id, meta, { skipChangeLog: true });
   }
 
   /**

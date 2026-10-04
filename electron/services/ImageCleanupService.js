@@ -7,6 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const DatabaseManager = require('../dao/DatabaseManager');
+const { collectReferencedImageNames, isImageReferenced } = require('./imageReferences');
 
 // 尝试加载 Electron，如果失败则使用 null（独立运行模式）
 let app = null;
@@ -120,58 +121,9 @@ class ImageCleanupService {
     if (!this.db) {
       this.initialize();
     }
-
-    const referenced = new Set();
-
-    // 查询所有笔记内容（包括已删除的笔记，因为可能需要恢复）
-    const notes = this.db.prepare('SELECT content, note_type FROM notes').all();
-
-    // 图片引用的正则表达式（用于 Markdown 笔记）
-    // 匹配：![](images/xxx.png) 或 ![](images/whiteboard/xxx.png) 或 app://images/xxx.png
-    const imageRegex = /(?:!\[.*?\]\(|src=["'])(?:app:\/\/)?images\/(?:whiteboard\/)?([^")]+)/g;
-
-    for (const note of notes) {
-      if (!note.content) continue;
-
-      // 处理画布笔记
-      if (note.note_type === 'whiteboard') {
-        try {
-          const whiteboardData = JSON.parse(note.content);
-
-          // 提取 fileMap 中的图片文件名
-          if (whiteboardData.fileMap && typeof whiteboardData.fileMap === 'object') {
-            Object.values(whiteboardData.fileMap).forEach(fileInfo => {
-              if (!fileInfo) return;
-
-              // fileMap 的值可能是对象（包含 fileName 字段）或直接是字符串
-              let filename;
-              if (typeof fileInfo === 'string') {
-                filename = fileInfo;
-              } else if (typeof fileInfo === 'object' && fileInfo.fileName) {
-                filename = fileInfo.fileName;
-              }
-
-              if (filename && typeof filename === 'string') {
-                referenced.add(filename);
-              }
-            });
-          }
-        } catch (error) {
-          console.error('[ImageCleanup] 解析画布笔记失败:', error);
-          // 继续处理其他笔记
-        }
-      } else {
-        // 处理 Markdown 笔记
-        let match;
-        while ((match = imageRegex.exec(note.content)) !== null) {
-          const imageName = match[1];
-          referenced.add(imageName);
-        }
-      }
-    }
-
-    console.log(`[ImageCleanup] 找到 ${referenced.size} 个被引用的图片`);
-    return referenced;
+    // 含回收站里的笔记；按文件名在正文里查找，不依赖图片语法（见 imageReferences.js）
+    const notes = this.db.prepare('SELECT content FROM notes').all();
+    return collectReferencedImageNames(notes.map((note) => note.content));
   }
 
   /**
@@ -195,7 +147,7 @@ class ImageCleanupService {
 
     const unusedImages = allImages.filter(img => {
       // 检查是否被引用
-      if (referencedImages.has(img.name)) {
+      if (isImageReferenced(img.name, referencedImages)) {
         return false;
       }
 
