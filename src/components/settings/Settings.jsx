@@ -1855,7 +1855,7 @@ const Settings = () => {
                                 onClick={async () => {
                                     const res = await window.electronAPI?.backup?.restore();
                                     if (res?.success) {
-                                        showSnackbar(`恢复成功：${res.data.restoredItems.join('、')}，重启后生效`);
+                                        showSnackbar(`恢复成功：${res.data.restoredItems.join('、')}。原数据已另存，应用即将重启`);
                                     } else if (res?.error && res.error !== '用户取消') {
                                         showSnackbar(`恢复失败：${res.error}`);
                                     }

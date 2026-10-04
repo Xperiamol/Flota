@@ -1,6 +1,7 @@
 const BaseExporter = require('./BaseExporter');
 const path = require('path');
 const fs = require('fs').promises;
+const { existsSync } = require('fs');
 
 // 获取用户数据路径
 const getUserDataPath = () => {
@@ -221,8 +222,13 @@ class ObsidianExporter extends BaseExporter {
       }
       
       // 保存为 .excalidraw 文件
-      const excalidrawFileName = `${this.sanitizeFileName(note.title || `whiteboard-${note.id}`)}.excalidraw`;
+      const excalidrawBase = this.sanitizeFileName(note.title || `whiteboard-${note.id}`);
+      let excalidrawFileName = `${excalidrawBase}.excalidraw`;
+      for (let counter = 1; this.usedFileNames.has(path.join(attachmentPath, excalidrawFileName)) || existsSync(path.join(attachmentPath, excalidrawFileName)); counter++) {
+        excalidrawFileName = `${excalidrawBase}-${counter}.excalidraw`;
+      }
       const excalidrawPath = path.join(attachmentPath, excalidrawFileName);
+      this.usedFileNames.add(excalidrawPath);
       
       // Excalidraw 格式
       const excalidrawContent = {
@@ -305,7 +311,8 @@ class ObsidianExporter extends BaseExporter {
     let counter = 1;
     let fullPath = path.join(dirPath, `${fileName}.md`);
     
-    while (this.usedFileNames.has(fullPath)) {
+    // 磁盘上已有的同名文件也要避开：导出到已有的 Obsidian 库时，以前会直接覆盖库里的笔记
+    while (this.usedFileNames.has(fullPath) || existsSync(fullPath)) {
       fileName = `${baseFileName}-${counter}`;
       fullPath = path.join(dirPath, `${fileName}.md`);
       counter++;
@@ -588,6 +595,8 @@ class ObsidianExporter extends BaseExporter {
   async createObsidianConfig(exportPath) {
     try {
       const obsidianPath = path.join(exportPath, '.obsidian');
+      // 导出到已有的库：不碰用户自己的 Obsidian 配置
+      if (existsSync(obsidianPath)) return;
       await this.createExportDirectory(obsidianPath);
       
       // 创建基本配置文件
