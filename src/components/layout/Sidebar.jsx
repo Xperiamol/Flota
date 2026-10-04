@@ -535,15 +535,22 @@ const Sidebar = () => {
         }}
       />
 
-      {/* 菜单项 + 最近笔记 */}
+      {/* 菜单项 + 最近笔记 — 图标放不下时整列纵向滚动（隐藏滚动条），设置按钮始终固定在底部 */}
       <Box
         sx={{
           display: 'flex',
           flexDirection: 'column',
+          alignItems: 'center',
           gap: '2px',
           flex: 1,
           minHeight: 0,
-          overflow: 'visible',
+          width: '100%',
+          // 上下留 2px，避免拖拽插入线 / focus 描边被滚动容器裁掉
+          paddingY: '2px',
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          scrollbarWidth: 'none',
+          '&::-webkit-scrollbar': { display: 'none' },
         }}
       >
         {orderedMenuItems.map((item) => (

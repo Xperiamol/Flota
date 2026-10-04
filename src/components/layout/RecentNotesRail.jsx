@@ -111,8 +111,9 @@ const RecentNotesRail = () => {
   return (
     <Box
       sx={{
-        flex: 1,
-        minHeight: 0,
+        flex: '1 1 0',
+        // 空间足够时填满剩余高度、内部滚动；导航图标太多时至少露出前 3 条，外层侧边栏整体滚动
+        minHeight: `${17 + Math.min(items.length, 3) * 38}px`,
         overflowY: 'auto',
         overflowX: 'visible',
         scrollbarWidth: 'none',
