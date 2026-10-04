@@ -9,6 +9,7 @@ import HardBreak from '@tiptap/extension-hard-break'
 import Placeholder from '@tiptap/extension-placeholder'
 import Highlight from '@tiptap/extension-highlight'
 import Underline from '@tiptap/extension-underline'
+import Strike from '@tiptap/extension-strike'
 import Link from '@tiptap/extension-link'
 import { Image } from '@tiptap/extension-image'
 import TaskList from '@tiptap/extension-task-list'
@@ -104,14 +105,22 @@ const rgbToHex = (c) => {
 const preprocessMarkdown = (md) => {
   if (!md) return md
   return transformOutsideMath(prepareMarkdownForDisplay(md), text => text
-    // 带颜色高亮：限制不跨行
-    .replace(/==(?:\{([^}\n]+)\})([^\n=]+?)==/g, (_, color, text) =>
+    // 带颜色高亮：限制不跨行。内部允许单个 =：高亮里有彩色文字时是 <span style="color:…">，
+    // 以前遇到 = 就匹配失败，重开后高亮丢失、正文里露出 ==
+    .replace(/==(?:\{([^}\n]+)\})((?:[^\n=]|=(?!=))+?)==/g, (_, color, text) =>
       `<mark data-color="${color}">${text}</mark>`)
     // 普通高亮：限制不跨行
-    .replace(/==([^\n=]+?)==/g, (_, text) => `<mark>${text}</mark>`)
+    .replace(/==((?:[^\n=]|=(?!=))+?)==/g, (_, text) => `<mark>${text}</mark>`)
     // 下划线：限制不跨行
     .replace(/\+\+([^\n+]+?)\+\+/g, (_, text) => `<u>${text}</u>`))
 }
+
+// 序列化器把函数当成字符串拼接时留下的源码，如 `function () { [native code] }`（转义后为 `\[native code\]`）
+const NATIVE_CODE_GARBAGE = /function\s*\w*\s*\([^)]*\)\s*\{\s*\\?\[native code\\?\]\s*\}/
+const hasNativeCodeGarbage = (text) => typeof text === 'string' && NATIVE_CODE_GARBAGE.test(text)
+// 文档里本来就写着这段文字（比如 JS 笔记）不算；只有正文里没有、序列化后才冒出来的才是坏输出
+const isCorruptSerialization = (editor, markdown) => hasNativeCodeGarbage(markdown)
+  && !String(editor?.state?.doc?.textContent || '').includes('native code')
 
 // 序列化后处理：prosemirror-markdown 会把 [!type] 转义为 \[!type\]，需要还原
 const postprocessMarkdown = (md) => {
@@ -168,7 +177,12 @@ const LineBreak = HardBreak.extend({
 })
 
 // ─── Highlight / Underline 扩展序列化 ─────────────────────────────────────────
+// 高亮、下划线、文字颜色的优先级高于粗体/斜体/删除线（默认 100）：同一处同时开始时它们在外层，
+// 写成 ==**重要**事情== 而不是 **==重要==**==事情==；后者会被 tiptap-markdown 挪动 ** 位置，重开后格式丢失
+const OUTER_MARK_PRIORITY = 101
+
 const CustomHighlight = Highlight.extend({
+  priority: OUTER_MARK_PRIORITY,
   addStorage() {
     return {
       markdown: {
@@ -178,6 +192,8 @@ const CustomHighlight = Highlight.extend({
             return c ? `=={${rgbToHex(c)}}` : '=='
           },
           close() { return '==' },
+          // 可与粗体等交叉开合（配合 OUTER_MARK_PRIORITY），否则高亮被拆成两段
+          mixable: true,
         },
         parse: {},
       },
@@ -185,12 +201,66 @@ const CustomHighlight = Highlight.extend({
   },
 })
 
-const CustomUnderline = Underline.extend({
+// 删除线和粗体、斜体一样可交叉开合；tiptap-markdown 默认不可，删除线里再加下划线等格式时被拆成两段，
+// 拆开处的空格落在 ~~ 里侧（`~~删除 ~~`），重开后不再是删除线、露出 ~~
+const CustomStrike = Strike.extend({
   addStorage() {
     return {
       markdown: {
-        serialize: { open: '++', close: '++' },
+        serialize: { open: '~~', close: '~~', mixable: true, expelEnclosingWhitespace: true },
         parse: {},
+      },
+    }
+  },
+})
+
+const CustomUnderline = Underline.extend({
+  priority: OUTER_MARK_PRIORITY,
+  addStorage() {
+    return {
+      markdown: {
+        serialize: { open: '++', close: '++', mixable: true },
+        parse: {},
+      },
+    }
+  },
+})
+
+// 普通列表和任务列表之间只隔一个空行时，Markdown 把它们读成同一个列表（`- a\n\n- [ ] b`）。
+// tiptap-markdown 把整个列表标成 taskList，普通项装不进去，于是在笔记开头凭空多出一个空的 `- [ ]`，
+// 每保存一次多一个，重开后还显示成字面的 "[ ]"。解析时把混合列表拆成连续的普通段和任务段。
+const MixedTaskListSplit = Extension.create({
+  name: 'mixedTaskListSplit',
+  addStorage() {
+    return {
+      markdown: {
+        parse: {
+          updateDOM(element) {
+            element.querySelectorAll('.contains-task-list').forEach((list) => {
+              const items = [...list.children]
+              const isTask = (item) => item.classList.contains('task-list-item')
+              if (items.every(isTask) || !items.some(isTask)) return
+              const parts = []
+              let current = null
+              let currentIsTask = null
+              items.forEach((item) => {
+                if (!current || isTask(item) !== currentIsTask) {
+                  currentIsTask = isTask(item)
+                  current = document.createElement(list.tagName.toLowerCase())
+                  if (currentIsTask) {
+                    current.className = 'contains-task-list'
+                    current.setAttribute('data-type', 'taskList')
+                  } else if (list.getAttribute('start')) {
+                    current.setAttribute('start', list.getAttribute('start'))
+                  }
+                  parts.push(current)
+                }
+                current.appendChild(item)
+              })
+              list.replaceWith(...parts)
+            })
+          },
+        },
       },
     }
   },
@@ -234,6 +304,7 @@ const EditorTabIndent = Extension.create({
 
 const TextColor = Mark.create({
   name: 'textColor',
+  priority: OUTER_MARK_PRIORITY,
   addAttributes() {
     return {
       color: {
@@ -2559,6 +2630,13 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
     if (!pendingEditor || pendingEditor.isDestroyed) return null
 
     const markdown = postprocessMarkdown(pendingEditor.storage.markdown.getMarkdown())
+    // 兜底：序列化器把函数源码拼进正文（"function () { [native code] }"）时绝不保存，
+    // 否则一次按键就把整篇笔记写坏，再经云同步带到所有设备
+    if (isCorruptSerialization(pendingEditor, markdown)) {
+      console.error('[WYSIWYGEditor] 序列化结果含函数源码，已拒绝保存', markdown.slice(0, 500))
+      notifyError('编辑器保存出错，已阻止写入，原内容未改动。请把这篇笔记的内容反馈给我们')
+      return null
+    }
     lastExternalContentRef.current = markdown
     pendingHandler?.(markdown)
     return markdown
@@ -2640,6 +2718,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
         codeBlock: false, // 由 CodeBlockLowlight 接管
         link: false,
         underline: false,
+        strike: false, // 由 CustomStrike 接管
         text: false,
         hardBreak: false, // 由 LineBreak 接管（保存成普通换行）
         // 行内代码关闭拼写检查（避免代码标识符被划红线）
@@ -2650,6 +2729,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       CustomHighlight.configure({ multicolor: true }),
       TextColor,
       CustomUnderline,
+      CustomStrike,
       EditorTabIndent,
       AIAssistSelection,
       InlineMath,
@@ -2672,6 +2752,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       CustomImage.configure({ inline: false, allowBase64: true, noteId }),
       TaskList,
       TaskItem.configure({ nested: true }),
+      MixedTaskListSplit, // 必须排在 TaskList 之后：它会先把整个混合列表标成 taskList
       Table.configure({ resizable: true }),
       TableRow,
       TableHeader,
@@ -3139,6 +3220,12 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
         pendingMarkdownHandlerRef.current = null
       }
       const markdown = postprocessMarkdown(editor?.storage?.markdown?.getMarkdown?.() ?? '')
+      // 与 emitPendingMarkdown 同一道兜底：序列化坏了就交回上一次正常的内容，不让调用方存进去
+      if (isCorruptSerialization(editor, markdown)) {
+        console.error('[WYSIWYGEditor] 序列化结果含函数源码，已拒绝保存', markdown.slice(0, 500))
+        notifyError('编辑器保存出错，已阻止写入，原内容未改动。请把这篇笔记的内容反馈给我们')
+        return lastExternalContentRef.current
+      }
       lastExternalContentRef.current = markdown
       return markdown
     },

@@ -36,6 +36,12 @@ let server, browser, socket, profile
   socket.on('message', raw => {
     const message = JSON.parse(raw)
     if (message.id) { const promise = pending.get(message.id); pending.delete(message.id); if (message.error) promise?.reject(new Error(message.error.message)); else promise?.resolve(message.result) }
+    if (message.method === 'Runtime.consoleAPICalled' && message.params.args?.[0]?.value === 'DEBUG') console.log(message.params.args.map(arg => arg.value).join(' '))
+    // 页面弹出原生对话框会让所有 evaluate 卡住：记录并关掉
+    if (message.method === 'Page.javascriptDialogOpening') {
+      errors.push(`Unexpected dialog: ${message.params.type} ${message.params.message}`)
+      socket.send(JSON.stringify({ id: ++sequence, method: 'Page.handleJavaScriptDialog', params: { accept: false } }))
+    }
     if (message.method === 'Runtime.exceptionThrown') errors.push(message.params.exceptionDetails.exception?.description || message.params.exceptionDetails.text)
   })
   const call = (method, params = {}) => new Promise((resolve, reject) => { const id = ++sequence; pending.set(id, { resolve, reject }); socket.send(JSON.stringify({ id, method, params })) })
@@ -57,8 +63,15 @@ let server, browser, socket, profile
   await fs.mkdir(output, { recursive: true })
   const screenshot = async name => { const { data } = await call('Page.captureScreenshot', { format: 'png' }); await fs.writeFile(path.join(output, name), Buffer.from(data, 'base64')) }
   console.log('Running editor browser regressions...')
-  await evaluate('window.runEditorTests()')
+  if (process.env.EDITOR_FILTER) await evaluate(`window.testFilter = ${JSON.stringify(process.env.EDITOR_FILTER)}`)
+  if (process.env.EDITOR_DEBUG) await evaluate(`window.debugSources = ${process.env.EDITOR_DEBUG}`)
+  const noteResults = await evaluate('window.runEditorTests()')
   await screenshot('notes.png')
+  // 笔记编辑器结果先打印：后面白板部分出错时也能看到序列化/保存回归的结论
+  for (const result of noteResults) console.log(`${result.ok ? 'PASS' : 'FAIL'} ${result.name}${result.error ? `\n${result.error}` : ''}`)
+  console.log(`Note editor: ${noteResults.filter(result => result.ok).length}/${noteResults.length} checks passed.`)
+  if (noteResults.some(result => !result.ok)) process.exitCode = 1
+  if (process.env.EDITOR_ONLY) return
   const points = await evaluate('window.mountWhiteboard()')
   const toolbarCenterBefore = await evaluate('(() => { const rect = document.querySelector(".flota-whiteboard-toolbar").getBoundingClientRect(); return rect.left + rect.width / 2 })()')
   await call('Input.dispatchMouseEvent', { type: 'mousePressed', ...points.rectangle, button: 'left', clickCount: 1 })
@@ -110,7 +123,7 @@ let server, browser, socket, profile
   await call('Emulation.setDeviceMetricsOverride', { width: 820, height: 580, deviceScaleFactor: 1, mobile: false })
   await sleep(300)
   await screenshot('whiteboard-narrow.png')
-  for (const result of results) console.log(`${result.ok ? 'PASS' : 'FAIL'} ${result.name}${result.error ? `\n${result.error}` : ''}`)
+  for (const result of results.slice(noteResults.length)) console.log(`${result.ok ? 'PASS' : 'FAIL'} ${result.name}${result.error ? `\n${result.error}` : ''}`)
   const failed = results.filter(result => !result.ok)
   await fs.writeFile(path.join(output, 'results.json'), JSON.stringify({ results, errors }, null, 2))
   if (errors.length) console.error('Browser exceptions:', errors)

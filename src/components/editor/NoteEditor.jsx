@@ -645,6 +645,29 @@ const NoteEditor = ({ onCollapseSidebar }) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedNoteId]) // 只依赖 selectedNoteId，不依赖 currentNote，防止同步更新覆盖编辑中的内容
 
+  // 把数据库里的最新版本装进编辑器（AI 改写、云同步下载后用）
+  const applyFreshNoteSnapshot = useCallback((freshNote) => {
+    cancelSave()
+    const nextTitle = freshNote.title || ''
+    const nextContent = freshNote.content || ''
+    const nextTags = Array.isArray(freshNote.tags) ? freshNote.tags.join(', ') : (freshNote.tags || '')
+    const nextNoteType = freshNote.note_type || 'markdown'
+    setTitle(nextTitle)
+    setContent(nextContent)
+    setTags(nextTags)
+    setNoteType(nextNoteType)
+    setLastSaved(freshNote.updated_at || freshNote.created_at || null)
+    setHasUnsavedChanges(false)
+    hasUnsavedChangesRef.current = false
+    setShowSaveError(false)
+    prevStateRef.current = {
+      title: nextTitle,
+      content: nextContent,
+      tags: nextTags,
+      noteType: nextNoteType
+    }
+  }, [cancelSave, setHasUnsavedChanges])
+
   // AI 在主进程直接写入数据库。列表刷新后只对明确被 AI 修改的当前笔记应用新快照，
   // 避免依赖 currentNote 的普通同步更新覆盖用户正在输入的内容。
   useEffect(() => {
@@ -655,29 +678,31 @@ const NoteEditor = ({ onCollapseSidebar }) => {
 
       const freshNote = useStore.getState().notes.find((note) => String(note.id) === String(activeId))
       if (!freshNote) return
-      cancelSave()
-      const nextTitle = freshNote.title || ''
-      const nextContent = freshNote.content || ''
-      const nextTags = Array.isArray(freshNote.tags) ? freshNote.tags.join(', ') : (freshNote.tags || '')
-      const nextNoteType = freshNote.note_type || 'markdown'
-      setTitle(nextTitle)
-      setContent(nextContent)
-      setTags(nextTags)
-      setNoteType(nextNoteType)
-      setLastSaved(freshNote.updated_at || freshNote.created_at || null)
-      setHasUnsavedChanges(false)
-      hasUnsavedChangesRef.current = false
-      setShowSaveError(false)
-      prevStateRef.current = {
-        title: nextTitle,
-        content: nextContent,
-        tags: nextTags,
-        noteType: nextNoteType
-      }
+      applyFreshNoteSnapshot(freshNote)
     }
     window.addEventListener('ai-notes-updated', handleAINoteUpdate)
     return () => window.removeEventListener('ai-notes-updated', handleAINoteUpdate)
-  }, [cancelSave])
+  }, [applyFreshNoteSnapshot])
+
+  // 云同步下载了当前打开的笔记：编辑器里没有未保存的修改时换成新版本。
+  // 以前编辑器一直停在旧内容，接着打字就把旧内容连同新输入一起存回去，下一轮同步再把另一台设备的修改盖掉。
+  // 有未保存修改时保留本地编辑（两端都改了，交给同步冲突处理）。
+  const storeContent = currentNote?.content
+  const storeTitle = currentNote?.title
+  const storeNoteType = currentNote?.note_type
+  useEffect(() => {
+    if (!currentNote || hasUnsavedChangesRef.current) return
+    if (String(currentNote.id) !== String(selectedNoteIdRef.current)) return
+    const local = prevStateRef.current
+    // 画布由 WhiteboardEditor 自己管理内容
+    if ((local.noteType || 'markdown') !== 'markdown' || (storeNoteType || 'markdown') !== 'markdown') return
+    const freshContent = storeContent || ''
+    const freshTitle = storeTitle || ''
+    const localContent = finalizeMarkdownForStorage(local.content || '')
+    if (freshContent === localContent && freshTitle === (local.title || '').trim()) return
+    applyFreshNoteSnapshot(currentNote)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeContent, storeTitle, storeNoteType, applyFreshNoteSnapshot])
 
   // 暴露保存函数供窗口关闭时调用
   useEffect(() => {

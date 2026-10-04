@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material'
 import { convertToExcalidrawElements } from '@excalidraw/excalidraw'
 import WYSIWYGEditor from '../../src/components/editor/WYSIWYGEditor'
+import NoteEditor from '../../src/components/editor/NoteEditor'
 import WhiteboardEditor from '../../src/components/editor/WhiteboardEditor'
 import MarkdownToolbar from '../../src/components/editor/MarkdownToolbar'
 import { ErrorProvider } from '../../src/components/common/ErrorProvider'
@@ -27,7 +28,7 @@ const waitFor = async (fn, label) => { for (let i = 0; i < 200; i++) { if (fn())
 const assert = (value, message) => { if (!value) throw new Error(message) }
 const equal = (actual, expected) => assert(JSON.stringify(actual) === JSON.stringify(expected), `${JSON.stringify(actual)} != ${JSON.stringify(expected)}`)
 const results = []
-const test = async (name, fn) => { window.testStep = name; try { await fn(); results.push({ name, ok: true }) } catch (error) { results.push({ name, ok: false, error: error.stack }) } }
+const test = async (name, fn) => { if (window.testFilter && !name.includes(window.testFilter)) return; window.testStep = name; try { await fn(); results.push({ name, ok: true }) } catch (error) { results.push({ name, ok: false, error: error.stack }) } }
 const wrap = children => <ThemeProvider theme={theme}><CssBaseline /><ErrorProvider>{children}</ErrorProvider></ThemeProvider>
 let editor
 let noteCounter = 0
@@ -83,6 +84,231 @@ $$
     const stored = ref.current.getMarkdown()
     assert(!stored.includes('native code'), `garbage: ${stored}`)
     assert(stored.includes(source), `wiki links changed: ${stored}`)
+  })
+  // ── 随机化序列化回归：覆盖 4.1.3 修过的"function () { [native code] }"乱码以及各种格式组合 ──
+  // 固定种子，失败可复现；每轮：随机源文 → 打开 → 保存 → 重开 → 再保存，两次结果必须一致且没有函数源码
+  const GARBAGE = /native code|function\s*\w*\s*\(/
+  const seeded = (seed) => () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296 }
+  const FRAGMENTS = [
+    '[[B]]', '[[B|别名]]', '[[B#章节]]', '[[笔记 A|别名#小节]]', '![[B]]', '[[B]][[C]]',
+    '**粗体**', '*斜体*', '~~删除~~', '`code`', '==高亮==', '=={#fde68a}黄色高亮==', '++下划线++',
+    '<span style="color:#ef4444">红字</span>', '[链接](https://example.com/a(b)?x=1)',
+    '$x^2$', '中文', 'plain', ' ', '  ', '，', '。', '😀', 'a < b', '&lt;div&gt;', '#tag', '$5',
+    '**[[B]] 粗体里的双链**', '*[[B|别名]]*', '~~[[B#章节]]~~', '<span style="color:#3b82f6">[[B]] 蓝</span>',
+  ]
+  const randomParagraph = (rand) => {
+    const n = 1 + Math.floor(rand() * 7)
+    let out = ''
+    for (let i = 0; i < n; i++) out += FRAGMENTS[Math.floor(rand() * FRAGMENTS.length)] + (rand() < 0.5 ? ' ' : '')
+    return out.trim() || '空'
+  }
+  const randomSource = (rand) => {
+    const blocks = []
+    const count = 1 + Math.floor(rand() * 4)
+    for (let i = 0; i < count; i++) {
+      const roll = rand()
+      const p = randomParagraph(rand)
+      if (roll < 0.1) blocks.push(`# ${p}`)
+      else if (roll < 0.2) blocks.push(`- ${p}\n- ${randomParagraph(rand)}`)
+      else if (roll < 0.3) blocks.push(`> ${p}`)
+      else if (roll < 0.38) blocks.push(`- [ ] ${p}`)
+      else if (roll < 0.46) blocks.push(`${p}\n${randomParagraph(rand)}`)
+      else blocks.push(p)
+    }
+    return blocks.join('\n\n')
+  }
+  await test('随机格式组合（双链/颜色/高亮/粗斜体/链接/公式）保存重开稳定且不出乱码', async () => {
+    const rand = seeded(20261004)
+    for (let i = 0; i < 160; i++) {
+      const source = randomSource(rand)
+      await mountNote(source)
+      // 直接看序列化器的原始输出：保存兜底会拦下乱码，测试不能被它掩盖
+      const raw = editor.storage.markdown.getMarkdown()
+      assert(!GARBAGE.test(raw), `#${i} serializer garbage\nsource: ${source}\nraw: ${raw}`)
+      const first = ref.current.getMarkdown()
+      assert(!GARBAGE.test(first), `#${i} garbage after first save\nsource: ${source}\nstored: ${first}`)
+      const text = editor.state.doc.textContent
+      await mountNote(first)
+      assert(editor.state.doc.textContent === text, `#${i} text changed on reopen\nsource: ${JSON.stringify(source)}\nstored: ${JSON.stringify(first)}\nbefore: ${JSON.stringify(text)}\nafter:  ${JSON.stringify(editor.state.doc.textContent)}`)
+      const second = ref.current.getMarkdown()
+      assert(!GARBAGE.test(second), `#${i} garbage after reopen\nsource: ${source}\nstored: ${second}`)
+      assert(second === first, `#${i} not stable on reopen\nsource: ${source}\nfirst:  ${JSON.stringify(first)}\nsecond: ${JSON.stringify(second)}`)
+    }
+  })
+  await test('随机编辑（加粗/斜体/颜色/高亮/链接/输入双链）后每次自动保存都不出乱码', async () => {
+    const rand = seeded(42)
+    const emitted = []
+    const mountTracked = async content => {
+      editor = null
+      root.render(wrap(<div style={{ maxWidth: 880, margin: '24px auto', padding: 24 }}>
+        <WYSIWYGEditor key={++noteCounter} noteId={`test-${noteCounter}`} ref={ref} content={content} onChange={value => emitted.push(value)} onEditorReady={value => { editor = value }} />
+      </div>))
+      await waitFor(() => editor && !editor.isDestroyed, 'note editor')
+      await sleep(30)
+    }
+    const ops = [
+      ed => ed.chain().toggleBold().run(),
+      ed => ed.chain().toggleItalic().run(),
+      ed => ed.chain().toggleStrike().run(),
+      ed => ed.chain().toggleCode().run(),
+      ed => ed.chain().toggleUnderline().run(),
+      ed => ed.chain().toggleHighlight().run(),
+      ed => ed.chain().toggleHighlight({ color: '#fde68a' }).run(),
+      ed => ed.chain().setTextColor('#ef4444').run(),
+      ed => ed.chain().unsetTextColor().run(),
+      ed => ed.chain().setLink({ href: 'https://example.com/x' }).run(),
+      ed => ed.chain().insertContent({ type: 'text', text: ' [[B]] ' }).run(),
+      ed => ed.chain().insertContent({ type: 'text', text: '[[B|别名]]' }).run(),
+      ed => ed.chain().insertContent({ type: 'text', text: ' 文字 ' }).run(),
+      ed => ed.chain().setHardBreak().run(),
+    ]
+    for (let i = 0; i < 60; i++) {
+      const source = randomSource(rand)
+      await mountTracked(source)
+      for (let step = 0; step < 8; step++) {
+        const size = editor.state.doc.content.size
+        const a = 1 + Math.floor(rand() * Math.max(1, size - 2))
+        const b = Math.min(size - 1, a + Math.floor(rand() * 12))
+        try { editor.commands.setTextSelection({ from: a, to: Math.max(a, b) }) } catch { continue }
+        ops[Math.floor(rand() * ops.length)](editor)
+      }
+      await sleep(170) // 等 120ms 的合并保存发出
+      const raw = editor.storage.markdown.getMarkdown()
+      assert(!GARBAGE.test(raw), `#${i} serializer garbage\nsource: ${source}\nraw: ${raw}`)
+      const stored = ref.current.getMarkdown()
+      const bad = [...emitted, stored].find(value => GARBAGE.test(value))
+      assert(!bad, `#${i} garbage emitted\nsource: ${source}\nstored: ${bad}`)
+      // 随机选区会把 [[ ]]、** 拆成半截，这种文档的重开稳定性不在这里要求，只要求绝不写出乱码
+      await mountTracked(stored)
+      const reopened = ref.current.getMarkdown()
+      assert(!GARBAGE.test(reopened), `#${i} garbage after reopen\nstored: ${reopened}`)
+      emitted.length = 0
+    }
+  })
+  // 调试用：EDITOR_DEBUG='["源文"]' 时打印每段源文保存后的结果与文档结构
+  if (window.debugSources) await test('DEBUG', async () => {
+    for (const source of (window.debugSources || [])) {
+      await mountNote(source)
+      console.log('DEBUG', JSON.stringify(source), '=>', JSON.stringify(ref.current.getMarkdown()), JSON.stringify(editor.getJSON()))
+    }
+  })
+  await test('常见格式叠加（高亮里加粗/上色、整段双链加斜体等）保存重开不变', async () => {
+    const select = (needle) => {
+      let from = null
+      editor.state.doc.descendants((node, pos) => {
+        if (from === null && node.isTextblock && node.textContent.includes(needle)) from = pos + 1 + node.textContent.indexOf(needle)
+        return from === null
+      })
+      assert(from !== null, `missing ${needle}`)
+      editor.commands.setTextSelection({ from, to: from + needle.length })
+    }
+    const cases = [
+      ['今天要做的重要事情', [['重要事情', c => c.toggleHighlight()], ['重要', c => c.toggleBold()]]],
+      ['今天要做的重要事情', [['今天要做的重要事情', c => c.toggleHighlight({ color: '#fde68a' })], ['做的', c => c.setTextColor('#ef4444')]]],
+      ['红色里有高亮的字', [['红色里有高亮的字', c => c.setTextColor('#ef4444')], ['高亮', c => c.toggleHighlight()]]],
+      ['参见 [[笔记B|别名]] 和 [[C#章节]] 两篇', [['[[笔记B|别名]]', c => c.toggleItalic()], ['[[C#章节]]', c => c.toggleBold()]]],
+      ['参见 [[笔记B]] 和 [[C]]', [['参见 [[笔记B]] 和 [[C]]', c => c.setTextColor('#3b82f6')]]],
+      ['参见 [[笔记B]] 和 [[C]]', [['参见 [[笔记B]] 和 [[C]]', c => c.toggleHighlight()]]],
+      ['加粗 斜体 删除 下划线', [['加粗 斜体', c => c.toggleBold()], ['斜体', c => c.toggleItalic()], ['删除 下划线', c => c.toggleStrike()], ['下划线', c => c.toggleUnderline()]]],
+      ['链接文字里有粗体', [['链接文字里有粗体', c => c.setLink({ href: 'https://example.com/a(b)' })], ['粗体', c => c.toggleBold()]]],
+      ['写 a=b 与 x == y', [['a=b 与 x', c => c.toggleHighlight()]]],
+      ['重要的红字后面', [['重要的红字后面', c => c.toggleBold()], ['重要的红字', c => c.setTextColor('#ef4444')]]],
+      ['重要的红字后面', [['重要的红字', c => c.setTextColor('#ef4444')], ['重要的红字后面', c => c.toggleBold()]]],
+      ['前面高亮下划线后面', [['高亮下划线', c => c.toggleHighlight()], ['下划线', c => c.toggleUnderline()]]],
+      ['粗体整句里高亮一词', [['粗体整句里高亮一词', c => c.toggleBold()], ['高亮', c => c.toggleHighlight()]]],
+      ['斜体开头的高亮', [['斜体开头', c => c.toggleItalic()], ['斜体开头的高亮', c => c.toggleHighlight()]]],
+    ]
+    // 同一颜色可能存成 #ef4444 或 rgb(239, 68, 68)
+    const hexColor = c => { const m = String(c).match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/); return m ? '#' + m.slice(1, 4).map(n => (+n).toString(16).padStart(2, '0')).join('') : String(c).toLowerCase() }
+    for (const [source, steps] of cases) {
+      await mountNote(source)
+      for (const [needle, apply] of steps) { select(needle); apply(editor.chain()).run() }
+      const marksOf = () => { const out = []; editor.state.doc.descendants(node => { if (node.isText) out.push(`${node.text}:${node.marks.map(mark => mark.type.name + (mark.attrs.color ? `(${hexColor(mark.attrs.color)})` : '')).sort().join('+')}`) }); return out.join('|') }
+      const before = marksOf()
+      const stored = ref.current.getMarkdown()
+      assert(!GARBAGE.test(stored), stored)
+      await mountNote(stored)
+      assert(marksOf() === before, `formatting changed on reopen\nstored: ${JSON.stringify(stored)}\nbefore: ${before}\nafter:  ${marksOf()}`)
+      equal(ref.current.getMarkdown(), stored)
+    }
+    // 粗体紧贴中文引号：CommonMark 不认 `的**“`，序列化时把 ** 挪进引号内——粗体范围变小，但文字一个不少
+    await mountNote('前面的“引号里加粗”后面')
+    select('“引号里加粗”'); editor.chain().toggleBold().run()
+    await mountNote(ref.current.getMarkdown())
+    equal(editor.state.doc.textContent, '前面的“引号里加粗”后面')
+  })
+  await test('序列化器一旦写出函数源码，保存兜底拒绝写入并保留原内容', async () => {
+    const emitted = []
+    editor = null
+    root.render(wrap(<WYSIWYGEditor key={++noteCounter} noteId={`test-${noteCounter}`} ref={ref} content="原来的内容 [[B]]" onChange={value => emitted.push(value)} onEditorReady={value => { editor = value }} />))
+    await waitFor(() => editor && !editor.isDestroyed, 'note editor')
+    const original = editor.storage.markdown.getMarkdown
+    editor.storage.markdown.getMarkdown = () => '原来的内容 [[B]]function () { [native code] }'
+    try {
+      editor.chain().focus('end').insertContent('新输入').run()
+      await sleep(200)
+      assert(!emitted.some(value => GARBAGE.test(value)), `garbage emitted: ${emitted}`)
+      equal(ref.current.getMarkdown(), '原来的内容 [[B]]')
+    } finally {
+      editor.storage.markdown.getMarkdown = original
+    }
+  })
+  await test('打开着的笔记被云同步更新：没在编辑就换成新版本，正在编辑则不覆盖', async () => {
+    const saved = []
+    const original = useStore.getState().updateNote
+    const note = { id: 'sync-open', title: '同步中的笔记', content: '电脑上的旧内容', note_type: 'markdown', tags: [], updated_at: '2026-10-01 10:00:00' }
+    useStore.setState({ notes: [note], selectedNoteId: 'sync-open', currentView: 'notes', editorMode: 'wysiwyg', updateNote: async (id, updates) => { saved.push({ id, ...updates }); useStore.setState(state => ({ notes: state.notes.map(item => item.id === id ? { ...item, ...updates } : item) })); return { success: true, data: { ...note, ...updates } } } })
+    try {
+      root.render(wrap(<div style={{ height: 600 }}><NoteEditor /></div>))
+      await waitFor(() => document.querySelector('.wysiwyg-editor-content')?.textContent.includes('电脑上的旧内容'), 'note editor mounted')
+      // 同步下载了新版本 → 编辑器跟着换
+      useStore.setState(state => ({ notes: state.notes.map(item => ({ ...item, content: '手机上改过的新内容', updated_at: '2026-10-01 10:05:00' })) }))
+      await waitFor(() => document.querySelector('.wysiwyg-editor-content')?.textContent.includes('手机上改过的新内容'), 'synced content shown')
+      // 用户接着打字，保存的是"新内容 + 输入"，不是旧内容
+      const tiptap = document.querySelector('.wysiwyg-editor-content').editor
+      tiptap.commands.insertContentAt(1, '补充：')
+      await sleep(3600) // NoteEditor 防抖 3 秒保存
+      assert(saved.length > 0, 'nothing saved')
+      const last = saved[saved.length - 1].content
+      assert(last.includes('手机上改过的新内容') && last.includes('补充：'), `saved stale content: ${last}`)
+      // 有未保存的输入时，同步来的版本不覆盖编辑器
+      tiptap.commands.insertContentAt(1, '未保存')
+      await sleep(200)
+      useStore.setState(state => ({ notes: state.notes.map(item => ({ ...item, content: '又一个远端版本' })) }))
+      await sleep(300)
+      assert(document.querySelector('.wysiwyg-editor-content').textContent.includes('未保存'), 'unsaved typing was overwritten')
+    } finally {
+      useStore.setState({ updateNote: original, notes: [], selectedNoteId: null })
+    }
+  })
+  await test('打开着的画布被云同步更新：没在编辑就载入新版本', async () => {
+    window.electronAPI = { ...(window.electronAPI || {}), whiteboard: {
+      saveImages: async (files) => ({ success: true, data: files || {} }),
+      loadImages: async (fileMap) => ({ success: true, data: fileMap || {} }),
+      savePreview: async () => ({ success: true }),
+    } }
+    const scene = (ids) => JSON.stringify({ type: 'excalidraw', version: 2, elements: convertToExcalidrawElements(ids.map((id, index) => ({ id, type: 'rectangle', x: 40 + index * 160, y: 40, width: 120, height: 80 }))), appState: { viewBackgroundColor: '#ffffff' }, fileMap: {} })
+    const original = useStore.getState().updateNote
+    useStore.setState({ notes: [{ id: 'board-sync', title: '同步画布', note_type: 'whiteboard', content: scene(['a']) }], updateNote: async () => ({ success: true }) })
+    let getContent = null
+    try {
+      root.render(wrap(<div style={{ width: 900, height: 600 }}><WhiteboardEditor noteId="board-sync" onGetContent={getter => { getContent = getter }} /></div>))
+      await waitFor(() => document.querySelector('.excalidraw canvas') && getContent, 'whiteboard canvas')
+      await sleep(500)
+      const count = async () => JSON.parse(await getContent()).elements.filter(element => !element.isDeleted).length
+      equal(await count(), 1)
+      useStore.setState(state => ({ notes: state.notes.map(note => ({ ...note, content: scene(['a', 'b', 'c']) })) }))
+      for (let i = 0; i < 40 && await count() !== 3; i++) await sleep(100)
+      equal(await count(), 3)
+    } finally {
+      useStore.setState({ updateNote: original, notes: [] })
+    }
+  })
+  await test('JS 笔记里真的写着 "function () { [native code] }" 时照常保存', async () => {
+    await mountNote('```js\nString(Math.max) // function max() { [native code] }\n```\n\n正文 function () { [native code] }')
+    const stored = ref.current.getMarkdown()
+    assert(stored.includes('function max() { [native code] }'), stored)
+    assert(stored.includes('function () { \\[native code\\] }') || stored.includes('function () { [native code] }'), stored)
   })
   await test('正文里的 <div>、&lt; 字面文字重开两次后仍在', async () => {
     const source = '手打 &lt;div&gt; 与 &lt;/think&gt; 和 &amp;lt; 以及 a < b'
@@ -349,10 +575,16 @@ window.mountWhiteboard = async () => {
   const elements = [...baseElements, ...svg.elements, ...mermaid.elements]
   const fileMap = { ...svg.files, ...mermaid.files }
   const content = JSON.stringify({ type: 'excalidraw', version: 2, elements, appState: { scrollX: 0, scrollY: 0, zoom: { value: 1 }, selectedElementIds: {} }, fileMap })
+  // 浏览器里没有 Electron 预加载的 API：画布图片原样当作已保存（只测交互，不测落盘）
+  window.electronAPI = { ...(window.electronAPI || {}), whiteboard: {
+    saveImages: async (files) => ({ success: true, data: Object.fromEntries(Object.entries(files || {}).map(([id, file]) => [id, { ...file }])) }),
+    loadImages: async (fileMap) => ({ success: true, data: fileMap || {} }),
+    savePreview: async () => ({ success: true }),
+  } }
   useStore.setState({ notes: [{ id: 'board-test', title: '白板交互检查', note_type: 'whiteboard', content }], theme: 'light', whiteboardStyle: 'neat', updateNote: async () => ({ success: true }) })
   localStorage.removeItem('flota.whiteboard.propertiesCollapsed')
   root.render(wrap(<div id="board-host" style={{ width: '100vw', height: '100vh' }}><WhiteboardEditor noteId="board-test" onGetContent={getter => { window.getBoardContent = getter }} /></div>))
-  await waitFor(() => document.querySelector('.excalidraw canvas'), 'whiteboard canvas')
+  try { await waitFor(() => document.querySelector('.excalidraw canvas'), 'whiteboard canvas') } catch (error) { throw new Error(`${error.message}; page: ${document.getElementById('root').innerText.slice(0, 300)}`) }
   await sleep(700)
   const canvas = document.querySelector('.excalidraw canvas').getBoundingClientRect()
   return {

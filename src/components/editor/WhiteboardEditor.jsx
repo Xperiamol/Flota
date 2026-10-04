@@ -275,8 +275,14 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
     actualIsStandaloneMode = false
   }
   
-  const { notes: storeNotes, currentNote: storeCurrentNote, updateNote, currentView, theme: themePref, primaryColor, whiteboardStyle, language = 'zh-CN' } = store
+  const { notes: storeNotes, currentNote: storeCurrentNote, updateNote: storeUpdateNote, currentView, theme: themePref, primaryColor, whiteboardStyle, language = 'zh-CN' } = store
   const notes = useMemo(() => storeNotes || (storeCurrentNote ? [storeCurrentNote] : []), [storeNotes, storeCurrentNote])
+  // 画布自己写进数据库的内容（按笔记 id）。数据库里的内容变成了别的版本（云同步下载、独立窗口、AI）时据此识别
+  const knownContentRef = useRef(new Map())
+  const updateNote = useCallback((id, updates) => {
+    if (typeof updates?.content === 'string') knownContentRef.current.set(String(id), updates.content)
+    return storeUpdateNote(id, updates)
+  }, [storeUpdateNote])
   const notesByReference = useMemo(() => {
     const index = new Map()
     notes.forEach(note => {
@@ -1171,6 +1177,22 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
       })()
     }
   }, [noteId, notes, resetExcalidrawContent, updateNote, setHasUnsavedChanges])
+
+  // 打开着的画布在别处被更新（云同步下载了另一台设备的版本等）：没有未保存的修改就载入新版本。
+  // 以前画布只在打开时读一次，接着再画一笔就把旧画布连同新笔画存回去，另一台设备的修改被覆盖
+  const storeContent = storeCurrentNote?.content
+  useEffect(() => {
+    const note = storeCurrentNote
+    if (viewOnly || !note || note.note_type !== 'whiteboard') return
+    const key = String(note.id)
+    const known = knownContentRef.current
+    if (!known.has(key)) { known.set(key, note.content); return }
+    if (known.get(key) === note.content) return
+    if (hasUnsavedChangesRef.current || isSwitchingNoteRef.current || String(activeNoteIdRef.current) !== key) return
+    known.set(key, note.content)
+    resetExcalidrawContent(excalidrawAPI, note)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeContent])
 
   // 保存函数（稳定引用）
   const performSave = useCallback(async () => {
