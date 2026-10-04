@@ -2,6 +2,15 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [4.2.1] - 2026-10-04
+
+### Changed / 更新内容
+- fix(backup): local backup and restore work again, and exporting to an existing Obsidian vault no longer overwrites its notes
+- fix(sync): another device's edits are no longer reverted by this computer, deleted notes stay deleted, and in-use images are no longer cleaned up
+- fix(editor): synced changes show up in the open note and whiteboard instead of being overwritten by the old version, and formatting survives reopening
+- fix(ui): the left sidebar scrolls when there are too many icons instead of running off the window
+
+
 ## [4.2.0] - 2026-10-01
 
 ### Changed / 更新内容
