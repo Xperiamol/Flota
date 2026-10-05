@@ -2,6 +2,81 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [4.2.2] - 2026-10-05
+
+### Changed / 更新内容
+- fix(i18n): default to English unless the system language is Chinese
+- chore: release v4.2.1
+- fix(backup): local backup and restore work again, and exporting to an existing Obsidian vault no longer overwrites its notes
+- fix(sync): another device's edits are no longer reverted by this computer, deleted notes stay deleted, and in-use images are no longer cleaned up
+- fix(editor): synced changes show up in the open note and whiteboard instead of being overwritten by the old version, and formatting survives reopening
+- fix(ui): the left sidebar scrolls when there are too many icons instead of running off the window
+- chore: release v4.2.0
+- chore(sync): shorter wording in the WebDAV sync settings
+- feat(settings): redesigned memory page - activity heatmap, memory breakdown, editable memory list, and a downloadable multilingual model for much better Chinese matching
+- feat(memory): after each chat Flota remembers your preferences, background and recent plans on its own, with a notice under the reply and one-click undo
+- fix(memory): memory works again when the image library fails to load, Chinese facts like "likes coffee" and "likes running" are no longer merged into one, note and todo memories follow edits and deletions, and chat now draws on your preferences and recent context
+- feat(sync): self-hosted WebDAV servers work as well as Nutstore - pick the server in setup, switch server or account from settings, and syncing to your own server is no longer slowed by Nutstore's rate limits
+- chore: add copy/paste and frosted-glass fixes to the 4.1.3 changelog
+- fix(ui): the bookmarks window and the selection AI panel use the same frosted glass as the AI mini window
+- fix(editor): cleaner copy and paste between notes and other apps
+- chore: release v4.1.3
+- chore: list @tiptap/extension-hard-break in package-lock root dependencies
+- fix(editor): single line breaks survive editing in rich-text mode instead of being merged into one line
+- test(editor): regressions for [[link]] garbage and literal <tag> text lost on reload
+- fix(editor): text like <div> or <think> typed in a note is no longer deleted after reopening and editing it
+- fix(editor): notes with several [[links]] in one paragraph no longer turn into "function () { [native code] }" garbage when edited
+- fix(obsidian): images in imported Obsidian notes are copied into Flota instead of being left as broken links
+- feat(import): imported notes keep the file's original date instead of all landing on today
+- fix(notes): switching notes right after typing (e.g. clicking a [[link]]) no longer overwrites the previous note with the new note's title and content
+- chore: release v4.1.2
+- fix(editor): pressing Enter to pick an IME candidate in a link field no longer saves the link early
+- fix(editor): Tab works again in notes - it indents list items (Shift+Tab outdents) and inserts spaces elsewhere; in source mode the title no longer swallows Tab or Ctrl+B
+- chore: release v4.1.1
+- fix(trash): the trash list matches the note list and no longer overflows; Restore all and Empty trash moved to the toolbar
+- perf(notes): the note list stays fast with hundreds of notes - opening the notes page, selecting a note, searching and typing no longer stall
+- feat(ui): frosted-glass AI panel, smoother panel dragging, and a new pick-up animation when dragging notes and todos out of the list
+- feat(widgets): home cards can have one-tap actions like check-in, every widget size is tested before saving, and AI has more design freedom
+- fix(ai): when the assistant claims a confirmation card but never created one, it now retries and the card appears
+- fix: CVE-2026-39244 security vulnerability
+- docs: privacy policy for the Microsoft Store listing
+- build(windows): Store identity for Flota Notes; build the AppX from win-unpacked in its own step
+- ci(windows): read the Store display name from MS_STORE_DISPLAY_NAME
+- feat(windows): Microsoft Store (AppX) package
+- chore: release v4.1.0
+- feat: redesigned trash with auto-empty, page names in the title bar, new home cards and consistent glass on wallpapers
+- feat(settings): regrouped settings with Notes & Files and Todos pages, .txt/.log support, redesigned switches and auto-check for updates on launch
+- fix(notes): filters and search missed notes older than the latest 50; redesigned filter panel
+- feat(focus): pausing saves your focus time, and running sessions autosave every minute
+- feat(calendar): notes view shows what you wrote and edited each day; change a note's creation date by dragging it or from the info panel
+- feat(ai): live progress on running actions, one-click AI button in the title bar and a new AI settings page
+- feat(installer): Apple-style DMG window and Windows installer artwork
+- feat(clipper): tags replace categories in the web clipper, with a tag editor in the extension
+- chore: release v4.0.2
+- feat: open files in separate windows with copy, edit-and-save and a context menu
+- fix(ai): clearer input box in the AI mini window
+- fix(widgets): runtime assets 404 on Windows, so preset widgets failed to load
+- chore: release v4.0.1
+- fix: correct electron file associations
+- chore: release v4.0.0
+- feat(ui): home page with cards, floating-island layout, liquid glass and a quieter visual style
+- feat(widgets): widget runtime, widget store, AI-generated widgets, note embeds and sync
+- feat(clipper): Chrome web clipper extension that saves pages into Flota
+- chore: release v3.10.0
+- fix(mcp): missing dialog import crashed install-complete/error handlers
+- fix(plugin): knowledge graph dimming, auto-fit, and small-graph labels
+- fix(whiteboard): keep Mermaid diagrams vector instead of rasterizing
+- fix(ui): dark-mode contrast, filter panel, buttons, and bookmarks
+- perf: stop several always-mounted components subscribing to the whole store
+- fix: strip full markdown syntax from note-list and timeline preview text
+- fix: replace native alert/confirm/prompt with in-app dialogs
+- feat(timeline): paste or drop images and files into the composer
+- feat: open external files read-only, add a native macOS app menu
+- feat(ai): dynamic action cards, live note refresh, fix AI silently disabling
+- feat(calendar): drag todos onto a date to reschedule, with a live hint
+- fix(todo): correct all-day todo handling across timezone conversion and queries
+
+
 ## [4.2.1] - 2026-10-04
 
 ### Changed / 更新内容
