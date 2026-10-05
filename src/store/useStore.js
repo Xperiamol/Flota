@@ -120,7 +120,7 @@ const useStore = create(
                 whiteboardStyle: 'neat',
                 // macOS 下强制使用 mac 样式（并在设置中隐藏该项）
                 titleBarStyle: IS_MACOS ? 'mac' : 'windows', // 标题栏样式：'mac' 或 'windows'
-                language: 'zh-CN', // 界面语言
+                language: (typeof navigator !== 'undefined' && /^zh\b/i.test(navigator.language || '')) ? 'zh-CN' : 'en-US', // 界面语言（跟随系统，非中文回退英文）
 
                 // 笔记相关状态
                 notes: [],

@@ -1,4 +1,5 @@
 const { getInstance } = require('./DatabaseManager');
+const { detectDefaultLanguage } = require('../utils/defaultLanguage');
 
 class SettingDAO {
   constructor() {
@@ -208,7 +209,7 @@ class SettingDAO {
       { key: 'theme', value: 'system', type: 'string', description: '主题模式' },
       { key: 'customThemeColor', value: '#1976d2', type: 'string', description: '主色调' },
       { key: 'titleBarStyle', value: 'windows', type: 'string', description: '标题栏样式' },
-      { key: 'language', value: 'zh-CN', type: 'string', description: '界面语言' },
+      { key: 'language', value: detectDefaultLanguage(), type: 'string', description: '界面语言' },
       { key: 'maskOpacity', value: 'medium', type: 'string', description: '遮罩强度' },
       { key: 'whiteboardStyle', value: 'neat', type: 'string', description: '画布视觉风格 (neat | sketchy)' },
       { key: 'backgroundPattern', value: 'none', type: 'string', description: '背景花纹' },

@@ -19,8 +19,12 @@ const LANGUAGE_RESOURCES = {
   'en-US': enUS
 };
 
-// 默认语言
-const DEFAULT_LANGUAGE = 'zh-CN';
+// 默认语言：跟随系统语言，中文系统用 zh-CN，其余回退到 en-US
+function detectSystemLanguage() {
+  const nav = typeof navigator !== 'undefined' ? (navigator.language || '') : '';
+  return /^zh\b/i.test(nav) ? 'zh-CN' : 'en-US';
+}
+const DEFAULT_LANGUAGE = detectSystemLanguage();
 
 // 当前语言
 let currentLanguage = DEFAULT_LANGUAGE;
@@ -149,11 +153,11 @@ export async function getDateFnsLocale(language = currentLanguage) {
     return mod.default || mod[localeKey] || Object.values(mod)[0];
   }
 
-  // 回退到中文
-  const fallback = DATE_FNS_LOCALE_MODULES['zh-CN'];
+  // 回退到英文
+  const fallback = DATE_FNS_LOCALE_MODULES['en-US'];
   if (fallback) {
     const mod = await fallback();
-    return mod.default || mod['zh-CN'] || Object.values(mod)[0];
+    return mod.default || mod['en-US'] || Object.values(mod)[0];
   }
 
   return null;
