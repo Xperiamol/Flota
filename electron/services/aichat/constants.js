@@ -2,9 +2,10 @@
  * AI Chat 通用常量。
  */
 
-const WRITE_TOOL_NAMES = new Set(['create_note', 'edit_note', 'edit_notes', 'create_whiteboard', 'update_whiteboard', 'create_todo', 'create_todos', 'add_memory', 'update_memory', 'write_long_document', 'create_widget', 'update_widget', 'create_widget_instance', 'add_widget_records']);
+const WRITE_TOOL_NAMES = new Set(['update_settings', 'create_note', 'edit_note', 'edit_notes', 'create_whiteboard', 'update_whiteboard', 'create_todo', 'create_todos', 'add_memory', 'update_memory', 'write_long_document', 'create_widget', 'update_widget', 'create_widget_instance', 'add_widget_records']);
 
 const ACTION_LABELS = {
+  update_settings: '修改应用设置',
   create_note: '创建笔记',
   edit_note: '编辑笔记',
   edit_notes: '批量编辑笔记',
@@ -21,8 +22,6 @@ const ACTION_LABELS = {
   add_widget_records: '写入组件数据'
 };
 
-const DEFAULT_CHAT_MAX_TOKENS = 320000;
-
 // 输入上下文预算：system prompt + 历史消息的粗估 token 上限，超出则从最早的历史轮次开始丢弃
 const MAX_CONTEXT_TOKENS = 120000;
 
@@ -37,7 +36,6 @@ const CURRENT_NOTE_MAX_CHARS = 24000;
 module.exports = {
   WRITE_TOOL_NAMES,
   ACTION_LABELS,
-  DEFAULT_CHAT_MAX_TOKENS,
   MAX_CONTEXT_TOKENS,
   PROFILE_INJECT_LIMIT,
   PROFILE_INJECT_CHARS,

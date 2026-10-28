@@ -6,9 +6,9 @@
 const { EventEmitter } = require('events');
 const { getInstance: getLogger } = require('./LoggerService');
 const { encryptValue, decryptValue, isEncryptedValue } = require('../utils/secureValue');
-const { extractTextResponse } = require('./aiResponse');
+const { extractTextResponse, mergeContinuationContent, getTokenCandidates, accumulateUsage } = require('./aiResponse');
 
-const isEnabledSetting = (value) => value === true || value === 'true' || value === 1 || value === '1';
+const { isEnabledSetting } = require('./aichat/utils');
 
 class AIService extends EventEmitter {
   constructor(settingDAO) {
@@ -416,13 +416,13 @@ class AIService extends EventEmitter {
           if (text) { const e = JSON.parse(text); errorMessage = e.error?.message || e.message || errorMessage; }
         } catch (_) {}
         if (RETRYABLE.has(response.status) && attempt < MAX_ATTEMPTS) {
-          lastErr = new Error(errorMessage);
+          lastErr = Object.assign(new Error(errorMessage), { status: response.status });
           const backoff = 800 * attempt;
           this.logger.warn('AI', `网关瞬时错误 ${response.status}，${backoff}ms 后重试（${attempt}/${MAX_ATTEMPTS - 1}）`);
           await new Promise((r) => setTimeout(r, backoff));
           continue;
         }
-        throw new Error(errorMessage);
+        throw Object.assign(new Error(errorMessage), { status: response.status });
       }
 
       const text = response.text;
@@ -452,46 +452,111 @@ class AIService extends EventEmitter {
         : undefined;
 
       const temp = Math.min(Math.max(options.temperature ?? config.temperature, 0), 2);
-      const limitMaxTokensEnabled = Boolean(config.limitMaxTokens);
+      const limitMaxTokensEnabled = isEnabledSetting(config.limitMaxTokens);
       const hasExplicitMaxTokens = options.maxTokens != null;
       // bypassTokenLimit：结构化生成（如画布规划）忽略用户的小额 token 上限，避免输出被截断；
-      // 不强行设置一个偏大的 max_tokens（会被部分模型拒绝/返回空），而是交给模型自身默认值。
+      // 默认省略 max_tokens；需要兼容网关时由共享额度策略处理。
       const maxTk = hasExplicitMaxTokens
         ? options.maxTokens
         : (options.bypassTokenLimit ? undefined : (limitMaxTokensEnabled ? config.maxTokens : undefined));
-      const stdBody = {
-        model: config.model,
-        messages,
-        temperature: temp,
-        ...(maxTk != null ? { max_tokens: maxTk } : {})
-      };
-      const qwenBody = {
-        model: config.model,
-        input: { messages },
-        parameters: {
+      // 未显式限长（maxTk == null）时，若服务商单次默认输出上限触发 finish_reason=length，自动从断点续写（最多 8 次）
+      const maxContinuations = options.autoContinue === false || maxTk != null
+        ? 0
+        : (Number.isInteger(options.maxContinuations) ? Math.max(0, options.maxContinuations) : 8);
+
+      // Anthropic/Claude 接口必填 max_tokens，兼容网关在省略该字段时常注入 4096/8192 默认值，
+      // 开启 Extended Thinking 时会被内部推理耗尽导致正文为空（finish_reason=length, content=""）。
+      const tokenCandidates = getTokenCandidates(config.model, maxTk);
+
+      const requestSingleBudget = async (turnMessages, allowTruncated, candidateMaxTk) => {
+        const stdBody = {
+          model: config.model,
+          messages: turnMessages,
           temperature: temp,
-          ...(maxTk != null ? { max_tokens: maxTk } : {})
+          ...(candidateMaxTk != null ? { max_tokens: candidateMaxTk } : {})
+        };
+        const qwenBody = {
+          model: config.model,
+          input: { messages: turnMessages },
+          parameters: {
+            temperature: temp,
+            ...(candidateMaxTk != null ? { max_tokens: candidateMaxTk } : {})
+          }
+        };
+
+        const openAIExtract = (data) => extractTextResponse(data, 'openai', { allowTruncated });
+        const qwenExtract = (data) => extractTextResponse(data, 'qwen', { allowTruncated });
+
+        switch (config.provider) {
+          case 'openai':
+            return await this._chatAPI('https://api.openai.com/v1/chat/completions', config.apiKey, stdBody, openAIExtract, customTimeoutMs, options.signal);
+          case 'deepseek':
+            return await this._chatAPI('https://api.deepseek.com/v1/chat/completions', config.apiKey, stdBody, openAIExtract, customTimeoutMs, options.signal);
+          case 'qwen':
+            return await this._chatAPI(
+              'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
+              config.apiKey, qwenBody, qwenExtract, customTimeoutMs, options.signal
+            );
+          case 'custom':
+            return await this._chatAPI(this.normalizeApiUrl(config.apiUrl), config.apiKey, stdBody, openAIExtract, customTimeoutMs, options.signal);
+          default:
+            return { success: false, error: '不支持的AI提供商' };
         }
       };
 
-      const openAIExtract = (data) => extractTextResponse(data);
-      const qwenExtract = (data) => extractTextResponse(data, 'qwen');
+      const requestTurn = async (turnMessages, allowTruncated) => {
+        let lastError;
+        for (let i = 0; i < tokenCandidates.length; i++) {
+          const candidateMaxTk = tokenCandidates[i];
+          const hasNext = i < tokenCandidates.length - 1;
+          try {
+            return await requestSingleBudget(turnMessages, allowTruncated, candidateMaxTk);
+          } catch (err) {
+            lastError = err;
+            // 若自动注入的高 max_tokens 被上游以 400 拒绝，降档重试
+            if (hasNext && maxTk == null && candidateMaxTk != null && err?.status === 400) {
+              continue;
+            }
+            // 若省略 max_tokens 时网关默认额度被思考过程耗尽（返回空正文 + finish_reason=length），升档显式传入大额度重试
+            if (hasNext && maxTk == null && candidateMaxTk == null && err?.code === 'EMPTY_TRUNCATED_RESPONSE') {
+              continue;
+            }
+            throw err;
+          }
+        }
+        throw lastError || new Error('请求失败');
+      };
 
-      switch (config.provider) {
-        case 'openai':
-          return await this._chatAPI('https://api.openai.com/v1/chat/completions', config.apiKey, stdBody, openAIExtract, customTimeoutMs, options.signal);
-        case 'deepseek':
-          return await this._chatAPI('https://api.deepseek.com/v1/chat/completions', config.apiKey, stdBody, openAIExtract, customTimeoutMs, options.signal);
-        case 'qwen':
-          return await this._chatAPI(
-            'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
-            config.apiKey, qwenBody, qwenExtract, customTimeoutMs, options.signal
-          );
-        case 'custom':
-          return await this._chatAPI(this.normalizeApiUrl(config.apiUrl), config.apiKey, stdBody, openAIExtract, customTimeoutMs, options.signal);
-        default:
-          return { success: false, error: '不支持的AI提供商' };
+      let content = '';
+      let usage = null;
+      let finishReason = null;
+      let previousAdded = null;
+      for (let part = 0; part <= maxContinuations; part++) {
+        const turnMessages = part === 0 ? messages : [
+          ...messages,
+          { role: 'assistant', content },
+          { role: 'user', content: '上一条回复在末尾因单次输出长度上限截断了。请从中断的位置直接接着写：不要重复已经输出的内容，不要重新开始，不要加代码块围栏或任何解释。' }
+        ];
+        const turnResult = await requestTurn(turnMessages, part < maxContinuations);
+        if (!turnResult?.success) return turnResult;
+        const data = turnResult.data;
+        finishReason = data.finishReason;
+        usage = accumulateUsage(usage, data.usage);
+        if (part === 0) {
+          content = data.content;
+          previousAdded = data.content;
+        } else {
+          const merged = mergeContinuationContent(content, data.content);
+          if (!merged.added.trim() || merged.added === previousAdded) {
+            throw new Error('模型输出被 token 上限截断，请提高模型输出额度或缩小生成内容');
+          }
+          content = merged.content;
+          previousAdded = merged.added;
+        }
+        if (finishReason !== 'length') break;
       }
+
+      return { success: true, data: { content, usage, finishReason } };
     } catch (error) {
       this.logger.error('AI', 'Chat failed', error);
       return { success: false, error: error.message };

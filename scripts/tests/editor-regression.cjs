@@ -70,7 +70,7 @@ let server, browser, socket, profile
   await call('Runtime.enable')
   await call('Page.enable')
   await call('Page.bringToFront')
-  const testPage = process.env.EDITOR_SURFACE === 'rows' ? 'row-actions-preview.html' : 'editor-regression.html'
+  const testPage = process.env.EDITOR_SURFACE === 'features' ? 'features-preview.html' : process.env.EDITOR_SURFACE === 'rows' ? 'row-actions-preview.html' : 'editor-regression.html'
   await call('Page.navigate', { url: `http://127.0.0.1:${port}/scripts/tests/${testPage}` })
   await waitFor(async () => {
     if (errors.length) throw new Error(errors.join('\n'))
@@ -91,7 +91,66 @@ let server, browser, socket, profile
     await call('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point })
     await sleep(200)
   }
-  const noteResults = await evaluate('window.runEditorTests()')
+  const noteResults = await evaluate('window.runEditorTests()').catch(async error => {
+    const step = await evaluate('window.testStep').catch(() => 'unknown')
+    throw new Error(`${error.message}; test step: ${step}`)
+  })
+  if (process.env.EDITOR_SURFACE === 'features') {
+    for (const [view, mode, width, height = 850] of [['ai-settings','light',1200],['ai-settings','dark',1200],['ai-settings','light',500],['settings-search','light',1200],['settings-search','dark',1200],['settings-search','light',500],['ai-capabilities','light',1200],['ai-capabilities','dark',1200],['ai-capabilities','light',500],['christmas-art','light',1200],['christmas-art','dark',1200],['onboarding','light',1200],['onboarding','dark',1200],['onboarding','light',500],['onboarding','light',500,500],['patterns','light',1200],['patterns','dark',1200],['patterns','light',500],['christmas','light',1200],['christmas','dark',1200],['christmas','light',500],['shortcuts','light',1200],['shortcuts','dark',1200],['shortcuts','light',500],['choices','light',1200],['choices','dark',1200],['choices','light',500],['timeline','light',1200],['timeline','dark',1200],['timeline','light',500],['cloud','light',1200],['offline','light',1200],['history','light',1200],['cloud','dark',1200],['offline','dark',1200],['history','dark',1200],['cloud','light',500],['offline','light',500],['history','light',500],['history','light',1200,500],['history','light',500,500]]) {
+      await call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false })
+      if (view === 'ai-capabilities') await evaluate('window.captureCapabilityPause = true')
+      await evaluate(`window.showFeature(${JSON.stringify(view)}, ${JSON.stringify(mode)})`)
+      if (view === 'onboarding') {
+        await evaluate("window.dispatchEvent(new Event('flota:show-onboarding'))")
+        await sleep(100)
+        await evaluate("[...document.querySelectorAll('button')].find(button => button.textContent.includes('带我看看')).click()")
+      }
+      await sleep(350)
+      if (view === 'settings-search') {
+        await evaluate(`(() => { const input = document.querySelector('[aria-label="搜索设置"]'); input.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '历史'); input.dispatchEvent(new Event('input', { bubbles: true })); })()`)
+        await sleep(100)
+      }
+      if (view === 'onboarding') noteResults.push({ name: `引导 ${mode} ${width}×${height} 卡片位于窗口内`, ok: await evaluate("(() => { const r = document.querySelector('[data-onboarding-card]').getBoundingClientRect(); return r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight })()") })
+      if (view === 'history') noteResults.push({ name: `历史长文 ${mode} ${width}×${height} 单层滚动且操作可见`, ok: await evaluate('window.checkHistoryLayout()') })
+      await screenshot(`feature-${view}-${mode}-${width}-${height}.png`)
+      if (view === 'ai-capabilities') {
+        await evaluate("document.querySelector('[aria-label=\"新增 Prompt 快捷方式\"]').click()")
+        await sleep(200)
+        await screenshot(`feature-prompt-editor-${mode}-${width}.png`)
+        await evaluate("[...document.querySelectorAll('[aria-label=\"快捷方式编辑面板\"] button')].find(button => button.textContent.trim() === '取消').click()")
+        await sleep(50)
+        await evaluate("[...document.querySelectorAll('[aria-label=\"快捷方式编辑面板\"] button')].find(button => button.textContent.trim() === '完成').click()")
+      }
+      if (view === 'onboarding') {
+        await evaluate("(async () => { for (let i = 0; i < 4; i++) { [...document.querySelectorAll('button')].find(button => button.textContent.includes('下一步')).click(); await new Promise(resolve => setTimeout(resolve, 50)); } })()")
+        await screenshot(`feature-onboarding-ai-${mode}-${width}-${height}.png`)
+        await evaluate("(async () => { for (let i = 0; i < 2; i++) { [...document.querySelectorAll('button')].find(button => button.textContent.includes('下一步')).click(); await new Promise(resolve => setTimeout(resolve, 50)); } })()")
+        await screenshot(`feature-onboarding-canvas-${mode}-${width}-${height}.png`)
+        await evaluate("[...document.querySelectorAll('button')].find(button => button.textContent.includes('下一步')).click()")
+        await sleep(100)
+        await screenshot(`feature-onboarding-special-${mode}-${width}-${height}.png`)
+      }
+      if (view === 'christmas') {
+        await evaluate("(() => { for (let i = 0; i < 3; i++) window.dispatchEvent(new CustomEvent('flota:christmas-celebrate', { detail: { kind: 'note' } })); })()")
+        await sleep(500)
+        await screenshot(`feature-christmas-discovery-${mode}-${width}.png`)
+      }
+      noteResults.push({ name: `${view} ${mode} ${width}px 无页面横向溢出`, ok: await evaluate('document.documentElement.scrollWidth <= innerWidth') })
+    }
+    await call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
+    await evaluate("window.showFeature('christmas', 'light')")
+    await sleep(200)
+    noteResults.push({ name: '圣诞模式尊重减少动态效果设置', ok: await evaluate("!document.querySelector('[data-christmas-snow]') && !document.querySelector('[data-christmas-burst]') && !document.querySelector('[data-christmas-gift]')") })
+    await evaluate("window.captureCapabilityPause = false; window.showFeature('ai-capabilities')")
+    await sleep(150)
+    noteResults.push({ name: '减少动态效果时 AI 能力完整静态显示', ok: await evaluate("document.querySelector('[data-ai-capability-ticker]').textContent.includes('做一个读书打卡组件')") })
+    await evaluate("window.showFeature('cloud')")
+    await call('Emulation.setEmulatedMedia', { features: [] })
+    for (const result of noteResults) console.log(`${result.ok ? 'PASS' : 'FAIL'} ${result.name}${result.error ? '\n' + result.error : ''}`)
+    await fs.writeFile(path.join(output, 'feature-results.json'), JSON.stringify({ results: noteResults, errors }, null, 2))
+    if (noteResults.some(result => !result.ok) || errors.length) process.exitCode = 1
+    return
+  }
   if (process.env.EDITOR_SURFACE === 'rows') {
     const point = await evaluate('(() => { const r = document.querySelector(".note-menu-button").getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2} })()')
     await call('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 })
@@ -134,6 +193,11 @@ let server, browser, socket, profile
     const metrics = await call('Page.getLayoutMetrics')
     const { data: galleryPng } = await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip: { x: 0, y: 0, width: 1280, height: Math.min(3000, metrics.cssContentSize.height), scale: 1 } })
     await fs.writeFile(path.join(output, 'generation-gallery.png'), Buffer.from(galleryPng, 'base64'))
+  }
+  if (screenshotsEnabled && await evaluate('!!window.showApprovalFlow')) {
+    await fs.writeFile(path.join(output, 'approval-flow.svg'), await evaluate('window.approvalFlowSvg'))
+    await evaluate('window.showApprovalFlow()')
+    await screenshot('approval-flow.png')
   }
   if (screenshotsEnabled && await evaluate('!!window.showColorGallery')) {
     await evaluate('window.showColorGallery()')

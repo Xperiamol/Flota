@@ -1,6 +1,6 @@
 # Flota 隐私政策 / Privacy Policy
 
-生效日期 / Effective date: 2026-09-28
+生效日期 / Effective date: 2026-10-28
 
 [中文](#中文) · [English](#english)
 
@@ -24,8 +24,9 @@
 | --- | --- | --- |
 | AI 助手、AI 生成组件、记忆引擎 | 你的提问，以及你让 AI 读取或处理的笔记、待办内容 | 你配置的 AI 服务商，例如 OpenAI、DeepSeek、阿里云百炼（通义千问），或你填写的自定义接口 |
 | 联网搜索 | 搜索关键词 | 你配置的搜索服务（默认接口为 open.feedcoopapi.com） |
-| 语音转文字 | 你录制的语音 | 火山引擎语音识别服务 |
-| 云同步 | 笔记、待办、组件等需要同步的数据 | 你自己的 WebDAV 服务（如坚果云）、Google 日历或 CalDAV 服务器 |
+| 云端语音转文字 | 选择云端识别时，你录制的语音 | 火山引擎语音识别服务 |
+| 下载离线语音模型 | 模型文件的下载请求，不包含录音 | Hugging Face 模型托管服务 |
+| 云同步与多网盘备份 | 需要同步的数据；备份还包含笔记历史版本和本地附件，不包含服务密钥与本机连接配置 | 你自己的 WebDAV 服务（如坚果云）；日历同步发送到 Google 日历或 CalDAV 服务器 |
 | 检查更新（仅官网和 GitHub 下载的版本） | 当前版本号 | GitHub |
 
 这些服务如何处理数据，以它们各自的隐私政策为准。如果你在设置里配置了网络代理，上述请求会经过你的代理。
@@ -34,6 +35,8 @@
 
 ### 本机功能
 
+- **离线语音转文字**：模型下载完成后，在本机识别录音，不上传音频，也不会自动改用云端识别。
+- **笔记历史版本**：保存在本机数据库中；启用多网盘备份后会随完整备份保存到你指定的网盘。永久删除笔记时会一并删除本机历史，已有云端备份需要在对应网盘删除。
 - **网页剪藏扩展**：只把你主动剪藏的网页内容发送到你电脑上运行的 Flota（127.0.0.1），不会发送到其他地方。
 - **MCP 服务**：开启后，你连接的 AI 客户端可以读取和修改你的笔记与待办。这些数据之后如何处理，由该客户端及其服务商决定。
 - **插件**：插件在你授予的权限范围内运行。第三方插件由其开发者负责。
@@ -80,8 +83,9 @@ These features are off by default or only work after you enter your own service 
 | --- | --- | --- |
 | AI assistant, AI-generated widgets, memory engine | Your prompts and the notes or to-dos you ask the AI to read or work on | The AI provider you configure, such as OpenAI, DeepSeek, Alibaba Cloud Model Studio (Qwen), or a custom endpoint you enter |
 | Web search | Search queries | The search service you configure (the default endpoint is open.feedcoopapi.com) |
-| Speech to text | Your voice recordings | Volcengine speech recognition |
-| Cloud sync | The notes, to-dos, widgets and other data being synced | Your own WebDAV service (such as Nutstore), Google Calendar or CalDAV server |
+| Cloud speech to text | Your voice recordings, when you choose cloud recognition | Volcengine speech recognition |
+| Offline speech model download | Requests for model files, without your recordings | Hugging Face model hosting |
+| Cloud sync and backups to multiple drives | Data being synced; backups also include note history and local attachments, but exclude service keys and device connection settings | Your own WebDAV services (such as Nutstore); calendar sync uses Google Calendar or your CalDAV server |
 | Update check (only in versions downloaded from the website or GitHub) | The current app version | GitHub |
 
 How these services handle your data is governed by their own privacy policies. If you set up a network proxy in Settings, these requests go through your proxy.
@@ -90,6 +94,8 @@ The Microsoft Store version is updated by the Store and does not check for updat
 
 ### On-device features
 
+- **Offline speech to text**: after the model is downloaded, recordings are processed on your device. Audio is not uploaded, and recognition does not automatically fall back to a cloud service.
+- **Note history**: stored in the local database and included in full backups to drives you configure. Permanently deleting a note also removes its local history; existing cloud backups must be deleted separately in that service.
 - **Web Clipper extension**: sends only the pages you choose to clip, and only to Flota running on your computer (127.0.0.1).
 - **MCP server**: when turned on, the AI clients you connect can read and change your notes and to-dos. What happens to that data afterwards is up to those clients and their providers.
 - **Plugins**: plugins run within the permissions you grant. Third-party plugins are the responsibility of their developers.

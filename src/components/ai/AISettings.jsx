@@ -22,18 +22,15 @@ import {
   Check as CheckIcon,
   ExpandMore as ExpandMoreIcon
 } from '../common/AppIcons';
-import { settingsFieldGroupSx, settingsRowSx, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../../styles/commonStyles';
+import { settingsFieldGroupSx, settingsRowSx, settingsSectionSx, sectionTitleSx } from '../../styles/commonStyles';
 import { AgentHero, CapabilityGrid } from './AIAgentShowcase';
 import { useHomeStore } from '../../store/useHomeStore';
-import shortcutManager from '../../utils/ShortcutManager';
-import { formatShortcut } from '../layout/TitleBarAIButton';
 
 const isEnabledSetting = (value) => value === true || value === 'true' || value === 1 || value === '1';
 
 const AISettings = ({ showSnackbar }) => {
   const { t } = useTranslation();
   const aiBarHidden = useHomeStore((state) => state.aiBarHidden);
-  const aiShortcut = formatShortcut(shortcutManager.shortcuts?.['panels.aiCommandCenter']?.currentKey || 'CmdOrCtrl+K');
   const [config, setConfig] = useState({
     enabled: false,
     provider: 'openai',
@@ -253,9 +250,7 @@ const AISettings = ({ showSnackbar }) => {
 
       <Box id="ai-settings-model" sx={{ ...settingsSectionSx(), scrollMarginTop: 16 }}>
         <Typography variant="h6" sx={sectionTitleSx}>模型服务</Typography>
-        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
-          选择模型服务并填写访问凭据；所有能力都通过这里的模型完成
-        </Typography>
+
         <Box sx={settingsFieldGroupSx}>
           <FormControl fullWidth size="small">
             <InputLabel>{t('ai.provider')}</InputLabel>
@@ -350,9 +345,7 @@ const AISettings = ({ showSnackbar }) => {
           <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <Typography variant="h6" sx={sectionTitleSx}>联网搜索</Typography>
-              <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
-                对话与长文写作需要实时信息时会调用这里的搜索服务
-              </Typography>
+
             </Box>
             <Switch
               checked={isEnabledSetting(config.webSearchEnabled)}
@@ -430,9 +423,7 @@ const AISettings = ({ showSnackbar }) => {
 
       <Box sx={settingsSectionSx}>
         <Typography variant="h6" sx={sectionTitleSx}>自动整理</Typography>
-        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 1 }}>
-          不用开口，切换笔记时 AI 在后台帮你补上标题和标签
-        </Typography>
+
         <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2, ...disabledSx })}>
           <ListItemText
             primary="自动 AI 标题"
@@ -463,9 +454,7 @@ const AISettings = ({ showSnackbar }) => {
 
       <Box sx={settingsSectionSx}>
         <Typography variant="h6" sx={sectionTitleSx}>入口</Typography>
-        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 1 }}>
-          标题栏右上角的 AI 按钮和 {aiShortcut} 随时可以打开 AI 小窗
-        </Typography>
+
         <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2 })}>
           <ListItemText
             primary="首页显示「问 FlotaAI」输入框"
@@ -494,9 +483,7 @@ const AISettings = ({ showSnackbar }) => {
           <AccordionSummary expandIcon={<ExpandMoreIcon fontSize="small" />}>
             <Box>
               <Typography variant="subtitle1" sx={sectionTitleSx}>高级设置</Typography>
-              <Typography variant="caption" sx={sectionDescriptionSx}>
-                调整随机性；默认使用较大的输出预算
-              </Typography>
+
             </Box>
           </AccordionSummary>
           <AccordionDetails sx={{ pt: 0 }}>
@@ -518,7 +505,7 @@ const AISettings = ({ showSnackbar }) => {
             <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2, mb: 2 })}>
               <ListItemText
                 primary="限制最大输出长度"
-                secondary="默认关闭；关闭时不传最大输出长度限制，仅在开启后使用下面的自定义值。"
+                secondary="默认关闭；开启后使用下面的自定义值，关闭时遇到单次输出上限会自动续写。"
                 slotProps={{ primary: { sx: { fontWeight: 650 } } }}
               />
               <Switch
@@ -542,7 +529,7 @@ const AISettings = ({ showSnackbar }) => {
                 disabled={!isEnabledSetting(config.limitMaxTokens)}
               />
               <Typography variant="caption" color="text.secondary">
-                {isEnabledSetting(config.limitMaxTokens) ? t('ai.maxTokensDesc') : '当前关闭：不会向模型传 max_tokens，仅在开启后使用这里的自定义限制。'}
+                {isEnabledSetting(config.limitMaxTokens) ? t('ai.maxTokensDesc') : '当前关闭：不限制回复总长度；按服务商默认单次长度生成并自动续写，可随时停止。仍受模型上下文容量限制。'}
               </Typography>
             </Box>
           </AccordionDetails>

@@ -1,3 +1,6 @@
+import QuickPromptShortcuts from './QuickPromptShortcuts'
+import { GENERAL_AI_QUICK_PROMPTS, NOTE_AI_QUICK_PROMPTS } from '../../utils/aiQuickPrompts'
+import AICapabilityTicker from './AICapabilityTicker'
 import { AI_ATTACHMENT_ACCEPT, MAX_AI_ATTACHMENTS, readAIAttachment, buildAttachmentMessage } from '../../utils/aiAttachments'
 import { releasePopoverFocus } from '../../utils/popoverFocus'
 import { getUiLocation, getVisibleNoteId, noteWindowLocation } from '../../utils/aiCore/uiLocation'
@@ -20,6 +23,7 @@ import {
   DragIndicator as DragIcon,
   Add as AddIcon,
   EditNote as NoteIcon,
+  Settings as SettingsIcon,
   Send as SendIcon,
   Stop as StopIcon,
   Search as SearchIcon,
@@ -46,10 +50,11 @@ import { useShallow } from 'zustand/react/shallow'
 import useAIStream from '../../hooks/useAIStream'
 import useDraggableFloatingPanel from '../../hooks/useDraggableFloatingPanel'
 import { truncateText } from '../../utils/aiContextUtils'
-import { buildContext, CONTEXT_PROFILES } from '../../utils/aiCore/contextBuilder'
+import { buildContext } from '../../utils/aiCore/contextBuilder'
 import {
   getLatestConfirmableAction,
   getMessagePendingActions,
+  getDisplayMessages,
   isExplicitPendingActionConfirmation,
   supersedeStalePendingActions,
   toApiMessages,
@@ -58,19 +63,15 @@ import {
 import PendingActionCard from './PendingActionCard'
 import MemoryUpdateNotice from './MemoryUpdateNotice'
 import { useUndoMemoryUpdate } from '../../hooks/useAutoMemoryNotices'
-import { messageText, parseToolResult, buildMessageMetadata, createUserMessage, createAssistantMessage } from '../../utils/aiCore/messageModel'
+import { messageText, parseToolResult, formatAssistantCompletion, buildMessageMetadata, createUserMessage, createAssistantMessage } from '../../utils/aiCore/messageModel'
 import usePendingActionExecution from '../../hooks/usePendingActionExecution'
 import logger from '../../utils/logger'
+import { WHITEBOARD_AI_EXAMPLES } from '../../utils/whiteboardAIPrompts'
 import { notifyAINoteIdsUpdated } from '../../utils/aiCore/noteRefresh'
 import PanelIconButton from '../common/PanelIconButton'
 import { ThinkingDots, TypewriterText, pickThinkingPhrase } from './thinking'
 
-const QUICK_PROMPTS = [
-  { id: 'summarize', label: '总结当前笔记', prompt: '请总结当前笔记，输出：核心要点、关键结论。' },
-  { id: 'next-step', label: '下一步建议', prompt: '基于当前笔记，给我 3 条具体可执行的下一步行动建议。' },
-  { id: 'extract-todos', label: '提取待办', prompt: '请从当前笔记提取待办事项，并按优先级排序。' },
-  { id: 'related', label: '关联内容', prompt: '找出和当前笔记最相关的笔记、待办和记忆，并简要说明关联原因。' }
-]
+
 
 const TASK_PLANNING_PROMPTS = [
   {
@@ -251,7 +252,6 @@ const AICommandCenter = ({
   )
   const isTaskPlanning = currentConversation?.mode === 'task-planning'
     || currentConversation?.source === 'task-planning'
-  const quickPrompts = isTaskPlanning ? TASK_PLANNING_PROMPTS : QUICK_PROMPTS
 
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState(() => currentConversation?.messages || [])
@@ -345,6 +345,7 @@ const AICommandCenter = ({
   const [resizing, setResizing] = useState(false)
   const resizeStateRef = useRef(null)
   const [thinkingPhrase, setThinkingPhrase] = useState('Thinking… 思考中')
+  const displayMessages = useMemo(() => new Set(getDisplayMessages(messages)), [messages])
   const executingActionIds = useMemo(() => new Set(messages.flatMap(getMessagePendingActions)
     .filter(action => action.status === 'running').map(action => action.actionId)), [messages])
 
@@ -424,6 +425,9 @@ const AICommandCenter = ({
     () => notes.find(note => String(note.id) === String(selectedNoteId)),
     [notes, selectedNoteId]
   )
+
+  const isCanvas = currentNote?.note_type === 'whiteboard' && !isTaskPlanning
+  const quickPrompts = isTaskPlanning ? TASK_PLANNING_PROMPTS : isCanvas ? WHITEBOARD_AI_EXAMPLES : currentNote ? NOTE_AI_QUICK_PROMPTS : GENERAL_AI_QUICK_PROMPTS
 
   const previousConversationIdRef = useRef(currentConversationId)
   const pendingConversationIdRef = useRef(null)
@@ -626,7 +630,7 @@ const AICommandCenter = ({
       const apiMessages = toApiMessages(nextMessages)
       // 独立笔记窗口只有这一篇笔记；主窗口按当前页面判断
       const location = selectedNoteIdOverride !== undefined ? noteWindowLocation(selectedNoteIdOverride) : getUiLocation(useStore.getState())
-      const prepareContext = () => buildContext({ notes, selectedNoteId, query: text, contextEnabled: CONTEXT_PROFILES.floating_panel, location })
+      const prepareContext = () => buildContext({ notes, selectedNoteId, query: text, scene: 'floating_panel', location })
 
       const { result, content, cancelledByUser, requestId, contextPackage } = await runStream({
         conversationId,
@@ -644,7 +648,7 @@ const AICommandCenter = ({
         },
         onContent: (c) => { streamDraftsRef.current.set(conversationId, c); if (isActiveView()) setStreamContent(c) },
         onChunk: (chunk) => {
-          if (chunk?.type === 'tool_start') {
+          if (chunk?.type === 'tool_call_prepare' || chunk?.type === 'tool_start') {
             if (isActiveView()) showActiveTool(chunk.name || null)
             return
           }
@@ -682,12 +686,7 @@ const AICommandCenter = ({
         : result?.success
           ? (result.fullContent || content || '')
           : (content || `❌ ${result?.error || '请求失败'}`)
-      const truncatedHint = result?.outputLimitApplied
-        ? '⚠️ 回复达到当前最大 token 限制，可能未完整输出。可以在高级设置里调高最大输出长度，或发送“继续”。'
-        : '⚠️ 回复达到模型或服务商的输出上限，可能未完整输出。可以发送“继续”让 AI 接着写。'
-      const assistantContent = result?.truncated
-        ? `${assistantContentBase}\n\n${truncatedHint}`
-        : assistantContentBase
+      const assistantContent = formatAssistantCompletion(assistantContentBase, result)
 
       const latestMessages = readLatestMessages()
       if (!latestMessages) return
@@ -917,7 +916,7 @@ const AICommandCenter = ({
               sx={{
                 position: 'relative',
                 width: '100%',
-                height: compactEmptyState ? 102 : 138,
+                height: compactEmptyState ? 86 : 108,
                 flexShrink: 0,
                 overflow: 'visible'
               }}
@@ -927,60 +926,32 @@ const AICommandCenter = ({
                   position: 'absolute',
                   left: '50%',
                   top: '50%',
-                  transform: `translate(-50%, -50%) scale(${compactEmptyState ? 0.5 : 0.66})`,
+                  transform: `translate(-50%, -50%) scale(${compactEmptyState ? 0.44 : 0.52})`,
                   transformOrigin: 'center'
                 }}
               />
             </Box>
 
             <Box sx={{ textAlign: 'center', px: 1, mt: compactEmptyState ? -0.2 : -0.45 }}>
-              <Typography sx={{ fontSize: compactEmptyState ? 14 : 15, fontWeight: 650, lineHeight: 1.35 }}>
-                {isTaskPlanning ? 'AI 任务规划' : '你好！我是 FlotaAI'}
+              <Typography sx={{ fontSize: compactEmptyState ? 14 : 15, fontWeight: 550, lineHeight: 1.35 }}>
+                {isTaskPlanning ? 'AI 任务规划' : isCanvas ? '想把什么画出来？' : '你好！我是 FlotaAI'}
               </Typography>
-              {!compactEmptyState && (
+              {!compactEmptyState && (isTaskPlanning || isCanvas) && (
                 <Typography color="text.secondary" sx={{ mt: 0.25, fontSize: 11.5, lineHeight: 1.55 }}>
                   {isTaskPlanning
                     ? '从一个模板开始，或直接告诉我你想完成什么'
-                    : '管理笔记、查询待办、搜索记忆，或者聊聊天'}
+                    : isCanvas ? '画图、改图、读图，都可以从一句话开始' : '管理笔记、查询待办、搜索记忆，或者聊聊天'}
                 </Typography>
               )}
             </Box>
 
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.35, lineHeight: 1.2 }}>
-              快速开始
-            </Typography>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 0.5, width: '100%' }}>
-              {quickPrompts.map((item) => (
-                <Chip
-                  key={item.id}
-                  clickable
-                  disableRipple={false}
-                  size="small"
-                  label={item.label}
-                  onClick={() => handleSend(item.prompt)}
-                  sx={(theme) => ({
-                    height: 26,
-                    fontSize: 12,
-                    borderRadius: 1,
-                    bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.08 : 0.16),
-                    color: 'text.primary',
-                    boxShadow: `inset 0 0 0 1px ${alpha(theme.palette.common.white, theme.palette.mode === 'dark' ? 0.03 : 0.3)}`,
-                    overflow: 'hidden',
-                    '& .MuiTouchRipple-root': { inset: 0, borderRadius: 'inherit', overflow: 'hidden' },
-                    '& .MuiTouchRipple-child': { borderRadius: '8px !important' },
-                    transition: 'background-color 160ms ease, box-shadow 160ms ease',
-                    '&:hover': {
-                      bgcolor: alpha(theme.palette.primary.main, 0.07),
-                      boxShadow: `inset 0 0 0 1px ${alpha(theme.palette.primary.main, 0.13)}`
-                    }
-                  })}
-                />
-              ))}
-            </Box>
+            {!isTaskPlanning && !isCanvas && <AICapabilityTicker onSelect={prompt => { setInput(prompt); inputRef.current?.focus() }} sx={{ width: '100%', maxWidth: 380, mt: .5 }} />}
+
+            <QuickPromptShortcuts defaults={quickPrompts} scope={isTaskPlanning ? 'planning' : isCanvas ? 'canvas' : currentNote ? 'note' : 'general'} onSelect={prompt => { setInput(prompt); inputRef.current?.focus() }} />
           </Box>
         )}
 
-        {messages.map((msg, index) => (
+        {messages.map((msg, index) => displayMessages.has(msg) && (
           <ChatBubble
             key={index}
             msg={msg}
@@ -1122,7 +1093,7 @@ const AICommandCenter = ({
           maxRows={5}
           placeholder={isTaskPlanning
             ? '告诉我你的目标、期限或当前困难…'
-            : currentNote ? `就「${truncateText(currentNote.title || '未命名', 14)}」问点什么…` : '问 AI 任何问题…'}
+            : isCanvas ? '描述你想画什么、改哪里，或问问这张图…' : currentNote ? `就「${truncateText(currentNote.title || '未命名', 14)}」问点什么…` : '问 AI 任何问题…'}
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={handleKeyDown}
@@ -1302,10 +1273,13 @@ const ChatBubble = ({ msg, userAvatar, executingActionIds, onExecuteAction, onDi
       >
         {isUser
           ? (userAvatar ? null : '我')
-          // 确认后的动作还在执行：头像显示与「思考中」相同的跳动点
-          : getMessagePendingActions(msg).some((action) => executingActionIds.has(action.actionId))
-            ? <LoadingAvatarContent />
-            : <FlotaAIIcon sx={{ fontSize: 16 }} />}
+          : (() => {
+            const runningAction = getMessagePendingActions(msg).find((action) => executingActionIds.has(action.actionId))
+            // 确认后的动作还在执行：头像在对应工具图标与思考跳动点之间切换动画
+            return runningAction
+              ? <LoadingAvatarContent activeTool={runningAction.name} />
+              : <FlotaAIIcon sx={{ fontSize: 16 }} />
+          })()}
       </Avatar>
       <Paper elevation={0} sx={(theme) => ({
         maxWidth: 'calc(100% - 36px)',
@@ -1396,6 +1370,10 @@ const ChatBubble = ({ msg, userAvatar, executingActionIds, onExecuteAction, onDi
 }
 
 const TOOL_AVATAR_ICON = {
+  read_note: ReadIcon,
+  read_skill: ReadIcon,
+  get_settings: SettingsIcon,
+  update_settings: SettingsIcon,
   search_notes: SearchIcon,
   web_search: SearchIcon,
   get_current_note: NoteIcon,
@@ -1406,10 +1384,19 @@ const TOOL_AVATAR_ICON = {
   create_note: NoteIcon,
   edit_note: EditIcon,
   edit_notes: EditIcon,
+  create_whiteboard: EditIcon,
+  update_whiteboard: EditIcon,
+  list_widgets: SearchIcon,
+  get_widget: ReadIcon,
+  create_widget: EditIcon,
+  update_widget: EditIcon,
+  create_widget_instance: EditIcon,
+  add_widget_records: EditIcon,
   write_long_document: NoteIcon,
   search_todos: CheckIcon,
   get_today_todos: CalendarIcon,
   create_todo: CheckIcon,
+  create_todos: CheckIcon,
   search_memory: MemoryIcon,
   add_memory: MemoryIcon,
   update_memory: MemoryIcon,
@@ -1418,7 +1405,28 @@ const TOOL_AVATAR_ICON = {
 
 // 头像内容根据 activeTool 在「三点动画」与「对应工具图标」之间淡入切换
 const LoadingAvatarContent = ({ activeTool }) => {
-  const targetKey = activeTool && TOOL_AVATAR_ICON[activeTool] ? activeTool : '__dots__'
+  const hasToolIcon = Boolean(activeTool && TOOL_AVATAR_ICON[activeTool])
+  const [showDotsPhase, setShowDotsPhase] = useState(false)
+
+  useEffect(() => {
+    setShowDotsPhase(false)
+    if (!hasToolIcon) return undefined
+    let timer = null
+    let dots = false
+    const schedule = () => {
+      timer = window.setTimeout(() => {
+        dots = !dots
+        setShowDotsPhase(dots)
+        schedule()
+      }, dots ? 1400 : 1800)
+    }
+    schedule()
+    return () => {
+      if (timer) window.clearTimeout(timer)
+    }
+  }, [activeTool, hasToolIcon])
+
+  const targetKey = hasToolIcon && !showDotsPhase ? activeTool : '__dots__'
   const Icon = targetKey !== '__dots__' ? TOOL_AVATAR_ICON[targetKey] : null
   return (
     <Box

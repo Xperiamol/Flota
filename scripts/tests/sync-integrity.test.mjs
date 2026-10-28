@@ -22,12 +22,99 @@ const engine = () => Object.assign(Object.create(SyncEngine.prototype), {
   log() {}, logError() {}, emit() {}, config: { syncCategories: [] },
 })
 
+test('索引修复只接受已同步且逐字相同的正文，提交前云端变化仍拒绝', async () => {
+  const hash = require('../../electron/services/sync/utils/hash')
+  const local = { id: 'note', content: 'known synced body', title: '原有标题', note_type: 'markdown', is_deleted: 0 }
+  const entry = { h: hash.calculateMarkdownHash(local.content), t: 1000, d: 0, ext: '.md', meta: { title: local.title } }
+  const remote = { ...entry, h: hash.calculateMarkdownHash(''), t: 1, meta: { title: '' } }
+  const setup = () => {
+    const e = engine()
+    let body = local.content
+    e.client = { downloadText: async () => body }
+    e.storage = {
+      calculateNoteHash: note => hash.calculateMarkdownHash(note.content),
+      getNoteById: async () => local,
+      upsertNote: async () => { throw new Error('修复索引不应改写本地笔记') },
+    }
+    const task = { fileId: 'note', operation: 'download', remotePath: 'note.md', remoteEntry: remote,
+      expectedLocal: local, localEntry: entry, cachedEntry: entry }
+    return { e, task, setBody: value => { body = value } }
+  }
+  const { e, task, setBody } = setup()
+  await e.executeDownload(task)
+  assert.equal(task.repairedEntry.h, entry.h)
+  let saved
+  e.loadLocalManifest = () => ({ files: { note: entry } })
+  e.saveLocalManifest = value => { saved = value }
+  e.config.rootPath = '/Flota/'
+  let uploads = 0
+  e.client.uploadJson = async (_, manifest) => { uploads++; assert.equal(manifest.files.note.h, entry.h) }
+  await e.commit({ files: { note: entry } }, { files: { note: remote } }, [task], { successfulTaskKeys: ['note:download'] })
+  assert.equal(saved.files.note.h, entry.h)
+  assert.equal(uploads, 1)
+  setBody('new edit by another device')
+  await assert.rejects(e.commit({ files: { note: entry } }, { files: { note: remote } }, [task],
+    { successfulTaskKeys: ['note:download'] }), /云端正文发生变化/)
+  assert.equal(uploads, 1)
+
+  for (const scenario of ['different body', 'no baseline', 'local edits', 'edit during download', 'deleted', 'newer index', 'same-time index', 'changed metadata', 'wrong extension']) {
+    const { e, task, setBody } = setup()
+    if (scenario === 'different body') setBody('unknown cloud body')
+    if (scenario === 'no baseline') task.cachedEntry = undefined
+    if (scenario === 'local edits') task.cachedEntry = { ...entry, h: hash.calculateMarkdownHash('old') }
+    if (scenario === 'edit during download') e.storage.getNoteById = async () => ({ ...local, content: 'new local edit' })
+    if (scenario === 'deleted') task.cachedEntry = { ...entry, d: 1 }
+    if (scenario === 'newer index') task.remoteEntry = { ...remote, t: entry.t + 1 }
+    if (scenario === 'same-time index') task.remoteEntry = { ...remote, t: entry.t }
+    if (scenario === 'changed metadata') task.localEntry = { ...entry, meta: { ...entry.meta, extra: 'new source' } }
+    if (scenario === 'wrong extension') task.remoteEntry = { ...remote, ext: '.wb', meta: { ...remote.meta, note_type: 'markdown' } }
+    await assert.rejects(e.executeDownload(task), /云端正文与同步索引不一致/, scenario)
+    assert.equal(task.repairedEntry, undefined)
+  }
+})
+
 test('索引第 11 项损坏也必须拒绝', () => {
   const manifest = { version: 3, files: {} }
   for (let n = 0; n < 11; n++) manifest.files[n] = { h: 'hash', t: 1, d: 0 }
   assert.equal(engine().isValidManifest(manifest), true)
   manifest.files[10].t = NaN
   assert.equal(engine().isValidManifest(manifest), false)
+})
+
+test('中断恢复先验证正文；已提交的索引不重复上传，正文变化时放弃重放', async () => {
+  const hash = require('../../electron/services/sync/utils/hash')
+  const base = { version: 3, files: { note: { h: hash.calculateMarkdownHash('old'), t: 1, d: 0, ext: '.md' } } }
+  const recovery = { version: 3, files: { note: { ...base.files.note, h: hash.calculateMarkdownHash('new'), t: 2 } } }
+  for (const scenario of ['unchanged body', 'changed body', 'already committed', 'network failure']) {
+    const e = engine()
+    let cache = { ...recovery, _pendingCommit: true, _pendingBase: base, _pendingLocalCache: recovery, _pendingPreviousCache: base }
+    let uploads = 0, reads = 0
+    e.config.rootPath = '/Flota/'
+    e._bootstrapManifest = scenario === 'already committed' ? recovery : base
+    e.loadLocalManifest = () => cache
+    e.saveLocalManifest = value => { cache = value }
+    e.storage = { calculateNoteHash: note => hash.calculateMarkdownHash(note.content) }
+    e.generateManifest = async () => recovery
+    e.computeSyncTasks = async () => []
+    e.client = {
+      downloadText: async () => {
+        reads++
+        if (scenario === 'network failure') throw new Error('offline')
+        return scenario === 'changed body' ? 'another device body' : 'new'
+      },
+      uploadJson: async () => { uploads++ },
+    }
+    if (scenario === 'network failure') {
+      await assert.rejects(e.scanAndDiff(), /offline/)
+      assert.equal(cache._pendingCommit, true)
+    } else {
+      const result = await e.scanAndDiff()
+      assert.deepEqual(JSON.parse(JSON.stringify(result.remoteManifest)), scenario === 'changed body' ? base : recovery)
+      assert.deepEqual(JSON.parse(JSON.stringify(cache)), scenario === 'changed body' ? base : recovery)
+    }
+    assert.equal(uploads, scenario === 'unchanged body' ? 1 : 0)
+    assert.equal(reads, scenario === 'already committed' ? 0 : 1)
+  }
 })
 
 test('本地索引写失败不能吞掉；保留旧索引', () => {

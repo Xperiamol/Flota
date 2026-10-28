@@ -11,6 +11,20 @@ class NoteService extends EventEmitter {
     this.autoSaveTimers = new Map(); // 存储自动保存定时器
   }
 
+  async listVersions(id) {
+    return { success: true, data: this.noteDAO.listVersions(id) };
+  }
+
+  async getVersion(id, versionId) {
+    return { success: true, data: this.noteDAO.getVersion(id, versionId) };
+  }
+
+  async restoreVersion(id, versionId, revision) {
+    const note = this.noteDAO.restoreVersion(id, versionId, revision);
+    this.emit('note-updated', note);
+    return { success: true, data: note };
+  }
+
   /**
    * 创建新笔记
    */

@@ -6,12 +6,20 @@ const { withoutReferencePayload } = require('../../aiReferences');
  *   2) 判断是否有工具已直接交付内容（delivered=true），若是则禁用工具走轻量收尾
  *   3) 达到上限时禁用工具强制最终产出
  *   4) 联网搜索次数超预算后下一轮起剔除 web_search 工具
+ *   5) 有新结果时继续；重复无进展、上下文或总轮次达到预算时停止
  */
 
-const { isEnabledSetting, safeJsonParse } = require('../utils');
+const {
+  isEnabledSetting,
+  safeJsonParse,
+  estimateFullMessageTokens,
+  compactMessagesInPlace
+} = require('../utils');
 
-const MAX_DEPTH = 3;
+const { MAX_CONTEXT_TOKENS } = require('../constants');
 const MAX_WEB_SEARCH = 3;
+const MAX_TOTAL_ROUNDS = 24;
+const MAX_STALLED_ROUNDS = 3;
 
 const runToolCalls = async ({
   messages,
@@ -29,11 +37,20 @@ const runToolCalls = async ({
   });
 
   let delivered = false;
+  let pendingConfirmation = false;
+  let madeProgress = false;
+  options._toolResults ||= new Map();
   const pendingImageInjections = [];
   for (const tc of prevResult.toolCalls) {
     const fnName = tc.function.name;
+    const rawArgs = tc.function.arguments || '{}';
     let args = {};
-    try { args = JSON.parse(tc.function.arguments || '{}'); } catch (_) {}
+    let argParseError = null;
+    try {
+      args = JSON.parse(rawArgs);
+    } catch (err) {
+      argParseError = err;
+    }
 
     onChunk({ type: 'tool_start', name: fnName, args });
     logger?.info?.('AIChatService', `Executing tool: ${fnName}`, {
@@ -42,15 +59,25 @@ const runToolCalls = async ({
       name: fnName,
     });
 
-    const toolResult = await executeTool(fnName, args, {
-      requireConfirmation: options.requireConfirmation !== false,
-      disabledTools: options.disabledTools,
-      actionContext: options.actionContext || null,
-      onChunk,
-      abortSignal
-    });
+    const toolResult = argParseError
+      ? JSON.stringify({
+        error: prevResult.finishReason === 'length'
+          ? `工具 ${fnName} 的参数因单次输出长度上限被截断（JSON 未闭合）。请不要在单次工具参数中塞入超长内容，改为分段写入（如先创建再按段 edit_note append）或使用 write_long_document 工具。`
+          : `工具 ${fnName} 的参数不是合法 JSON（${argParseError.message}），请检查格式后重试。`
+      })
+      : await executeTool(fnName, args, {
+        requireConfirmation: options.requireConfirmation !== false,
+        disabledTools: options.disabledTools,
+        actionContext: options.actionContext || null,
+        onChunk,
+        abortSignal
+      });
     // 通知前端时剔除 dataURL，避免对话历史持久化数 MB 的 base64
     const parsed = safeJsonParse(toolResult);
+    const key = JSON.stringify([fnName, args]);
+    if (!parsed?.error && parsed?.success !== false && options._toolResults.get(key) !== toolResult) madeProgress = true;
+    options._toolResults.set(key, toolResult);
+    if (parsed?.requiresConfirmation) pendingConfirmation = true;
     if (parsed && (parsed.error || parsed.success === false)) {
       logger?.warn?.('AIChatService', `Tool failed: ${fnName}`, {
         requestId: options.requestId || null,
@@ -102,7 +129,7 @@ const runToolCalls = async ({
       ]
     });
   }
-  return delivered;
+  return { delivered, pendingConfirmation, madeProgress };
 };
 
 const handleToolCalls = async ({
@@ -112,21 +139,21 @@ const handleToolCalls = async ({
   onChunk,
   temp,
   maxTk,
-  depth,
   abortSignal,
   options,
   streamRequest,
   executeTool,
   logger
 }) => {
+  options._toolRounds = (options._toolRounds || 0) + 1;
   const userOutputLimitApplied = options.maxTokens != null || isEnabledSetting(config.limitMaxTokens);
 
-  const delivered = await runToolCalls({
+  const { delivered, pendingConfirmation, madeProgress } = await runToolCalls({
     messages, prevResult, onChunk, options, abortSignal, executeTool, logger
   });
 
   // 已经把最终内容直接交付给用户：禁用工具走轻量收尾
-  if (delivered) {
+  if (delivered || pendingConfirmation) {
     const wrapUp = await streamRequest(
       config, messages, temp, maxTk, onChunk, abortSignal, { ...options, disableTools: true }
     );
@@ -136,15 +163,23 @@ const handleToolCalls = async ({
       usage: wrapUp.usage,
       finishReason: wrapUp.finishReason,
       truncated: wrapUp.finishReason === 'length',
-      outputLimitApplied: userOutputLimitApplied
+      outputLimitApplied: userOutputLimitApplied,
+      taskStatus: pendingConfirmation ? 'awaiting_confirmation' : 'delivered'
     };
   }
 
+  options._stalledRounds = madeProgress ? 0 : (options._stalledRounds || 0) + 1;
+  // 先对历史工具轮次执行分级压缩（L1/L2/L3），压缩后仍超预算才强制收尾
+  const rawTokens = messages.reduce((sum, message) => sum + estimateFullMessageTokens(message), 0);
+  if (rawTokens > MAX_CONTEXT_TOKENS * 0.55) {
+    compactMessagesInPlace(messages, Math.floor(MAX_CONTEXT_TOKENS * 0.8));
+  }
   // 达到工具轮次上限：禁用工具，强制模型基于已有结果直接产出最终回答
-  if (depth >= MAX_DEPTH) {
+  const contextFull = messages.reduce((sum, message) => sum + estimateFullMessageTokens(message), 0) > MAX_CONTEXT_TOKENS * .85;
+  if (contextFull || options._stalledRounds >= MAX_STALLED_ROUNDS || options._toolRounds >= MAX_TOTAL_ROUNDS) {
     messages.push({
       role: 'user',
-      content: '你已经拿到了足够多的工具结果，不要再调用任何工具。现在请基于已有上下文直接给出最终回答或最终文档；若用户要的是长文档/报告/方案，请直接完整输出最终内容。'
+      content: '本轮因重复调用没有取得新结果或达到上下文/执行预算而停止。请明确说明已完成与仍缺少的部分；不要编造数据或宣称整项任务完成。'
     });
     const forcedFinal = await streamRequest(
       config, messages, temp, maxTk, onChunk, abortSignal, { ...options, disableTools: true }
@@ -155,7 +190,9 @@ const handleToolCalls = async ({
       usage: forcedFinal.usage,
       finishReason: forcedFinal.finishReason,
       truncated: forcedFinal.finishReason === 'length',
-      outputLimitApplied: userOutputLimitApplied
+      outputLimitApplied: userOutputLimitApplied,
+      taskStatus: 'incomplete',
+      stopReason: contextFull ? 'context_budget' : options._stalledRounds >= MAX_STALLED_ROUNDS ? 'no_progress' : 'budget'
     };
   }
 
@@ -166,7 +203,7 @@ const handleToolCalls = async ({
   if (newResult.toolCalls && newResult.toolCalls.length > 0) {
     return handleToolCalls({
       config, messages, prevResult: newResult, onChunk, temp, maxTk,
-      depth: depth + 1, abortSignal, options: nextOptions,
+      abortSignal, options: nextOptions,
       streamRequest, executeTool, logger
     });
   }
@@ -181,4 +218,4 @@ const handleToolCalls = async ({
   };
 };
 
-module.exports = { handleToolCalls, MAX_DEPTH };
+module.exports = { handleToolCalls };

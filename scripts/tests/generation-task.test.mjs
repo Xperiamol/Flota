@@ -80,7 +80,7 @@ test('编辑器临时 DOM 使用 app 协议，不再相对安装目录解析图�
 
 let streamSource = await readFile(new URL('../../src/hooks/useAIStream.js', import.meta.url), 'utf8')
 streamSource = streamSource.replace(/^import .*$/gm, '')
-streamSource = `const useRef = value => ({ current: value }); const useCallback = fn => fn; const useEffect = () => {}; const aiLog = { info() {}, warn() {}, error() {} };\n` + streamSource
+streamSource = `const useRef = value => ({ current: value }); const useCallback = fn => fn; const useEffect = () => {}; const getAppSettingsSnapshot = () => ({}); const aiLog = { info() {}, warn() {}, error() {} };\n` + streamSource
 const { useAIStream } = await import(`data:text/javascript;base64,${Buffer.from(streamSource).toString('base64')}`)
 test('两个会话并行流式生成：结束旧请求不移除新监听器，取消只影响指定会话', async () => {
   const listeners = new Set(), requests = [], cancelled = []

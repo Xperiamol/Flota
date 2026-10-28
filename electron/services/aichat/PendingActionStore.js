@@ -118,6 +118,7 @@ class PendingActionStore {
     };
 
     switch (name) {
+      case 'update_settings': return require('./tools/handlers/settings').summarizeChanges(args.changes);
       case 'create_note': return `创建笔记「${args.title || '未命名'}」`;
       case 'edit_note': {
         const title = args.title ? `，标题改为「${args.title}」` : '';

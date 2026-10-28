@@ -420,7 +420,7 @@ const Profile = () => {
         {/* 与 AI 小窗同一个入口：回车直接发送；可以本次隐藏或永久隐藏 */}
         {showAiBar && (
         <Box sx={(theme) => ({
-          height: 46, mb: 3, pl: 1.75, pr: 0.75, display: 'flex', alignItems: 'center', gap: 1.25, borderRadius: '12px',
+          height: 46, mb: 2.5, pl: 1.75, pr: 0.75, display: 'flex', alignItems: 'center', gap: 1.25, borderRadius: '12px',
           // 半透明：设了壁纸时不是一整条白块
           bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.5 : 0.72), border: `1px solid ${theme.palette.divider}`,
           transition: 'border-color 150ms ease', '&:focus-within': { borderColor: alpha(theme.palette.primary.main, 0.6) },
@@ -429,7 +429,7 @@ const Profile = () => {
           <InputBase
             fullWidth
             value={aiDraft}
-            placeholder="问 FlotaAI，或让它帮你做一个组件"
+            placeholder="问 FlotaAI…"
             onChange={(event) => setAiDraft(event.target.value)}
             onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) sendToAI(); }}
             inputProps={{ 'aria-label': '问 FlotaAI' }}

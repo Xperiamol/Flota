@@ -1,116 +1,118 @@
-import React, { useMemo } from 'react';
-import { Box } from '@mui/material';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Box, GlobalStyles, useMediaQuery } from '@mui/material';
 import { keyframes } from '@emotion/react';
+import { CHRISTMAS_ART } from '../../assets/christmas';
 
-// 圣诞配色方案
 export const CHRISTMAS_COLORS = {
-    // 主色调
-    primary: '#c41e3a',      // 深红色 (Cranberry Red)
-    secondary: '#165B33',    // 深绿色 (Hunter Green)
-    // 辅助色
-    gold: '#FFD700',         // 金色
-    ivory: '#FFFFF0',        // 象牙白
-    holly: '#00563F',        // 冬青绿
-    burgundy: '#800020',     // 酒红色
-    snow: '#FFFAFA',         // 雪白
-    pine: '#01796F',         // 松绿色
-    // 渐变
-    gradient: 'linear-gradient(135deg, #c41e3a 0%, #165B33 100%)',
-    softGradient: 'linear-gradient(135deg, rgba(196, 30, 58, 0.1) 0%, rgba(22, 91, 51, 0.1) 100%)'
+  primary: '#c41e3a', secondary: '#165B33', gold: '#FFD700', ivory: '#FFFFF0',
+  holly: '#00563F', burgundy: '#800020', snow: '#FFFAFA', pine: '#01796F',
+  gradient: 'linear-gradient(135deg, #c41e3a 0%, #165B33 100%)',
+  softGradient: 'linear-gradient(135deg, rgba(196,30,58,.1), rgba(22,91,51,.1))',
 };
-
-// 雪花飘落动画
-const snowfall = keyframes`
-  0% {
-    transform: translateY(-10px) translateX(0) rotate(0deg);
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-  }
-  90% {
-    opacity: 0.8;
-  }
-  100% {
-    transform: translateY(100vh) translateX(30px) rotate(360deg);
-    opacity: 0;
-  }
+const palette = ['#ba4050', '#609575', '#e5c679', '#f7eac5'];
+const fall = keyframes`
+  from { transform: translate3d(0,-20px,0); opacity: 0; }
+  12%,85% { opacity: var(--snow-opacity); }
+  to { transform: translate3d(35px,105vh,0); opacity: 0; }
+`;
+const fly = keyframes`
+  from { transform: translateX(-260px); opacity: 0; }
+  8%,90% { opacity: .9; }
+  to { transform: translateX(calc(100vw + 260px)); opacity: 0; }
+`;
+const scatter = keyframes`
+  from { transform: translate3d(0,0,0) scale(.4); opacity: 1; }
+  to { transform: translate3d(var(--dx),var(--dy),0) scale(.1) rotate(160deg); opacity: 0; }
+`;
+const peek = keyframes`
+  from { transform: translateY(36px) rotate(5deg); opacity: 0; }
+  15%,75% { transform: translateY(0) rotate(0); opacity: 1; }
+  to { transform: translateY(28px); opacity: 0; }
 `;
 
-const ChristmasDecorations = () => {
-    // 生成雪花数据 - 使用 useMemo 避免重渲染时重新生成
-    const snowflakes = useMemo(() => {
-        return Array.from({ length: 60 }).map((_, i) => ({
-            id: i,
-            left: Math.random() * 100,
-            size: Math.random() * 4 + 2, // 2-6px 小微粒
-            duration: Math.random() * 8 + 6, // 6-14秒
-            delay: Math.random() * 10, // 0-10秒延迟
-            opacity: Math.random() * 0.5 + 0.3, // 0.3-0.8透明度
-        }));
-    }, []);
+export default function ChristmasDecorations() {
+  const reduced = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const [paused, setPaused] = useState(document.hidden);
+  const [burst, setBurst] = useState(null);
+  const [surprise, setSurprise] = useState(null);
+  const burstTimer = useRef(null);
+  const surpriseTimer = useRef(null);
+  const lastBurst = useRef(0);
+  const lastReveal = useRef(0);
+  const moments = useRef({ note: 0, todo: 0, writing: 0, writingStarted: 0 });
+  const flakes = useMemo(() => Array.from({ length: 32 }, (_, i) => ({
+    left: Math.random() * 100, size: 2 + Math.random() * 3,
+    duration: 10 + Math.random() * 12, delay: -Math.random() * 22,
+    opacity: .2 + Math.random() * .35, edge: i % 3 !== 0,
+  })), []);
+  const celebrate = useCallback(() => {
+    if (reduced || document.hidden || Date.now() - lastBurst.current < 650) return;
+    lastBurst.current = Date.now();
+    const target = document.querySelector('[data-tour="todo"]')?.getBoundingClientRect();
+    setBurst({ id: Date.now(), x: target ? target.right + 8 : innerWidth - 50, y: target ? target.top + target.height / 2 : innerHeight - 90 });
+    clearTimeout(burstTimer.current);
+    burstTimer.current = setTimeout(() => setBurst(null), 950);
+  }, [reduced]);
+  const reveal = useCallback(art => {
+    // 彩蛋只由真实使用触发，并留出安静的间隔。
+    if (document.hidden || Date.now() - lastReveal.current < 45000) return;
+    lastReveal.current = Date.now();
+    const flight = art === 'sleigh' && !reduced;
+    setSurprise({ id: Date.now(), art: reduced && art === 'sleigh' ? 'gifts' : art, flight });
+    clearTimeout(surpriseTimer.current);
+    surpriseTimer.current = setTimeout(() => setSurprise(null), flight ? 9000 : 3600);
+  }, [reduced]);
+  useEffect(() => {
+    document.documentElement.dataset.flotaChristmas = 'true';
+    const visibility = () => {
+      setPaused(document.hidden);
+      if (document.hidden) { setSurprise(null); setBurst(null); clearTimeout(surpriseTimer.current); clearTimeout(burstTimer.current); }
+    };
+    const onMoment = event => {
+      if (document.hidden) return;
+      const kind = event.detail?.kind || 'todo';
+      if (kind === 'note') {
+        moments.current.note++;
+        if (moments.current.note % 3 === 0) reveal('tree');
+      } else if (kind === 'todo') {
+        celebrate();
+        moments.current.todo++;
+        if (moments.current.todo % 3 === 0) reveal('sleigh');
+      }
+    };
+    const onWriting = event => {
+      if (!(event.target instanceof Element) || !event.target.closest('.ProseMirror') || event.isComposing || document.hidden) return;
+      const now = Date.now();
+      if (!moments.current.writingStarted) moments.current.writingStarted = now;
+      moments.current.writing++;
+      if (moments.current.writing >= 16 && now - moments.current.writingStarted >= 8000) {
+        reveal('snowman'); moments.current.writing = 0; moments.current.writingStarted = now;
+      }
+    };
+    document.addEventListener('visibilitychange', visibility);
+    document.addEventListener('input', onWriting);
+    window.addEventListener('flota:christmas-celebrate', onMoment);
+    return () => {
+      delete document.documentElement.dataset.flotaChristmas;
+      document.removeEventListener('visibilitychange', visibility);
+      document.removeEventListener('input', onWriting);
+      window.removeEventListener('flota:christmas-celebrate', onMoment);
+      clearTimeout(burstTimer.current); clearTimeout(surpriseTimer.current);
+    };
+  }, [celebrate, reveal]);
 
-    const borderWidth = '4px';
-    const borderRadius = '8px';
-
-    return (
-        <>
-            {/* 
-        四周渐变边框 - 使用 mask 技术实现镂空 
-        background 填充整个区域，然后 mask 将中间部分(content-box)与整体(border-box)进行 xor 运算，只保留边框
-      */}
-            <Box
-                sx={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    zIndex: 9998,
-                    pointerEvents: 'none',
-                    padding: borderWidth,
-                    borderRadius: borderRadius,
-                    background: `linear-gradient(135deg, #c41e3a 0%, #165B33 25%, #c41e3a 50%, #165B33 75%, #c41e3a 100%)`,
-                    WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-                    WebkitMaskComposite: 'xor',
-                    maskComposite: 'exclude',
-                }}
-            />
-
-            {/* 雪花飘落效果 */}
-            <Box
-                sx={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    pointerEvents: 'none',
-                    zIndex: 9997,
-                    overflow: 'hidden',
-                }}
-            >
-                {snowflakes.map((flake) => (
-                    <Box
-                        key={flake.id}
-                        sx={{
-                            position: 'absolute',
-                            left: `${flake.left}%`,
-                            top: -10,
-                            width: `${flake.size}px`,
-                            height: `${flake.size}px`,
-                            borderRadius: '50%',
-                            backgroundColor: '#a5d8ff', // 淡蓝色
-                            boxShadow: '0 0 4px #74c0fc', // 增强发光效果
-                            opacity: flake.opacity,
-                            animation: `${snowfall} ${flake.duration}s linear infinite`,
-                            animationDelay: `${flake.delay}s`,
-                        }}
-                    />
-                ))}
-            </Box>
-        </>
-    );
-};
-
-export default ChristmasDecorations;
+  return <>
+    <GlobalStyles styles={{ '@media print': { '[data-christmas-layer]': { display: 'none !important' } } }} />
+    <Box data-christmas-layer aria-hidden="true" sx={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 1401, overflow: 'hidden', '& *': { animationPlayState: paused ? 'paused !important' : 'running' } }}>
+      <Box sx={{ position: 'absolute', inset: 0, border: '3px solid transparent', borderImage: 'linear-gradient(135deg,#a43e4b,#d6b56e,#37644c,#a43e4b) 1', borderRadius: '10px' }} />
+      {!reduced && flakes.map((flake, i) => <Box key={i} data-christmas-snow sx={{ position: 'absolute', top: -10,
+        left: `${flake.edge ? (i % 2 ? flake.left * .18 : 82 + flake.left * .18) : flake.left}%`, width: flake.size, height: flake.size, borderRadius: '50%', bgcolor: '#b5d8e8',
+        '--snow-opacity': flake.opacity, opacity: 0, animation: `${fall} ${flake.duration}s linear infinite`, animationDelay: `${flake.delay}s`,
+      }} />)}
+      {burst && <Box key={burst.id} data-christmas-burst sx={{ position: 'absolute', left: burst.x, top: burst.y }}>{palette.map((color, i) => <Box key={i} sx={{ position: 'absolute', fontSize: 11, color, '--dx': `${18 + i * 8}px`, '--dy': `${(i - 2) * 16}px`, animation: `${scatter} 900ms ease-out forwards` }}>✦</Box>)}</Box>}
+      {surprise && <Box key={surprise.id} component="img" data-christmas-surprise={surprise.art} src={CHRISTMAS_ART[surprise.art]} alt="" draggable={false} sx={{ position: 'absolute', objectFit: 'contain', filter: 'drop-shadow(0 3px 6px rgba(35,50,30,.15))',
+        ...(surprise.flight ? { top: 42, left: -220, width: 200, height: 100, animation: `${fly} 9s linear forwards` } : { bottom: 52, right: 18, width: 86, height: 100, animation: reduced ? 'none' : `${peek} 3.6s ease-in-out forwards` }),
+      }} />}
+    </Box>
+  </>;
+}

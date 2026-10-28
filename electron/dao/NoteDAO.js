@@ -1,7 +1,11 @@
 const { getInstance } = require('./DatabaseManager');
+const SettingDAO = require('./SettingDAO');
 const TagService = require('../services/TagService');
 const ChangeLogDAO = require('./ChangeLogDAO');
 const crypto = require('crypto');
+const HISTORY_FIELDS = ['title', 'content', 'tags', 'category', 'note_type', 'meta'];
+const historySnapshot = note => Object.fromEntries(HISTORY_FIELDS.map(key => [key, note[key] ?? null]));
+const historyRevision = note => crypto.createHash('sha256').update(JSON.stringify(historySnapshot(note))).digest('hex');
 
 // meta 以 JSON 文本存储；传对象自动序列化，传 null 清空
 const serializeMeta = (meta) => {
@@ -24,6 +28,40 @@ class NoteDAO {
    */
   getDB() {
     return this.dbManager.getDatabase();
+  }
+
+  listVersions(noteId) {
+    const note = this.findById(noteId);
+    if (!note) throw new Error('笔记不存在');
+    const versions = this.getDB().prepare(`SELECT id, created_at,
+      json_extract(snapshot, '$.title') AS title,
+      length(json_extract(snapshot, '$.content')) AS length
+      FROM note_versions WHERE note_id = ? ORDER BY id DESC`).all(noteId);
+    const settings = new SettingDAO();
+    const policy = {
+      enabled: settings.get('noteHistoryEnabled')?.value ?? false,
+      intervalSeconds: settings.get('noteHistoryIntervalSeconds')?.value ?? 60,
+      limit: settings.get('noteHistoryLimit')?.value ?? 50,
+    };
+    return { versions, revision: historyRevision(note), policy };
+  }
+
+  getVersion(noteId, versionId) {
+    const row = this.getDB().prepare('SELECT * FROM note_versions WHERE note_id = ? AND id = ?').get(noteId, versionId);
+    if (!row) throw new Error('历史版本不存在');
+    return { id: row.id, created_at: row.created_at, ...JSON.parse(row.snapshot) };
+  }
+
+  restoreVersion(noteId, versionId, revision) {
+    return this.getDB().transaction(() => {
+      const current = this.findById(noteId);
+      if (!current) throw new Error('笔记不存在');
+      if (historyRevision(current) !== revision) throw new Error('笔记已更新，请重新打开历史版本后再恢复');
+      const saved = this.getVersion(noteId, versionId);
+      this.getDB().prepare('INSERT INTO note_versions(note_id, snapshot, created_at) VALUES(?, ?, ?)')
+        .run(noteId, JSON.stringify(historySnapshot(current)), Date.now());
+      return this.updateInTransaction(noteId, historySnapshot(saved));
+    })();
   }
 
   /**

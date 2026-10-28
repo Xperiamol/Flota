@@ -19,6 +19,61 @@ import logger from '../logger'
 
 const SVG_MIME = 'image/svg+xml'
 
+/**
+ * Mermaid 11.14+ 会在 render(renderId, ...) 生成的 SVG 内部给所有 <g>/<path> 的 id
+ * 加上 `${renderId}-` 前缀（例如 `id="mermaid-to-excalidraw-0-SG1"`），
+ * 但 getDiagramFromText() 阶段产出的 diagram.db 仍保留无前缀的原始 id（如 `SG1`）。
+ * @excalidraw/mermaid-to-excalidraw@2.2.2 的 parseSubGraph / parseClasses / parseEntity / parseState
+ * 使用精确选择器 `[id='${data.id}']` 查询 DOM，导致所有带 subgraph 的流程图必报
+ * `Error: SubGraph element not found` 并静默退化为不可编辑的静态图片。
+ *
+ * 这里剥离图形元素上的 `${renderId}-` 前缀，同时保留 <defs> 内 filter/gradient/marker 的 id。
+ */
+export const stripMermaidRenderIdPrefix = (svg = '', renderId = '') => {
+  const rawSvg = String(svg || '')
+  const prefix = String(renderId || '').trim()
+  if (!rawSvg || !prefix) return rawSvg
+  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const tagIdRe = new RegExp(
+    `(<(?:g|path|rect|circle|ellipse|polygon|polyline|line|text|foreignObject)\\b[^>]*?\\bid=(["']))${escaped}-(?!drop-shadow|gradient)`,
+    'gi',
+  )
+  return rawSvg.replace(tagIdRe, '$1')
+}
+
+const MERMAID_CONTAINER_ID_RE = /^mermaid-to-excalidraw-\d+-container$/
+
+// The converter creates an offscreen container before assigning the rendered SVG.
+// Adapt only that container; Mermaid's API is frozen and DOM prototypes stay untouched.
+let conversionQueue = Promise.resolve()
+const parseCompatibleMermaid = (code, options) => {
+  const run = async () => {
+    const body = document.body
+    const ownAppend = Object.getOwnPropertyDescriptor(body, 'appendChild')
+    const append = body.appendChild
+    const innerHTML = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML')
+    body.appendChild = function (node) {
+      if (node instanceof Element && MERMAID_CONTAINER_ID_RE.test(node.id)) {
+        const renderId = node.id.replace(/-container$/, '')
+        Object.defineProperty(node, 'innerHTML', {
+          configurable: true,
+          get() { return innerHTML.get.call(this) },
+          set(value) { innerHTML.set.call(this, stripMermaidRenderIdPrefix(value, renderId)) },
+        })
+      }
+      return append.call(this, node)
+    }
+    try { return await parseMermaidToExcalidraw(code, options) }
+    finally {
+      if (ownAppend) Object.defineProperty(body, 'appendChild', ownAppend)
+      else delete body.appendChild
+    }
+  }
+  const pending = conversionQueue.then(run)
+  conversionQueue = pending.catch(() => {})
+  return pending
+}
+
 // PNG 回退时的渲染倍率：尽量高（放大查看仍清晰），但限制总像素，避免超大图导致内存爆炸
 const MAX_RASTER_PIXELS = 36_000_000
 const computeRenderScale = (logicalW = 1200, logicalH = 800) => {
@@ -183,11 +238,177 @@ const autoQuoteFlowchartLabels = (code = '') => {
 
 // Mermaid 关键字（flowchart/graph/class/end/subgraph 等）若被模型误用作节点 id 会引发
 // lex 错误。识别 `保留字[...]` `保留字(...)` `保留字{...}` 形式，统一加 `_` 前缀避开冲突。
+// 注意：行首的 `subgraph[...]` 是模型漏写空格的 subgraph 标题声明，不能当作普通节点转义。
 const MERMAID_RESERVED_AS_ID_RE = /\b(class|graph|flowchart|end|subgraph|style|click|direction|linkStyle|classDef)([\[\(\{])/g
-const escapeReservedNodeIds = (code = '') => String(code || '').replace(
-  MERMAID_RESERVED_AS_ID_RE,
-  (_, word, bracket) => `_${word}${bracket}`,
-)
+const escapeReservedNodeIds = (code = '') => String(code || '')
+  .split('\n')
+  .map((line) => {
+    if (/^\s*subgraph\s*[\[\(\{]/i.test(line)) {
+      return line.replace(/^(\s*subgraph)\s*([\[\(\{])/i, '$1 $2')
+    }
+    return line.replace(
+      MERMAID_RESERVED_AS_ID_RE,
+      (_, word, bracket) => `_${word}${bracket}`,
+    )
+  })
+  .join('\n')
+
+/**
+ * 规范化 flowchart/graph 中的 subgraph 声明并剔除空 subgraph：
+ * 1) 将 `subgraph 中文标题`、`subgraph "标题"`、`subgraph [标题]`、`subgraph id[标题]`
+ *    统一规范为具有唯一安全 ASCII id 的 `subgraph sg_N ["标题"]`（保留原本合法且不与节点冲突的 ASCII id），
+ *    避免中文/引号/连字符 id 在 DOM 选择器 `[id='${data.id}']` 中失配。
+ * 2) 若 subgraph id 与普通节点 id 重名，自动重命名 subgraph id，防止 dagre 父子循环或覆盖。
+ * 3) 移除内部没有任何有效语句的空 `subgraph ... end` 块（空块在 Mermaid dagre 中不会生成 cluster 节点）。
+ */
+export const normalizeFlowchartSubgraphs = (code = '') => {
+  const raw = String(code || '')
+  const kind = detectDiagramKind(raw)
+  if (kind !== 'flowchart' && kind !== 'graph') return raw
+  if (!/\bsubgraph\b/i.test(raw)) return raw
+
+  const lines = raw.split('\n')
+  const vertexIds = new Set()
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('%%')) continue
+    if (/^(flowchart|graph|subgraph|end|style|classDef|class|linkStyle|direction|click)\b/i.test(trimmed)) {
+      continue
+    }
+    // 提取节点定义与连线端点中的 ASCII 节点 id
+    const shapeMatches = trimmed.matchAll(/\b([A-Za-z_][\w-]*)\s*[\[\(\{>]/g)
+    for (const m of shapeMatches) vertexIds.add(m[1])
+    if (FLOWCHART_LINK_RE.test(trimmed)) {
+      const parts = trimmed.split(/(?:-->|---|-\.->|-\.-|==>|===|<-->|o--|--o|x--|--x)(?:\s*\|[^|]*\|)?/)
+      for (const part of parts) {
+        const token = part.trim().match(/^([A-Za-z_][\w-]*)/)
+        if (token) vertexIds.add(token[1])
+      }
+    }
+  }
+
+  const usedSubgraphIds = new Set()
+  const renamedSubgraphMap = new Map()
+  let sgCounter = 1
+  const nextSubgraphId = () => {
+    while (usedSubgraphIds.has(`sg_${sgCounter}`) || vertexIds.has(`sg_${sgCounter}`)) {
+      sgCounter += 1
+    }
+    const id = `sg_${sgCounter}`
+    usedSubgraphIds.add(id)
+    sgCounter += 1
+    return id
+  }
+
+  const cleanSubgraphTitle = (title = '') => String(title || '')
+    .trim()
+    .replace(/^["']+|["']+$/g, '')
+    .replace(/"/g, "'")
+    .trim()
+
+  const normalizedLines = lines.map((line) => {
+    const match = line.match(/^(\s*)subgraph\b(.*)$/i)
+    if (!match) return line
+    const indent = match[1] || ''
+    const rest = (match[2] || '').trim()
+
+    if (!rest) {
+      const safeId = nextSubgraphId()
+      return `${indent}subgraph ${safeId}`
+    }
+
+    // 形式 1: `subgraph id ["title"]` 或 `subgraph id [title]`
+    const idWithBracket = rest.match(/^([^\s\[\]()"']+)\s*\[([\s\S]*)\]\s*$/)
+    if (idWithBracket) {
+      const rawId = idWithBracket[1].trim()
+      const title = cleanSubgraphTitle(idWithBracket[2]) || rawId
+      const isValidSafeAscii = /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawId) && !/^flowchart_/i.test(rawId)
+      const hasCollision = vertexIds.has(rawId) || usedSubgraphIds.has(rawId)
+      const safeId = (isValidSafeAscii && !hasCollision) ? rawId : nextSubgraphId()
+      usedSubgraphIds.add(safeId)
+      if (safeId !== rawId && !vertexIds.has(rawId)) {
+        renamedSubgraphMap.set(rawId, safeId)
+      }
+      return `${indent}subgraph ${safeId} ["${title}"]`
+    }
+
+    // 形式 2: `subgraph ["title"]` 或 `subgraph [title]`
+    const bracketOnly = rest.match(/^\[([\s\S]*)\]\s*$/)
+    if (bracketOnly) {
+      const safeId = nextSubgraphId()
+      const title = cleanSubgraphTitle(bracketOnly[1]) || safeId
+      return `${indent}subgraph ${safeId} ["${title}"]`
+    }
+
+    // 形式 3: 仅单个安全 ASCII 标识符 `subgraph SG1`
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(rest)) {
+      if (!vertexIds.has(rest) && !usedSubgraphIds.has(rest)) {
+        usedSubgraphIds.add(rest)
+        return `${indent}subgraph ${rest}`
+      }
+      const safeId = nextSubgraphId()
+      return `${indent}subgraph ${safeId} ["${rest}"]`
+    }
+
+    // 形式 4: `subgraph "标题"`、`subgraph 中文标题`、`subgraph A-B`、`subgraph Multi Word Title`
+    const safeId = nextSubgraphId()
+    const title = cleanSubgraphTitle(rest) || safeId
+    if (!/\s/.test(rest) && !/^["']/.test(rest) && !vertexIds.has(rest)) {
+      renamedSubgraphMap.set(rest, safeId)
+    }
+    return `${indent}subgraph ${safeId} ["${title}"]`
+  })
+
+  // 同步更新针对被重命名 subgraph id 的 style 指向
+  const styleUpdatedLines = normalizedLines.map((line) => {
+    const styleMatch = line.match(/^(\s*style\s+)(\S+)(\s+.+)$/i)
+    if (styleMatch && renamedSubgraphMap.has(styleMatch[2])) {
+      return `${styleMatch[1]}${renamedSubgraphMap.get(styleMatch[2])}${styleMatch[3]}`
+    }
+    return line
+  })
+
+  // 剥离空的 `subgraph ... end` 块（自内向外迭代，确保只含空子块的父块也能被剥离）
+  let current = styleUpdatedLines
+  let changed = true
+  while (changed) {
+    changed = false
+    const stack = []
+    const dropIndices = new Set()
+    for (let i = 0; i < current.length; i += 1) {
+      const trimmed = current[i].trim()
+      if (!trimmed || trimmed.startsWith('%%')) continue
+      if (/^subgraph\b/i.test(trimmed)) {
+        stack.push({ startIndex: i, hasContent: false })
+        continue
+      }
+      if (/^end\s*$/i.test(trimmed)) {
+        const top = stack.pop()
+        if (top) {
+          if (!top.hasContent) {
+            dropIndices.add(top.startIndex)
+            dropIndices.add(i)
+            changed = true
+          } else if (stack.length > 0) {
+            stack[stack.length - 1].hasContent = true
+          }
+        }
+        continue
+      }
+      if (/^(direction|style|classDef|class|linkStyle|click)\b/i.test(trimmed)) {
+        continue
+      }
+      if (stack.length > 0) {
+        stack[stack.length - 1].hasContent = true
+      }
+    }
+    if (changed) {
+      current = current.filter((_, idx) => !dropIndices.has(idx))
+    }
+  }
+
+  return current.join('\n')
+}
 
 // classDiagram 中 `class A{` 缺空格会触发 lexical error，这里强制补一个空格
 const normalizeClassDiagramSpacing = (code = '') => String(code || '').replace(
@@ -227,7 +448,7 @@ const FLOWCHART_KEYWORD_RE = /^(flowchart|graph|subgraph|end|style|classDef|clas
 const FLOWCHART_LINK_RE = /(-->|---|-\.->|-\.-|==>|===|<-->|o--|--o|x--|--x)/
 const FLOWCHART_NODE_SHAPE_RE = /[\[\]\(\){}<>]/
 
-const isFlowchartGarbageLine = (line, kind, isFirstNonHeader) => {
+const isFlowchartGarbageLine = (line, kind) => {
   if (kind !== 'flowchart' && kind !== 'graph') return false
   const trimmed = line.trim()
   if (!trimmed) return false
@@ -238,7 +459,7 @@ const isFlowchartGarbageLine = (line, kind, isFirstNonHeader) => {
   // 单独的节点 id 行（仅字母数字和下划线）也是合法的，保留
   if (/^[A-Za-z_][\w-]*\s*$/.test(trimmed)) return false
   // 其他都视为伪指令（例如 `bg #xxx,#yyy`、`theme dark` 这类模型自造）
-  return !isFirstNonHeader
+  return true
 }
 
 // Mermaid erDiagram 的词法表里 CLASS / ORDER / GROUP / TYPE 等是保留 token，
@@ -256,14 +477,15 @@ const renameErReservedEntities = (code) => {
   return out
 }
 
-const sanitizeMermaidCode = (code = '') => {
+export const sanitizeMermaidCode = (code = '') => {
   const stripped = stripFence(String(code || '').replace(/\r/g, ''))
   const indented = normalizeIndent(stripped)
   const escaped = escapeReservedNodeIds(indented)
   const classFixed = normalizeClassDiagramSpacing(escaped)
   const normalized = autoQuoteFlowchartLabels(normalizeStatementBoundaries(classFixed))
-  const kind = detectDiagramKind(normalized)
-  const reservedFixed = kind === 'erdiagram' ? renameErReservedEntities(normalized) : normalized
+  const subgraphNormalized = normalizeFlowchartSubgraphs(normalized)
+  const kind = detectDiagramKind(subgraphNormalized)
+  const reservedFixed = kind === 'erdiagram' ? renameErReservedEntities(subgraphNormalized) : subgraphNormalized
   const lines = reservedFixed.split('\n')
   const out = []
   let seenHeader = false
@@ -274,19 +496,11 @@ const sanitizeMermaidCode = (code = '') => {
       continue
     }
     if (isUnsupportedDirectiveLine(line, kind)) continue
-    if (isFlowchartGarbageLine(line, kind, false)) continue
+    if (isFlowchartGarbageLine(line, kind)) continue
     const cleaned = sanitizeMermaidStyleLine(line)
     if (cleaned) out.push(cleaned)
   }
   return out.filter(Boolean).join('\n')
-}
-
-const flattenSubgraphFlowchart = (code = '') => {
-  const lines = String(code || '').replace(/\r/g, '').split('\n')
-  return lines
-    .filter((line) => !/^\s*subgraph\b/i.test(line))
-    .filter((line) => !/^\s*end\s*$/i.test(line))
-    .join('\n')
 }
 
 /**
@@ -432,26 +646,10 @@ const annotateElements = (elements, { tier, mermaidSource }) => elements.map((el
 })
 
 export const renderMermaidNative = async (mermaidCode, { offsetX = 100, offsetY = 100 } = {}) => {
-  const parseWithFallback = async (sourceCode) => {
-    const sanitizedCode = sanitizeMermaidCode(sourceCode)
-    try {
-      return await parseMermaidToExcalidraw(sanitizedCode, {
-        themeVariables: { fontSize: '16px' },
-      })
-    } catch (error) {
-      if (/SubGraph element not found/i.test(error?.message || '') && /\bsubgraph\b/i.test(sanitizedCode)) {
-        logger.warn('[mermaidNative] subgraph 解析失败，尝试扁平化重试')
-        const flattened = flattenSubgraphFlowchart(sanitizedCode)
-        return parseMermaidToExcalidraw(flattened, {
-          themeVariables: { fontSize: '16px' },
-        })
-      }
-      throw error
-    }
-  }
-
   const effectiveCode = sanitizeMermaidCode(mermaidCode)
-  const { elements: skeletons, files } = await parseWithFallback(effectiveCode)
+  const { elements: skeletons, files } = await parseCompatibleMermaid(effectiveCode, {
+    themeVariables: { fontSize: '16px' },
+  })
   if (!skeletons?.length) {
     throw new Error('Mermaid 解析未生成任何元素')
   }

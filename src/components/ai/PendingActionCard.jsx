@@ -22,6 +22,7 @@ import { ThinkingDots, TypewriterText, pickThinkingPhrase } from './thinking'
 //   superseded—— AI 给出了新方案，旧卡自动失效（折叠成一行）
 
 export const ACTION_LABELS = {
+  update_settings: '修改应用设置',
   create_note: '创建笔记',
   edit_note: '编辑笔记',
   edit_notes: '批量编辑笔记',
@@ -241,6 +242,7 @@ const NoteEditPreview = ({ preview, compact }) => {
 // ─── 执行中：有步骤进度时显示真实进度，没有时轮换提示语（与 AI 页面的思考动画一致） ───
 
 const RUNNING_COPY = {
+  update_settings: { verb: '正在应用设置' },
   write_long_document: { verb: '正在写作' },
   create_whiteboard: { verb: '正在画画布' },
   update_whiteboard: { verb: '正在修改画布' },

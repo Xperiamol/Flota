@@ -457,7 +457,8 @@ const MarkdownPreview = ({
                 sttBtn.textContent = '⏳ 转文字中…'
                 try {
                   const sttSrc = originalSrc.replace(/^app:\/\//, '')
-                  const sttArg = /\.webm$/i.test(sttSrc) ? await urlToWav(appSrc) : sttSrc
+                  const config = await window.electronAPI.stt.getConfig()
+                  const sttArg = /\.webm$/i.test(sttSrc) || config?.data?.provider === 'offline' ? await urlToWav(appSrc) : sttSrc
                   const result = await window.electronAPI.stt.transcribe(sttArg)
                   if (result?.success && result?.data?.text) {
                     sttResult.textContent = result.data.text

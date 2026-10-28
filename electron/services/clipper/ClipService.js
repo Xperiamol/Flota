@@ -394,7 +394,7 @@ class ClipService extends EventEmitter {
       const result = await chatService._generatePlainText([
         { role: 'system', content: '你是阅读助手。用简体中文为文章写 3-5 条要点摘要，每条一行，以“- ”开头，不超过 40 字，只输出要点本身。' },
         { role: 'user', content: `标题：${note.title}\n\n${text}` },
-      ], { temperature: 0.2, maxTokens: 600 });
+      ], { temperature: 0.2, bypassTokenLimit: true });
       const lines = String(result?.content || '').split('\n').map((line) => line.trim()).filter((line) => /^[-*•]\s*/.test(line)).slice(0, 6);
       if (lines.length) {
         const callout = ['> [!abstract] AI 摘要', ...lines.map((line) => `> - ${line.replace(/^[-*•]\s*/, '')}`)].join('\n');

@@ -18,7 +18,7 @@ import {
   ListItemText,
 } from '@mui/material';
 import { Sync, CheckCircle } from '../common/AppIcons';
-import { spacing, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../../styles/commonStyles';
+import { spacing, settingsSectionSx, sectionTitleSx } from '../../styles/commonStyles';
 
 const DEFAULT_CALDAV_CONFIG = {
   enabled: false,
@@ -156,9 +156,7 @@ const CalendarSyncSettings = () => {
     <Box>
       <Box sx={settingsSectionSx}>
         <Typography variant="h6" sx={sectionTitleSx}>CalDAV 日历同步</Typography>
-        <Typography variant="caption" sx={sectionDescriptionSx}>
-          配置私有或第三方 CalDAV 日历服务
-        </Typography>
+
       </Box>
 
       {message && (

@@ -85,6 +85,17 @@ class FolderDav {
   const outputs = []
   for (const op of ops) {
     switch (op.op) {
+      case 'rollbackRemoteEntry': {
+        const file = path.join(remoteDir, 'Flota', 'manifest.json')
+        const manifest = JSON.parse(fs.readFileSync(file, 'utf8'))
+        const entry = manifest.files[byTitle(op.title).sync_id]
+        entry.h = require('../../electron/services/sync/utils/hash').calculateMarkdownHash('')
+        entry.t = entry.c
+        entry.meta.title = ''
+        fs.writeFileSync(file, JSON.stringify(manifest))
+        outputs.push({ rolledBack: true })
+        break
+      }
       case 'draftChecks': {
         const Drafts = require('../../electron/services/EditorDraftService')
         const drafts = new Drafts(DatabaseManager.getInstance())

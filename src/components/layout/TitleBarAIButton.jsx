@@ -23,6 +23,7 @@ export default function TitleBarAIButton() {
       <Box
         component="button"
         type="button"
+        data-tour="ai-quick"
         aria-label={open ? '关闭 FlotaAI' : '打开 FlotaAI'}
         aria-pressed={open}
         onClick={() => setOpen(!open)}

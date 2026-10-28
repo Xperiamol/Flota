@@ -11,6 +11,7 @@ const todos = require('./handlers/todos');
 const memories = require('./handlers/memories');
 const webSearch = require('./handlers/webSearch');
 const longDocument = require('./handlers/longDocument');
+const settings = require('./handlers/settings');
 const widgets = require('./handlers/widgets');
 
 const HANDLERS = Object.freeze({
@@ -19,7 +20,8 @@ const HANDLERS = Object.freeze({
   ...memories,
   ...webSearch,
   ...longDocument,
-  ...widgets
+  ...widgets,
+  ...settings
 });
 
 const dispatchTool = async (name, args, runtime, services) => {

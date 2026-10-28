@@ -7,6 +7,7 @@
  *   3) Composer 可在原生图元之间穿插局部 SVG
  */
 import logger from './logger'
+import { parseStructuredOutput } from './diagrams/structuredOutput'
 import { computeOffset, DIAGRAM_THEME } from './diagrams/shared'
 import { renderMermaidNative } from './diagrams/mermaidNative'
 import { renderComposer } from './diagrams/composer'
@@ -26,12 +27,7 @@ const MERMAID_BLOCK_TYPES = new Set(Object.keys(MERMAID_BLOCKS))
 
 const safeJsonExtract = (text) => {
   if (!text) return null
-  let s = String(text).trim()
-  s = s.replace(/^```[\w-]*\s*/i, '').replace(/```\s*$/i, '').trim()
-  const start = s.indexOf('{')
-  const end = s.lastIndexOf('}')
-  if (start === -1 || end <= start) return null
-  try { return JSON.parse(s.slice(start, end + 1)) } catch (e) {
+  try { return parseStructuredOutput(text) } catch (e) {
     logger.warn('[composer] JSON 解析失败:', e.message)
     return null
   }
@@ -117,6 +113,12 @@ const compactFeedbackPayload = (value, maxLen = 12000) => {
 const inferDiagramIntentHeuristically = (text) => {
   const s = String(text || '')
   if (!s.trim()) return { mode: 'composition', blockType: null, reason: '空请求默认交给组合规划' }
+  // 工具传入的明确图型优先于正文和视觉反馈中的关键词。
+  const explicit = s.match(/^\s*以(流程图|时序图|类图|状态图|ER 图|ER图|SVG 矢量图)呈现[：:]/i)
+  if (explicit) {
+    const types = { '流程图': 'flowchart', '时序图': 'sequence', '类图': 'class', '状态图': 'state', 'er 图': 'er', 'er图': 'er', 'svg 矢量图': 'svg' }
+    return { mode: 'single', blockType: types[explicit[1].toLowerCase()], reason: '工具明确指定图型' }
+  }
   const avoidsSvg = /(?:不要|不用|禁止|避免|无需).{0,8}(?:svg|矢量|图片)|可编辑|可拆分|逐个修改|单独修改|方便修改/i.test(s)
   const forcesSvg = /^\s*以\s*SVG\s*矢量图呈现|只(?:用|要).{0,8}(?:svg|矢量)|(?:全部|整体).{0,8}(?:svg|矢量)/i.test(s)
   const asksSvg = /(?:svg|矢量(?:图|插画|视觉|海报|图形)?)/i.test(s)
@@ -433,7 +435,7 @@ const hydrateComposerSvgNodes = async (tree, userRequest, task) => {
 const generateDsl = async (blockType, summary, task) => {
   const res = await (task ? task.chat : window.electronAPI.ai.chat)(
     buildDslMessages(blockType, summary),
-    { temperature: 0.4, timeoutMs: 600000 },
+    { temperature: 0.4, timeoutMs: 600000, bypassTokenLimit: true },
   )
   if (!res?.success || !res.data?.content) {
     throw new Error(res?.error || `${blockType} DSL 生成失败：模型未返回正文`)
@@ -452,7 +454,7 @@ const regenerateDslWithFeedback = async (blockType, summary, previousDsl, genera
   ]
   const res = await (task ? task.chat : window.electronAPI.ai.chat)(
     messages,
-    { temperature: 0.2, timeoutMs: 600000 },
+    { temperature: 0.2, timeoutMs: 600000, bypassTokenLimit: true },
   )
   if (!res?.success || !res.data?.content) {
     throw new Error(res?.error || `${blockType} DSL 反思重写失败`)
@@ -517,11 +519,11 @@ const renderComposerWithReflection = async (description, offsets, task) => {
 
 // ─── 对外主入口 ────────────────────────────────────
 
-async function generateCanvasOnce(description, existingElements = [], task) {
+async function generateCanvasOnce(description, existingElements = [], task, fixedIntent) {
   const offsets = computeOffset(existingElements)
   logger.log('[aiExcalidrawGenerator] 输入:', description, 'offset:', offsets)
 
-  const diagramIntent = await classifyDiagramIntent(description)
+  const diagramIntent = fixedIntent || await classifyDiagramIntent(description)
   logger.log('[aiExcalidrawGenerator] 图型意图:', diagramIntent)
 
   const { route, blockType } = classifyCanvasRoute(diagramIntent)
@@ -558,17 +560,26 @@ async function generateCanvasOnce(description, existingElements = [], task) {
 }
 
 export async function aiGenerateExcalidrawElements(description, existingElements = [], task) {
-  const result = await generateCanvasOnce(description, existingElements, task)
+  const intent = classifyDiagramIntent(description)
+  const stamp = result => {
+    const { route, blockType } = classifyCanvasRoute(intent)
+    const [first, ...rest] = result.elements || []
+    if (!first) return result
+    const flotaGeneration = { engine: route === 'flowchart' ? 'mermaid' : route, diagramType: blockType || 'composition' }
+    return { ...result, elements: [{ ...first, customData: { ...first.customData, flotaGeneration } }, ...rest] }
+  }
+  const result = stamp(await generateCanvasOnce(description, existingElements, task, intent))
   if (!window.electronAPI?.ai?.getConfig) return result
   try {
     const { reviewCanvas } = await import('./diagrams/visualReview')
     const issues = await reviewCanvas(result, description, task)
     if (!issues?.length) return result
     const prior = result.elements?.length === 1 ? result.elements[0]?.customData?.svgSource : null
-    return await generateCanvasOnce(`${description}\n\n上一稿渲染后的视觉复核要求（保持原需求与事实，仅修正这些问题）：\n${issues.join('\n')}${prior ? `\n上一稿 SVG：\n${prior}` : ''}`, existingElements, task)
+    return stamp(await generateCanvasOnce(`${description}\n\n上一稿渲染后的视觉复核要求（保持原需求与事实，仅修正这些问题）：\n${issues.join('\n')}${prior ? `\n上一稿 SVG：\n${prior}` : ''}`, existingElements, task, intent))
   } catch (error) {
     if (task?.signal.aborted || error?.name === 'AbortError') throw error
-    return { ...result, warnings: [...(result.warnings || []), `视觉复核未完成，保留已生成的版本：${error.message}`] }
+    logger.warn('[aiExcalidrawGenerator] 视觉复核未完成:', error.message)
+    return { ...result, warnings: [...(result.warnings || []), '视觉复核未完成，已保留生成结果'] }
   }
 }
 

@@ -1,3 +1,4 @@
+import { applyAISettings } from './appSettings'
 import { createGenerationTask } from './generationTask'
 // 统一的待确认动作执行器（问题2）。
 //
@@ -184,6 +185,10 @@ export const runPendingAction = async ({ action, overrides = null, deps = {} }) 
       : WIDGET_ACTIONS.has(action.name)
         ? await executeWidgetAction(action, task, overrides)
         : await window.electronAPI?.ai?.executePendingAction?.(action.actionId, overrides, buildFallback(action))
+    if (result?.success && action.name === 'update_settings') {
+      await applyAISettings(result.result.settingsChanges)
+      result.message = result.result.message
+    }
     // 步骤进度只在执行期间显示，完成后由结果卡片接管
     useActionSteps.getState().clear(action.actionId)
 

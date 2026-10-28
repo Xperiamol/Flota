@@ -105,7 +105,7 @@ export const inferWhiteboardActionFromPrompt = (prompt = '') => {
     return WHITEBOARD_AI_ACTIONS.REPLACE
   }
 
-  if (/(修改|调整|优化|改成|改为|删掉|删除|去掉|替换掉|重排|合并|拆分|补齐|修正|更新一下|把.+改)/.test(text)) {
+  if (/(修改|调整|优化|美化|太丑|不好看|不整齐|不对齐|改成|改为|删掉|删除|去掉|替换掉|重排|合并|拆分|补齐|修正|更新一下|把.+改)/.test(text)) {
     return WHITEBOARD_AI_ACTIONS.EDIT
   }
 
@@ -293,7 +293,7 @@ export const classifyWhiteboardIntent = async ({ note, prompt, messages = [] }) 
     : ''
   const res = await window.electronAPI.ai.chat(
     buildIntentClassificationMessages({ prompt, note, messages, currentWhiteboardSummary }),
-    { temperature: 0 }
+    { temperature: 0, bypassTokenLimit: true }
   )
 
   if (!res?.success || !res.data?.content) {
@@ -314,7 +314,7 @@ export const groundWhiteboardRequest = async ({ note, prompt, messages = [] }) =
     : ''
   const res = await window.electronAPI.ai.chat(
     buildGroundingMessages({ prompt, note, messages, currentWhiteboardSummary, actionHint }),
-    { temperature: 0 }
+    { temperature: 0, bypassTokenLimit: true }
   )
 
   if (!res?.success || !res.data?.content) {
@@ -498,7 +498,7 @@ const buildWhiteboardActionMessage = (result = {}) => {
     ? ` 提示：${result.warnings.slice(0, 2).join('；')}${result.warnings.length > 2 ? '；...' : ''}`
     : ''
   if (action === WHITEBOARD_AI_ACTIONS.REPLACE) {
-    return `已清空当前画布并重新生成 ${result.addedCount || 0} 个元素。${warningText}`
+    return `已重新生成画布，共 ${result.addedCount || 0} 个元素。${warningText}`
   }
   if (action === WHITEBOARD_AI_ACTIONS.EDIT) {
     return `已基于当前画布完成修改，生成 ${result.addedCount || 0} 个元素。${warningText}`

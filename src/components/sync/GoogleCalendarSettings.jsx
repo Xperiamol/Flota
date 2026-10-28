@@ -19,7 +19,7 @@ import {
   Chip,
 } from '@mui/material';
 import { Sync, CheckCircle, Google as GoogleIcon, LinkOff } from '../common/AppIcons';
-import { spacing, flex, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../../styles/commonStyles';
+import { spacing, flex, settingsSectionSx, sectionTitleSx } from '../../styles/commonStyles';
 
 const GoogleCalendarSettings = () => {
   const { t } = useTranslation();
@@ -45,7 +45,7 @@ const GoogleCalendarSettings = () => {
     const result = await window.electronAPI.invoke('google-calendar:get-config');
     if (result.success) {
       setConfig(result.data);
-      
+
       // 如果已连接,加载日历列表
       if (result.data.connected) {
         loadCalendars();
@@ -84,11 +84,11 @@ const GoogleCalendarSettings = () => {
   const handleStartAuth = async () => {
     setAuthorizing(true);
     setMessage({ type: 'info', text: t('googleCalendar.startAuthInfo') });
-    
+
     try {
       // 新版本:本地服务器自动接收授权,无需手动输入授权码
       const result = await window.electronAPI.invoke('google-calendar:start-auth');
-      
+
       if (result.success) {
         // 授权成功,直接获得日历列表
         setCalendars(result.data.calendars);
@@ -100,11 +100,11 @@ const GoogleCalendarSettings = () => {
       } else {
         // 显示详细错误信息
         console.error('[GoogleCalendar] 授权失败:', result.error);
-        
+
         // 解析错误信息
         const errorMsg = result.error || '授权失败';
         const isInvalidRequest = errorMsg.toLowerCase().includes('invalid');
-        
+
         // 构建用户友好的错误提示
         let displayMsg = errorMsg;
         if (isInvalidRequest) {
@@ -115,7 +115,7 @@ const GoogleCalendarSettings = () => {
             '请查看文档 docs/GOOGLE_CALENDAR_OAUTH_SETUP.md 了解详细配置步骤。\n\n' +
             '或者按 Ctrl+Shift+I 打开开发者工具查看详细日志。';
         }
-        
+
         setMessage({ 
           type: 'error', 
           text: displayMsg
@@ -132,7 +132,7 @@ const GoogleCalendarSettings = () => {
   const handleDisconnect = async () => {
     try {
       const result = await window.electronAPI.invoke('google-calendar:disconnect');
-      
+
       if (result.success) {
         setConfig({ ...config, enabled: false, connected: false, calendarId: '' });
         setCalendars([]);
@@ -180,9 +180,7 @@ const GoogleCalendarSettings = () => {
     <Box>
       <Box sx={settingsSectionSx}>
         <Typography variant="h6" sx={sectionTitleSx}>Google Calendar 设置</Typography>
-        <Typography variant="caption" sx={sectionDescriptionSx}>
-          连接 Google 账号，并配置日历同步规则
-        </Typography>
+
       </Box>
 
       {message && (
@@ -196,13 +194,13 @@ const GoogleCalendarSettings = () => {
         <Typography variant="subtitle2" sx={spacing.mb1}>
           账号连接
         </Typography>
-        
+
         {!config.connected ? (
           <Box sx={{ textAlign: 'center', py: 2 }}>
             <Typography variant="body2" color="text.secondary" sx={spacing.mb2}>
               使用 OAuth 2.0 安全授权
             </Typography>
-            
+
             {authorizing ? (
               <Box sx={{ ...flex.column, alignItems: 'center' }}>
                 <CircularProgress size={24} sx={spacing.mb1} />

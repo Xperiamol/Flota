@@ -67,6 +67,26 @@ const startWithSharedNote = (cloud, title, content) => {
   assert.equal(cloud.note('B', title)?.content, content)
 }
 
+test('云端旧索引回退但正文仍等于已同步版本：修复索引、保留标题，双端再次同步收敛', () => {
+  const cloud = createCloud()
+  try {
+    startWithSharedNote(cloud, '旧索引恢复', '')
+    cloud.run('A', [laterSecond, { op: 'edit', title: '旧索引恢复', content: '已成功同步的完整正文' }, { op: 'sync' }])
+    cloud.sync('B')
+    // 对应真实故障：正文没变，manifest 条目却退回刚创建时的空白版本。
+    const result = cloud.run('A', [{ op: 'rollbackRemoteEntry', title: '旧索引恢复' }, { op: 'sync' }])
+    assert.equal(result[1].errors, 0)
+    assert.equal(result[1].calls.filter(call => call.method.startsWith('upload') && call.path.includes('/notes/')).length, 0)
+    assert.equal(cloud.note('A', '旧索引恢复').content, '已成功同步的完整正文')
+    cloud.sync('B')
+    assert.equal(cloud.note('B', '旧索引恢复').content, '已成功同步的完整正文')
+    for (const device of ['A', 'B']) {
+      const synced = cloud.sync(device)
+      assert.equal(synced.uploaded + synced.downloaded, 0)
+    }
+  } finally { cloud.cleanup() }
+})
+
 test('新建、编辑在两台设备间往返，再次同步没有多余任务', () => {
   const cloud = createCloud()
   try {

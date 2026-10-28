@@ -211,6 +211,73 @@ window.runEditorTests = async () => {
       }
     } finally { window.electronAPI = oldAPI }
   })
+  await test('审批流程：Mermaid 原生图元保留判断菱形和审核回路', async () => {
+    const { renderMermaidNative } = await import('../../src/utils/diagrams/mermaidNative')
+    const result = await renderMermaidNative(`flowchart TD
+      A([开始]) --> B[提交申请]
+      B --> C{负责人审核}
+      C -->|通过| D[执行项目]
+      D --> E([结束])
+      C -->|不通过| F[修改申请]
+      F --> G[重新提交]
+      G --> C`)
+    assert(result.elements.some(element => element.type === 'diamond'), 'review decision shape was lost')
+    assert(!result.elements.some(element => element.type === 'image'), 'editable diagram became a flattened image')
+    assert(result.elements.filter(element => element.type === 'arrow').length >= 7, 'approval loop lost its edges')
+    const { prepareSceneStyle } = await import('../../src/utils/diagrams/sceneStyle')
+    const svg = await exportToSvg({ elements: prepareSceneStyle(result.elements, 'neat'), files: result.files || {}, appState: { viewBackgroundColor: '#ffffff', exportBackground: true } })
+    svg.setAttribute('width', '100%'); svg.setAttribute('height', '100%')
+    window.approvalFlowSvg = svg.outerHTML
+    window.showApprovalFlow = () => { root.render(wrap(<div style={{ padding: 32, height: '100vh', background: '#fff' }} dangerouslySetInnerHTML={{ __html: window.approvalFlowSvg }} />)) }
+
+    // 验收带 subgraph（含中文标题、subgraph[...]、括号标题）的流程图不报 SubGraph element not found 且不退化为图片
+    const subgraphResult = await renderMermaidNative(`flowchart TD
+      subgraph["感知层 (Sensor)"]
+        S1[图像采集] --> S2[特征提取]
+      end
+      subgraph 核心决策层
+        S2 --> D1{风险评估}
+        D1 -->|通过| D2[执行动作]
+      end`)
+    equal(subgraphResult.tier, 1)
+    assert(!subgraphResult.elements.some(element => element.type === 'image'), 'subgraph flowchart degraded to static image')
+    assert(subgraphResult.elements.filter(element => element.type === 'rectangle').length >= 5, 'subgraph containers or nodes missing')
+  })
+  await test('Mermaid兼容：只读 API、并发子图与失败清理不污染全局', async () => {
+    const mermaid = (await import('mermaid')).default
+    const { renderMermaidNative } = await import('../../src/utils/diagrams/mermaidNative')
+    const render = mermaid.render, apiRender = mermaid.mermaidAPI.render
+    const append = document.body.appendChild
+    const descriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML')
+    const sources = [
+      'flowchart TD\nsubgraph SG1 ["中文分组"]\n A[输入] --> B[输出]\nend',
+      'flowchart LR\nsubgraph OUTER ["外层"]\n subgraph INNER ["内层"]\n A[开始] --> B[结束]\n end\nend',
+    ]
+    const results = await Promise.all(sources.map(code => renderMermaidNative(code)))
+    assert(results.every(result => result.tier === 1), 'subgraphs degraded into images')
+    let rejected = false
+    try { await renderMermaidNative('flowchart TD\n A[未闭合') } catch { rejected = true }
+    assert(rejected, 'invalid syntax should fail')
+    equal(document.body.appendChild, append)
+    equal(Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML').set, descriptor.set)
+    equal(mermaid.render, render)
+    equal(mermaid.mermaidAPI.render, apiRender)
+    assert(!document.querySelector('[id^="mermaid-to-excalidraw-"][id$="-container"]'), 'temporary container leaked')
+    equal((await renderMermaidNative(sources[0])).tier, 1)
+  })
+  await test('局部画布：新增节点与避障连线可由真实 Excalidraw 导出', async () => {
+    const { makeRect } = await import('../../src/utils/diagrams/shared')
+    const a = { ...makeRect({ x: 40, y: 40, width: 160, height: 80 }), id: 'patch-start' }
+    const scene = applyScenePatch([a], {
+      updates: [{ id: a.id, changes: { type: 'diamond' } }], remove: [],
+      add: [{ id: 'patch-end', type: 'rectangle', x: 360, y: 240, width: 180, height: 80, label: '新增审核节点' }, { id: 'patch-edge', type: 'arrow', from: a.id, to: 'patch-end' }],
+    }).elements
+    const svg = await exportToSvg({ elements: scene, files: {}, appState: { viewBackgroundColor: '#ffffff', exportBackground: true } })
+    assert(svg.textContent.includes('新增审核节点'), 'bound label missing from native export')
+    assert(!/NaN|Infinity/.test(svg.outerHTML), 'invalid native geometry')
+    equal(scene.find(el => el.id === 'patch-edge').endBinding.elementId, 'patch-end')
+    equal(a.type, 'rectangle')
+  })
   await test('AI验收：运行卡片可停止，失败提示留在原卡片且可重试', async () => {
     const task = createGenerationTask('acceptance-stop')
     const action = { actionId: 'acceptance-stop', name: 'update_whiteboard', args: { id: 328 }, status: 'running' }
@@ -371,6 +438,46 @@ window.runEditorTests = async () => {
     window.showGenerationGallery = async () => {
       root.render(wrap(<div id="final-gallery" style={{ padding: 24, maxWidth: 1200, margin: '0 auto' }} dangerouslySetInnerHTML={{ __html: window.generationGallerySvg }} />))
       await waitFor(() => document.querySelector('#final-gallery svg'), 'final gallery')
+    }
+  })
+  await test('画布反馈：已完成卡片的结果不再重复显示为气泡', async () => {
+    const oldAPI = window.electronAPI, oldState = useStore.getState()
+    const messages = [
+      { role: 'user', content: '画个流程图' },
+      { role: 'assistant', content: '已准备好', actions: [{ actionId: 'feedback', name: 'create_whiteboard', status: 'done', resultMessage: '画布已生成测试结果' }] },
+      { role: 'assistant', content: '画布已生成测试结果', actionResultFor: 'feedback' },
+    ]
+    window.electronAPI = { ...oldAPI, ai: { getConfig: async () => ({ success: true, data: {} }), onChatChunk: () => () => {} } }
+    useStore.setState({ currentView: 'ai', selectedNoteId: null, aiActiveConvId: 'feedback-chat', aiConversations: [{ id: 'feedback-chat', messages }] })
+    try {
+      root.render(wrap(<AICommandCenter open notesOverride={[]} selectedNoteIdOverride={null} onClose={() => {}} />))
+      await waitFor(() => document.body.textContent.includes('画布已生成测试结果'), 'result card')
+      equal(document.body.textContent.match(/画布已生成测试结果/g).length, 1)
+      equal(useStore.getState().aiConversations[0].messages.length, 3)
+    } finally { root.render(wrap(<div />)); window.electronAPI = oldAPI; useStore.setState(oldState) }
+  })
+  await test('画布 AI 示例明确能力，点击填入草稿而不自动请求', async () => {
+    const oldAPI = window.electronAPI
+    const oldState = useStore.getState()
+    let calls = 0
+    window.electronAPI = { ...oldAPI, ai: { getConfig: async () => ({ success: true, data: {} }), onChatChunk: () => () => {}, chatStream: async () => { calls++; return { success: true } } } }
+    const note = { id: 'canvas-guide', note_type: 'whiteboard', title: '测试画布', content: '' }
+    useStore.setState({ currentView: 'notes', notes: [note], selectedNoteId: note.id, aiActiveConvId: 'canvas-guide-chat', aiNoteConversationMap: { [note.id]: 'canvas-guide-chat' }, aiConversations: [{ id: 'canvas-guide-chat', noteId: note.id, messages: [] }] })
+    try {
+      root.render(wrap(<AICommandCenter open notesOverride={[note]} selectedNoteIdOverride={note.id} onClose={() => {}} />))
+      await waitFor(() => document.body.textContent.includes('想把什么画出来？'), 'canvas AI examples')
+      for (const label of ['流程图', '思维导图', '架构图', '文字成图', '局部改图', '读图总结']) assert(document.body.textContent.includes(label), `missing ${label}`)
+      const chip = [...document.querySelectorAll('.MuiChip-root')].find(node => node.textContent === '流程图')
+      chip.click()
+      await waitFor(() => document.querySelector('textarea')?.value.includes('项目审批流程图'), 'example draft')
+      equal(calls, 0)
+      const read = [...document.querySelectorAll('.MuiChip-root')].find(node => node.textContent === '读图总结')
+      read.click()
+      await waitFor(() => document.querySelector('textarea')?.value.includes('不修改画布'), 'read-only example draft')
+      equal(calls, 0)
+    } finally {
+      root.render(wrap(<div />)); await sleep(50)
+      window.electronAPI = oldAPI; useStore.setState(oldState)
     }
   })
   await test('附件：AI 小窗拖入图片和文本，预览并发送多模态消息', async () => {
@@ -823,6 +930,68 @@ $$
     equal(plain, '见 [[笔记B|别名]]，路径 ~/a，[注]\n\n\n\n> [!note] 提示\n> 内容\n\n公式 $E=mc^2$')
     assert(copied.getData('text/html').includes('$E=mc^2$'), 'formula missing from copied HTML')
   })
+  await test('笔记复制不改写代码里的反斜杠与双链样例，不混入序列化器函数源码', async () => {
+    const inline = '`\\[x\\] \\~name \\[\\[literal\\]\\]`'
+    await mountNote('代码示例 ' + inline + '\n\n```js\nconst sample = "\\[x\\]"\n```')
+    editor.commands.selectAll()
+    const text = clipboardEvent('copy').getData('text/plain')
+    assert(text.includes(inline), `inline source changed: ${JSON.stringify(text)}`)
+    assert(text.includes('const sample = "\\[x\\]"'), 'fenced code changed')
+    const nativeExample = '```js\nString(Math.max) // function max() { [native code] }\n```'
+    await mountNote(nativeExample)
+    editor.commands.selectAll()
+    equal(clipboardEvent('copy').getData('text/plain'), nativeExample)
+    await mountNote('原来的内容')
+    editor.commands.selectAll()
+    const serializer = editor.storage.markdown.serializer
+    const original = serializer.serialize
+    serializer.serialize = () => '原来的内容 function () { [native code] }'
+    try {
+      const copied = clipboardEvent('copy').getData('text/plain')
+      assert(!copied.includes('native code'), 'serializer garbage leaked to clipboard')
+      assert(copied.includes('原来的内容'), 'copy lost actual text')
+    } finally { serializer.serialize = original }
+  })
+  await test('右键复制与快捷键复制的 Markdown 一致，公式可复制，剪切等待期间不删新选区', async () => {
+    const clipboard = navigator.clipboard
+    const original = Object.getOwnPropertyDescriptor(clipboard, 'writeText')
+    let written = [], release = null
+    Object.defineProperty(clipboard, 'writeText', { configurable: true, value: async text => {
+      written.push(text)
+      if (release === 'pending') await new Promise(resolve => { release = resolve })
+    } })
+    const clickMenu = async label => {
+      const coords = editor.view.coordsAtPos(editor.state.selection.from)
+      editor.view.dom.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: coords.left + 1, clientY: coords.top + 1 }))
+      await waitFor(() => document.querySelector('[data-editor-context-menu]'), 'context menu')
+      const button = [...document.querySelectorAll('[data-editor-context-menu] button')].find(node => node.textContent.startsWith(label))
+      assert(button && !button.disabled, `${label} unavailable`)
+      button.click()
+    }
+    try {
+      for (const source of ['# 标题\n\n**粗体**、[[笔记]]、`\\[literal\\]`\n\n- [x] 完成\n- [ ] 待办', '$E=mc^2$', '| A | B |\n| --- | --- |\n| 甲 | 乙 |']) {
+        await mountNote(source)
+        editor.commands.selectAll()
+        const expected = clipboardEvent('copy').getData('text/plain')
+        written = []
+        await clickMenu('复制')
+        await waitFor(() => written.length === 1, 'copied text')
+        equal(written[0], expected)
+      }
+      await mountNote('原文不能被误删')
+      editor.commands.selectAll()
+      release = 'pending'
+      await clickMenu('剪切')
+      await waitFor(() => typeof release === 'function', 'clipboard write pending')
+      editor.commands.setTextSelection(2)
+      release()
+      await sleep(50)
+      equal(editor.state.doc.textContent, '原文不能被误删')
+    } finally {
+      if (original) Object.defineProperty(clipboard, 'writeText', original)
+      else delete clipboard.writeText
+    }
+  })
   await test('粘贴多行纯文本保留换行与空行，保存与原文一致', async () => {
     await mountNote('')
     clipboardEvent('paste', { 'text/plain': '第一行\n第二行\n\n\n\n隔了多行\n结尾 $5' })
@@ -859,6 +1028,29 @@ $$
     await mountNote('')
     clipboardEvent('paste', { 'text/plain': '注意', 'text/html': '<p><span style="background-color:yellow">注意</span></p>' })
     assert(!ref.current.getMarkdown().includes('color:null'), ref.current.getMarkdown())
+  })
+  await test('VS Code 的 Markdown 按格式粘贴，语言元数据优先，代码与代码块内粘贴保持原文', async () => {
+    const html = '<div style="font-family: Menlo, monospace;white-space: pre;"><div># 标题</div></div>'
+    for (const source of [
+      { text: '# 单行标题', metadata: JSON.stringify({ version: 1, mode: 'markdown' }) },
+      { text: '# 标题\n\n- 第一项\n- 第二项', metadata: '' },
+      { text: '# 标题\n\n- 第一项\n- 第二项', metadata: '{broken' },
+      { text: '# 长文\n\n' + '这是一段用于验证长文粘贴完整性的正文。'.repeat(3000) + '\n\n**全文结束**', metadata: JSON.stringify({ version: 1, mode: 'markdown' }) },
+    ]) {
+      await mountNote('')
+      clipboardEvent('paste', { 'text/plain': source.text, 'text/html': html, 'vscode-editor-data': source.metadata })
+      assert(types().includes('heading'), 'Markdown became literal text or code')
+      assert(!types().includes('codeBlock'), 'Markdown wrapped in code block')
+      equal(ref.current.getMarkdown().trim(), source.text)
+    }
+    await mountNote('')
+    const script = '# 安装脚本\n# **说明**\necho ok'
+    clipboardEvent('paste', { 'text/plain': script, 'text/html': html, 'vscode-editor-data': JSON.stringify({ version: 1, mode: 'shellscript' }) })
+    assert(types().includes('codeBlock') && !types().includes('heading'), 'script misclassified as Markdown')
+    await mountNote('```\ncode\n```')
+    editor.commands.setTextSelection(3)
+    clipboardEvent('paste', { 'text/plain': '# 标题', 'text/html': html, 'vscode-editor-data': JSON.stringify({ version: 1, mode: 'markdown' }) })
+    assert(!types().includes('heading'), 'Markdown parsed inside code block')
   })
   await test('公式加载、序列化和重开保持 LaTeX', async () => {
     const source = '公式 $a_1 + b^2$。\n\n$$\n\\begin{aligned}\na &= b + c \\\\\n\n  d &= \\frac{1}{2}\n\\end{aligned}\n$$'
@@ -940,6 +1132,25 @@ $$
     await mountNote('')
     pasteEditorText(editor.view, '请看 https://example.com/a\n另见 www.example.org/b')
     equal(links().length, 2)
+  })
+  await test('代码语言菜单使用玻璃表面且筛选选择正常', async () => {
+    await mountNote('\`\`\`text\ncode\n\`\`\`')
+    document.querySelector('.wysiwyg-code-block [contenteditable="false"]').click()
+    await waitFor(() => document.querySelector('[data-code-language-menu]'), 'language menu')
+    const menu = document.querySelector('[data-code-language-menu]')
+    const style = getComputedStyle(menu)
+    assert(style.backdropFilter.includes('blur(24px)'), 'menu misses shared glass blur')
+    assert(style.backgroundColor.includes('0.72'), 'menu remains opaque')
+    const input = menu.querySelector('input')
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setValue.call(input, 'javascript')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await sleep(100)
+    const row = [...menu.querySelectorAll('div')].find(el => el.textContent === 'JavaScript')
+    assert(row, 'language search lost JavaScript')
+    row.click()
+    await waitFor(() => !document.querySelector('[data-code-language-menu]'), 'language selected')
+    assert(ref.current.getMarkdown().includes('\`\`\`javascript'), 'language not saved')
   })
   await test('代码块和无格式粘贴保持原始文本', async () => {
     await mountNote('```text\ncode\n```')
@@ -1071,6 +1282,12 @@ $$
 }
 
 window.mountWhiteboard = async () => {
+  const originalError = console.error
+  window.whiteboardPropWarnings = []
+  console.error = (...args) => {
+    if (args.join(' ').includes('Failed prop type')) window.whiteboardPropWarnings.push(args.join(' '))
+    originalError(...args)
+  }
   const baseElements = convertToExcalidrawElements([{ id: 'left-shape', type: 'rectangle', x: 40, y: 140, width: 180, height: 100, backgroundColor: '#a5d8ff', fillStyle: 'solid' }])
   const svg = createSvgAsset('<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg"><rect width="120" height="80" rx="12" fill="#91a7ff"/><text x="60" y="46" text-anchor="middle" font-size="18">SVG</text></svg>', { offsetX: 350, offsetY: 140 })
   const mermaid = createSvgAsset('<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg"><rect width="120" height="80" rx="12" fill="#b2f2bb"/><text x="60" y="46" text-anchor="middle" font-size="15">Mermaid</text></svg>', { offsetX: 610, offsetY: 140 })
@@ -1089,6 +1306,7 @@ window.mountWhiteboard = async () => {
   root.render(wrap(<div id="board-host" style={{ width: '100vw', height: '100vh' }}><WhiteboardEditor noteId="board-test" onGetContent={getter => { window.getBoardContent = getter }} /></div>))
   try { await waitFor(() => document.querySelector('.excalidraw canvas'), 'whiteboard canvas') } catch (error) { throw new Error(`${error.message}; page: ${document.getElementById('root').innerText.slice(0, 300)}`) }
   await sleep(700)
+  console.error = originalError
   const canvas = document.querySelector('.excalidraw canvas').getBoundingClientRect()
   return {
     rectangle: { x: canvas.left + 130, y: canvas.top + 190 },
@@ -1097,6 +1315,7 @@ window.mountWhiteboard = async () => {
   }
 }
 window.checkWhiteboardToolbar = async () => {
+  await test('画布 Portal 控件不会触发 Box children 类型警告', () => equal(window.whiteboardPropWarnings, []))
   await test('Flota 工具栏切换工具并统一承载高级工具与成图', async () => {
     const toolbar = document.querySelector('.flota-whiteboard-toolbar')
     assert(toolbar?.closest('.shapes-section'), 'custom toolbar is outside native toolbar slot')

@@ -461,7 +461,7 @@ class SyncEngine extends EventEmitter {
     const manifest = await this.generateManifest(localNotes, localTodos, localSettings);
 
     // 7.5 补救扫描：把云端已存在但本地没有的笔记文件也加入 manifest
-    // 场景：forceFullSync 重建索引时，远端原本可能有 N 篇笔记是从其他设备同步上来的，本端从未拥有；
+    // 场景：云端索引丢失时，远端原本可能有笔记是从其他设备同步上来的，本端从未拥有；
     // 这些笔记不在 localNotes 中，但 .md/.wb 文件实际存在于云端 notes/ 目录。
     // 必须把它们登记到 manifest，下次 scanAndDiff 才会识别为 "仅远端存在 → 下载"。
     if (enabledCategories.includes('notes')) {
@@ -734,9 +734,22 @@ class SyncEngine extends EventEmitter {
         throw new Error('旧版未完成同步缺少恢复快照，已停止自动覆盖云端索引；请先备份并检查同步状态');
       }
       const { _pendingCommit, _pendingBase, _pendingLocalCache, _pendingPreviousCache, ...recovery } = pending;
-      if (isDeepStrictEqual(remoteManifest.files, _pendingBase.files) ||
-          isDeepStrictEqual(remoteManifest.files, recovery.files)) {
-        await this.client.uploadJson(this.config.rootPath + 'manifest.json', recovery);
+      const alreadyCommitted = isDeepStrictEqual(remoteManifest.files, recovery.files);
+      let canReplay = isDeepStrictEqual(remoteManifest.files, _pendingBase.files);
+      if (!alreadyCommitted && canReplay) {
+        // 索引未变不代表正文未变：另一端可能已写正文、还没提交索引。
+        // 对将要发布的新 Markdown 指纹重新验正文，不能重放过期的修复/上传记录。
+        for (const [fileId, entry] of Object.entries(recovery.files)) {
+          if (entry.d === 1 || entry.ext !== '.md' || entry.h === _pendingBase.files[fileId]?.h) continue;
+          const content = await this.client.downloadText(this.getRemotePath(fileId, entry.ext));
+          if (this.storage.calculateNoteHash({ content, note_type: 'markdown' }) !== entry.h) {
+            canReplay = false;
+            break;
+          }
+        }
+      }
+      if (alreadyCommitted || canReplay) {
+        if (!alreadyCommitted) await this.client.uploadJson(this.config.rootPath + 'manifest.json', recovery);
         this.saveLocalManifest(_pendingLocalCache);
         remoteManifest = recovery;
       } else {
@@ -796,7 +809,7 @@ class SyncEngine extends EventEmitter {
 
     // 灾难防御：本地数据被意外清空检测
     // 当本地 active 笔记 = 0 但远端有 ≥10 个 active 笔记，且本轮要执行 ≥5 个 upload-delete 时，
-    // 阻止本轮删除任务，避免"本地清空 → 全量删云端"灾难。用户可手动 forceFullSync 强制覆盖。
+    // 阻止本轮删除任务，避免"本地清空 → 全量删云端"灾难。
     const localActiveNotesCount = Object.keys(localNotes || {}).length;
     const remoteActiveNotesCount = Object.values(remoteManifest.files || {}).filter(
       e => e && e.d === 0 && e.ext && (e.ext === '.md' || e.ext === '.wb')
@@ -853,6 +866,8 @@ class SyncEngine extends EventEmitter {
       if (task) {
         if (isNotesCategory && task.operation === 'download') {
           task.expectedLocal = localData.localNotes[fileId] || null;
+          task.localEntry = localEntry;
+          task.cachedEntry = cachedEntry;
         }
         tasks.push(task);
       }
@@ -1703,6 +1718,20 @@ class SyncEngine extends EventEmitter {
       // 白板的历史 Android Gson 转义尚未与桌面 JSON.stringify 完全一致，不能在此强制同一 hash。
       if (noteType !== 'whiteboard' && /^[a-f0-9]{32}$/i.test(task.remoteEntry.h || '') &&
           this.storage.calculateNoteHash(noteData) !== task.remoteEntry.h) {
+        // 索引可能退回旧版本。只有云端正文逐字等于本地，
+        // 且本地仍是上次成功同步的完整版本，才有足够证据修复索引；绝不采用未知正文。
+        const local = task.expectedLocal;
+        const entry = task.localEntry;
+        const cached = task.cachedEntry;
+        if (local && !local.is_deleted && local.note_type === 'markdown' &&
+            task.remoteEntry.ext === '.md' && actualExt === '.md' && entry?.ext === '.md' && entry.d === 0 &&
+            task.remoteEntry.t < entry.t && isDeepStrictEqual(entry, cached) &&
+            content === local.content && this.storage.calculateNoteHash(local) === entry.h &&
+            isDeepStrictEqual(await this.storage.getNoteById(task.fileId, true), local)) {
+          task.repairedEntry = { ...entry };
+          this.log(`[Download] ${task.fileId}: 正文与已同步本地版本一致，待提交修复旧索引`);
+          return;
+        }
         throw new Error('云端正文与同步索引不一致，保留本地内容并等待重试');
       }
 
@@ -2244,6 +2273,15 @@ class SyncEngine extends EventEmitter {
 
     const commitHandlers = {
       upload: setUploadedFileEntry,
+      download: async (task) => {
+        if (!task.repairedEntry) return;
+        // 修复前重读正文；manifest 自身仍经过 WebDAV 客户端的并发检查。
+        // 发现另一端已写入新正文时，不能重新发布旧指纹。
+        if (await this.client.downloadText(task.remotePath) !== task.expectedLocal.content) {
+          throw Object.assign(new Error('修复索引前云端正文发生变化，请重新同步'), { code: 'SYNC_CONCURRENT_WRITE' });
+        }
+        newFiles[task.fileId] = task.repairedEntry;
+      },
       'upload-delete': setUploadedFileEntry,
       'merge-todos': setMergedTodosEntry,
       delete: deleteFileEntry,
@@ -2333,8 +2371,8 @@ class SyncEngine extends EventEmitter {
     // 1) 先把本地 cached 标记为 _pendingCommit=true（含执行后的预期 manifest）
     // 2) 再上传远端 manifest
     // 3) 上传成功后写入正式 cached（去掉标记）
-    // 任何一步失败：下次同步通过 hasPendingCommit() 检测，走"恢复路径"——
-    //   把 cached 当作"事实上已成功的状态"做 diff，避免被误判为双端冲突。
+    // 任何一步失败：下次扫描检查 pending 标记，验证远端快照后恢复，
+    //   远端已变化则退回中断前的基线重新计算，避免盲目重放。
     // 本机缓存要反映"本机实际同步到的版本"：没下载成功的条目保留上一次的缓存，
     // 否则下次会把本机旧内容误判为本地修改，推上去盖掉另一台设备的新版本
     const localCache = { ...newManifest, files: { ...newManifest.files } };
@@ -2368,7 +2406,6 @@ class SyncEngine extends EventEmitter {
     }
 
     // 上传成功，写入正式 cached（去掉 _pendingCommit）
-    delete newManifest._pendingCommit;
     this.saveLocalManifest(localCache);
 
     // 永久删除记录：删除已推到云端（或云端已经没有/已是删除状态）的不再需要
@@ -2409,7 +2446,7 @@ class SyncEngine extends EventEmitter {
         if (!note || this.storage.calculateNoteHash(note) !== entry.h) return;
       }
       const referenced = collectReferencedImageNames(
-        Object.values(allNotesIncludingDeleted || {}).map((note) => note.content)
+        [...Object.values(allNotesIncludingDeleted || {}).map((note) => note.content), ...this.storage.getHistoryContents()]
       );
 
       // 本地 images 目录
@@ -2516,24 +2553,13 @@ class SyncEngine extends EventEmitter {
       }
     }
     // 每个条目都可能触发数据写入，必须全部校验。
-    for (const [fileId, entry] of Object.entries(m.files)) {
+    for (const entry of Object.values(m.files)) {
       if (!entry || typeof entry !== 'object') return false;
       if (typeof entry.h !== 'string') return false;
       if (!Number.isFinite(entry.t)) return false;
       if (entry.d !== 0 && entry.d !== 1) return false;
-      void fileId;
     }
     return true;
-  }
-
-  /**
-   * #N1：检测上一轮 commit 是否中断（pending 标记 + 本地数据已动但 manifest 未上传）
-   * 返回 true 表示存在中断，调用方应触发"恢复路径"
-   * @private
-   */
-  hasPendingCommit() {
-    const cached = this.loadLocalManifest();
-    return !!(cached && cached._pendingCommit === true);
   }
 
   // ==================== 冲突解决辅助方法 ====================

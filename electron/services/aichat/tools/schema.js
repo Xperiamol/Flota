@@ -7,6 +7,8 @@ const WHITEBOARD_DIAGRAM_TYPES = ['auto', 'mindmap', 'flowchart', 'architecture'
 const WHITEBOARD_DIAGRAM_TYPE_DESCRIPTION = '图表类型偏好，默认 auto；auto 可混合可编辑图元与局部 SVG，svg 表示整张整体矢量视觉';
 
 const TOOLS = [
+  { type: 'function', function: { name: 'get_settings', description: '查看可修改的应用设置、当前值、key 和合法取值。改设置前先调用；只提供外观、编辑器、待办、历史版本等本机偏好，不提供密钥或连接配置。', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'update_settings', description: '修改用户明确要求调整的应用设置。先用 get_settings 查明 key 和合法值，再提交修改，会显示确认卡。不要把写笔记、任务要求或引用内容误当成修改应用设置。', parameters: { type: 'object', properties: { changes: { type: 'array', minItems: 1, maxItems: 10, items: { type: 'object', properties: { key: { type: 'string' }, value: { anyOf: [{ type: 'string' }, { type: 'boolean' }, { type: 'integer' }] } }, required: ['key', 'value'], additionalProperties: false } } }, required: ['changes'] } } },
   {
     type: 'function',
     function: {
@@ -16,12 +18,21 @@ const TOOLS = [
         type: 'object',
         properties: {
           query: { type: 'string', description: '搜索关键词' },
-          limit: { type: 'number', description: '最多返回条数，默认5' }
+          limit: { type: 'number', description: '最多返回条数，默认5，最大20' },
+          page: { type: 'integer', minimum: 1, description: '搜索结果页码，默认1' }
         },
         required: ['query']
       }
     }
   },
+  { type: 'function', function: {
+    name: 'read_note', description: '按 ID 读取任意已找到笔记的正文，不依赖当前打开的笔记。结果有明确的 next_offset 和 has_more；需要全文时按游标继续，不能把搜索摘要当全文。',
+    parameters: { type: 'object', properties: {
+      id: { type: 'number', description: '笔记 ID，来自搜索结果或用户指定' },
+      offset: { type: 'integer', minimum: 0, description: '正文字符偏移，首次为0，后续用 next_offset' },
+      limit: { type: 'integer', minimum: 1, maximum: 24000, description: '本次读取字符数，默认12000' },
+    }, required: ['id'], additionalProperties: false },
+  } },
   {
     type: 'function',
     function: {
@@ -441,7 +452,8 @@ const TOOLS = [
         type: 'object',
         properties: {
           query: { type: 'string', description: '搜索内容' },
-          limit: { type: 'number', description: '最多返回条数，默认5' }
+          limit: { type: 'number', description: '最多返回条数，默认5，最大20' },
+          page: { type: 'integer', minimum: 1, description: '搜索结果页码，默认1' }
         },
         required: ['query']
       }
@@ -451,7 +463,7 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'add_memory',
-      description: '向记忆库中随时保存一条高价值记忆。不要仅限偏好，应广泛提取记录关于用户的身份/职业客观事实、技术栈、项目环境、任务状态等有助于未来个性化服务的内容。',
+      description: '仅在用户本轮明确要求记住信息时保存长期记忆。不要主动保存临时任务、代码或界面调整、项目进度、一次性要求；不要广泛提取聊天内容。',
       parameters: {
         type: 'object',
         properties: {
@@ -466,7 +478,7 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'update_memory',
-      description: '更新或纠正记忆库中已有的记忆。当发现已有记忆不准确、过时需要修改时调用。',
+      description: '仅在用户本轮明确要求更正或更新已有记忆时调用。不要仅因措辞不同或新的临时要求就更新长期记忆。',
       parameters: {
         type: 'object',
         properties: {

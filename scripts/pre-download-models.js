@@ -12,10 +12,6 @@ async function preDownloadModels() {
         const path = require('path');
         const fs = require('fs');
 
-        // 1. 导入 transformers
-        console.log('\n[1/4] 加载 @xenova/transformers...');
-        const { pipeline, env } = await import('@xenova/transformers');
-
         // 2. 设置缓存目录到项目根目录的 models/
         const projectRoot = path.join(__dirname, '..');
         const modelsPath = path.join(projectRoot, 'models');
@@ -24,15 +20,14 @@ async function preDownloadModels() {
             fs.mkdirSync(modelsPath, { recursive: true });
         }
 
-        env.cacheDir = modelsPath;
-        env.allowRemoteModels = true;
-        env.allowLocalModels = true;
-
         console.log(`✓ 模型目录: ${modelsPath}`);
 
         // 3. 检查模型是否已存在
         const modelPath = path.join(modelsPath, 'Xenova', 'all-MiniLM-L6-v2');
-        if (fs.existsSync(modelPath)) {
+        if (['config.json', 'tokenizer.json', 'tokenizer_config.json', 'onnx/model_quantized.onnx'].every(file => {
+            const target = path.join(modelPath, file);
+            return fs.existsSync(target) && fs.statSync(target).size > 0;
+        })) {
             console.log('\n✓ 模型已存在，跳过下载');
             console.log(`  位置: ${modelPath}`);
 
@@ -42,7 +37,7 @@ async function preDownloadModels() {
 
             files.forEach(file => {
                 if (file.isFile()) {
-                    const filePath = path.join(file.path, file.name);
+                    const filePath = path.join(file.parentPath || file.path, file.name);
                     const stats = fs.statSync(filePath);
                     totalSize += stats.size;
                 }
@@ -54,6 +49,11 @@ async function preDownloadModels() {
             console.log('='.repeat(60) + '\n');
             return;
         }
+
+        const { pipeline, env } = await import('@xenova/transformers');
+        env.cacheDir = modelsPath;
+        env.allowRemoteModels = true;
+        env.allowLocalModels = true;
 
         // 4. 下载模型
         console.log('\n[2/4] 下载模型 Xenova/all-MiniLM-L6-v2...');
@@ -98,7 +98,7 @@ async function preDownloadModels() {
 
             files.forEach(file => {
                 if (file.isFile()) {
-                    const filePath = path.join(file.path, file.name);
+                    const filePath = path.join(file.parentPath || file.path, file.name);
                     const stats = fs.statSync(filePath);
                     totalSize += stats.size;
                     const sizeMB = (stats.size / 1024 / 1024).toFixed(2);

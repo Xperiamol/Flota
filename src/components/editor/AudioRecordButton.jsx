@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback } from 'react'
 import { IconButton, Tooltip } from '@mui/material'
 import { Mic as MicIcon, Stop as StopIcon } from '../common/AppIcons'
 import { blobToWav } from '../../utils/audioCodec'
+import { notifyError } from '../../utils/notify'
 
 const AudioRecordButton = ({ onAudioInsert, onTranscription, disabled = false, sx }) => {
   const [isRecording, setIsRecording] = useState(false)
@@ -55,14 +56,16 @@ const AudioRecordButton = ({ onAudioInsert, onTranscription, disabled = false, s
           if (window.electronAPI?.stt?.transcribe && onTranscription) {
             setSttBusy(true)
             try {
-              const isWebm = ext === 'webm'
-              const sttArg = isWebm ? await blobToWav(blob) : audioPath
+              const config = await window.electronAPI.stt.getConfig()
+              if (!config?.data?.enabled) return
+              const sttArg = ext === 'webm' || config.data.provider === 'offline' ? await blobToWav(blob) : audioPath
               const sttResult = await window.electronAPI.stt.transcribe(sttArg)
               if (sttResult?.success && sttResult?.data?.text) {
                 onTranscription(sttResult.data.text, audioPath)
-              }
+              } else if (!sttResult?.success) notifyError(sttResult?.error || '转文字失败，录音已保留，可稍后重试')
             } catch (e) {
               console.error('自动转文字失败:', e)
+              notifyError('转文字失败，录音已保留，可稍后重试')
             } finally {
               setSttBusy(false)
             }

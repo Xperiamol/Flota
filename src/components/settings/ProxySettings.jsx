@@ -75,7 +75,7 @@ const ProxySettings = ({ showSnackbar }) => {
         port: configToSave.port
       };
       logger.log('[ProxySettings] 自动保存配置:', normalized);
-      
+
       const result = await window.electronAPI.invoke('proxy:save-config', normalized);
 
       if (result.success) {
@@ -115,7 +115,7 @@ const ProxySettings = ({ showSnackbar }) => {
         port: config.port
       };
       logger.log('[ProxySettings] 测试配置:', configToTest);
-      
+
       const result = await window.electronAPI.invoke('proxy:test', configToTest);
 
       if (result.success) {
@@ -139,9 +139,7 @@ const ProxySettings = ({ showSnackbar }) => {
   return (
     <Box>
       <Box sx={settingsSectionSx}>
-        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
-          配置应用访问网络时使用的本地代理
-        </Typography>
+
         <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2 })}>
           <ListItemText
             primary={t('proxy.proxyStatus')}

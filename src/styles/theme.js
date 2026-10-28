@@ -1,6 +1,7 @@
 import React from 'react';
 import { createTheme, alpha } from '@mui/material/styles';
 import { ArrowDropDown, CheckCircle, Error as ErrorIcon, Info, Warning } from '../components/common/AppIcons';
+import { choiceChipStyles } from './choiceChipStyles';
 import { EASING, DURATION_MS } from '../utils/animationConfig';
 
 const checkboxIcon = React.createElement('span', { className: 'FlotaCheckbox-icon' });
@@ -630,10 +631,18 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2', { onWal
             // 标签：实心蓝色药丸换成浅底色小标签，圆角收小
             MuiChip: {
                 styleOverrides: {
-                    root: {
+                    root: ({ ownerState, theme }) => ({
                         borderRadius: 8,
                         fontWeight: 500,
-                    },
+                        // 统一可点击选项；状态和可删除标签仍保留各自的语义色。
+                        ...(['default', 'primary'].includes(ownerState.color || 'default') && {
+                            '&&.MuiChip-clickable': {
+                                ...choiceChipStyles(theme, ownerState.color === 'primary'),
+                                '& .MuiChip-label': { paddingLeft: 9, paddingRight: 9 },
+                                '& .MuiChip-icon': { color: 'inherit', fontSize: 15 },
+                            },
+                        }),
+                    }),
                     filled: {
                         '&.MuiChip-colorPrimary': {
                             backgroundColor: alpha(primaryColor, isDark ? 0.2 : 0.1),

@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Box, Button, Typography } from '@mui/material';
+import { Box, Button } from '@mui/material';
 import { ArrowBack as ArrowBackIcon } from '../common/AppIcons';
 import SyncRegistryView from './SyncRegistryView';
 import NutcloudSyncSettings from './NutcloudSyncSettings';
 import GoogleCalendarSettings from './GoogleCalendarSettings';
 import CalendarSyncSettings from './CalendarSyncSettings';
-import { sectionDescriptionSx, settingsSectionSx } from '../../styles/commonStyles';
+import CloudBackupSettings from './CloudBackupSettings';
+import { settingsSectionSx } from '../../styles/commonStyles';
 
 const CloudSyncSettings = () => {
   const [currentView, setCurrentView] = useState('registry'); // 'registry', 'nutcloud', 'google-calendar', 'caldav'
@@ -20,14 +21,6 @@ const CloudSyncSettings = () => {
 
   return (
     <Box>
-      {currentView === 'registry' && (
-        <Box sx={settingsSectionSx}>
-          <Typography variant="caption" sx={sectionDescriptionSx}>
-            管理笔记、待办和日历的同步服务
-          </Typography>
-        </Box>
-      )}
-
       {/* 返回按钮 */}
       {currentView !== 'registry' && (
         <Box sx={(theme) => ({ ...settingsSectionSx(theme), py: 1.25 })}>
@@ -44,7 +37,7 @@ const CloudSyncSettings = () => {
 
       {/* 内容区域 */}
       {currentView === 'registry' && (
-        <SyncRegistryView onOpenSettings={handleOpenSettings} />
+        <><SyncRegistryView onOpenSettings={handleOpenSettings} /><CloudBackupSettings /></>
       )}
       {currentView === 'nutcloud' && <NutcloudSyncSettings />}
       {currentView === 'google-calendar' && <GoogleCalendarSettings />}

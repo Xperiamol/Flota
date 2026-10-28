@@ -20,10 +20,7 @@ class BackupService {
    * @returns {{ success: boolean, data?: { filePath: string, size: number }, error?: string }}
    */
   async createBackup() {
-    let snapshotDir = null;
     try {
-      const userDataPath = getUserDataPath();
-      const dbManager = DatabaseManager.getInstance();
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       const result = await dialog.showSaveDialog({
@@ -35,11 +32,39 @@ class BackupService {
         return { success: false, error: '用户取消' };
       }
 
+      await this.writeArchive(result.filePath);
+      const stat = await fsp.stat(result.filePath);
+      return { success: true, data: { filePath: result.filePath, size: stat.size } };
+    } catch (error) {
+      console.error('创建备份失败:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+
+  async writeArchive(filePath, { portable = false } = {}) {
+    const userDataPath = getUserDataPath();
+    const dbManager = DatabaseManager.getInstance();
+    let snapshotDir;
+    try {
       // 数据库在 userData/database/flota.db（以前误读 userData/flota.db，备份永远失败）。
       // 用 SQLite 在线备份拿一致快照，不直接复制正在写的库文件和 WAL
       snapshotDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'flota-backup-'));
       const snapshotPath = path.join(snapshotDir, 'flota.db');
       await dbManager.backup(snapshotPath);
+      if (portable) {
+        const { isSyncableSetting } = require('./sync/StorageAdapter');
+        const snapshot = new Database(snapshotPath);
+        try {
+          snapshot.pragma('journal_mode = DELETE');
+          const remove = snapshot.prepare('DELETE FROM settings WHERE key = ?');
+          snapshot.transaction(() => {
+            for (const row of snapshot.prepare('SELECT key, value FROM settings').all()) {
+              if (!isSyncableSetting(row.key, row.value)) remove.run(row.key);
+            }
+          })();
+        } finally { snapshot.close(); }
+      }
 
       const zip = new AdmZip();
       zip.addLocalFile(snapshotPath, '', 'flota.db');
@@ -52,16 +77,12 @@ class BackupService {
         createdAt: new Date().toISOString(),
         platform: process.platform,
       }, null, 2), 'utf8'));
-      zip.writeZip(result.filePath);
+      await zip.writeZipPromise(filePath);
 
-      const stat = await fsp.stat(result.filePath);
-      return { success: true, data: { filePath: result.filePath, size: stat.size } };
-    } catch (error) {
-      console.error('创建备份失败:', error);
-      return { success: false, error: error.message };
     } finally {
       if (snapshotDir) fs.rmSync(snapshotDir, { recursive: true, force: true });
     }
+    return filePath;
   }
 
   /**

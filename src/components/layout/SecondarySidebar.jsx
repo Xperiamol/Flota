@@ -39,12 +39,13 @@ import {
   AddTask as AddTaskIcon,
   Brush as WhiteboardIcon,
   RestartAlt as ResetIcon,
-  Tag as TagIcon,
   BookmarkBorder,
   FolderOpenRounded,
   TaskAltRounded,
 } from '../common/AppIcons';
 import FlotaAIIcon from '../common/FlotaAIIcon';
+import FilterChip from '../filters/FilterChip';
+import { getTagColor } from '../../utils/tagUtils';
 import { useStore } from '../../store/useStore';
 import NoteList from '../notes/NoteList';
 import { SETTINGS_GROUPS } from '../settings/settingsCategories';
@@ -111,6 +112,7 @@ const clampSidebarWidth = (value, fallback) => {
 
 const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, onShowCompletedChange, viewMode, showCompleted, onMultiSelectChange, onMultiSelectRefChange, todoRefreshTrigger, todoSortBy, onTodoSortByChange, showDeleted, selectedDate, calendarRefreshTrigger, onTodoUpdated, calendarViewMode = 'todos' }) => {
   const theme = useTheme();
+  const [timelineTagSearch, setTimelineTagSearch] = useState('');
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     try {
       const saved = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
@@ -343,12 +345,16 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
           />
         );
       case 'timeline': {
-        const allTags = Array.from(new Set(
-          (notesAll || [])
-            .filter((n) => !n.is_deleted)
-            .flatMap((n) => Array.isArray(n.tags) ? n.tags : [])
-            .filter(Boolean)
-        )).sort()
+        const tagCounts = new Map()
+        for (const note of notesAll || []) {
+          if (note.is_deleted) continue
+          for (const tag of new Set(Array.isArray(note.tags) ? note.tags.filter(Boolean) : [])) {
+            tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1)
+          }
+        }
+        const allTags = [...tagCounts.keys()]
+          .sort((a, b) => tagCounts.get(b) - tagCounts.get(a) || a.localeCompare(b))
+          .filter(tag => tag.toLowerCase().includes(timelineTagSearch.trim().toLowerCase()))
 
         const typeOptions = [
           { id: 'note', label: '笔记', icon: <NotesIcon fontSize="small" /> },
@@ -378,25 +384,24 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
           timelineFilter.showFuture ||
           (timelineFilter.quickMode || 'all') !== 'all'
 
-        // 筛选分组直接放在面板上，组与组之间用细分割线分开
-        const filterSectionSx = (themeObj) => ({
-          px: 0.25,
-          py: 1.25,
-          borderTop: `1px solid ${themeObj.palette.divider}`,
-        })
+        const filterSectionSx = { flexShrink: 0 }
 
         const sectionTitleSx = {
           fontSize: 12,
           fontWeight: 700,
           color: 'text.secondary',
-          mb: 0.75
+          mb: 1
         }
 
         return (
           <Box
             sx={(themeObj) => ({
               ...compactPanelSx(themeObj),
-              gap: 1
+              ...thinScrollbarSx,
+              p: 1.5,
+              gap: 2.25,
+              scrollbarGutter: 'auto',
+              '& > *': { flexShrink: 0 }
             })}
           >
             <Stack direction="row" alignItems="center" justifyContent="space-between">
@@ -422,7 +427,10 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
               sx={{
                 '& .MuiOutlinedInput-root': {
                   height: 34,
-                  borderRadius: '12px',
+                  borderRadius: '8px',
+                  bgcolor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.09 : 0.06),
+                  '& fieldset': { borderColor: 'transparent' },
+                  '&:hover fieldset': { borderColor: 'transparent' },
                   fontSize: '0.8125rem'
                 }
               }}
@@ -439,18 +447,16 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
 
             <Box sx={filterSectionSx}>
               <Typography sx={sectionTitleSx}>快捷视图</Typography>
-              <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', rowGap: 0.75 }}>
+              <Stack direction="row" sx={{ flexWrap: 'wrap', gap: 0.75 }}>
                 {quickOptions.map((opt) => {
                   const active = (timelineFilter.quickMode || 'all') === opt.id
                   return (
-                    <Chip
+                    <FilterChip
                       key={opt.id}
                       label={opt.label}
-                      size="small"
-                      color={active ? 'primary' : 'default'}
-                      variant={active ? 'filled' : 'outlined'}
-                      onClick={() => setTimelineFilter({ quickMode: opt.id })}
-                      sx={{ borderRadius: '10px', fontWeight: active ? 650 : 500 }}
+                      value={opt.id}
+                      isSelected={active}
+                      onClick={value => setTimelineFilter({ quickMode: value })}
                     />
                   )
                 })}
@@ -459,19 +465,17 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
 
             <Box sx={filterSectionSx}>
               <Typography sx={sectionTitleSx}>只看</Typography>
-              <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', rowGap: 0.75 }}>
+              <Stack direction="row" sx={{ flexWrap: 'wrap', gap: 0.75 }}>
                 {typeOptions.map((opt) => {
                   const active = normalizedTypes.includes(opt.id)
                   return (
-                    <Chip
+                    <FilterChip
                       key={opt.id}
-                      icon={opt.icon}
                       label={opt.label}
-                      size="small"
-                      color={active ? 'primary' : 'default'}
-                      variant={active ? 'filled' : 'outlined'}
-                      onClick={() => toggleTimelineType(opt.id)}
-                      sx={{ borderRadius: '10px', fontWeight: 650 }}
+                      value={opt.id}
+                      isSelected={active}
+                      icon={opt.icon}
+                      onClick={toggleTimelineType}
                     />
                   )
                 })}
@@ -480,18 +484,16 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
 
             <Box sx={filterSectionSx}>
               <Typography sx={sectionTitleSx}>时间范围</Typography>
-              <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', rowGap: 0.75 }}>
+              <Stack direction="row" sx={{ flexWrap: 'wrap', gap: 0.75 }}>
                 {dateOptions.map((opt) => {
                   const active = timelineFilter.dateRange === opt.id
                   return (
-                    <Chip
+                    <FilterChip
                       key={opt.id}
                       label={opt.label}
-                      size="small"
-                      color={active ? 'primary' : 'default'}
-                      variant={active ? 'filled' : 'outlined'}
-                      onClick={() => setTimelineFilter({ dateRange: opt.id })}
-                      sx={{ borderRadius: '10px' }}
+                      value={opt.id}
+                      isSelected={active}
+                      onClick={value => setTimelineFilter({ dateRange: value })}
                     />
                   )
                 })}
@@ -516,9 +518,8 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
               </Stack>
             </Box>
 
-            <Box sx={{ ...filterSectionSx(theme), flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <Box sx={filterSectionSx}>
               <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-                <TagIcon fontSize="small" sx={{ color: 'text.secondary' }} />
                 <Typography sx={{ ...sectionTitleSx, mb: 0, flex: 1 }}>标签</Typography>
                 {timelineFilter.tags.length > 0 && (
                   <Chip
@@ -528,7 +529,21 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
                   />
                 )}
               </Stack>
-              <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pr: 0.5 }}>
+              <TextField
+                fullWidth
+                size="small"
+                placeholder="搜索标签"
+                value={timelineTagSearch}
+                onChange={event => setTimelineTagSearch(event.target.value)}
+                slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon sx={{ fontSize: 16 }} /></InputAdornment> } }}
+                sx={{ mb: 1, '& .MuiOutlinedInput-root': {
+                  height: 30, fontSize: 12.5, borderRadius: '8px',
+                  bgcolor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.09 : 0.06),
+                  '& fieldset': { borderColor: 'transparent' },
+                  '&:hover fieldset': { borderColor: 'transparent' },
+                } }}
+              />
+              <Box>
                 {allTags.length === 0 ? (
                   <Box
                     sx={(themeObj) => ({
@@ -539,21 +554,21 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
                       bgcolor: themeObj.palette.mode === 'dark' ? 'rgba(157,157,165,0.06)' : 'rgba(22,22,24,0.035)'
                     })}
                   >
-                    <Typography sx={{ fontSize: 12 }}>暂无可用标签</Typography>
+                    <Typography sx={{ fontSize: 12 }}>{timelineTagSearch ? '没有匹配的标签' : '暂无可用标签'}</Typography>
                   </Box>
                 ) : (
-                  <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', rowGap: 0.75 }}>
+                  <Stack direction="row" sx={{ flexWrap: 'wrap', gap: 0.75 }}>
                     {allTags.map((tag) => {
                       const active = timelineFilter.tags.includes(tag)
                       return (
-                        <Chip
+                        <FilterChip
                           key={tag}
-                          label={`#${tag}`}
-                          size="small"
-                          color={active ? 'primary' : 'default'}
-                          variant={active ? 'filled' : 'outlined'}
-                          onClick={() => toggleTimelineTag(tag)}
-                          sx={{ borderRadius: '8px', fontSize: 12 }}
+                          label={tag}
+                          value={tag}
+                          isSelected={active}
+                          color={getTagColor(tag)}
+                          count={tagCounts.get(tag)}
+                          onClick={toggleTimelineTag}
                         />
                       )
                     })}

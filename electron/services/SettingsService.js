@@ -16,6 +16,9 @@ class SettingsService extends EventEmitter {
    * 关键设置的语义校验规则
    */
   static VALIDATION_RULES = {
+    noteHistoryEnabled: v => typeof v === 'boolean' ? null : '历史快照开关必须为布尔值',
+    noteHistoryIntervalSeconds: v => Number.isInteger(v) && v >= 30 && v <= 3600 ? null : '快照间隔须为 30–3600 秒的整数',
+    noteHistoryLimit: v => Number.isInteger(v) && v >= 1 && v <= 500 ? null : '历史版本数量须为 1–500 的整数',
     ai_api_url: (v) => !v || /^https?:\/\/.+/.test(v) ? null : 'API地址必须以 http:// 或 https:// 开头',
     ai_temperature: (v) => { const n = Number(v); return n >= 0 && n <= 2 ? null : '温度参数必须在 0-2 之间'; },
     ai_limit_max_tokens: (v) => typeof v === 'boolean' || v === 'true' || v === 'false' ? null : '最大输出限制开关必须为布尔值',

@@ -84,6 +84,7 @@ app/
 !CHANGELOG.md
 !PRIVACY.md
 !docs/RELEASE_FLOW.md
+!electron/services/aichat/skills/**/SKILL.md
 *_导出_*.json
 Flota_导出_*.json
 

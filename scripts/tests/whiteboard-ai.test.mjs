@@ -191,3 +191,10 @@ test('所有画布保存入口拒绝成功标记下的残缺图片索引', async
     assert.deepEqual(await board.saveWhiteboardFiles({}), {})
   } finally { globalThis.window = previous }
 })
+
+
+test('外观投诉和美化默认局部编辑，只有明确重画才替换整张图', () => {
+  for (const prompt of ['画的太丑了', '美化一下', '节点不对齐', '改成蓝色']) assert.equal(board.inferWhiteboardActionFromPrompt(prompt), 'edit')
+  for (const prompt of ['清空后重画', '重新生成流程图']) assert.equal(board.inferWhiteboardActionFromPrompt(prompt), 'replace')
+  assert.equal(board.inferWhiteboardActionFromPrompt('补充一个独立说明区'), 'append')
+})

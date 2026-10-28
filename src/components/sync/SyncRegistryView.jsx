@@ -417,10 +417,6 @@ const SyncRegistryView = ({ onOpenSettings }) => {
         </Box>
       )}
 
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-        开关只控制各类数据是否参与同步；账号、自动同步和密码在对应服务的设置里。
-      </Typography>
-
       {/* 一行一个数据类型，行之间用细分割线，与其他设置页一致（不再每行一块白底） */}
       <List disablePadding>
         {syncRegistry.map((item) => (

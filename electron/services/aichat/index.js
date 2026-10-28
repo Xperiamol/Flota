@@ -1,3 +1,4 @@
+const { createSkillSession } = require('./skills');
 const { referencesFromMessages } = require('../aiReferences');
 /**
  * AI Chat Service - 为 AI 助手提供带工具调用的流式聊天
@@ -17,16 +18,16 @@ const { referencesFromMessages } = require('../aiReferences');
 const { getInstance: getLogger } = require('../LoggerService');
 const LongDocumentPipeline = require('../longtask/longDocumentPipeline');
 
-const { WRITE_TOOL_NAMES, DEFAULT_CHAT_MAX_TOKENS, MAX_CONTEXT_TOKENS } = require('./constants');
+const { WRITE_TOOL_NAMES, MAX_CONTEXT_TOKENS } = require('./constants');
 
 // 会改动笔记内容 / 标题 / 标签的工具（白板由渲染层执行器自行保存并刷新）
 const NOTE_WRITE_TOOLS = new Set(['create_note', 'edit_note', 'edit_notes', 'write_long_document']);
-const { isEnabledSetting, safeJsonParse, trimMessagesToBudget } = require('./utils');
+const { isEnabledSetting, safeJsonParse, trimMessagesToBudget, compactHistoryWithLLM } = require('./utils');
 const { dispatchTool } = require('./tools/dispatcher');
 const { getSystemPrompt, buildContextSection } = require('./systemPrompt');
 const { enrichContextPackageWithMemories } = require('./memoryContext');
 const { streamRequest } = require('./stream/streamRequest');
-const { handleToolCalls, MAX_DEPTH: MAX_TOOL_DEPTH } = require('./stream/toolLoop');
+const { handleToolCalls } = require('./stream/toolLoop');
 const PendingActionStore = require('./PendingActionStore');
 const { MemoryExtractor } = require('./memoryExtractor');
 
@@ -51,7 +52,7 @@ const isToolDisabled = (options, name) =>
 // 用户反复重试也只会得到同样的空话。本次请求没产生待确认动作、回复却声称有确认卡时追加一轮纠正。
 // 判定与渲染层 utils/aiCore/pendingActions.js 的 toApiMessages 保持一致。
 const CONFIRMATION_CLAIM_RE = /确认卡|确认执行|点(?:击)?确认/;
-const PHANTOM_CONFIRMATION_NUDGE = '（系统提示）你刚才的回复声称已准备好确认卡，但本轮没有调用任何写入工具，用户看不到确认卡。现在直接调用对应的写入工具（如 update_widget、create_todo），不要再调用只读工具，也不要先输出说明文字。';
+const PHANTOM_CONFIRMATION_NUDGE = '（系统提示）你刚才的回复声称已准备好确认卡，但本轮没有调用任何写入工具，用户看不到确认卡。现在按需 read_skill 加载对应能力并调用写入工具生成确认卡，不要先输出说明文字。';
 
 class AIChatService {
   constructor(aiService, noteDAO, todoDAO, mem0Service, webSearchService = null) {
@@ -106,11 +107,11 @@ class AIChatService {
     if (!config.apiKey) throw new Error('请先在设置中配置API密钥');
 
     const temp = Math.min(Math.max(typeof opts.temperature === 'number' ? opts.temperature : (config.temperature || 0.7), 0), 2);
-    // maxTokens 与主 AI 聊天保持一致：显式传入优先，否则按 limitMaxTokens 开关取 config.maxTokens 或默认值
+    // 与主聊天一致：关闭限长时不发送 max_tokens，由服务商决定单次输出长度。
     const limitMaxTokensEnabled = isEnabledSetting(config.limitMaxTokens);
     const maxTk = Number(opts.maxTokens) > 0
       ? Math.floor(opts.maxTokens)
-      : (opts.bypassTokenLimit ? undefined : (limitMaxTokensEnabled ? config.maxTokens : DEFAULT_CHAT_MAX_TOKENS));
+      : (opts.bypassTokenLimit ? undefined : (limitMaxTokensEnabled ? config.maxTokens : undefined));
     const onToken = typeof opts.onToken === 'function' ? opts.onToken : null;
 
     const innerOnChunk = (chunk) => {
@@ -119,7 +120,7 @@ class AIChatService {
 
     const result = await streamRequest(
       config, messages, temp, maxTk, innerOnChunk, opts.abortSignal,
-      { disableTools: true, timeoutMs: opts.timeoutMs }, this.aiService
+      { disableTools: true, timeoutMs: opts.timeoutMs, autoContinue: Boolean(opts.autoContinue) }, this.aiService
     );
 
     return {
@@ -148,6 +149,8 @@ class AIChatService {
       longDocPipeline: this._getLongDocPipeline(),
       logger: this.logger,
       getCurrentNote,
+      appSettings: contextPackage?.appSettings || {},
+      settingDAO: this.aiService?.settingDAO,
       widgetService: this._widgetService || null
     };
   }
@@ -162,6 +165,12 @@ class AIChatService {
       });
     }
     if (options.requireConfirmation !== false && WRITE_TOOL_NAMES.has(name)) {
+      if (name === 'update_settings') {
+        try {
+          const { validateChanges } = require('./tools/handlers/settings');
+          args = { changes: validateChanges(args?.changes) };
+        } catch (error) { return JSON.stringify({ success: false, error: error.message }); }
+      }
       const { referenceImages, ...targetContext } = options.actionContext || {};
       const usesReferences = ['create_whiteboard', 'update_whiteboard', 'create_widget', 'update_widget'].includes(name);
       const context = options.actionContext ? (usesReferences ? options.actionContext : targetContext) : null;
@@ -333,26 +342,51 @@ class AIChatService {
         options = { ...options, disabledTools: [...(options.disabledTools || []), 'read_note_image'] };
       }
 
+      options.toolSession = createSkillSession({
+        disabledTools: options.disabledTools,
+        webSearchEnabled: isEnabledSetting(config.webSearchEnabled) && Boolean(config.webSearchApiKey),
+        memoryEnabled: Boolean(this.mem0Service?.isAvailable?.()),
+      });
+
       const systemPrompt = `${await getSystemPrompt({ mem0Service: this.mem0Service, imageReadingEnabled })}${buildContextSection(enrichedPackage)}`;
-      const budgetedHistory = trimMessagesToBudget(systemPrompt, messages, MAX_CONTEXT_TOKENS);
+      this._compactionCache ||= new Map();
+      const budgetedHistory = await compactHistoryWithLLM(systemPrompt, messages, MAX_CONTEXT_TOKENS, {
+        cache: this._compactionCache,
+        cacheKey: options.conversationId || 'default',
+        summarize: async (summaryMessages) => {
+          wrappedOnChunk({ type: 'tool_call_prepare', name: 'summarize_current_note_section' });
+          const res = await this._generatePlainText(summaryMessages, {
+            temperature: 0.2,
+            bypassTokenLimit: true,
+            timeoutMs: 25000,
+            abortSignal: options.abortSignal,
+          });
+          return res?.content || '';
+        },
+      });
       const fullMessages = [
         { role: 'system', content: systemPrompt },
         ...budgetedHistory
       ];
 
-      const stream = (cfg, msgs, t, mt, oc, ab, opts) => streamRequest(cfg, msgs, t, mt, oc, ab, opts, this.aiService);
-      const runToolLoop = (prevResult, depth, chunkHandler) => handleToolCalls({
+      const stream = (cfg, msgs, t, mt, oc, ab, opts) => streamRequest(
+        cfg, msgs, t, mt, oc, ab, { ...opts, autoContinue: !userOutputLimitApplied }, this.aiService
+      );
+      const runToolLoop = (prevResult, chunkHandler) => handleToolCalls({
         config,
         messages: fullMessages,
         prevResult,
         onChunk: chunkHandler,
         temp,
         maxTk,
-        depth,
         abortSignal: options.abortSignal,
         options,
         streamRequest: stream,
-        executeTool: (name, args, opts) => this._executeTool(name, args, { ...opts, contextPackage: options.contextPackage }),
+        executeTool: (name, args, opts) => {
+          if (!options.toolSession.canExecute(name)) return JSON.stringify({ success: false, error: '工具尚未开放或已禁用。请先用 read_skill 加载对应技能，不要猜测调用。' });
+          if (name === 'read_skill') return JSON.stringify(options.toolSession.read(args?.skill));
+          return this._executeTool(name, args, { ...opts, contextPackage: options.contextPackage });
+        },
         logger: this.logger
       });
       const toFinalResult = (streamResult) => ({
@@ -367,11 +401,12 @@ class AIChatService {
       const result = await stream(config, fullMessages, temp, maxTk, wrappedOnChunk, options.abortSignal, options);
       const path = result.toolCalls && result.toolCalls.length > 0 ? 'toolLoop' : 'direct';
       let finalResult = path === 'toolLoop'
-        ? await runToolLoop(result, 0, wrappedOnChunk)
+        ? await runToolLoop(result, wrappedOnChunk)
         : toFinalResult(result);
 
       const claimedText = String(finalResult.fullContent || '');
       if (!pendingActionCreated
+        && finalResult.taskStatus !== 'incomplete'
         && options.requireConfirmation !== false
         && options.disableTools !== true
         && CONFIRMATION_CLAIM_RE.test(claimedText)) {
@@ -395,7 +430,7 @@ class AIChatService {
         };
         const retry = await stream(config, fullMessages, temp, maxTk, retryOnChunk, options.abortSignal, options);
         finalResult = retry.toolCalls && retry.toolCalls.length > 0
-          ? await runToolLoop(retry, MAX_TOOL_DEPTH - 1, retryOnChunk)
+          ? await runToolLoop(retry, retryOnChunk)
           : toFinalResult(retry);
       }
 

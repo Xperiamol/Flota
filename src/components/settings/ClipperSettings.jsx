@@ -81,9 +81,7 @@ export default function ClipperSettings() {
   return (
     <Box>
       <Box sx={settingsSectionSx}>
-        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
-          通过 Flota 浏览器扩展，把网页全文、选中内容或书签剪藏为笔记。图片会下载到本地，同一链接不会重复保存。
-        </Typography>
+
         {!status.pluginEnabled && (
           <Alert severity="warning" sx={{ mb: 1.5, borderRadius: 2 }}>
             “网页剪藏”插件未启用，浏览器扩展暂时无法发送内容。请在插件中心启用它。
@@ -140,9 +138,7 @@ export default function ClipperSettings() {
 
       <Box sx={settingsSectionSx}>
         <Typography variant="subtitle1" sx={sectionTitleSx}>剪藏偏好</Typography>
-        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 1.5 }}>
-          扩展中没有单独指定时，使用这里的默认设置。
-        </Typography>
+
         {/* 剪藏用标签归类：每篇剪藏自动打上这些标签，在扩展弹窗里还可以再增减 */}
         <Box sx={(theme) => ({ ...settingsRowSx(theme) })}>
           <ListItemText primary="默认标签" secondary="每篇剪藏自动加上这些标签，在笔记列表里按标签就能筛出所有剪藏；扩展弹窗里还可以再增减"

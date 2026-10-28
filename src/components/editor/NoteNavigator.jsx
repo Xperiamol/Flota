@@ -530,7 +530,7 @@ const NoteNavigator = ({
         <NavIcon sx={{ fontSize: 16, color: 'primary.main' }} />
         <Typography sx={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>笔记导航/书签</Typography>
         <Box sx={{ flex: 1 }} />
-        <PanelIconButton title="关闭" onClick={onClose}>
+        <PanelIconButton title="关闭" onClick={onClose} sx={{ width: 32, height: 32 }}>
           <CloseIcon />
         </PanelIconButton>
       </Box>

@@ -117,6 +117,7 @@ const ConversationService = require('./services/ConversationService')
 const WindowManager = require('./services/WindowManager')
 const DataImportService = require('./services/DataImportService')
 const BackupService = require('./services/BackupService')
+const CloudBackupService = require('./services/CloudBackupService')
 const ShortcutService = require('./services/ShortcutService')
 const NotificationService = require('./services/NotificationService')
 const ImageService = require('./services/ImageService')
@@ -712,6 +713,8 @@ async function initializeServices() {
     // 导入 Obsidian 时把笔记图片存进 images/ 目录（以前传的是从未赋值的 imageStorageService，图片全部丢失）
     services.dataImportService = new DataImportService(services.noteService, services.settingsService, services.imageService)
     services.backupService = new BackupService()
+    services.cloudBackupService = new CloudBackupService(services.backupService)
+    services.cloudBackupService.start()
 
     // 暴露 DAO 供插件使用
     const NoteDAO = require('./dao/NoteDAO')

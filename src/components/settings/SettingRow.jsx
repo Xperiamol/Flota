@@ -5,6 +5,7 @@ import { settingsRowSx } from '../../styles/commonStyles'
 export function SettingRow({ primary, secondary, action, disabled = false }) {
   return (
     <ListItem
+      data-setting-label={typeof primary === 'string' ? primary : undefined}
       sx={(theme) => ({
         ...settingsRowSx(theme),
         display: 'flex',

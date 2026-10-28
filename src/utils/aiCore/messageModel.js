@@ -76,3 +76,13 @@ export const parseToolResult = (result) => {
     return null
   }
 }
+
+// Shared by the AI page and floating panel so completion states stay consistent.
+export const formatAssistantCompletion = (content, result) => {
+  if (result?.taskStatus === 'incomplete') return `${content}\n\n本轮已暂停，任务尚未完成。可以缩小范围后继续。`
+  if (!result?.truncated) return content
+  const hint = result.outputLimitApplied
+    ? '⚠️ 回复达到当前最大 token 限制，可能未完整输出。可以在高级设置里调高最大输出长度，或发送“继续”。'
+    : '⚠️ 回复达到模型或服务商的输出上限，可能未完整输出。可以发送“继续”让 AI 接着写。'
+  return `${content}\n\n${hint}`
+}

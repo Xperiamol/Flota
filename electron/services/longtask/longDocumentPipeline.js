@@ -230,7 +230,7 @@ class LongDocumentPipeline {
         attempt === 0
           ? messages
           : [...messages, { role: 'user', content: '上次输出无法解析为 JSON。请重新仅输出一个完整、合法的 JSON 对象，不要任何额外文字或代码块标记。' }],
-        { abortSignal }
+        { abortSignal, bypassTokenLimit: true, autoContinue: true }
       );
       lastContent = res.content || '';
       usage = res.usage;
@@ -300,7 +300,7 @@ class LongDocumentPipeline {
     const maxRounds = target > 0 ? MAX_SECTION_ROUNDS : 1;
     for (let round = 0; round < maxRounds; round += 1) {
       checkAbortSignal(abortSignal);
-      const { content, usage } = await this.llm.generate(messages, { abortSignal, onToken });
+      const { content, usage } = await this.llm.generate(messages, { abortSignal, onToken, bypassTokenLimit: true, autoContinue: true });
       if (usage) this._accUsage(usageAcc, usage);
       lastDelta = (content || '').trim();
       if (!lastDelta) break;
@@ -340,7 +340,7 @@ class LongDocumentPipeline {
           { role: 'system', content: '你是一名摘要助手，请用要点形式精炼概括给定章节，保留关键情节/结论/人物/数据，便于后续章节衔接。控制在 300 字以内。' },
           { role: 'user', content: text.slice(0, 8000) }
         ],
-        { abortSignal }
+        { abortSignal, bypassTokenLimit: true }
       );
       return (content || '').trim();
     } catch (e) {

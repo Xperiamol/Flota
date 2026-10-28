@@ -64,6 +64,7 @@ const SecondarySidebar = lazy(() => import('./components/layout/SecondarySidebar
 const Profile = lazy(() => import('./components/settings/Profile'))
 const AIChatView = lazy(() => import('./components/ai/AIChatView'))
 const ConflictResolutionDialog = lazy(() => import('./components/sync/ConflictResolutionDialog'))
+const OnboardingTour = lazy(() => import('./components/common/OnboardingTour'))
 const ChristmasDecorations = lazy(() => import('./components/common/ChristmasSnow'))
 
 // 加载指示器组件
@@ -128,6 +129,7 @@ function App() {
   const removePluginCommand = useStore((state) => state.removePluginCommand)
   const setAppVersion = useStore((state) => state.setAppVersion)
   const checkForUpdates = useStore((state) => state.checkForUpdates)
+  const [appReady, setAppReady] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [secondarySidebarOpen, setSecondarySidebarOpen] = useState(true)
   // 回收站开关放在 store 里：标题栏要显示「回收站」
@@ -282,7 +284,7 @@ function App() {
       return
     }
 
-    const css = generatePatternCSS(backgroundPattern, primaryColor, patternOpacity, wallpaperPath)
+    const css = generatePatternCSS(backgroundPattern, primaryColor, patternOpacity, wallpaperPath, resolvedTheme)
     if (!css) {
       if (styleEl) styleEl.remove()
       return
@@ -295,7 +297,7 @@ function App() {
     }
     styleEl.textContent = css
     return () => { styleEl?.remove() }
-  }, [backgroundPattern, primaryColor, patternOpacity, wallpaperPath])
+  }, [backgroundPattern, primaryColor, patternOpacity, wallpaperPath, resolvedTheme])
 
   // 暴露插件API到全局对象（用于调试和测试）
   useEffect(() => {
@@ -682,6 +684,7 @@ function App() {
     // 初始化设置
     const initApp = async () => {
       await initializeSettings()
+      setAppReady(true)
 
       // 初始化i18n系统
       const { language } = useStore.getState()
@@ -1496,6 +1499,7 @@ function App() {
 
         <Suspense fallback={null}>
           {christmasMode && <ChristmasDecorations />}
+          <OnboardingTour ready={appReady} />
         </Suspense>
       </DragAnimationProvider>
     </ErrorProvider>

@@ -5,7 +5,7 @@ import test from 'node:test'
 // 前端为 Vite ESM、仓库默认 CommonJS；用原文件测试纯逻辑，无需引入测试框架。
 const source = await readFile(new URL('../../src/utils/aiCore/pendingActions.js', import.meta.url), 'utf8')
 const {
-  dismissConversationAction, executeConversationAction, getLatestConfirmableAction,
+  getDisplayMessages, dismissConversationAction, executeConversationAction, getLatestConfirmableAction,
   isExplicitPendingActionConfirmation, supersedeStalePendingActions, toApiMessages, stripInternalActionAnnotations,
 } =
   await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
@@ -170,4 +170,13 @@ test('取消保留在原卡片且可重试，失败提示不追加到另一个�
   assert.equal(messages[0].actions[0].status, 'cancelled')
   await executeConversationAction({ ...request, execute: async () => ({ success: true, message: '已创建', resultNoteId: 42 }) })
   assert.equal(messages[0].actions[0].status, 'done')
+})
+
+
+test('completed result stays in API history but is not displayed twice beside its card', () => {
+  const messages = [{ role: 'assistant', content: '已准备好', actions: [{ actionId: 'a', status: 'done', resultMessage: '已更新画布' }] }, { role: 'assistant', content: '已更新画布', actionResultFor: 'a' }]
+  assert.equal(getDisplayMessages(messages).length, 1)
+  assert.equal(toApiMessages(messages).length, 2)
+  assert.equal(getDisplayMessages([messages[1]]).length, 1)
+  assert.equal(getDisplayMessages([messages[0], { ...messages[1], content: '额外说明' }]).length, 2)
 })

@@ -176,3 +176,11 @@ export const supersedeStalePendingActions = (messages) => {
 }
 
 export default getMessagePendingActions
+
+
+// 结果仍保留在会话中供 AI 读取；卡片已显示同一结果时，不再重复渲染一条气泡。
+export const getDisplayMessages = messages => {
+  const completed = new Map((messages || []).flatMap(getMessagePendingActions)
+    .filter(action => action.status === 'done').map(action => [action.actionId, action.resultMessage]))
+  return (messages || []).filter(message => !message.actionResultFor || !completed.has(message.actionResultFor) || completed.get(message.actionResultFor) !== message.content)
+}

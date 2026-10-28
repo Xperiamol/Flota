@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
     MenuItem,
     Box,
+    ButtonBase,
     Typography,
     Paper,
     Switch,
@@ -39,6 +40,7 @@ import {
     PhotoCamera,
     Delete,
     Restore,
+    CheckCircle,
     Warning as WarningIcon,
     Code as CodeIcon,
     Visibility as VisibilityIcon,
@@ -59,6 +61,7 @@ import TrashRetentionSetting from './TrashRetentionSetting';
 import { SettingRow, SettingGroupLabel } from './SettingRow';
 import AppUpdateCard from './AppUpdateCard';
 import { usePrefsStore } from '../../store/usePrefsStore';
+import SettingsSearch from './SettingsSearch';
 import FileTypesSetting from './FileTypesSetting';
 import OpenSourceLicenses from './OpenSourceLicenses';
 import ClipperSettings from './ClipperSettings';
@@ -70,15 +73,14 @@ import {
     SHORTCUT_CATEGORIES,
     getShortcutsByCategory,
     checkShortcutConflict,
-    resetShortcutsToDefault,
-    formatShortcutDisplay
+    resetShortcutsToDefault
 } from '../../utils/shortcutUtils';
 import shortcutManager from '../../utils/ShortcutManager';
 import { useError } from '../common/ErrorProvider';
 import { ALL_TOOLBAR_ITEMS, DEFAULT_TOOLBAR_ORDER, DEFAULT_FLOATING_ORDER } from '../editor/MarkdownToolbar';
 import { ALL_CONTEXT_MENU_ITEMS, CONTEXT_MENU_ITEM_LABELS, DEFAULT_CONTEXT_MENU_ITEMS } from '../editor/contextMenuConfig';
-import { PATTERN_STYLES, hexToRgb } from '../../utils/patternStyles';
-import { sectionTitleSx, sectionDescriptionSx, settingsRowSx, settingsSectionSx, colorPresetSwatchSx } from '../../styles/commonStyles';
+import { TEXTURE_STYLES, getPatternBackgroundStyle, normalizeTextureId } from '../../utils/patternStyles';
+import { sectionTitleSx, settingsRowSx, settingsSectionSx, colorPresetSwatchSx } from '../../styles/commonStyles';
 import logger from '../../utils/logger';
 import { useHomeStore, STARTUP_VIEWS } from '../../store/useHomeStore';
 
@@ -404,13 +406,11 @@ function EditorSettingsPanel({ aiPanelMode, setAiPanelMode, toolbarOrder, setToo
     return (
         <Box>
             <Typography variant="h6" gutterBottom>浮动面板</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                控制富文本编辑器中浮动面板的显示方式
-            </Typography>
+
             <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
                 {aiModeChips.map(o => (
                     <Chip key={o.value} label={o.label}
-                        variant={aiPanelMode === o.value ? 'filled' : 'outlined'}
+                        variant="filled" aria-pressed={aiPanelMode === o.value}
                         color={aiPanelMode === o.value ? 'primary' : 'default'}
                         onClick={() => changeAiPanelMode(o.value)} size="small" />
                 ))}
@@ -438,7 +438,7 @@ function EditorSettingsPanel({ aiPanelMode, setAiPanelMode, toolbarOrder, setToo
                             size="small"
                             label={CONTEXT_MENU_ITEM_LABELS[id] || id}
                             color={enabled ? 'primary' : 'default'}
-                            variant={enabled ? 'filled' : 'outlined'}
+                            variant="filled" aria-pressed={enabled}
                             onClick={() => toggleContextItem(id)}
                             sx={{ fontWeight: 600 }}
                         />
@@ -578,6 +578,31 @@ const Settings = () => {
         setWhiteboardStyle: state.setWhiteboardStyle,
     })));
     const settingsTabValue = useStore((state) => state.settingsTabValue);
+    const settingsContentRef = React.useRef(null);
+    const [searchTarget, setSearchTarget] = useState(null);
+    const navigateSearch = (item) => {
+        useStore.getState().setSettingsTabValue(item.tab);
+        setSearchTarget(item);
+    };
+    useEffect(() => {
+        if (!searchTarget) return;
+        const frame = requestAnimationFrame(() => {
+            const panel = settingsContentRef.current?.querySelector(`#settings-tabpanel-${searchTarget.tab}`);
+            if (!panel) return;
+            const labels = [...panel.querySelectorAll('[data-setting-label], label, h2, h3, h4, h5, h6, .MuiListItemText-primary')];
+            const match = labels.find(node => (node.dataset.settingLabel || node.textContent).trim() === searchTarget.label);
+            const target = match?.closest('[data-setting-label], .MuiListItem-root, .MuiFormControl-root') || match;
+            if (target) {
+                target.scrollIntoView({ block: 'center', behavior: 'instant' });
+                if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) target.animate([
+                    { backgroundColor: alpha(muiTheme.palette.primary.main, .16) },
+                    { backgroundColor: 'transparent' }
+                ], { duration: 1600 });
+            } else settingsContentRef.current?.scrollTo({ top: 0 });
+            setSearchTarget(null);
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [searchTarget, settingsTabValue, muiTheme]);
     const appVersion = useStore((state) => state.appVersion);
     const updateInfo = useStore((state) => state.appUpdateInfo);
     const isStoreBuild = useStore((state) => state.appDistribution === 'microsoft-store');
@@ -602,6 +627,9 @@ const Settings = () => {
         defaultMinibarMode: false,
         hiddenMode: false,
         mcpEnabled: false,
+        noteHistoryEnabled: false,
+        noteHistoryIntervalSeconds: 60,
+        noteHistoryLimit: 50,
         attachmentMaxSizeMB: 50
     });
     const [shortcuts, setShortcuts] = useState(DEFAULT_SHORTCUTS);
@@ -678,6 +706,7 @@ const Settings = () => {
                 if (result && result.success && result.data) {
                     // 确保布尔值类型正确
                     const normalizedData = { ...result.data };
+                    if (normalizedData.close_to_tray !== undefined) setCloseToTray(normalizedData.close_to_tray !== false && normalizedData.close_to_tray !== 'false');
                     if (normalizedData.autoLaunch !== undefined) {
                         normalizedData.autoLaunch = Boolean(normalizedData.autoLaunch);
                     }
@@ -698,6 +727,11 @@ const Settings = () => {
             showError(error, '加载设置失败');
         }
     };
+
+    useEffect(() => {
+        window.addEventListener('flota:settings-updated', loadSettings);
+        return () => window.removeEventListener('flota:settings-updated', loadSettings);
+    }, []);
 
     const loadShortcuts = async () => {
         try {
@@ -1058,7 +1092,7 @@ const Settings = () => {
         }
     };
 
-    const chipRowSx = { display: 'flex', gap: 1 };
+    const chipRowSx = { display: 'flex', flexWrap: 'wrap', gap: 0.75 };
     /** 通用 Chip 选择器 */
     const ChipSelector = ({ options, value, onChange, getKey = o => o.value, getLabel = o => o.label, getIcon }) => (
         <Box sx={chipRowSx}>
@@ -1066,7 +1100,7 @@ const Settings = () => {
                 const k = getKey(o)
                 return (
                     <Chip key={k} icon={getIcon?.(o)} label={getLabel(o)}
-                        variant={value === k ? 'filled' : 'outlined'}
+                        variant="filled" aria-pressed={value === k}
                         onClick={() => onChange(k)} size="small"
                         color={value === k ? 'primary' : 'default'} />
                 )
@@ -1129,15 +1163,15 @@ const Settings = () => {
             : 'pattern';
     const backgroundModeOptions = [
         { value: 'none', label: '无背景' },
-        { value: 'pattern', label: '几何花纹' },
+        { value: 'pattern', label: '材质纹理' },
         { value: 'wallpaper', label: '自定义壁纸' },
     ];
-    const patternEntries = Object.entries(PATTERN_STYLES);
-    const fallbackPatternId = patternEntries[0]?.[0] || 'dots';
-    const activePatternId = backgroundMode === 'pattern' && PATTERN_STYLES[backgroundPattern]
-        ? backgroundPattern
+    const patternEntries = Object.entries(TEXTURE_STYLES);
+    const fallbackPatternId = patternEntries[0]?.[0] || 'leather';
+    const activePatternId = backgroundMode === 'pattern' && TEXTURE_STYLES[normalizeTextureId(backgroundPattern)]
+        ? normalizeTextureId(backgroundPattern)
         : fallbackPatternId;
-    const backgroundEffectLabel = backgroundMode === 'wallpaper' ? '壁纸显现' : '花纹强度';
+    const backgroundEffectLabel = backgroundMode === 'wallpaper' ? '壁纸显现' : '纹理强度';
     const effectSliderMin = backgroundMode === 'wallpaper' ? 0.15 : 0.2;
     const effectSliderMax = backgroundMode === 'wallpaper' ? 1 : 2;
     const effectSliderStep = 0.05;
@@ -1150,25 +1184,6 @@ const Settings = () => {
         border: '1px solid',
         borderColor: 'divider',
         bgcolor: isDark ? 'rgba(22,22,24,0.18)' : 'rgba(250,250,250,0.72)',
-    };
-
-    const buildPatternPreviewStyle = (style) => {
-        const rgb = hexToRgb(primaryColor);
-        const previewCss = style.css
-            .replace(/rgba\(99,\s*102,\s*241,\s*([\d.]+)\)/g, (_, a) =>
-                `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${(parseFloat(a) * 4).toFixed(2)})`
-            );
-        const previewStyle = {};
-        previewCss.split(';').forEach(rule => {
-            const colonIdx = rule.indexOf(':');
-            if (colonIdx === -1) return;
-            const prop = rule.slice(0, colonIdx).trim();
-            const val = rule.slice(colonIdx + 1).trim();
-            if (prop && val) {
-                previewStyle[prop.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = val;
-            }
-        });
-        return previewStyle;
     };
 
     const handleBackgroundModeChange = async (mode) => {
@@ -1196,15 +1211,17 @@ const Settings = () => {
             }}
         >
             {/* 内容区域 */}
-            <Box sx={{ flex: 1, overflow: 'auto' }}>
+            <Box ref={settingsContentRef} sx={{ flex: 1, minWidth: 0, overflow: 'auto', scrollPaddingTop: '80px' }}>
+                <Box sx={theme => ({ position: 'sticky', top: 0, zIndex: 3, px: 3, py: 1.5, bgcolor: alpha(theme.palette.background.default, .8), backdropFilter: 'blur(20px)', borderBottom: 1, borderColor: 'divider' })}>
+                    <SettingsSearch onNavigate={navigateSearch} />
+                </Box>
                 {/* 通用设置 */}
                 <TabPanel value={settingsTabValue} index={0}>
                     <Paper elevation={0} sx={settingsSurfaceSx}>
-                    <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 1 }}>
-                        应用怎么启动、窗口怎么关闭，以及界面语言
-                    </Typography>
+
                     <List disablePadding>
                         <SettingGroupLabel first>启动</SettingGroupLabel>
+                        <SettingRow primary="首次使用引导" action={<Button size="small" onClick={() => window.dispatchEvent(new Event('flota:show-onboarding'))}>重新查看</Button>} />
                         {isStoreBuild ? (
                             <SettingRow
                                 primary={t('settings.autoLaunch')}
@@ -1306,9 +1323,7 @@ const Settings = () => {
                 {/* 外观设置 */}
                 <TabPanel value={settingsTabValue} index={1}>
                     <Paper elevation={0} sx={settingsSurfaceSx}>
-                    <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
-                        主题、头像、背景和界面显示方式
-                    </Typography>
+
                     {/* 主题 */}
                     <List disablePadding>
                         <SettingRow
@@ -1440,7 +1455,7 @@ const Settings = () => {
                     <Box sx={{ px: 2, mb: 2 }}>
                         <Typography variant="subtitle2" gutterBottom>主题壁纸</Typography>
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                            把背景模式拆开管理，花纹和照片壁纸分别预览与调节，减少误操作
+                            把背景模式拆开管理，纹理和照片壁纸分别预览与调节，减少误操作
                         </Typography>
                         <Box sx={{ mb: 2 }}>
                             <ChipSelector
@@ -1463,44 +1478,47 @@ const Settings = () => {
                                     当前不使用背景
                                 </Typography>
                                 <Typography variant="caption" color="text.secondary">
-                                    适合专注写作。若想增强个性化，可以切换到几何花纹或自定义壁纸。
+                                    适合专注写作。若想增强个性化，可以切换到材质纹理或自定义壁纸。
                                 </Typography>
                             </Box>
                         )}
 
                         {backgroundMode === 'pattern' && (
-                            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 1.25, mb: 2 }}>
+                            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))' }, gap: 1.25, mb: 2 }}>
                                 {patternEntries.map(([id, style]) => {
-                                    const selected = backgroundPattern === id;
+                                    const selected = normalizeTextureId(backgroundPattern) === id;
                                     return (
-                                        <Box
+                                        <ButtonBase
                                             key={id}
+                                            aria-label={`使用${style.name}纹理`}
+                                            aria-pressed={selected}
                                             onClick={() => applyBackground(id)}
                                             sx={{
-                                                borderRadius: backgroundPanelRadius,
+                                                display: 'flex', flexDirection: 'column', alignItems: 'stretch', textAlign: 'left',
+                                                borderRadius: '14px',
                                                 border: '1px solid',
                                                 borderColor: selected ? 'primary.main' : 'divider',
                                                 bgcolor: muiTheme.custom?.surface?.inset,
                                                 cursor: 'pointer',
                                                 overflow: 'hidden',
                                                 transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
-                                                boxShadow: selected ? '0 0 0 1px rgba(59,130,246,0.18) inset' : 'none',
+                                                boxShadow: selected ? `0 0 0 1px ${primaryColor} inset` : 'none',
+                                                '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 3 },
                                                 '&:hover': { borderColor: 'primary.main' },
                                             }}
                                         >
                                             <Box
                                                 sx={{
-                                                    height: 72,
+                                                    height: 96,
                                                     bgcolor: isDark ? 'rgba(31,31,34,0.5)' : 'rgba(250,250,250,0.95)',
                                                 }}
-                                                style={buildPatternPreviewStyle(style)}
+                                                style={getPatternBackgroundStyle(id, primaryColor, 1, isDark ? 'dark' : 'light')}
                                             />
-                                            <Box sx={{ px: 1.25, py: 1 }}>
-                                                <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                                                    {style.name}
-                                                </Typography>
+                                            <Box sx={{ px: 1.25, py: 1.25, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                                                <Box><Typography variant="caption" sx={{ display: 'block', fontWeight: 650 }}>{style.name}</Typography><Typography variant="caption" sx={{ fontSize: 10, color: 'text.secondary' }}>{style.detail}</Typography></Box>
+                                                {selected && <CheckCircle sx={{ fontSize: 15, color: 'primary.main' }} />}
                                             </Box>
-                                        </Box>
+                                        </ButtonBase>
                                     );
                                 })}
                             </Box>
@@ -1596,7 +1614,7 @@ const Settings = () => {
                                             {backgroundEffectLabel}
                                         </Typography>
                                         <Typography variant="caption" color="text.secondary">
-                                            {backgroundMode === 'wallpaper' ? '降低显现能减少干扰，适合文字阅读。' : '提高强度会让花纹更明显。'}
+                                            {backgroundMode === 'wallpaper' ? '降低显现能减少干扰，适合文字阅读。' : '提高强度会让材质肌理更明显。'}
                                         </Typography>
                                     </Box>
                                     <Typography variant="caption" color="text.secondary" sx={{ minWidth: 36, textAlign: 'right' }}>
@@ -1663,14 +1681,9 @@ const Settings = () => {
                 {/* 快捷键设置 */}
                 <TabPanel value={settingsTabValue} index={2}>
                     <Paper elevation={0} sx={settingsSurfaceSx}>
-                    <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
-                        <Box>
-                            <Typography variant="caption" sx={sectionDescriptionSx}>
-                                管理全局快捷键和输入行为
-                            </Typography>
-                        </Box>
+                    <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 2 }}>
                         <Button
-                            variant="outlined"
+                            variant="text"
                             size="small"
                             startIcon={<Restore />}
                             onClick={handleResetAllShortcuts}
@@ -1692,8 +1705,11 @@ const Settings = () => {
                                     key={categoryKey}
                                     variant="outlined"
                                     sx={(theme) => ({
-                                        ...settingsRowSx(theme),
-                                        p: 0,
+                                        p: 0, mb: 2.5,
+                                        borderRadius: '16px',
+                                        bgcolor: 'transparent',
+                                        backgroundImage: 'none',
+                                        borderColor: alpha(theme.palette.text.primary, 0.08),
                                         overflow: 'hidden',
                                     })}
                                 >
@@ -1705,14 +1721,12 @@ const Settings = () => {
                                             : 'rgba(0,0,0,0.02)',
                                         borderBottom: '1px solid',
                                         borderColor: theme.palette.mode === 'dark' ? 'rgba(157,157,165,0.12)' : 'rgba(22,22,24,0.08)',
-                                        display: 'flex', alignItems: 'baseline', gap: 1,
+                                        display: 'flex', alignItems: 'center', gap: 1,
                                     })}>
                                         <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
                                             {category.name}
                                         </Typography>
-                                        <Typography variant="caption" color="text.secondary">
-                                            {category.description}
-                                        </Typography>
+                                        <Typography variant="caption" color="text.disabled" sx={{ ml: 'auto', fontVariantNumeric: 'tabular-nums' }}>{categoryShortcuts.length}</Typography>
                                     </Box>
 
                                     {/* 快捷键列表 */}
@@ -1721,7 +1735,7 @@ const Settings = () => {
                                             <ListItem
                                                 key={config.id}
                                                 divider={index < categoryShortcuts.length - 1}
-                                                sx={{ px: 2, py: 1 }}
+                                                sx={{ px: 2, py: 1.1, gap: 1, flexWrap: { xs: 'wrap', sm: 'nowrap' }, '&:hover': { bgcolor: 'action.hover' } }}
                                             >
                                                 <Box sx={{ flex: 1, minWidth: 0 }}>
                                                     <Typography variant="body2" sx={{ fontWeight: 500 }}>
@@ -1731,9 +1745,9 @@ const Settings = () => {
                                                                 component="span"
                                                                 variant="caption"
                                                                 color="text.secondary"
-                                                                sx={{ ml: 1, fontWeight: 400, fontStyle: 'italic' }}
+                                                                sx={{ ml: 1, fontWeight: 400, fontSize: 10 }}
                                                             >
-                                                                · 由编辑器内置，不可修改
+                                                                内置
                                                             </Typography>
                                                         )}
                                                     </Typography>
@@ -1743,24 +1757,15 @@ const Settings = () => {
                                                         </Alert>
                                                     )}
                                                 </Box>
-                                                <Box sx={{ minWidth: 200, ml: 2, display: 'flex', alignItems: 'center', gap: 1, opacity: config.readOnly ? 0.55 : 1 }}>
+                                                <Box sx={{ minWidth: 0, width: { xs: '100%', sm: 'auto' }, flexShrink: 0, ml: { xs: 0, sm: 2 } }}>
                                                     <ShortcutInput
                                                         value={config.currentKey}
                                                         defaultValue={config.defaultKey}
                                                         onChange={(newKey) => handleShortcutChange(config.id, newKey)}
-                                                        onValidationChange={() => {}}
                                                         disabled={!!config.readOnly}
-                                                        label=""
-                                                        placeholder={t('settings.clickToSetShortcut')}
+                                                        label={config.name}
                                                     />
-                                                    {config.defaultKey && config.currentKey !== config.defaultKey && (
-                                                        <Chip
-                                                            label={formatShortcutDisplay(config.defaultKey)}
-                                                            size="small"
-                                                            variant="outlined"
-                                                            sx={{ fontFamily: 'monospace', fontSize: 11, opacity: 0.5, flexShrink: 0 }}
-                                                        />
-                                                    )}
+
                                                 </Box>
                                             </ListItem>
                                         ))}
@@ -1831,9 +1836,7 @@ const Settings = () => {
                         <Typography variant="h6" sx={sectionTitleSx}>
                             本地备份与恢复
                         </Typography>
-                        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
-                            将所有数据（笔记、待办、图片、音频）打包为 ZIP 备份文件，或从备份恢复
-                        </Typography>
+
                         <Box sx={{ display: 'flex', gap: 2 }}>
                             <Button
                                 variant="contained"
@@ -1873,10 +1876,7 @@ const Settings = () => {
                         <Typography variant="h6" sx={sectionTitleSx}>
                             Obsidian 导入导出
                         </Typography>
-                        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 2 }}>
-                            从 Obsidian 导入笔记或导出笔记到 Obsidian 格式(.md)
 
-                        </Typography>
                         <ObsidianImportExport />
                     </Box>
 
@@ -1922,9 +1922,7 @@ const Settings = () => {
                 {/* 编辑器设置 */}
                 <TabPanel value={settingsTabValue} index={10}>
                     <Paper elevation={0} sx={settingsSurfaceSx}>
-                    <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 1 }}>
-                        编辑模式、正文排版、浮动面板和工具栏
-                    </Typography>
+
                     <List disablePadding sx={{ mb: 1 }}>
                         <SettingGroupLabel first>编辑</SettingGroupLabel>
                         <SettingRow
@@ -1932,6 +1930,35 @@ const Settings = () => {
                             secondary={t('settings.editorModeDesc')}
                             action={<ChipSelector options={editorModeOptions} value={editorMode}
                                 onChange={(value) => handleSettingChange('editorMode', value)} getIcon={o => o.icon} />}
+                        />
+                        <SettingGroupLabel>历史版本</SettingGroupLabel>
+                        <SettingRow
+                            primary="自动保存历史快照"
+                            secondary="修改前保留旧内容；关闭后已有历史仍可查看和恢复"
+                            action={<Switch checked={settings.noteHistoryEnabled} onChange={e => handleSettingChange('noteHistoryEnabled', e.target.checked)} />}
+                        />
+                        <SettingRow
+                            primary="快照最小间隔"
+                            secondary="间隔内的连续编辑共用一份快照，并非定时保存"
+                            action={<ChipSelector options={[{ value: 30, label: '30 秒' }, { value: 60, label: '1 分钟' }, { value: 300, label: '5 分钟' }, { value: 600, label: '10 分钟' }]}
+                                value={settings.noteHistoryIntervalSeconds} onChange={value => handleSettingChange('noteHistoryIntervalSeconds', value)} />}
+                        />
+                        <SettingRow
+                            primary="每篇保留版本"
+                            secondary="下次生成快照时按此数量保留，优先删除最早的版本；恢复前仍会保存当前内容"
+                            action={<ChipSelector options={[20, 50, 100, 200].map(value => ({ value, label: `${value} 份` }))}
+                                value={settings.noteHistoryLimit} onChange={value => handleSettingChange('noteHistoryLimit', value)} />}
+                        />
+                        <SettingGroupLabel>正文统计</SettingGroupLabel>
+                        <SettingRow
+                            primary="显示字数"
+                            secondary="在笔记右下角显示字数"
+                            action={<Switch checked={prefs.editorShowWordCount} onChange={(e) => savePref('editorShowWordCount', e.target.checked)} />}
+                        />
+                        <SettingRow
+                            primary="显示阅读时长"
+                            secondary="在笔记右下角显示预计阅读分钟数，按每分钟约 400 字估算"
+                            action={<Switch checked={prefs.editorShowReadingTime} onChange={(e) => savePref('editorShowReadingTime', e.target.checked)} />}
                         />
                         <SettingGroupLabel>排版</SettingGroupLabel>
                         <SettingRow
@@ -1971,9 +1998,7 @@ const Settings = () => {
                 {/* 笔记与文件 */}
                 <TabPanel value={settingsTabValue} index={13}>
                     <Paper elevation={0} sx={settingsSurfaceSx}>
-                    <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 1 }}>
-                        笔记列表的显示方式，以及 Flota 能打开哪些文件
-                    </Typography>
+
                     <List disablePadding>
                         <SettingGroupLabel first>笔记列表</SettingGroupLabel>
                         <SettingRow
@@ -2025,9 +2050,7 @@ const Settings = () => {
                 {/* 待办 */}
                 <TabPanel value={settingsTabValue} index={14}>
                     <Paper elevation={0} sx={settingsSurfaceSx}>
-                    <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 1 }}>
-                        打开待办页时的默认视图、排序，以及新建待办的默认值
-                    </Typography>
+
                     <List disablePadding>
                         <SettingGroupLabel first>待办页</SettingGroupLabel>
                         <SettingRow

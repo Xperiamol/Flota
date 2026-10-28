@@ -1753,6 +1753,8 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
             </IconButton>
           </Tooltip>
         )}
+        {/* Portal 是有效的 React 子项，但 prop-types 的 node 校验不识别；用 Fragment 包装。 */}
+        <>
         {!viewOnly && controlSlots.toolbar && createPortal(
           <WhiteboardToolbar
             api={excalidrawAPI}
@@ -1808,6 +1810,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
           </button>,
           controlSlots.contextMenu,
         )}
+        </>
       </Box>
       <NoteReferencePicker open={notePickerOpen} excludeId={noteId} onClose={() => setNotePickerOpen(false)} onSelect={insertNoteReference} />
       <Dialog

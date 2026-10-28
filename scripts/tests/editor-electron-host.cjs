@@ -23,6 +23,8 @@ app.whenReady().then(async () => {
     if (!/^images\/[a-zA-Z0-9_.-]+$/.test(relative)) return new Response('Not found', { status: 404 })
     return net.fetch(require('node:url').pathToFileURL(images.getImagePath(relative)).href)
   })
+  // 历史预览测试显式启用快照，产品默认保持关闭。
+  if (process.env.EDITOR_SURFACE === 'features') new (require('../../electron/dao/SettingDAO'))().set('noteHistoryEnabled', true, 'boolean')
   const win = new BrowserWindow({ width: 1280, height: 850, useContentSize: true, show: false,
     webPreferences: { preload: path.join(__dirname, 'editor-electron-preload.cjs'), contextIsolation: true, sandbox: true, backgroundThrottling: false } })
   const handle = (channel, fn) => ipcMain.handle(channel, (event, ...args) => {
@@ -37,6 +39,9 @@ app.whenReady().then(async () => {
   handle('acceptance:note-create', content => notes.createNote({ title: 'Acceptance roundtrip', content }))
   handle('acceptance:note-read', id => notes.getNoteById(id))
   handle('acceptance:note-update', (id, content) => notes.updateNote(id, { content }))
+  handle('acceptance:note-versions', id => notes.listVersions(id))
+  handle('acceptance:note-version', (id, versionId) => notes.getVersion(id, versionId))
+  handle('acceptance:note-restore-version', (id, versionId, revision) => notes.restoreVersion(id, versionId, revision))
   await win.loadURL('about:blank')
 }).catch(error => { console.error(error); app.exit(1) })
 app.on('window-all-closed', () => app.quit())

@@ -23,7 +23,7 @@ import {
 } from '../common/AppIcons';
 import mcpAPI from '../../api/mcpAPI';
 import McpHttpSection from './McpHttpSection';
-import { settingsFieldGroupSx, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../../styles/commonStyles';
+import { settingsFieldGroupSx, settingsSectionSx, sectionTitleSx } from '../../styles/commonStyles';
 
 export default function MCPSettings({ enabled, onEnabledChange }) {
     const [installed, setInstalled] = useState(false);
@@ -40,10 +40,10 @@ export default function MCPSettings({ enabled, onEnabledChange }) {
     // 生成 Claude Desktop 配置 JSON
     const generateClaudeConfig = () => {
         if (!installInfo?.path) return null;
-        
+
         // JSON.stringify 会自动转义反斜杠，所以这里直接使用原始路径
         const launcherPath = `${installInfo.path}\\mcp-server-launcher.js`;
-        
+
         return {
             mcpServers: {
                 Flota: {
@@ -126,7 +126,7 @@ export default function MCPSettings({ enabled, onEnabledChange }) {
             });
 
             const result = await mcpAPI.installMCPServer();
-            
+
             if (removeProgressListener) removeProgressListener();
 
             if (result.success) {
@@ -191,9 +191,7 @@ export default function MCPSettings({ enabled, onEnabledChange }) {
                     <CodeIcon color="primary" fontSize="large" />
                     <Box sx={{ flex: 1 }}>
                         <Typography variant="h6" sx={sectionTitleSx}>Model Context Protocol Server</Typography>
-                        <Typography variant="caption" sx={sectionDescriptionSx}>
-                            允许其他 AI 应用（如 Claude Desktop）调用 Flota 功能
-                        </Typography>
+
                     </Box>
                     <Chip
                         icon={installed ? <CheckCircleIcon /> : <InfoIcon />}
@@ -271,7 +269,7 @@ export default function MCPSettings({ enabled, onEnabledChange }) {
                         3. 将复制的配置粘贴到 <code>mcpServers</code> 对象中<br />
                         4. 保存文件并重启 Claude Desktop
                     </Typography>
-                    
+
                     {installInfo && (
                         <Box sx={(theme) => ({ mt: 2, p: 1.5, bgcolor: theme.custom?.surface?.inset, borderRadius: 2, border: '1px solid', borderColor: 'divider' })}>
                             <Typography variant="caption" component="div" sx={{ fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>

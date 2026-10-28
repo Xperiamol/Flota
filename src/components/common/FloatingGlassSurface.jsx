@@ -81,6 +81,8 @@ const FloatingGlassSurface = forwardRef(function FloatingGlassSurface({
           maxWidth,
           maxHeight,
           pointerEvents: 'auto',
+          // 浮窗可能覆盖系统标题栏，交互不能被 Electron 的窗口拖动区域截走。
+          WebkitAppRegion: 'no-drag',
           ...getGlassSx(theme, density),
           ...(material === 'frosted' ? getFrostedSx(theme) : null),
           ...(typeof sx === 'function' ? sx(theme) : sx)

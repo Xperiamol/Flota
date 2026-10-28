@@ -213,10 +213,22 @@ class SyncIPCHandler {
         return { success: false, error: '同步服务未启用' };
       }
 
-      try {
-        const localPath = path.join(getUserDataPath(), relativePath);
+      if (typeof relativePath !== 'string' || !relativePath.trim()) {
+        return { success: false, error: '无效的图片路径' };
+      }
+      const cleaned = relativePath.trim().split('?')[0].replace(/^\.\/+/, '').replace(/^\/+/, '');
+      if (!cleaned || cleaned.includes('..') || /[<>*:"|?\\]/.test(cleaned)) {
+        return { success: false, error: '非法的图片相对路径' };
+      }
+      const normalizedRelPath = cleaned.startsWith('images/') ? cleaned : `images/${cleaned}`;
+      if (!/^images\/(?:(?:whiteboard|whiteboard-preview)\/)?[^/\\]+\.(?:png|jpe?g|gif|webp|svg|bmp)$/i.test(normalizedRelPath)) {
+        return { success: false, error: '不支持同步的图片路径' };
+      }
 
-        await this.v3SyncService.downloadImage(relativePath, localPath);
+      try {
+        const localPath = path.join(getUserDataPath(), normalizedRelPath);
+
+        await this.v3SyncService.downloadImage(normalizedRelPath, localPath);
         return { success: true, localPath };
       } catch (error) {
         console.error('[SyncIPCHandler] 下载图片失败:', error);

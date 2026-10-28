@@ -120,34 +120,36 @@ const preprocessMarkdown = (md) => {
 const NATIVE_CODE_GARBAGE = /function\s*\w*\s*\([^)]*\)\s*\{\s*\\?\[native code\\?\]\s*\}/
 const hasNativeCodeGarbage = (text) => typeof text === 'string' && NATIVE_CODE_GARBAGE.test(text)
 // 文档里本来就写着这段文字（比如 JS 笔记）不算；只有正文里没有、序列化后才冒出来的才是坏输出
-const isCorruptSerialization = (editor, markdown) => hasNativeCodeGarbage(markdown)
-  && !String(editor?.state?.doc?.textContent || '').includes('native code')
+const isCorruptSerialization = (sourceText, markdown) => hasNativeCodeGarbage(markdown)
+  && !String(sourceText || '').includes('native code')
 
 // 序列化后处理：prosemirror-markdown 会把 [!type] 转义为 \[!type\]，需要还原
 const postprocessMarkdown = (md) => {
   if (!md) return md
-  // 支持多层嵌套引用 > > \[!type\]
-  let out = md.replace(/^((?:>\s*)+)\\\[!(\w+)\\\]/gm, '$1[!$2]')
-  // 还原双链：tiptap-markdown 会把 `[[xxx]]` 转义为 `\[\[xxx\]\]`，
-  // 这会破坏 markdown-it wikiLink 与 useLinkGraph 的扫描，统一还原。
-  out = out.replace(/\\\[\\\[([^\]\n]+?)\\\]\\\]/g, '[[$1]]')
-  // 还原嵌入：![[xxx]] → \!\[\[xxx\]\] / !\[\[xxx\]\] 都还原
-  out = out.replace(/(!?)\\\[\\\[([^\]\n]+?)\\\]\\\]/g, (_m, bang, inner) => `${bang}[[${inner}]]`)
+  const out = transformOutsideMath(md, text => text
+    // 支持多层嵌套引用 > > \[!type\]；代码和公式保持原样。
+    .replace(/^((?:>\s*)+)\\\[!(\w+)\\\]/gm, '$1[!$2]')
+    // 还原双链，保持 markdown-it wikiLink 与 useLinkGraph 的扫描一致。
+    .replace(/\\\[\\\[([^\]\n]+?)\\\]\\\]/g, '[[$1]]')
+    // 还原嵌入：![[xxx]] → \!\[\[xxx\]\] / !\[\[xxx\]\] 都还原
+    .replace(/(!?)\\\[\\\[([^\]\n]+?)\\\]\\\]/g, (_m, bang, inner) => `${bang}[[${inner}]]`))
   return finalizeMarkdownForStorage(normalizeHtmlTablesInMarkdown(out))
 }
 
 // 复制出去的纯文本里去掉在别处也用不着的转义：单个 ~ 构不成删除线，
 // 后面不跟 ( 或 [ 的 [文字] 构不成链接。\$ 保留：`$5 和 $10` 在 Flota / Obsidian 里会被当成公式。
-const simplifyClipboardEscapes = (markdown) => {
-  const lines = markdown.split('\n')
-  let inFence = false
-  return lines.map((line) => {
-    if (/^\s{0,3}(```|~~~)/.test(line)) { inFence = !inFence; return line }
-    if (inFence) return line
-    return line
-      .replace(/(^|[^\\~])\\~(?!~)/g, '$1~')
-      .replace(/\\\[([^\]\n]*?)\\\](?![([:])/g, '[$1]')
-  }).join('\n')
+const simplifyClipboardEscapes = (markdown) => transformOutsideMath(markdown, text => text
+  .replace(/(^|[^\\~])\\~(?!~)/g, '$1~')
+  .replace(/\\\[([^\]\n]*?)\\\](?![([:])/g, '[$1]')
+)
+
+const getClipboardMarkdown = (editor, slice = editor.state.selection.content()) => {
+  const markdown = postprocessMarkdown(editor.storage.markdown.serializer.serialize(slice.content))
+  if (isCorruptSerialization(slice.content.textBetween(0, slice.content.size, '\n'), markdown)) {
+    notifyError('复制时格式转换异常，已改为纯文本复制，笔记内容未改动')
+    return slice.content.textBetween(0, slice.content.size, '\n')
+  }
+  return simplifyClipboardEscapes(markdown.replace(/\s+$/, ''))
 }
 
 // ─── 段内换行 ─────────────────────────────────────────────────────────────────
@@ -547,7 +549,8 @@ const AudioPlayerWidget = ({ src, selected, originalSrc, editor, getPos, nodeSiz
     try {
       const sttSrc = (originalSrc || '').replace(/^app:\/\//, '')
       // WebM 格式火山引擎不支持，用 Web Audio API 在渲染进程解码为 WAV
-      const needDecode = /\.webm$/i.test(sttSrc)
+      const config = await window.electronAPI.stt.getConfig()
+      const needDecode = /\.webm$/i.test(sttSrc) || config?.data?.provider === 'offline'
       const sttArg = needDecode ? await urlToWav(src) : sttSrc
       const result = await window.electronAPI.stt.transcribe(sttArg)
       if (result?.success && result?.data?.text) {
@@ -1032,8 +1035,10 @@ const CodeLanguageMenu = ({ anchorEl, filter, onFilterChange, languages, current
     <Portal>
       <Box
         ref={menuRef}
+        data-code-language-menu
         contentEditable={false}
-        sx={(theme) => ({
+        sx={{
+          ...floatingGlassSx({ radius: '14px', shadow: 'menu' }),
           position: 'fixed',
           ...(pos.top != null ? { top: pos.top } : { bottom: pos.bottom }),
           left: pos.left,
@@ -1042,16 +1047,10 @@ const CodeLanguageMenu = ({ anchorEl, filter, onFilterChange, languages, current
           maxHeight: pos.height,
           display: 'flex',
           flexDirection: 'column',
-          borderRadius: '10px',
           overflow: 'hidden',
-          bgcolor: theme.palette.mode === 'dark' ? 'rgba(31,31,34,0.98)' : 'rgba(255,255,255,0.98)',
-          border: '1px solid',
-          borderColor: theme.palette.mode === 'dark' ? 'rgba(157,157,165,0.18)' : 'rgba(22,22,24,0.1)',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.28)',
-          backdropFilter: 'blur(20px)',
-        })}
+        }}
       >
-        <Box sx={{ p: 0.8, borderBottom: '1px solid', borderColor: 'divider' }}>
+        <Box sx={{ p: 0.8, flexShrink: 0, borderBottom: '1px solid', borderColor: 'divider' }}>
           <TextField
             autoFocus
             fullWidth
@@ -1063,7 +1062,7 @@ const CodeLanguageMenu = ({ anchorEl, filter, onFilterChange, languages, current
             slotProps={{ input: { sx: { fontSize: '0.78rem', borderRadius: '8px' } } }}
           />
         </Box>
-        <Box sx={{ overflowY: 'auto', py: 0.5 }}>
+        <Box sx={{ ...editorScrollbarSx, minHeight: 0, overflowY: 'auto', py: 0.5 }}>
           <LanguageMenuRow
             label="纯文本"
             active={!currentLang}
@@ -2371,12 +2370,7 @@ const EditorContextMenu = ({ editor, menu, noteId, containerRef, undoBaseline, b
 
   if (!editor || !menu) return null
 
-  const selectedText = editor.state.doc.textBetween(
-    editor.state.selection.from,
-    editor.state.selection.to,
-    '\n'
-  )
-  const hasSelection = Boolean(selectedText)
+  const hasSelection = !editor.state.selection.empty
   const isLink = editor.isActive('link')
   const isTable = editor.isActive('table')
   const isBold = editor.isActive('bold')
@@ -2401,11 +2395,13 @@ const EditorContextMenu = ({ editor, menu, noteId, containerRef, undoBaseline, b
   }
 
   const copyText = () => run(async () => {
-    if (selectedText) navigator.clipboard?.writeText(selectedText)
+    if (hasSelection) await navigator.clipboard?.writeText(getClipboardMarkdown(editor))
   })
   const cutText = () => run(async () => {
-    if (!selectedText) return
-    await navigator.clipboard?.writeText(selectedText)
+    if (!hasSelection || !navigator.clipboard?.writeText) return
+    const selection = editor.state.selection
+    await navigator.clipboard.writeText(getClipboardMarkdown(editor))
+    if (editor.isDestroyed || !editor.state.selection.eq(selection)) return
     editor.chain().focus().deleteSelection().run()
   })
   const pasteText = () => run(async () => {
@@ -2636,7 +2632,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
     const markdown = postprocessMarkdown(pendingEditor.storage.markdown.getMarkdown())
     // 兜底：序列化器把函数源码拼进正文（"function () { [native code] }"）时绝不保存，
     // 否则一次按键就把整篇笔记写坏，再经云同步带到所有设备
-    if (isCorruptSerialization(pendingEditor, markdown)) {
+    if (isCorruptSerialization(pendingEditor.state.doc.textContent, markdown)) {
       console.error('[WYSIWYGEditor] 序列化结果含函数源码，已拒绝保存', markdown.slice(0, 500))
       notifyError('编辑器保存出错，已阻止写入，原内容未改动。请把这篇笔记的内容反馈给我们')
       return null
@@ -2821,7 +2817,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       clipboardTextSerializer: (slice) => {
         const ed = editorRef.current
         if (!ed) return ''
-        return simplifyClipboardEscapes(postprocessMarkdown(ed.storage.markdown.serializer.serialize(slice.content)).replace(/\s+$/, ''))
+        return getClipboardMarkdown(ed, slice)
       },
 
       // ── 拦截图片粘贴 ──────────────────────────────────────────────────────────
@@ -2862,8 +2858,32 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
         const inCode = view.state.selection.$from.parent.type.spec.code
           || view.state.selection.$from.marks().some(mark => mark.type.name === 'code')
 
+        // VS Code 剪贴板同时带语法高亮 HTML 和源语言，Markdown 不能一律当代码。
+        const fromCodeEditor = isCodeEditorHtml(htmlText)
+        let sourceLanguage = ''
+        try { sourceLanguage = JSON.parse(data.getData('vscode-editor-data') || '{}').mode || '' } catch (_) {}
+        const markdownSource = sourceLanguage === 'markdown' ||
+          (!sourceLanguage && (!htmlText.trim() || fromCodeEditor) && looksLikeMarkdown(plainText))
+        const ed = editorRef.current
+        if (plainText && !inCode && ed && markdownSource) {
+          event.preventDefault()
+          ed.chain().focus().insertContent(preprocessMarkdown(plainText.replace(/\r\n?/g, '\n'))).run()
+          const pastedDoc = ed.state.doc
+          notifyWithAction('已按 Markdown 格式粘贴', {
+            label: '保持原文',
+            onClick: () => {
+              const current = editorRef.current
+              // 粘贴之后又改过就不动，免得撤掉用户后来的输入
+              if (!current || current.isDestroyed || current.state.doc !== pastedDoc) return
+              current.commands.undo()
+              pasteEditorText(current.view, plainText)
+            },
+          }, 'info')
+          return true
+        }
+
         // 1.8) VS Code 等编辑器复制的代码：整体作为代码块，而不是一行一个带颜色的段落
-        if (plainText && isCodeEditorHtml(htmlText)) {
+        if (plainText && fromCodeEditor) {
           event.preventDefault()
           if (inCode || !view.state.schema.nodes.codeBlock) return pasteEditorText(view, plainText)
           const { state } = view
@@ -2877,22 +2897,6 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
         //    明显是 Markdown 的（AI 对话「复制」出来的回答、README）按格式粘贴，并提供一键退回原文。
         if (plainText && !htmlText.trim()) {
           event.preventDefault()
-          const ed = editorRef.current
-          if (!inCode && ed && looksLikeMarkdown(plainText)) {
-            ed.chain().focus().insertContent(preprocessMarkdown(plainText.replace(/\r\n?/g, '\n'))).run()
-            const pastedDoc = ed.state.doc
-            notifyWithAction('已按 Markdown 格式粘贴', {
-              label: '保持原文',
-              onClick: () => {
-                const current = editorRef.current
-                // 粘贴之后又改过就不动，免得撤掉用户后来的输入
-                if (!current || current.isDestroyed || current.state.doc !== pastedDoc) return
-                current.commands.undo()
-                pasteEditorText(current.view, plainText)
-              },
-            }, 'info')
-            return true
-          }
           return pasteEditorText(view, plainText)
         }
 
@@ -3225,7 +3229,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       }
       const markdown = postprocessMarkdown(editor?.storage?.markdown?.getMarkdown?.() ?? '')
       // 与 emitPendingMarkdown 同一道兜底：序列化坏了就交回上一次正常的内容，不让调用方存进去
-      if (isCorruptSerialization(editor, markdown)) {
+      if (isCorruptSerialization(editor?.state?.doc?.textContent, markdown)) {
         console.error('[WYSIWYGEditor] 序列化结果含函数源码，已拒绝保存', markdown.slice(0, 500))
         notifyError('编辑器保存出错，已阻止写入，原内容未改动。请把这篇笔记的内容反馈给我们')
         return lastExternalContentRef.current

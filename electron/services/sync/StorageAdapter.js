@@ -26,6 +26,7 @@ const DEVICE_LOCAL_SETTING_KEYS = new Set([
   'ai_api_key',
   'web_search_api_key',
   'stt_volc_token',
+  'stt_enabled', 'stt_provider', 'stt_language', 'stt_volc_appid', 'stt_volc_resource_id',
   'caldav_password',
   'google_calendar_access_token',
   'google_calendar_refresh_token',
@@ -70,6 +71,10 @@ const isSyncableSetting = (key, rawValue = '') =>
  * 负责桥接数据库 DAO 层和同步引擎
  */
 class StorageAdapter {
+  getHistoryContents() {
+    return this.db.prepare("SELECT json_extract(snapshot, '$.content') AS content FROM note_versions").all().map(row => row.content);
+  }
+
   constructor() {
     this.dbManager = DatabaseManager.getInstance();
     this.db = this.dbManager.getDatabase();
@@ -788,3 +793,4 @@ class StorageAdapter {
 }
 
 module.exports = StorageAdapter;
+module.exports.isSyncableSetting = isSyncableSetting;

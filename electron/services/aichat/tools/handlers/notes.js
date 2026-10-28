@@ -16,19 +16,37 @@ const { app } = require('electron');
 const search_notes = async (args, _runtime, { noteDAO }) => {
   const results = noteDAO.findAll({
     search: args.query,
-    limit: args.limit || 5,
-    page: 1
+    limit: Math.min(20, Math.max(1, Math.floor(Number(args.limit) || 5))),
+    page: Math.max(1, Math.floor(Number(args.page) || 1))
   });
   const notes = (results.notes || results || []).map((n) => ({
     id: n.id,
     title: n.title,
     content: n.content?.substring(0, 500),
+    total_chars: String(n.content || '').length,
+    has_more: String(n.content || '').length > 500,
     note_type: n.note_type || 'markdown',
     tags: n.tags,
     category: n.category,
     updated_at: n.updated_at
   }));
   return JSON.stringify(notes);
+};
+
+// 明确的字符游标避免单行长文被按行分页反复截断；不依赖当前打开哪篇笔记。
+const read_note = async (args, _runtime, { noteDAO }) => {
+  const note = noteDAO.findById(args.id);
+  if (!note || note.is_deleted) return JSON.stringify({ success: false, error: '笔记不存在或已删除' });
+  const text = String(note.content || '');
+  const offset = Math.max(0, Math.floor(Number(args.offset) || 0));
+  const limit = Math.min(24000, Math.max(1, Math.floor(Number(args.limit) || 12000)));
+  if (offset > text.length) return JSON.stringify({ success: false, error: '读取位置超出正文长度', total_chars: text.length });
+  let end = Math.min(text.length, offset + limit);
+  // 不在 UTF-16 代理对中间切开中文之外的 emoji 等字符。
+  if (end < text.length && end > offset && /[\uD800-\uDBFF]/.test(text[end - 1])) end++;
+  return JSON.stringify({ id: note.id, title: note.title, note_type: note.note_type || 'markdown',
+    content: text.slice(offset, end), offset, next_offset: end < text.length ? end : null,
+    total_chars: text.length, has_more: end < text.length });
 };
 
 const get_current_note = async (_args, _runtime, { getCurrentNote }) => {
@@ -114,7 +132,7 @@ const summarize_current_note_section = async (args, _runtime, { aiService, getCu
     const result = await aiService.chat([
       { role: 'system', content: `你是笔记摘要助手。对用户提供的笔记片段做精炼总结，覆盖主要论点、关键数据、结论和待办事项。${focus ? `\n关注重点：${focus}` : ''}\n用简洁中文，分点列出。不要复述原文。` },
       { role: 'user', content: `笔记片段（第 ${start}-${end} 行，共 ${total} 行）：\n\n${sliced}` }
-    ], { temperature: 0.3, maxTokens: 800 });
+    ], { temperature: 0.3, bypassTokenLimit: true });
     if (!result.success) return JSON.stringify({ error: result.error || '摘要失败', start_line: start, end_line: end });
     return JSON.stringify({ start_line: start, end_line: end, total_lines: total, summary: result.data?.content || '' });
   } catch (error) {
@@ -233,6 +251,7 @@ const edit_notes = async (args, _runtime, { noteDAO }) => {
 
 module.exports = {
   search_notes,
+  read_note,
   get_current_note,
   read_current_note,
   read_note_image,

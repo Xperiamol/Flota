@@ -84,6 +84,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getDeleted: inv('note:get-deleted'),
     getRecentlyModified: inv('note:get-recently-modified'),
     update: inv('note:update'),
+    versions: inv('note:versions'),
+    version: inv('note:version'),
+    restoreVersion: inv('note:restore-version'),
     autoSave: inv('note:auto-save'),
     delete: inv('note:delete'),
     restore: inv('note:restore'),
@@ -187,6 +190,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 本地备份/恢复
   backup: {
+    cloudConfig: inv('cloud-backup:config'),
+    saveCloud: inv('cloud-backup:save'),
+    removeCloud: inv('cloud-backup:remove'),
+    runCloud: inv('cloud-backup:run'),
+    downloadCloud: inv('cloud-backup:download'),
     create: inv('backup:create'),
     restore: inv('backup:restore'),
   },
@@ -396,6 +404,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     saveConfig: inv('stt:save-config'),
     testConnection: inv('stt:test-connection'),
     transcribe: (audioFile, options) => ipcRenderer.invoke('stt:transcribe', { audioFile, options }),
+    prepareOffline: inv('stt:prepare-offline'),
+    onModelProgress: listen('stt:model-progress'),
   },
 
   // 音频相关 API

@@ -251,3 +251,43 @@ test('tool summaries omit reference base64 while keeping the persisted action in
   assert.ok(!JSON.stringify(summary).includes('base64'))
   assert.equal(original.context.referenceImages.length, 1)
 })
+
+test('local patch adds a bound node and connector and reroutes without replacing unrelated identities', () => {
+  const a = { id: 'a', type: 'rectangle', x: 0, y: 0, width: 120, height: 80 }
+  const unrelated = { id: 'elsewhere', type: 'rectangle', x: 900, y: 900, width: 100, height: 60 }
+  const original = structuredClone(a)
+  const result = applyScenePatch([a, unrelated], {
+    updates: [{ id: 'a', changes: { type: 'diamond' } }], remove: [],
+    add: [{ id: 'new', type: 'rectangle', x: 300, y: 200, width: 160, height: 80, label: '下一步' }, { id: 'edge', type: 'arrow', from: 'a', to: 'new' }],
+  }, ['a']).elements
+  assert.equal(result.find(el => el.id === 'elsewhere'), unrelated)
+  assert.equal(result.find(el => el.id === 'a').type, 'diamond')
+  assert.deepEqual(a, original)
+  assert.equal(result.find(el => el.id === 'new-label').containerId, 'new')
+  const arrow = result.find(el => el.id === 'edge')
+  assert.equal(arrow.startBinding.elementId, 'a')
+  assert.equal(arrow.endBinding.elementId, 'new')
+  assert.ok(arrow.points.length >= 2)
+  assert.ok(arrow.points.flat().every(Number.isFinite))
+  assert.ok(result.find(el => el.id === 'a').boundElements.some(ref => ref.id === 'edge'))
+  for (let i = 1; i < arrow.points.length; i++) assert.ok(arrow.points[i][0] === arrow.points[i-1][0] || arrow.points[i][1] === arrow.points[i-1][1])
+})
+
+test('rerouting preserves arrow and bound label IDs and validates local scope atomically', () => {
+  const scene = [
+    { id: 'a', type: 'rectangle', x: 0, y: 0, width: 120, height: 80 },
+    { id: 'b', type: 'rectangle', x: 400, y: 200, width: 120, height: 80 },
+    { id: 'e', type: 'arrow', x: 120, y: 40, points: [[0, 0], [280, 200]], startBinding: { elementId: 'a' }, endBinding: { elementId: 'b' } },
+    { id: 'label', type: 'text', containerId: 'e', x: 600, y: 600, width: 40, height: 20 },
+  ]
+  const original = structuredClone(scene)
+  const next = applyScenePatch(scene, { updates: [], remove: [], reroute: ['e'] }, ['a']).elements
+  assert.deepEqual(next.map(el => el.id), scene.map(el => el.id))
+  assert.notEqual(next[3].x, scene[3].x)
+  assert.deepEqual(scene, original)
+  assert.throws(() => applyScenePatch(scene, { updates: [], remove: [], reroute: ['e'] }, ['label']))
+  assert.throws(() => applyScenePatch(scene, { updates: [], remove: [], add: [{ id: 'e', type: 'arrow', from: 'a', to: 'b' }] }))
+  assert.throws(() => applyScenePatch(scene, { updates: [], remove: [], add: [{ id: 'newedge', type: 'arrow', from: 'a', to: 'b' }] }, ['a']))
+  assert.throws(() => applyScenePatch(scene, { updates: [{ id: 'e', changes: { type: 'diamond' } }], remove: [] }))
+  assert.deepEqual(scene, original)
+})

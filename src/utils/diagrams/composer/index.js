@@ -1347,4 +1347,4 @@ export const renderComposer = (tree, { offsetX = 100, offsetY = 100 } = {}) => {
   return { elements: beautifyElements(out), files, width: root._w, height: root._h }
 }
 
-export { REGISTRY, register, palette }
+export { REGISTRY, register, palette, routeConnector, placeEdgeLabel }

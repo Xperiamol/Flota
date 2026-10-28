@@ -72,6 +72,8 @@ const parseSSEStream = async (response, onChunk) => {
   let pendingContent = '';   // 未确认是否安全 emit 的尾部缓冲
   let toolTextBuffer = '';   // 已经确认进入 <tool_call> 的全部文本
   let inToolText = false;
+  const notifiedToolIndices = new Set();
+  let notifiedTextToolName = null;
 
   const flushSafe = (text) => {
     if (!text) return;
@@ -83,6 +85,13 @@ const parseSSEStream = async (response, onChunk) => {
     if (!delta) return;
     if (inToolText) {
       toolTextBuffer += delta;
+      if (!notifiedTextToolName) {
+        const fnMatch = /<function=([\w.\-]+)>/.exec(toolTextBuffer);
+        if (fnMatch?.[1]) {
+          notifiedTextToolName = fnMatch[1];
+          onChunk({ type: 'tool_call_prepare', name: notifiedTextToolName });
+        }
+      }
       return;
     }
     pendingContent += delta;
@@ -164,7 +173,13 @@ const parseSSEStream = async (response, onChunk) => {
         }
         if (tc.id) toolCalls[idx].id = tc.id;
         if (tc.function?.name) toolCalls[idx].function.name += tc.function.name;
-        if (tc.function?.arguments) toolCalls[idx].function.arguments += tc.function.arguments;
+        if (tc.function?.arguments) {
+          toolCalls[idx].function.arguments += tc.function.arguments;
+          if (toolCalls[idx].function.name && !notifiedToolIndices.has(idx)) {
+            notifiedToolIndices.add(idx);
+            onChunk({ type: 'tool_call_prepare', name: toolCalls[idx].function.name });
+          }
+        }
       }
     }
 

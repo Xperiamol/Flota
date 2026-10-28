@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { lazy, Suspense, useEffect, useState, useMemo } from 'react'
 import {
   ThemeProvider,
   CssBaseline,
@@ -6,6 +6,7 @@ import {
   Typography,
   CircularProgress
 } from '@mui/material'
+import { useStore } from './store/useStore'
 import { createAppTheme } from './styles/theme'
 import './styles/index.css'
 import TitleBar from './components/layout/TitleBar'
@@ -80,7 +81,10 @@ function StandaloneContent({ windowType, windowData }) {
  * 独立窗口组件
  * 根据URL参数决定显示笔记编辑器还是Todo列表
  */
+const ChristmasDecorations = lazy(() => import('./components/common/ChristmasSnow'))
+
 function StandaloneWindow() {
+  const christmasMode = useStore(state => state.christmasMode)
   useApplyEditorPrefs()
   const [windowType, setWindowType] = useState(null)
   const [windowData, setWindowData] = useState(null)
@@ -121,6 +125,7 @@ function StandaloneWindow() {
         const result = await window.electronAPI.settings.getAll()
         if (result?.success && result.data) {
           const s = result.data
+          useStore.getState().setChristmasMode(Boolean(s.christmasMode))
           if (s.theme) {
             setThemeMode(resolveTheme(s.theme))
             store.setTheme?.(s.theme)
@@ -142,6 +147,7 @@ function StandaloneWindow() {
     // 监听设置变更（用户在主窗口修改时实时同步）
     const unsubSetting = window.electronAPI.settings.onSettingChanged((data) => {
       if (!data?.key) return
+      if (data.key === 'christmasMode') useStore.getState().setChristmasMode(Boolean(data.value))
       if (data.key === 'theme') {
         setThemeMode(resolveTheme(data.value))
         store.setTheme?.(data.value)
@@ -432,6 +438,7 @@ function StandaloneWindow() {
           </StandaloneProvider>
         )}
       </Box>
+      {christmasMode && ['note', 'todo', 'external-file'].includes(windowType) && <Suspense fallback={null}><ChristmasDecorations /></Suspense>}
     </ErrorProvider>
     </ThemeProvider>
   )

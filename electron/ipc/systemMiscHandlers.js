@@ -58,6 +58,13 @@ const registerSystemMiscHandlers = (services, getLogger) => {
   // backup
   ipcMain.handle('backup:create', async () => services.backupService.createBackup())
   ipcMain.handle('backup:restore', async () => services.backupService.restoreBackup())
+  for (const [channel, method] of Object.entries({
+    'cloud-backup:config': 'getConfig', 'cloud-backup:save': 'saveTarget',
+    'cloud-backup:remove': 'removeTarget', 'cloud-backup:run': 'run', 'cloud-backup:download': 'downloadLatest'
+  })) ipcMain.handle(channel, async (_event, ...args) => {
+    try { return await services.cloudBackupService[method](...args) }
+    catch (error) { return { success: false, error: error.message } }
+  })
 
   // network
   ipcMain.handle('network:is-online', () => services.networkService ? services.networkService.isOnline : true)

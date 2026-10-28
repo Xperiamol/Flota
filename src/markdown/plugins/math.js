@@ -64,6 +64,8 @@ export default function mathPlugin(md, { render = true } = {}) {
   md.block.ruler.before('fence', 'flota_math_block', (state, startLine, endLine, silent) => {
     if (state.sCount[startLine] - state.blkIndent >= 4) return false
     const first = state.src.slice(state.bMarks[startLine] + state.tShift[startLine], state.eMarks[startLine]).trim()
+    // 序列化后的双链 \[\[笔记\]\] 是转义文本，不能当作 \[ ... \] 块公式。
+    if (first.startsWith('\\[\\[')) return false
     const open = first.startsWith('$$') ? '$$' : first.startsWith('\\[') ? '\\[' : null
     if (!open) return false
     const close = open === '$$' ? '$$' : '\\]'

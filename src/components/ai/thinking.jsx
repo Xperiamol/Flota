@@ -8,14 +8,16 @@ import { Box, Typography, alpha, useMediaQuery } from '@mui/material'
  * - pickThinkingPhrase：从短语表里随机取一句，最近用过的不重复
  */
 
-export const TypewriterText = ({ text, fontSize = 12 }) => {
+export const TypewriterText = ({ text, fontSize = 12, onCycle, paused = false }) => {
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
+  const onCycleRef = useRef(onCycle)
+  onCycleRef.current = onCycle
   const latestText = useRef(text || '')
   latestText.current = text || ''
   const [display, setDisplay] = useState('')
 
   useEffect(() => {
-    if (reducedMotion) return
+    if (reducedMotion || paused) return
     let timer
     let characters = []
     let count = 0
@@ -36,6 +38,7 @@ export const TypewriterText = ({ text, fontSize = 12 }) => {
         delay = 1100
       } else if (erasing && count === 0) {
         erasing = false
+        onCycleRef.current?.()
         delay = 260
       }
       timer = setTimeout(tick, delay)
@@ -43,7 +46,7 @@ export const TypewriterText = ({ text, fontSize = 12 }) => {
     setDisplay('')
     timer = setTimeout(tick, 120)
     return () => clearTimeout(timer)
-  }, [reducedMotion])
+  }, [reducedMotion, paused])
 
   return (
     <Typography
@@ -59,11 +62,11 @@ export const TypewriterText = ({ text, fontSize = 12 }) => {
       })}
     >
       <Box component="span" aria-hidden="true">
-        {reducedMotion ? text : display}
+        {reducedMotion || paused ? text : display}
         <Box component="span" sx={{
           display: 'inline-block', ml: 0.3, width: '1px', height: '0.9em',
           bgcolor: 'currentColor', verticalAlign: '-0.05em', opacity: 0.5,
-          animation: reducedMotion ? 'none' : 'flota-thinking-caret 1s step-end infinite',
+          animation: reducedMotion || paused ? 'none' : 'flota-thinking-caret 1s step-end infinite',
           '@keyframes flota-thinking-caret': { '50%': { opacity: 0 } },
         }} />
       </Box>

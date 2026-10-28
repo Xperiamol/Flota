@@ -8,6 +8,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const zlib = require('zlib');
 const { encryptValue, decryptValue, isEncryptedValue } = require('../utils/secureValue');
+const OfflineSpeech = require('./stt/OfflineSpeech');
 
 let uuidv4;
 try { uuidv4 = require('uuid').v4; } catch (_) { uuidv4 = null; }
@@ -20,6 +21,7 @@ class STTService extends EventEmitter {
     super();
     this.settingDAO = settingDAO;
     this.initialized = false;
+    this.offline = new OfflineSpeech();
   }
 
   /**
@@ -69,6 +71,9 @@ class STTService extends EventEmitter {
         this.settingDAO.set('stt_volc_token', '', 'string', '火山引擎 Access Token');
       }
       const config = {
+        provider: g('stt_provider', 'volcengine'),
+        language: g('stt_language', 'auto'),
+        offline: this.offline.status(),
         enabled: g('stt_enabled') === true || g('stt_enabled') === 'true',
         volcAppId: g('stt_volc_appid'),
         volcToken,
@@ -87,6 +92,8 @@ class STTService extends EventEmitter {
   async saveConfig(config) {
     try {
       const { enabled, volcAppId, volcToken, volcResourceId } = config;
+      this.settingDAO.set('stt_provider', config.provider === 'offline' ? 'offline' : 'volcengine', 'string');
+      this.settingDAO.set('stt_language', config.language || 'auto', 'string');
 
       this.settingDAO.set('stt_enabled', enabled, 'boolean', 'STT功能开关');
       this.settingDAO.set('stt_volc_appid', volcAppId || '', 'string', '火山引擎 App ID');
@@ -189,6 +196,11 @@ class STTService extends EventEmitter {
       
       if (!config.enabled) {
         return { success: false, error: 'STT功能未启用' };
+      }
+
+      if (config.provider === 'offline') {
+        const audio = typeof audioFile === 'string' ? fs.readFileSync(audioFile) : Buffer.from(audioFile);
+        return { success: true, data: await this.offline.run('transcribe', audio, config.language) };
       }
 
       if (!config.volcAppId || !config.volcToken) {

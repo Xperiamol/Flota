@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
+import { getAppSettingsSnapshot } from '../utils/aiCore/appSettings'
 import { aiLog } from '../utils/logger'
 
 const createRequestId = (prefix = 'ai') => (
@@ -52,6 +53,7 @@ export const useAIStream = () => {
         resolvedContext = await Promise.race([prepareContext(), cancelled])
       }
       if (request.cancelledByUser) return { result: { cancelled: true }, content, requestId, contextPackage: {}, cancelledByUser: true }
+      resolvedContext = { ...resolvedContext, appSettings: getAppSettingsSnapshot() }
       request.started = true
       const result = await window.electronAPI?.ai?.chatStream?.(messages, {
         ...options, requestId, conversationId, contextPackage: resolvedContext,

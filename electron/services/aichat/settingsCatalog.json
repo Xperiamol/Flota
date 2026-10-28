@@ -1,0 +1,189 @@
+[
+  {
+    "key": "theme",
+    "label": "主题",
+    "store": "app",
+    "options": {
+      "light": "浅色",
+      "dark": "深色",
+      "system": "跟随系统"
+    }
+  },
+  {
+    "key": "editorMode",
+    "label": "编辑模式",
+    "store": "app",
+    "options": {
+      "markdown": "Markdown",
+      "wysiwyg": "所见即所得"
+    }
+  },
+  {
+    "key": "whiteboardStyle",
+    "label": "画布风格",
+    "store": "app",
+    "options": {
+      "neat": "规整",
+      "sketchy": "手绘"
+    }
+  },
+  {
+    "key": "maskOpacity",
+    "label": "背景遮罩",
+    "store": "app",
+    "options": {
+      "none": "无",
+      "light": "轻",
+      "medium": "中",
+      "heavy": "重"
+    }
+  },
+  {
+    "key": "backgroundPattern",
+    "label": "背景纹理",
+    "store": "app",
+    "options": {
+      "none": "无",
+      "leather": "皮革",
+      "steel": "钢铁",
+      "paper": "纸张",
+      "linen": "亚麻",
+      "frost": "磨砂",
+      "carbon": "碳纤维"
+    }
+  },
+  {
+    "key": "christmasMode",
+    "label": "圣诞模式",
+    "store": "app",
+    "type": "boolean"
+  },
+  {
+    "key": "editorShowWordCount",
+    "label": "显示字数",
+    "store": "prefs",
+    "type": "boolean"
+  },
+  {
+    "key": "editorShowReadingTime",
+    "label": "显示阅读时长",
+    "store": "prefs",
+    "type": "boolean"
+  },
+  {
+    "key": "noteListPreview",
+    "label": "显示正文预览",
+    "store": "prefs",
+    "type": "boolean"
+  },
+  {
+    "key": "todoShowCompleted",
+    "label": "显示已完成的待办",
+    "store": "prefs",
+    "type": "boolean"
+  },
+  {
+    "key": "editorFontSize",
+    "label": "正文字号",
+    "store": "prefs",
+    "options": {
+      "small": "小",
+      "standard": "标准",
+      "large": "大"
+    }
+  },
+  {
+    "key": "editorWidth",
+    "label": "内容宽度",
+    "store": "prefs",
+    "options": {
+      "full": "铺满",
+      "readable": "适合阅读"
+    }
+  },
+  {
+    "key": "noteListTime",
+    "label": "时间显示",
+    "store": "prefs",
+    "options": {
+      "relative": "相对时间",
+      "absolute": "具体日期"
+    }
+  },
+  {
+    "key": "todoDefaultView",
+    "label": "待办默认视图",
+    "store": "prefs",
+    "options": {
+      "quadrant": "四象限",
+      "focus": "专注"
+    }
+  },
+  {
+    "key": "todoSortBy",
+    "label": "待办默认排序",
+    "store": "prefs",
+    "options": {
+      "priority": "优先级",
+      "dueDate": "截止日期",
+      "createdAt": "创建时间"
+    }
+  },
+  {
+    "key": "todoDefaultDue",
+    "label": "待办默认截止日期",
+    "store": "prefs",
+    "options": {
+      "none": "无",
+      "today": "今天"
+    }
+  },
+  {
+    "key": "externalFileMode",
+    "label": "外部文件打开方式",
+    "store": "prefs",
+    "options": {
+      "preview": "预览",
+      "edit": "编辑"
+    }
+  },
+  {
+    "key": "noteHistoryEnabled",
+    "label": "自动保存历史快照",
+    "store": "database",
+    "type": "boolean",
+    "default": false
+  },
+  {
+    "key": "noteHistoryIntervalSeconds",
+    "label": "快照最小间隔（秒）",
+    "store": "database",
+    "type": "integer",
+    "min": 30,
+    "max": 3600,
+    "default": 60
+  },
+  {
+    "key": "noteHistoryLimit",
+    "label": "每篇保留历史版本数",
+    "store": "database",
+    "type": "integer",
+    "min": 1,
+    "max": 500,
+    "default": 50
+  },
+  {
+    "key": "hiddenMode",
+    "label": "隐藏模式",
+    "store": "database",
+    "type": "boolean",
+    "default": false
+  },
+  {
+    "key": "close_to_tray",
+    "label": "关闭主窗口时留在托盘",
+    "store": "database",
+    "type": "boolean",
+    "default": true
+  }
+]

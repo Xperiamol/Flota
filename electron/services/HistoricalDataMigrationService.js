@@ -259,7 +259,7 @@ class HistoricalDataMigrationService {
       const result = await this.aiService.chat([{
         role: 'user',
         content: `请用1-3句话概括以下笔记的核心知识点，保留关键术语和结论，不要添加评论：\n\n${content.substring(0, 2000)}`
-      }], { maxTokens: 300, temperature: 0.3 });
+      }], { bypassTokenLimit: true, temperature: 0.3 });
       const summary = result?.success && result.data?.content?.trim();
       if (summary && summary.length >= 10) return summary;
     } catch (e) {

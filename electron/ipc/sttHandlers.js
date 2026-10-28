@@ -11,6 +11,12 @@ const registerSttHandlers = (services) => {
     { channel: 'stt:get-config', handler: tryCatch('getConfig', '获取STT配置失败') },
     { channel: 'stt:save-config', handler: tryCatch('saveConfig', '保存STT配置失败') },
     { channel: 'stt:test-connection', handler: tryCatch('testConnection', '测试STT连接失败') },
+    { channel: 'stt:prepare-offline', handler: async event => {
+      try {
+        return { success: true, data: await services.sttService.offline.run('prepare', null, null,
+          progress => { if (!event.sender.isDestroyed()) event.sender.send('stt:model-progress', progress) }) };
+      } catch (error) { return { success: false, error: error.message }; }
+    } },
     {
       channel: 'stt:transcribe',
       handler: async (event, { audioFile, options }) => {

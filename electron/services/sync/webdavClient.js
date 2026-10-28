@@ -242,13 +242,20 @@ class WebDAVClient {
    * @private
    */
   isRetriableError(error) {
-    if (!error.response) {
-      // 网络错误
-      return ['ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'ECONNREFUSED'].includes(error.code);
+    const retriableCodes = ['ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'ECONNREFUSED', 'ECONNABORTED', 'ERR_STREAM_PREMATURE_CLOSE'];
+    if (retriableCodes.includes(error.code)) {
+      return true;
     }
 
-    // HTTP 状态码
+    if (!error.response) {
+      return false;
+    }
+
+    // HTTP 状态码（包含流在 2xx 响应头返回后中途断开的异常情况）
     const status = error.response.status;
+    if (status >= 200 && status < 300) {
+      return true;
+    }
     return [408, 429, 500, 502, 503, 504].includes(status);
   }
 
@@ -257,7 +264,16 @@ class WebDAVClient {
    * @private
    */
   normalizeError(error) {
-    if (error.response) {
+    const networkErrors = {
+      ENOTFOUND: '网络连接失败：无法解析域名',
+      ETIMEDOUT: '网络连接超时',
+      ECONNREFUSED: '连接被拒绝',
+      ECONNRESET: '连接被重置',
+      ECONNABORTED: '请求传输超时或中断',
+      ERR_STREAM_PREMATURE_CLOSE: '响应流传输中断',
+    };
+
+    if (error.response && !(error.response.status >= 200 && error.response.status < 300)) {
       const status = error.response.status;
       const statusText = error.response.statusText;
       // 提取请求方法 + URL 路径，便于定位是哪一步失败
@@ -314,13 +330,9 @@ class WebDAVClient {
         return new Error(`WebDAV 请求失败 (${status})${where}: ${statusText}${detailSuffix}`);
       }
     } else if (error.code) {
-      const networkErrors = {
-        ENOTFOUND: '网络连接失败：无法解析域名',
-        ETIMEDOUT: '网络连接超时',
-        ECONNREFUSED: '连接被拒绝',
-        ECONNRESET: '连接被重置',
-      };
       return new Error(networkErrors[error.code] || `网络错误: ${error.code}`);
+    } else if (error.response && error.response.status >= 200 && error.response.status < 300) {
+      return new Error(error.message ? `WebDAV 响应传输中断: ${error.message}` : 'WebDAV 响应传输中断');
     }
 
     return error;

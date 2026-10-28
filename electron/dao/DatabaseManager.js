@@ -124,6 +124,7 @@ class DatabaseManager {
       }
       dbLog('开始执行数据库迁移...');
       await this.runMigrations();
+      this.ensureNoteHistorySchema();
       dbLog('数据库迁移完成');
     
       dbLog('数据库初始化成功');
@@ -594,6 +595,36 @@ class DatabaseManager {
    * 组件相关表：组件（小应用本身）→ 实例（数据归属）→ 记录。
    * 放在建表之后单独执行，便于兼容早期开发版的表结构（records 按 widget_id 存储、组件存成 note_type='widget' 的笔记）。
    */
+  ensureNoteHistorySchema() {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS note_versions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+        snapshot TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_note_versions_note ON note_versions(note_id, id DESC);
+      DROP TRIGGER IF EXISTS notes_capture_version;
+      DROP TRIGGER IF EXISTS note_versions_trim;
+      CREATE TRIGGER notes_capture_version BEFORE UPDATE ON notes
+      WHEN (OLD.content IS NOT NEW.content OR OLD.title IS NOT NEW.title OR OLD.tags IS NOT NEW.tags
+        OR OLD.category IS NOT NEW.category OR OLD.note_type IS NOT NEW.note_type OR OLD.meta IS NOT NEW.meta)
+        AND COALESCE((SELECT value FROM settings WHERE key = 'noteHistoryEnabled'), 'false') = 'true'
+        AND NOT EXISTS (SELECT 1 FROM note_versions WHERE note_id = OLD.id
+          AND created_at > CAST(strftime('%s','now') AS INTEGER) * 1000
+            - COALESCE((SELECT CAST(value AS INTEGER) FROM settings WHERE key = 'noteHistoryIntervalSeconds'), 60) * 1000)
+      BEGIN
+        INSERT INTO note_versions(note_id, snapshot, created_at) VALUES(OLD.id,
+          json_object('title',OLD.title,'content',OLD.content,'tags',OLD.tags,'category',OLD.category,
+            'note_type',OLD.note_type,'meta',OLD.meta), CAST(strftime('%s','now') AS INTEGER) * 1000);
+      END;
+      CREATE TRIGGER note_versions_trim AFTER INSERT ON note_versions BEGIN
+        DELETE FROM note_versions WHERE note_id = NEW.note_id AND id NOT IN
+          (SELECT id FROM note_versions WHERE note_id = NEW.note_id ORDER BY id DESC LIMIT (SELECT COALESCE((SELECT CAST(value AS INTEGER) FROM settings WHERE key = 'noteHistoryLimit'), 50)));
+      END;
+    `);
+  }
+
   ensureWidgetSchema() {
     const db = this.db;
     db.exec(`CREATE TABLE IF NOT EXISTS widgets (

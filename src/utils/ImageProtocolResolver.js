@@ -53,33 +53,60 @@ class ImageProtocolResolver {
   }
 
   /**
+   * 校验并规范化应用管理的相对图片路径（排除笔记中形如 .../badge.png?project=<x> 的示例占位文本）
+   */
+  normalizeManagedImagePath(rawPath) {
+    if (typeof rawPath !== 'string') return null;
+    const trimmed = rawPath.trim();
+    if (!trimmed) return null;
+    const [withoutQuery] = trimmed.split('?');
+    const cleaned = withoutQuery.replace(/^\.\/+/, '').replace(/^\/+/, '');
+    if (!cleaned || cleaned.includes('..') || /[<>*:"|?\\]/.test(cleaned)) {
+      return null;
+    }
+    if (!/\.(?:png|jpe?g|gif|webp|svg|bmp)$/i.test(cleaned)) {
+      return null;
+    }
+    const normalized = cleaned.startsWith('images/') ? cleaned : `images/${cleaned}`;
+    if (!/^images\/(?:(?:whiteboard|whiteboard-preview)\/)?[^/\\]+$/i.test(normalized)) {
+      return null;
+    }
+    return normalized;
+  }
+
+  /**
    * 解析本地路径
    */
   async resolveLocalPath(relativePath) {
+    const normalizedPath = this.normalizeManagedImagePath(relativePath);
+    if (!normalizedPath) {
+      return this.getPlaceholderImage();
+    }
+
     // 检查缓存
-    if (this.cache.has(relativePath)) {
-      return this.cache.get(relativePath);
+    if (this.cache.has(normalizedPath)) {
+      return this.cache.get(normalizedPath);
     }
 
     // 检查是否有正在进行的请求
-    if (this.pendingRequests.has(relativePath)) {
-      return await this.pendingRequests.get(relativePath);
+    if (this.pendingRequests.has(normalizedPath)) {
+      return await this.pendingRequests.get(normalizedPath);
     }
 
     // 创建新的请求
-    const requestPromise = this.fetchImage(relativePath);
-    this.pendingRequests.set(relativePath, requestPromise);
+    const requestPromise = this.fetchImage(normalizedPath);
+    this.pendingRequests.set(normalizedPath, requestPromise);
 
     try {
       const base64Data = await requestPromise;
       
       if (!this.isPlaceholderImage(base64Data)) {
-        this.cache.set(relativePath, base64Data);
+        this.cache.set(normalizedPath, base64Data);
       }
       
       return base64Data;
     } finally {
-      this.pendingRequests.delete(relativePath);
+      this.pendingRequests.delete(normalizedPath);
     }
   }
 

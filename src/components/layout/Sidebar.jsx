@@ -27,6 +27,7 @@ import { EASING, DURATION_MS } from '../../utils/animationConfig';
 import RecentNotesRail from './RecentNotesRail';
 import AppContextMenu from '../common/AppContextMenu';
 import { useWidgetStore, ensureWidgetsLoaded, widgetViewId, parseWidgetViewId, openWidgetHome } from '../../store/useWidgetStore';
+import { CHRISTMAS_ART } from '../../assets/christmas';
 import FlotaAIIcon from '../common/FlotaAIIcon';
 import { WidgetGlyph } from '../widgets/widgetIcons';
 import { liquidGlassSx, usePaneOpacity } from '../../styles/paneStyles';
@@ -58,6 +59,7 @@ const NavItem = React.memo(function NavItem({
   onDrop,
   onDragEnd,
   onContextMenu,
+  tourId,
 }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
@@ -102,6 +104,7 @@ const NavItem = React.memo(function NavItem({
         <ButtonBase
           onClick={onClick}
           aria-label={tooltip}
+          data-tour={tourId}
           aria-current={active ? 'page' : undefined}
           focusRipple={false}
           disableRipple
@@ -143,12 +146,12 @@ const NavItem = React.memo(function NavItem({
 
 // 圣诞图标路径
 const CHRISTMAS_ICONS = {
-  notes: './png/gift-box.png',
-  todo: './png/christmas-wreath.png',
+  notes: CHRISTMAS_ART.gifts,
+  todo: CHRISTMAS_ART.wreath,
   calendar: './png/christmas-bell.png',
-  plugins: './png/christmas-tree.png',
+  timeline: CHRISTMAS_ART.snowman,
+  plugins: CHRISTMAS_ART.tree,
   profile: './png/hat.png',
-  settings: './png/christmas-tree.png'
 };
 
 // 圣诞问候语
@@ -557,6 +560,7 @@ const Sidebar = () => {
           <NavItem
             key={item.id}
             tooltip={item.tooltip}
+            tourId={item.id}
             active={currentView === item.id}
             onClick={() => handleMenuClick(item.id)}
             draggable
@@ -577,11 +581,15 @@ const Sidebar = () => {
               <Box
                 component="img"
                 src={CHRISTMAS_ICONS[item.id]}
+                data-christmas-nav={item.id}
                 alt={item.label}
                 sx={{
-                  width: '22px',
-                  height: '22px',
+                  width: '28px',
+                  height: '28px',
                   objectFit: 'contain',
+                  '&:hover': { animation: 'christmas-nav-nod 650ms ease-in-out' },
+                  '@keyframes christmas-nav-nod': { '0%,100%': { transform: 'rotate(0)' }, '30%': { transform: 'rotate(-10deg)' }, '65%': { transform: 'rotate(7deg)' } },
+                  '@media (prefers-reduced-motion: reduce)': { animation: 'none !important' },
                 }}
               />
             ) : (
@@ -614,23 +622,11 @@ const Sidebar = () => {
         />
         <NavItem
           tooltip={t('sidebar.settingsTooltip')}
+          tourId="settings"
           active={currentView === 'settings'}
           onClick={() => handleMenuClick('settings')}
         >
-          {christmasMode ? (
-            <Box
-              component="img"
-              src={CHRISTMAS_ICONS.settings}
-              alt="Settings"
-              sx={{
-                width: '22px',
-                height: '22px',
-                objectFit: 'contain',
-              }}
-            />
-          ) : (
-            <Settings sx={{ fontSize: '20px' }} />
-          )}
+          <Settings sx={{ fontSize: '20px' }} />
         </NavItem>
       </Box>
       <AppContextMenu

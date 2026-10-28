@@ -4,11 +4,11 @@
  */
 
 // 场景 → 优先召回的记忆层 + 检索条数
-// 目标：profile/semantic 是主轴，episodic（近况）也参与对话；笔记 / 待办索引（artifact）
+// 目标：只按需召回稳定的 profile/semantic，不自动召回 episodic；笔记 / 待办索引（artifact）
 // 不进对话——当前笔记和相关笔记由 contextPackage 另外注入，旧任务也不该污染当前回答
 const SCENE_LAYER_STRATEGY = {
-  chat_panel: { layers: ['profile', 'semantic', 'episodic'], limit: 5 },
-  floating_panel: { layers: ['profile', 'semantic', 'episodic'], limit: 4 },
+  chat_panel: { layers: ['profile', 'semantic'], limit: 5 },
+  floating_panel: { layers: ['profile', 'semantic'], limit: 4 },
   selection_panel: { layers: ['profile', 'semantic'], limit: 3 },
   whiteboard: { layers: ['semantic', 'artifact'], limit: 3 },
 };
@@ -47,6 +47,8 @@ const fetchMemoriesByScene = async (mem0Service, { query, scene, currentNote }) 
  */
 const enrichContextPackageWithMemories = async (contextPackage, mem0Service, { query, scene }) => {
   const pkg = contextPackage ? { ...contextPackage } : {};
+  const relevant = pkg.currentNote || /记忆|偏好|习惯|记得|上次|之前|我的背景|remember|my preferences|last time/i.test(query || '');
+  if (!relevant) { delete pkg.memories; return pkg; }
   const memories = await fetchMemoriesByScene(mem0Service, {
     query,
     scene,

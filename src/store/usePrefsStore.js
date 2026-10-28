@@ -12,8 +12,12 @@ export const EDITOR_READABLE_WIDTH = '760px'
 export const usePrefsStore = create(
   persist(
     (set) => ({
+      onboardingSeen: false,
+      aiQuickPromptSets: {},
       editorFontSize: 'standard', // small | standard | large
       editorWidth: 'full', // full | readable
+      editorShowWordCount: true,
+      editorShowReadingTime: true,
       noteListPreview: true, // 笔记列表显示正文预览
       noteListTime: 'relative', // relative（3 分钟前）| absolute（9月28日 14:05）
       todoDefaultView: 'quadrant', // quadrant | focus

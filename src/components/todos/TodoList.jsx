@@ -133,6 +133,7 @@ const playChristmasBell = () => {
   createOsc(987.77, 0.05);
   createOsc(1174.66, 0.1);
   createOsc(1567.98, 0.15);
+  setTimeout(() => { void ctx.close(); }, 1800);
 };
 
 const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSelectRefChange, refreshTrigger, sortBy, onSortByChange, externalTodos, isExternalData = false, onTodoUpdated, dragSourceDate = null }) => {
@@ -475,6 +476,7 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
         setTimeout(async () => {
           try {
             await toggleTodoComplete(todo.id);
+            if (christmasMode) window.dispatchEvent(new CustomEvent('flota:christmas-celebrate', { detail: { kind: 'todo' } }));
             loadTodos();
             // 如果有更新回调，触发它
             if (onTodoUpdated) {

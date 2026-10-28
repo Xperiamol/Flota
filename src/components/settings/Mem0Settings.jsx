@@ -551,7 +551,7 @@ const Mem0Settings = () => {
         <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2 })}>
           <ListItemText
             primary="对话后自动记忆"
-            secondary="回复下方会提示，可撤销"
+            secondary="低频筛选长期偏好和身份，至少间隔 5 分钟；临时任务不保存，更新可撤销"
             slotProps={{ primary: { sx: { fontWeight: 650 } } }}
           />
           <Switch

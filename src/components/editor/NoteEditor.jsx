@@ -42,6 +42,7 @@ import {
 } from '@mui/icons-material'
 import { FlotaNoteIcon as ArticleIcon, FlotaWhiteboardIcon as WhiteboardIcon } from '../common/FlotaIcons'
 import { useStore } from '../../store/useStore'
+import { usePrefsStore } from '../../store/usePrefsStore'
 import { useShallow } from 'zustand/react/shallow'
 import { useStandaloneContext } from '../common/StandaloneProvider'
 import { zhCN } from 'date-fns/locale/zh-CN'
@@ -55,6 +56,8 @@ import MarkdownToolbar from './MarkdownToolbar'
 import NoteTypeConversionDialog from './NoteTypeConversionDialog'
 import AIAssistPanel from '../ai/AIAssistPanel'
 import NoteInfoSummary from './NoteInfoSummary'
+import NoteHistoryDialog from './NoteHistoryDialog'
+import { HistoryOutlined } from '@mui/icons-material'
 import RelatedContextPanel from './RelatedContextPanel'
 import BacklinksPanel from './BacklinksPanel'
 import UnlinkedMentionsPanel from './UnlinkedMentionsPanel'
@@ -1835,6 +1838,9 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     () => countEditorWords(contentForWordStats),
     [contentForWordStats]
   )
+  const showWordCount = usePrefsStore(state => state.editorShowWordCount)
+  const showReadingTime = usePrefsStore(state => state.editorShowReadingTime)
+  const readingMinutes = Math.max(1, Math.round(wordCount / 400))
   const wordCountBadgeSx = {
     position: 'absolute',
     right: 14,
@@ -1860,6 +1866,11 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     WebkitBackdropFilter: 'blur(10px)',
     userSelect: 'none',
   }
+  const wordStatsBadge = (showWordCount || showReadingTime) && (
+    <Typography component="div" sx={wordCountBadgeSx}>
+      {[showWordCount && `${wordCount} 字`, showReadingTime && `约 ${readingMinutes} 分钟读完`].filter(Boolean).join(' · ')}
+    </Typography>
+  )
   const toolbarActionButtonSx = (active = false) => (theme) => ({
     width: 28,
     height: 28,
@@ -1979,7 +1990,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     const reserved = 36 // 「更多」按钮
     const usable = clientWidth - baseline
     if (usable <= 0) return 0
-    if (usable >= totalToolbarActions * perAction) return totalToolbarActions
+    if (usable >= totalToolbarActions * perAction + reserved) return totalToolbarActions
     return Math.max(0, Math.min(totalToolbarActions, Math.floor((usable - reserved) / perAction)))
   }, [compactToolbar, totalToolbarActions])
 
@@ -2015,6 +2026,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     return () => cancelAnimationFrame(raf)
   }, [toolbarMeasureSignature, computeFromClientWidth, toolbarsHidden])
 
+  const [historyOpen, setHistoryOpen] = useState(false)
   const overflowActions = toolbarActions.slice(actionVisibleCount)
 
   if (!selectedNoteId) {
@@ -2464,12 +2476,12 @@ const NoteEditor = ({ onCollapseSidebar }) => {
 
           <Box
             sx={{
-              maxWidth: overflowActions.length > 0 ? 36 : 0,
-              mr: overflowActions.length > 0 ? 0.5 : 0,
-              opacity: overflowActions.length > 0 ? 1 : 0,
-              transform: overflowActions.length > 0 ? 'scale(1)' : 'scale(0.92)',
+              maxWidth: 36,
+              mr: 0.5,
+              opacity: 1,
+              transform: 'scale(1)',
               overflow: 'hidden',
-              pointerEvents: overflowActions.length > 0 ? 'auto' : 'none',
+              pointerEvents: 'auto',
               transition: 'max-width 160ms ease, margin-right 160ms ease, opacity 140ms ease, transform 160ms ease'
             }}
           >
@@ -2493,6 +2505,11 @@ const NoteEditor = ({ onCollapseSidebar }) => {
             anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
             transformOrigin={{ vertical: 'top', horizontal: 'right' }}
           >
+            <MenuItem onClick={async () => {
+              setActionMenuAnchor(null)
+              try { await saveNow(); await flushEditorSaves(); setHistoryOpen(true) }
+              catch (e) { notifyError(e.message || '请先保存当前内容') }
+            }}><ListItemIcon><HistoryOutlined fontSize="small" /></ListItemIcon><ListItemText>历史版本</ListItemText></MenuItem>
             {overflowActions.map((action) => (
               <MenuItem
                 key={action.key}
@@ -2784,9 +2801,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
                     placeholder={t('common.startWriting')}
                   />
                 </Suspense>
-                <Typography component="div" sx={wordCountBadgeSx}>
-                  {wordCount} 字
-                </Typography>
+                {wordStatsBadge}
               </Box>
             ) : (
             /* Markdown 源码模式: 支持编辑/预览/分屏 */
@@ -2857,15 +2872,14 @@ const NoteEditor = ({ onCollapseSidebar }) => {
                       },
                     }}
                   />
-                  <Typography component="div" sx={wordCountBadgeSx}>
-                    {wordCount} 字
-                  </Typography>
+                  {wordStatsBadge}
                 </Box>
               )}
 
               {/* 预览面板 */}
               {(viewMode === 'preview' || viewMode === 'split') && (
                 <Box sx={{
+                  position: 'relative',
                   flex: viewMode === 'split' ? 1 : 'auto',
                   height: viewMode === 'preview' ? '100%' : 'auto',
                   overflow: 'hidden',
@@ -2885,6 +2899,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
                       boxSizing: 'border-box',
                     }}
                   />
+                  {viewMode === 'preview' && wordStatsBadge}
                 </Box>
               )}
             </Box>
@@ -3106,6 +3121,12 @@ const NoteEditor = ({ onCollapseSidebar }) => {
         loading={aiConvertLoading}
         loadingText={aiConvertStep}
       />
+
+      {historyOpen && <NoteHistoryDialog key={selectedNoteId} noteId={selectedNoteId} onClose={() => setHistoryOpen(false)} onRestored={async (freshNote) => {
+        applyFreshNoteSnapshot(freshNote)
+        if (standaloneContext?.loadNote) await standaloneContext.loadNote(selectedNoteId)
+        else await useStore.getState().loadNotes()
+      }} />}
 
       {isStandaloneMode && (
         <AICommandCenter

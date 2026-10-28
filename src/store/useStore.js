@@ -140,8 +140,8 @@ const useStore = create(
                 defaultMinibarMode: false, // 独立窗口默认minibar模式
                 maskOpacity: 'medium', // 遮罩透明度：'none' | 'light' | 'medium' | 'heavy'
                 christmasMode: false, // 圣诞模式：true | false
-                backgroundPattern: 'none', // 背景花纹：'none' | 'dots' | 'grid' | ... | 'custom'
-                patternOpacity: 1.0, // 花纹透明度倍率 0-2
+                backgroundPattern: 'none', // 材质纹理：none | leather | steel | paper | linen | frost | carbon | custom
+                patternOpacity: 1.0, // 纹理强度 0-2
                 wallpaperPath: '', // 自定义壁纸路径
 
                 // AI 面板显示模式：'selection' 右键选中文本 | 'always' 始终显示 | 'disabled' 禁用
@@ -661,6 +661,7 @@ const useStore = create(
                                 selectedNoteId: selectAfterCreate ? newNote.id : state.selectedNoteId
                             }))
                             try { useLinkGraph.getState().indexNote(newNote) } catch {}
+                            if (get().christmasMode && newNote.id != null) window.dispatchEvent(new CustomEvent('flota:christmas-celebrate', { detail: { kind: 'note' } }))
                             return { success: true, data: newNote }
                         }
                         return { success: false, error: result?.error || 'Failed to create note' }
