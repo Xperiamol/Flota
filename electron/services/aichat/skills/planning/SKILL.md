@@ -7,3 +7,8 @@
 - 用户希望一个目标下包含多个步骤时，用一条主待办的 subtasks 表达层级；不要把子任务平铺成互不相关的顶层待办。
 - 给已有待办添加子任务时，先用 search_todos 找到父待办 ID，再调用 create_todo/create_todos 并设置 parent_id。
 - 当用户要求“每天/每周/每月/每年”执行某件事时，创建一条重复待办，不要展开成许多普通待办：设置 repeat_type（daily/weekly/monthly/yearly）、repeat_interval（默认 1）以及首次执行的 due_date；每周指定星期时同时填写 repeat_days（1=周一，…，7=周日）。例如“每天晚上跑步”应创建 repeat_type: "daily" 的单条待办。
+
+## 笔记与行动项
+- 从一篇笔记提取并保存行动项时，先按需加载 notes 技能，读取用户指定的笔记；仅使用其中有依据的任务、负责人和时间。
+- 创建时填写 source_note_id，任务会关联来源。用户要求把清单放回笔记时，同时设置 embed_in_note: true；创建与插入会一起保存，不必再改写整篇笔记。
+- 普通 Markdown 复选框不会自动变成待办；用户仅要求总结或讨论时，不创建任务。

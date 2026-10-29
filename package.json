@@ -1,6 +1,6 @@
 {
   "name": "flota",
-  "version": "4.5.0",
+  "version": "4.5.1",
   "description": "Flota - 简洁高效的记录应用",
   "main": "electron/main.js",
   "homepage": "./",
@@ -110,6 +110,7 @@
     "react-dom": "^18.3.1",
     "react-i18next": "^16.3.5",
     "react-markdown": "^10.1.0",
+    "react-transition-group": "^4.4.5",
     "react-window": "^1.8.10",
     "rehype-highlight": "^7.0.2",
     "rehype-raw": "^7.0.0",

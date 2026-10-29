@@ -105,35 +105,46 @@ const get_today_todos = async (_args, _runtime, { todoDAO }) => {
   return JSON.stringify(todos);
 };
 
-const create_todo = async (args, _runtime, { todoDAO }) => {
-  const { parent: todo, subtasks } = createTodoWithSubtasks(todoDAO, args);
-  return JSON.stringify({
-    success: true,
-    id: todo.id,
-    content: todo.content,
-    repeat_type: todo.repeat_type,
-    repeat_interval: todo.repeat_interval,
-    repeat_days: todo.repeat_days,
-    subtasks
-  });
+// A note/task edit is one transaction: never leave orphan tasks if note persistence fails.
+const createLinkedTodos = (args, list, { todoDAO, noteDAO }) => {
+  const execute = () => {
+    let note = null;
+    if (args.source_note_id != null) {
+      note = noteDAO?.findBySyncId?.(String(args.source_note_id)) || noteDAO?.findById?.(args.source_note_id);
+      if (!note || note.is_deleted) throw new Error('来源笔记不存在或已删除');
+      if (args.embed_in_note && note.note_type && note.note_type !== 'markdown') throw new Error('待办清单只能插入文本笔记');
+    }
+    if (args.embed_in_note && !note) throw new Error('插入待办清单需要指定 source_note_id');
+    const link = note ? `[${String(note.title || '来源笔记').replace(/[\\[\]\r\n]/g, ' ')}](app://note/${encodeURIComponent(note.sync_id || note.id)})` : '';
+    const linkTask = todo => ({ ...todo, description: [todo.description, link].filter(Boolean).join('\n\n'),
+      subtasks: Array.isArray(todo.subtasks) ? todo.subtasks.map(subtask => ({ ...subtask, description: [subtask.description, link].filter(Boolean).join('\n\n') })) : todo.subtasks });
+    const created = list.filter(todo => todo?.content?.trim()).map(todo => {
+      const { parent, subtasks } = createTodoWithSubtasks(todoDAO, link ? linkTask(todo) : todo);
+      return { id: parent.id, sync_id: parent.sync_id, content: parent.content, repeat_type: parent.repeat_type,
+        repeat_interval: parent.repeat_interval, repeat_days: parent.repeat_days, subtasks };
+    });
+    if (note && args.embed_in_note && created.length) {
+      const reference = `app://todo-list/${encodeURIComponent(`note/${note.sync_id || note.id}`)}`;
+      if (!String(note.content || '').includes(reference)) {
+        const updated = noteDAO.update(note.id, { content: `${note.content || ''}\n\n[待办清单](${reference})\n\n` });
+        if (!updated) throw new Error('保存笔记失败');
+      }
+    }
+    return created;
+  };
+  // Existing unlinked callers and test doubles keep their previous path.
+  return args.source_note_id != null ? todoDAO.getDB().transaction(execute)() : execute();
 };
 
-const create_todos = async (args, _runtime, { todoDAO }) => {
-  const list = Array.isArray(args.todos) ? args.todos : [];
-  const created = [];
-  for (const t of list) {
-    if (!t?.content) continue;
-    const { parent: todo, subtasks } = createTodoWithSubtasks(todoDAO, t);
-    created.push({
-      id: todo.id,
-      content: todo.content,
-      repeat_type: todo.repeat_type,
-      repeat_interval: todo.repeat_interval,
-      repeat_days: todo.repeat_days,
-      subtasks
-    });
-  }
-  return JSON.stringify({ success: true, count: created.length, todos: created });
+const create_todo = async (args, _runtime, services) => {
+  const [todo] = createLinkedTodos(args, [args], services);
+  if (!todo) throw new Error('待办内容不能为空');
+  return JSON.stringify({ success: true, ...todo, noteId: args.source_note_id || null });
+};
+
+const create_todos = async (args, _runtime, services) => {
+  const created = createLinkedTodos(args, Array.isArray(args.todos) ? args.todos : [], services);
+  return JSON.stringify({ success: true, count: created.length, todos: created, noteId: args.source_note_id || null });
 };
 
 module.exports = { search_todos, get_today_todos, create_todo, create_todos };

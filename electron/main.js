@@ -707,6 +707,13 @@ async function initializeServices() {
     services.noteService = new NoteService()
     services.settingsService = new SettingsService()
     services.todoService = new TodoService()
+    for (const event of ['todo-created', 'todo-updated', 'todo-deleted', 'todos-batch-updated', 'todos-batch-deleted', 'todos-batch-completed', 'todos-imported']) {
+      services.todoService.on(event, () => {
+        for (const window of BrowserWindow.getAllWindows()) {
+          if (!window.isDestroyed()) window.webContents.send('todo:changed')
+        }
+      })
+    }
     services.tagService = new TagService()
     services.conversationService = new ConversationService()
     services.imageService = new ImageService()
@@ -871,6 +878,9 @@ async function initializeServices() {
         services.webSearchService
       )
       services.aiChatService.setWidgetService(services.widgetService)
+      services.aiChatService.setTodosChangedListener(() => {
+        for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send('todo:changed')
+      })
       // AI 工具直接写库，不经过 NoteService 事件；这里补发通知，让打开中的笔记立即刷新
       services.aiChatService.setNotesChangedListener((notes) => {
         BrowserWindow.getAllWindows().forEach((win) => {
@@ -963,9 +973,6 @@ async function initializeServices() {
         if (type === 'complete') {
           const updatedTodo = services.todoService.toggleTodoComplete(todo.id)
           services.todoService.emit('todo-updated', updatedTodo)
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('todo:changed', updatedTodo)
-          }
         } else if (type === 'snooze') {
           services.notificationService.snoozeTodo(todo.id, minutes || 10)
         } else if (type === 'open') {

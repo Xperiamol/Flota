@@ -1,3 +1,4 @@
+import { selectionAfterRemoval } from '../utils/noteSelection'
 import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
 import {
@@ -778,13 +779,13 @@ const useStore = create(
                     return { success: true, affected: targets.length }
                 },
 
-                deleteNote: async (id) => {
+                deleteNote: async (id, options = {}) => {
                     try {
                         const result = await deleteNoteAPI(id)
                         if (result?.success) {
                             set((state) => ({
                                 notes: state.notes.filter(note => note.id !== id),
-                                selectedNoteId: state.selectedNoteId === id ? null : state.selectedNoteId,
+                                selectedNoteId: selectionAfterRemoval(state.notes, state.selectedNoteId, [id], options.nextNoteId),
                                 whiteboardElementCounts: { ...state.whiteboardElementCounts, [id]: undefined }
                             }))
                             try { useLinkGraph.getState().removeNote(id) } catch {}
@@ -824,7 +825,7 @@ const useStore = create(
                                 notes: state.notes.filter(note => note.id !== id),
                                 trashNotes: state.trashNotes.filter((note) => note.id !== id),
                                 selectedTrashNoteId: state.selectedTrashNoteId === id ? null : state.selectedTrashNoteId,
-                                selectedNoteId: state.selectedNoteId === id ? null : state.selectedNoteId,
+                                selectedNoteId: selectionAfterRemoval(state.notes, state.selectedNoteId, [id], options.nextNoteId),
                                 whiteboardElementCounts: { ...state.whiteboardElementCounts, [id]: undefined }
                             }))
                             try { useLinkGraph.getState().removeNote(id) } catch {}
@@ -868,13 +869,13 @@ const useStore = create(
                 },
 
                 // 批量删除笔记
-                batchDeleteNotes: async (ids) => {
+                batchDeleteNotes: async (ids, options = {}) => {
                     try {
                         const result = await batchDeleteNotesAPI(ids)
                         if (result?.success || result === true) {
                             set((state) => ({
                                 notes: state.notes.filter(note => !ids.includes(note.id)),
-                                selectedNoteId: ids.includes(state.selectedNoteId) ? null : state.selectedNoteId
+                                selectedNoteId: selectionAfterRemoval(state.notes, state.selectedNoteId, ids, options.nextNoteId)
                             }))
                             try { ids.forEach((id) => useLinkGraph.getState().removeNote(id)) } catch {}
                             get().loadTrash()
@@ -915,7 +916,7 @@ const useStore = create(
                                 notes: state.notes.filter(note => !ids.includes(note.id)),
                                 trashNotes: state.trashNotes.filter((note) => !ids.includes(note.id)),
                                 selectedTrashNoteId: ids.includes(state.selectedTrashNoteId) ? null : state.selectedTrashNoteId,
-                                selectedNoteId: ids.includes(state.selectedNoteId) ? null : state.selectedNoteId
+                                selectedNoteId: selectionAfterRemoval(state.notes, state.selectedNoteId, ids, options.nextNoteId)
                             }))
                             try { ids.forEach((id) => useLinkGraph.getState().removeNote(id)) } catch {}
                             return { success: true }

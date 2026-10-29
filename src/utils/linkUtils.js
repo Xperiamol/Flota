@@ -31,11 +31,28 @@ export const openNoteLink = async (href) => {
     const { openWidgetInstance } = await import('../store/useWidgetStore')
     return openWidgetInstance(decodeURIComponent(new URL(url).pathname.slice(1)))
   }
+  if (/^app:\/\/todo-list\//i.test(url)) {
+    window.dispatchEvent(new CustomEvent('flota:open-todo-list', { detail: decodeURIComponent(new URL(url).pathname.slice(1)) }))
+    return true
+  }
+  if (/^app:\/\/todo\//i.test(url)) {
+    const { fetchTodos } = await import('../api/todoAPI')
+    const reference = decodeURIComponent(new URL(url).pathname.slice(1))
+    const todo = (await fetchTodos({ includeCompleted: true })).find(item => String(item.sync_id || item.id) === reference)
+    if (!todo) return false
+    window.dispatchEvent(new CustomEvent('flota:open-todo', { detail: todo }))
+    return true
+  }
   if (/^app:\/\/(?:note|whiteboard)\//i.test(url)) {
     const { useStore } = await import('../store/useStore')
     const reference = decodeURIComponent(new URL(url).pathname.slice(1))
     const note = useStore.getState().notes.find(item => String(item.sync_id || item.id) === reference || String(item.id) === reference)
     if (!note) return false
+    if (new URLSearchParams(window.location.search).get('type') === 'note' && window.electronAPI?.createNoteWindow) {
+      await window.electronAPI.createNoteWindow(note.id)
+      return true
+    }
+    useStore.getState().setCurrentView('notes')
     useStore.getState().setSelectedNoteId(note.id)
     return true
   }

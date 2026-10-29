@@ -442,6 +442,7 @@ class SyncEngine extends EventEmitter {
     // 6. 上传 todos 和 settings（如果有数据且类别已启用，覆盖空文件）
     const todosArray = Object.values(localTodos);
     if (enabledCategories.includes('todos') && todosArray.length > 0) {
+      await this.syncTodoAssets(todosArray, true);
       await this.client.uploadJson(this.config.rootPath + 'todos.json', todosArray);
       this.log('[Init] todos 上传完成');
     }
@@ -1427,6 +1428,7 @@ class SyncEngine extends EventEmitter {
 
     if (task.fileId === 'global_todos' || task.fileId === 'global_settings') {
       // 上传 JSON
+      if (task.fileId === 'global_todos') await this.syncTodoAssets(task.data, true);
       await this.client.uploadJson(task.remotePath, task.data);
       if (task.fileId === 'global_settings') {
         await this.syncWallpaperAsset(task.data, true);
@@ -1520,6 +1522,14 @@ class SyncEngine extends EventEmitter {
    * 上传笔记中引用的图片（带重试）
    * @private
    */
+  async syncTodoAssets(todos, upload) {
+    // Same Markdown asset pipeline as notes. Fail before publishing/applying task data.
+    const content = todos.filter(todo => !todo.is_deleted).map(todo => todo.description || '').join('\n\n');
+    const categories = this.config.syncCategories || [];
+    if (categories.includes('images')) await (upload ? this.uploadNoteImages(content, 'markdown') : this.downloadNoteImages(content, 'markdown'));
+    if (categories.includes('attachments')) await (upload ? this.uploadNoteAttachments(content, 'markdown') : this.downloadNoteAttachments(content, 'markdown'));
+  }
+
   async uploadNoteImages(content, noteType) {
     if (!content) return;
 
@@ -1632,6 +1642,7 @@ class SyncEngine extends EventEmitter {
         }
       }
 
+      await this.syncTodoAssets(remoteTodos, false);
       this.storage.applyTodos(remoteTodos);
 
       // 删除只能依赖显式墓碑；集合缺项也可能是另一端未同步完或本地刚新建。
@@ -2187,6 +2198,8 @@ class SyncEngine extends EventEmitter {
 
     // Step 3: 上传合并结果到远端（先于本地写入，确保失败时本地仍是旧状态）
     // 合并结果与云端内容相同（如新设备首次同步）时不重写，云端已是该快照。
+    await this.syncTodoAssets(remoteTodos, false);
+    await this.syncTodoAssets(mergedArray, true);
     if (this.storage.calculateTodosHash(mergedArray) !== this.storage.calculateTodosHash(remoteTodos)) {
       await this.client.uploadJson(task.remotePath, mergedArray);
       this.log(`[MergeTodos] 上传成功 ${mergedArray.length} 条 todos`);
@@ -2439,14 +2452,17 @@ class SyncEngine extends EventEmitter {
 
       // 本地引用只能证明本地孤儿，不能证明其他设备没有正在上传或引用。
       // 云端图片不在此自动删除；本地清理也要求所有远端笔记已完整落地。
-      if (!enabledCategories.includes('notes')) return;
+      if (!enabledCategories.includes('notes') || !enabledCategories.includes('todos')) return;
+      const allTodos = await this.storage.getAllTodos(true);
+      const remoteTodos = manifest.files?.global_todos;
+      if (remoteTodos && this.storage.calculateTodosHash(Object.values(allTodos)) !== remoteTodos.h) return;
       for (const [id, entry] of Object.entries(manifest.files || {})) {
         if (id === 'global_todos' || id === 'global_settings') continue;
         const note = allNotesIncludingDeleted[id];
         if (!note || this.storage.calculateNoteHash(note) !== entry.h) return;
       }
       const referenced = collectReferencedImageNames(
-        [...Object.values(allNotesIncludingDeleted || {}).map((note) => note.content), ...this.storage.getHistoryContents()]
+        [...Object.values(allNotesIncludingDeleted || {}).map((note) => note.content), ...this.storage.getHistoryContents(), ...Object.values(allTodos).map(todo => todo.description)]
       );
 
       // 本地 images 目录

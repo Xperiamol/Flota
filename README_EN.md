@@ -14,7 +14,7 @@
   </p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-3.5.0-5B8DEF?style=flat-square" alt="Version 3.5.0" />
+    <img src="https://img.shields.io/badge/version-4.5.1-5B8DEF?style=flat-square" alt="Version 4.5.1" />
     <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-2E3440?style=flat-square" alt="Platforms" />
     <img src="https://img.shields.io/badge/stack-React%20%2B%20Electron-61DAFB?style=flat-square" alt="React + Electron" />
     <img src="https://img.shields.io/badge/storage-SQLite-003B57?style=flat-square" alt="SQLite" />
@@ -71,6 +71,17 @@
     <td>Supports WebDAV, CalDAV, and Google Calendar for different synchronization scenarios.</td>
   </tr>
 </table>
+
+## 4.5.1: Connect notes and todos
+
+- **Rich todo descriptions**: Paste or insert images, format lists, and link existing or new notes.
+- **Live todos inside notes**: Use “Insert todo” to embed a single todo or a list scoped to the current note, a tag, or all todos. Checking and editing update the original records.
+- **Quiet note details**: A small dot on the details button signals linked or referenced todos. Open details to view and manage them without a large banner above the note.
+- **AI-assisted planning**: Create linked todos from a note and insert their list into the source note after confirmation. AI requires your own configured service.
+- **Refined interactions**: Compact two-row todo properties, grouped priority buttons, more room for tags, and smoother note deletion.
+- **Fixes and sync**: Handle wrapped tag-suggestion responses safely; sync local images in todo descriptions and protect referenced images from cleanup.
+
+These features describe the desktop release. Android is released separately. See the [changelog](./CHANGELOG.md) for details.
 
 <a id="features"></a>
 
@@ -135,7 +146,7 @@
     <td width="50%" valign="top">
       <h3>🎤 Voice and AI Workflows</h3>
       <ul>
-        <li><strong>Speech-to-text</strong>: Supports OpenAI Whisper, Alibaba Cloud speech recognition, and compatible services.</li>
+        <li><strong>Speech-to-text</strong>: Supports offline recognition and cloud recognition with your configured service.</li>
         <li><strong>AI command center</strong>: Summarize notes, plan todos, generate daily reports, and discover related content.</li>
         <li><strong>Whiteboard generation</strong>: Generate diagrams, flowcharts, and mind maps from natural language.</li>
         <li><strong>Context awareness</strong>: Combines the current note, upcoming todos, related memories, and conversation history.</li>
@@ -466,6 +477,6 @@ runtime.onActivate(async () =&gt; {
 <hr />
 
 <div align="center">
-  <p><strong>Flota 3.5</strong> · Make note-taking more efficient and enjoyable.</p>
+  <p><strong>Flota 4.5.1</strong> · Make note-taking more efficient and enjoyable.</p>
   <p>If this project helps you, please give it a ⭐️.</p>
 </div>

@@ -1,3 +1,4 @@
+import { notifyAINoteIdsUpdated } from '../../utils/aiCore/noteRefresh'
 import React, { createContext, useContext, useEffect } from 'react'
 import { useStandaloneStore } from '../../store/useStandaloneStore'
 import { useStore } from '../../store/useStore'
@@ -15,6 +16,7 @@ export const useStandaloneContext = () => {
 
 export const StandaloneProvider = ({ children, windowType, windowData }) => {
   const store = useStandaloneStore()
+  useEffect(() => { if (windowType === 'note') useStore.getState().loadNotes() }, [windowType])
   const defaultMinibarMode = useStore((state) => state.defaultMinibarMode)
   const [isLoading, setIsLoading] = React.useState(true)
   
@@ -50,12 +52,18 @@ export const StandaloneProvider = ({ children, windowType, windowData }) => {
       try {
         // 只同步当前独立窗口正在编辑的笔记
         store.applyIncomingNoteUpdate?.(updated)
+        useStore.getState().updateNoteInList(updated)
       } catch (e) {
         console.error('处理主进程笔记更新失败:', e)
       }
     })
 
+    const offAI = window.electronAPI?.ai?.onNotesChanged?.(notes => {
+      for (const note of notes || []) { store.applyIncomingNoteUpdate?.(note); useStore.getState().updateNoteInList(note) }
+      notifyAINoteIdsUpdated((notes || []).map(note => note.id))
+    })
     return () => {
+      offAI?.()
       try {
         if (typeof unsubscribe === 'function') unsubscribe()
       } catch (e) {

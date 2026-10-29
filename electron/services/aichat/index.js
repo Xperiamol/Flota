@@ -186,6 +186,10 @@ class AIChatService {
       abortSignal: options.abortSignal
     }, this._toolServices(options.contextPackage));
     this._notifyNotesChanged(name, args, result);
+    if (['create_todo', 'create_todos'].includes(name)) {
+      const parsed = safeJsonParse(result);
+      if (parsed?.success) this._todosChangedListener?.();
+    }
     return result;
   }
 
@@ -214,20 +218,24 @@ class AIChatService {
     this._notesChangedListener = typeof fn === 'function' ? fn : null;
   }
 
+  setTodosChangedListener(fn) { this._todosChangedListener = typeof fn === 'function' ? fn : null; }
+
   _notifyNotesChanged(name, args, rawResult) {
-    if (!this._notesChangedListener || !NOTE_WRITE_TOOLS.has(name)) return;
+    const linkedTasks = ['create_todo', 'create_todos'].includes(name) && args?.embed_in_note;
+    if (!this._notesChangedListener || (!NOTE_WRITE_TOOLS.has(name) && !linkedTasks)) return;
     try {
       const parsed = safeJsonParse(rawResult);
       if (!parsed || parsed.error || parsed.success === false || parsed.cancelled) return;
       let ids = [];
-      if (name === 'edit_note') ids = [args?.id];
+      if (linkedTasks) ids = [args.source_note_id];
+      else if (name === 'edit_note') ids = [args?.id];
       else if (name === 'create_note') ids = [parsed.id];
       else if (name === 'write_long_document') ids = [parsed.note_id];
       else if (name === 'edit_notes') {
         ids = (parsed.results || []).filter((item) => item?.success).map((item) => item.id);
       }
       const notes = [...new Set(ids.filter((id) => id != null).map(String))]
-        .map((id) => this.noteDAO?.findById?.(id))
+        .map((id) => this.noteDAO?.findById?.(id) || this.noteDAO?.findBySyncId?.(id))
         .filter(Boolean);
       if (notes.length) this._notesChangedListener(notes, name);
     } catch (error) {

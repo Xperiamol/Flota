@@ -15,10 +15,11 @@ const NOTE_ITEM_RADIUS = '12px'
 const NoteRow = memo(function NoteRow({
   note, title, preview, timeLabel, selected, isCurrent, menuOpen, multiSelectMode = false, checked = false, actions,
   // 回收站：文字整体淡一些；时间文案可换颜色（快到期时用警告色）
-  muted = false, timeColor
+  muted = false, timeColor, component = 'li'
 }) {
   return (
     <ListItem
+      component={component}
       disablePadding
       data-menu-open={menuOpen}
       sx={{

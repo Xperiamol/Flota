@@ -12,6 +12,7 @@ import './styles/index.css'
 import TitleBar from './components/layout/TitleBar'
 import NoteEditor from './components/editor/NoteEditor'
 import WidgetWindow from './components/widgets/WidgetWindow'
+import TodoReferenceDialogs from './components/todos/TodoReferenceDialogs'
 import TodoList from './components/todos/TodoList'
 import FocusMiniWindow from './components/todos/FocusMiniWindow'
 import TodoReminderWindow from './components/todos/TodoReminderWindow'
@@ -439,6 +440,7 @@ function StandaloneWindow() {
         )}
       </Box>
       {christmasMode && ['note', 'todo', 'external-file'].includes(windowType) && <Suspense fallback={null}><ChristmasDecorations /></Suspense>}
+      <TodoReferenceDialogs />
     </ErrorProvider>
     </ThemeProvider>
   )

@@ -14,7 +14,7 @@
   </p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-3.5.0-5B8DEF?style=flat-square" alt="Version 3.5.0" />
+    <img src="https://img.shields.io/badge/version-4.5.1-5B8DEF?style=flat-square" alt="Version 4.5.1" />
     <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-2E3440?style=flat-square" alt="Platforms" />
     <img src="https://img.shields.io/badge/stack-React%20%2B%20Electron-61DAFB?style=flat-square" alt="React + Electron" />
     <img src="https://img.shields.io/badge/storage-SQLite-003B57?style=flat-square" alt="SQLite" />
@@ -69,6 +69,17 @@
     <td>支持 WebDAV、CalDAV、Google Calendar 等同步方式，适配不同数据流转场景。</td>
   </tr>
 </table>
+
+## 4.5.1：让笔记和待办连起来
+
+- **待办详情支持富文本和图片**：可粘贴或插入图片、整理列表，并关联已有笔记或新建笔记。
+- **把待办放进笔记**：通过编辑器的“插入待办”，插入单条待办或清单；清单可按当前笔记、标签或全部待办显示。勾选和编辑会更新原始待办。
+- **关联信息收进笔记详情**：详情按钮的小红点表示有关联或引用的待办，点开后查看和操作，不占用正文顶部。
+- **AI 串起资料与行动**：可从笔记创建关联待办，并在确认后把待办清单插回来源笔记。AI 功能需自行配置服务。
+- **更顺手的细节**：紧凑的两行待办属性、相邻的“重要 / 紧急”按钮、更宽的标签空间，以及更平顺的笔记删除动画。
+- **修复与同步**：修复标签建议返回格式导致的报错；待办详情中的本地图片随同步传输，并纳入图片清理的引用检查。
+
+此处说明的是桌面版功能；Android 版独立发布。完整记录见 [更新日志](./CHANGELOG.md)。
 
 <a id="features"></a>
 
@@ -463,6 +474,6 @@ runtime.onActivate(async () =&gt; {
 <hr />
 
 <div align="center">
-  <p><strong>Flota 3.5</strong> · 让笔记记录变得更加高效和愉悦。</p>
+  <p><strong>Flota 4.5.1</strong> · 让笔记记录变得更加高效和愉悦。</p>
   <p>如果这个项目对你有帮助，欢迎给它一个 ⭐️。</p>
 </div>

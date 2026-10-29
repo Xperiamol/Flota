@@ -172,7 +172,7 @@ export const runPendingAction = async ({ action, overrides = null, deps = {} }) 
   try {
     // AI 改笔记前先把编辑器里还没落盘的输入保存下来：修改基于数据库里的最新正文，
     // 载入编辑器时也不会丢掉刚刚输入、尚未自动保存的文字。
-    if (NOTE_CONTENT_ACTIONS.has(action.name)) {
+    if (NOTE_CONTENT_ACTIONS.has(action.name) || (TODO_REFRESH_ACTIONS.has(action.name) && action.args?.embed_in_note)) {
       try {
         await window.__flushEditorSaves?.()
       } catch (error) {
@@ -205,7 +205,7 @@ export const runPendingAction = async ({ action, overrides = null, deps = {} }) 
       finalAction,
       resultNoteId: success ? pickResultNoteId(finalAction.name, result) : null,
       resultData: success ? (result?.resultData || null) : null,
-      reloadNotes: success && NOTE_REFRESH_ACTIONS.has(finalAction.name),
+      reloadNotes: success && (NOTE_REFRESH_ACTIONS.has(finalAction.name) || (TODO_REFRESH_ACTIONS.has(finalAction.name) && Boolean(finalAction.args?.embed_in_note))),
       reloadTodos: success && TODO_REFRESH_ACTIONS.has(finalAction.name),
     }
   } catch (error) {

@@ -245,9 +245,9 @@ const MarkdownPreview = ({
       if (link) {
         const rawHref = link.getAttribute('href') || ''
         const absHref = link.href || ''
-        if (/^app:\/\/(?:note|whiteboard)\//i.test(rawHref)) {
+        if (/^app:\/\/(?:note|whiteboard|todo|todo-list)\//i.test(rawHref)) {
           e.preventDefault()
-          openNoteLink(rawHref)
+          openNoteLink(rawHref).then(found => { if (!found) notifyError('引用内容已删除或尚未同步') }).catch(error => notifyError(error.message))
           return
         }
         // 优先按原始 href 识别应用内附件（attachments/ / audio/ / images/）

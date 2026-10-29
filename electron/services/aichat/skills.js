@@ -4,7 +4,7 @@ const { TOOLS } = require('./tools/schema');
 
 const SKILLS = {
   notes: { title: '笔记', description: '搜索、按段阅读、创建、局部修改和批量整理笔记', tools: ['search_notes', 'read_note', 'get_current_note', 'read_current_note', 'read_note_image', 'search_in_current_note', 'summarize_current_note_section', 'create_note', 'edit_note', 'edit_notes'] },
-  planning: { title: '待办与规划', description: '查询日程、拆解目标、创建待办、子任务和重复任务', tools: ['search_todos', 'get_today_todos', 'create_todo', 'create_todos'] },
+  planning: { title: '待办与规划', description: '查询日程、拆解目标、创建待办；从笔记提取行动项并嵌入实时清单', tools: ['search_todos', 'get_today_todos', 'create_todo', 'create_todos'] },
   canvas: { title: '画布', description: '创建或修改流程图、思维导图等可编辑画布', tools: ['create_whiteboard', 'update_whiteboard'] },
   widgets: { title: '组件', description: '生成交互工具、修改组件、创建实例与录入数据', tools: ['list_widgets', 'get_widget', 'create_widget', 'update_widget', 'create_widget_instance', 'add_widget_records'] },
   writing: { title: '长文写作', description: '多章节小说、报告、方案、教程，分段写作并保存', tools: ['write_long_document'] },

@@ -10,7 +10,7 @@ import {
 } from '@mui/material';
 import { Clear as ClearIcon, Add as AddIcon } from './AppIcons';
 import { FlotaTagIcon as TagIcon } from './FlotaIcons';
-import { parseTags, formatTags, validateTags, getTagColor } from '../../utils/tagUtils';
+import { parseTags, formatTags, validateTags, getTagColor, normalizeTagSuggestions } from '../../utils/tagUtils';
 import { usePluginExtensions } from '../../hooks/usePluginExtensions';
 import logger from '../../utils/logger';
 import FlotaAIIcon from './FlotaAIIcon';
@@ -31,6 +31,7 @@ const TagInput = ({
   getSuggestions, // 自定义获取建议的函数
   noteContent = '', // 笔记内容，用于插件上下文
   noteId = null, // 笔记ID，用于插件上下文
+  compact = false,
   sx = {}
 }) => {
   const [inputValue, setInputValue] = useState('');
@@ -64,10 +65,13 @@ const TagInput = ({
           await window.electronAPI.tags.recalculateUsage();
         }
         const result = await window.electronAPI.tags.getSuggestions(query, 12);
-        if (result?.success) next = result.data;
+        next = result;
       }
-      setSuggestions((next || []).filter((s) => !tags.includes(s)));
+      setSuggestions(normalizeTagSuggestions(next).filter((s) => !tags.includes(s)));
+      setSelectedSuggestionIndex(-1);
     } catch (error) {
+      setSuggestions([]);
+      setSelectedSuggestionIndex(-1);
       logger.warn('[TagInput] fetch suggestions failed', error?.message);
     }
   };
@@ -171,29 +175,30 @@ const TagInput = ({
         onClick={() => inputRef.current?.focus()}
         sx={(theme) => ({
           display: 'flex',
-          flexWrap: 'wrap',
+          flexWrap: compact ? 'nowrap' : 'wrap',
+          overflowX: compact ? 'auto' : undefined,
           alignItems: 'center',
-          gap: 0.6,
-          minHeight: 42,
+          gap: compact ? 1 : 0.6,
+          minHeight: compact ? 34 : 42,
           px: 1,
-          py: 0.6,
+          py: compact ? 0 : 0.6,
           borderRadius: '12px',
           cursor: disabled ? 'default' : 'text',
-          border: '1px solid',
+          border: compact ? 'none' : '1px solid',
           borderColor: focused
             ? theme.palette.primary.main
             : theme.palette.mode === 'dark'
               ? 'rgba(157,157,165, 0.22)'
               : 'rgba(157,157,165, 0.32)',
-          bgcolor: theme.custom?.surface?.control,
+          bgcolor: compact ? 'transparent' : theme.custom?.surface?.control,
           transition: 'background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
-          boxShadow: focused ? `0 0 0 2px ${theme.palette.primary.main}1f` : 'none',
+          boxShadow: !compact && focused ? `0 0 0 2px ${theme.palette.primary.main}1f` : 'none',
           '&:hover': {
             bgcolor: theme.custom?.surface?.controlHover || theme.palette.action.hover
           }
         })}
       >
-        <TagIcon sx={{ fontSize: 18, color: 'action.active', ml: 0.25, flexShrink: 0 }} />
+        <TagIcon sx={{ fontSize: 18, color: 'action.active', ml: compact ? 0 : 0.25, flexShrink: 0 }} />
 
         {tags.map((tag) => {
           const color = getTagColor(tag);
@@ -231,9 +236,9 @@ const TagInput = ({
           placeholder={tags.length === 0 ? placeholder : (atLimit ? '' : '继续添加…')}
           sx={{
             flex: 1,
-            minWidth: 80,
+            minWidth: compact ? 32 : 80,
             fontSize: '0.8125rem',
-            '& input': { p: 0.25 }
+            '& input': { p: compact ? 0 : 0.25 }
           }}
         />
 
@@ -271,7 +276,7 @@ const TagInput = ({
 
       {/* 建议云：聚焦时常驻展示，点击即添加 */}
       {showSuggestions && focused && visibleSuggestions.length > 0 && !atLimit && (
-        <Box sx={{ mt: 0.85 }}>
+        <Box sx={{ mt: 0.85, ...(compact ? { position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 2, p: 1, bgcolor: 'background.paper', boxShadow: 3, borderRadius: 2, maxHeight: 180, overflow: 'auto' } : {}) }}>
           <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: 'text.disabled', letterSpacing: '0.05em', mb: 0.5 }}>
             建议标签
           </Typography>

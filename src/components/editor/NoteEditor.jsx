@@ -3,6 +3,7 @@ import { saveWhiteboardFiles } from '../../utils/whiteboardAI'
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react'
 import {
   Box,
+  Badge,
   TextField,
   Typography,
   Paper,
@@ -52,6 +53,9 @@ import shortcutManager from '../../utils/ShortcutManager'
 import TagInput from '../common/TagInput'
 import useAIAutoAnnotate from '../../hooks/useAIAutoAnnotate'
 import MarkdownPreview from './MarkdownPreview'
+import RelatedTodos from '../todos/RelatedTodos'
+import useTodoReferences from '../../hooks/useTodoReferences'
+import { noteTodoReferences } from '../../utils/todoReferences'
 import MarkdownToolbar from './MarkdownToolbar'
 import NoteTypeConversionDialog from './NoteTypeConversionDialog'
 import AIAssistPanel from '../ai/AIAssistPanel'
@@ -256,6 +260,10 @@ const NoteEditor = ({ onCollapseSidebar }) => {
   const [exportNotice, setExportNotice] = useState({ open: false, severity: 'success', message: '' })
 
   const currentNote = notes.find(note => note.id === selectedNoteId)
+  const todoRecords = useTodoReferences()
+  const todoReferences = useMemo(() => noteTodoReferences(
+    currentNote ? { ...currentNote, content } : null, todoRecords.todos, notes
+  ), [currentNote, content, todoRecords.todos, notes])
   const compactToolbar = useMediaQuery('(max-width: 1180px)')
   const resolvedAICommandCenterOpen = isStandaloneMode
     ? standaloneAICommandCenterOpen
@@ -687,10 +695,10 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     const handleAINoteUpdate = (event) => {
       const noteIds = Array.isArray(event.detail?.noteIds) ? event.detail.noteIds.map(String) : []
       const activeId = selectedNoteIdRef.current
-      if (activeId == null || !noteIds.includes(String(activeId))) return
+      if (activeId == null) return
 
       const freshNote = useStore.getState().notes.find((note) => String(note.id) === String(activeId))
-      if (!freshNote) return
+      if (!freshNote || (!noteIds.includes(String(activeId)) && !noteIds.includes(String(freshNote.sync_id)))) return
       applyFreshNoteSnapshot(freshNote)
     }
     window.addEventListener('ai-notes-updated', handleAINoteUpdate)
@@ -1924,8 +1932,11 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     },
     {
       key: 'related',
-      label: relatedOpen ? '隐藏笔记详情' : '显示笔记详情',
-      icon: <RelatedIcon sx={{ fontSize: 18 }} />,
+      label: `${relatedOpen ? '隐藏笔记详情' : '显示笔记详情'}${todoReferences.hasReferences ? '（有关联待办）' : ''}`,
+      icon: <Badge variant="dot" color="error" invisible={!todoReferences.hasReferences}
+        sx={{ '& .MuiBadge-badge': { width: 6, minWidth: 6, height: 6, top: 1, right: 1 } }}>
+        <RelatedIcon sx={{ fontSize: 18 }} />
+      </Badge>,
       active: relatedOpen,
       onClick: handleToggleRelatedContext,
     },
@@ -2721,6 +2732,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
         )
       })()}
 
+
       {/* 编辑区域 */}
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, position: 'relative' }}>
         {/* 独立窗口打开提示 */}
@@ -2738,6 +2750,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
               }}
             >
               <MarkdownToolbar
+                sourceNote={notes.find(n => String(n.id) === String(selectedNoteId))}
                 onInsert={handleMarkdownInsert}
                 onBlockFormat={handleBlockFormat}
                 disabled={!selectedNoteId || (editorMode === 'markdown' && viewMode === 'preview')}
@@ -3014,7 +3027,10 @@ const NoteEditor = ({ onCollapseSidebar }) => {
           onClose={handleCloseRelatedContext}
         />
 
+        <RelatedTodos references={todoReferences} loading={todoRecords.loading} error={todoRecords.error} />
+
         <RelatedContextPanel
+          excludeTodos={todoReferences.tasks}
           embedded
           forceExpanded
           notes={notes}

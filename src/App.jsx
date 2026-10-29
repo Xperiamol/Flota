@@ -45,6 +45,7 @@ import Sidebar from './components/layout/Sidebar'
 import MultiSelectToolbar from './components/layout/MultiSelectToolbar'
 import TagSelectionDialog from './components/layout/TagSelectionDialog'
 import DragAnimationProvider from './components/common/DragAnimationProvider'
+import TodoReferenceDialogs from './components/todos/TodoReferenceDialogs'
 import TodoEditDialog from './components/todos/TodoEditDialog'
 import CreateTodoModal from './components/todos/CreateTodoModal'
 import CommandPalette from './components/layout/CommandPalette'
@@ -74,6 +75,7 @@ const LoadingFallback = () => (
   </Box>
 )
 
+import { refreshTodoReferences } from './hooks/useTodoReferences'
 import { createTodo as createTodoAPI } from './api/todoAPI'
 import TimeZoneUtils from './utils/timeZoneUtils'
 import { subscribePluginEvents, subscribePluginUiRequests, subscribePluginWindowRequests, loadPluginFile, executePluginCommand } from './api/pluginAPI'
@@ -211,6 +213,7 @@ function App() {
   const appUpdateCheckedRef = useRef(false)
   const handleTodoDialogClose = () => setSelectedTodo(null)
   const handleTodoUpdated = () => {
+    refreshTodoReferences()
     setTodoRefreshTrigger(prev => prev + 1)
     setCalendarRefreshTrigger(prev => prev + 1)
   }
@@ -618,26 +621,26 @@ function App() {
   }
 
   // 创建新待办事项
-  const handleCreateTodo = async () => {
+  const handleCreateTodo = async (snapshot = newTodo) => {
     try {
       // 使用TimeZoneUtils转换日期时间为UTC
-      const dueDateUTC = TimeZoneUtils.toUTC(newTodo.due_date, newTodo.due_time);
+      const dueDateUTC = TimeZoneUtils.toUTC(snapshot.due_date, snapshot.due_time);
 
       logger.log('[App] 创建待办事项:');
-      logger.log('  - 本地日期:', newTodo.due_date);
-      logger.log('  - 本地时间:', newTodo.due_time);
+      logger.log('  - 本地日期:', snapshot.due_date);
+      logger.log('  - 本地时间:', snapshot.due_time);
       logger.log('  - UTC时间:', dueDateUTC);
 
       await createTodoAPI({
-        content: newTodo.content,
-        description: newTodo.description, // 添加 description 字段
-        is_important: newTodo.is_important,
-        is_urgent: newTodo.is_urgent,
+        content: snapshot.content,
+        description: snapshot.description, // 添加 description 字段
+        is_important: snapshot.is_important,
+        is_urgent: snapshot.is_urgent,
         due_date: dueDateUTC,
-        tags: newTodo.tags,
-        repeat_type: newTodo.repeat_type,
-        repeat_interval: newTodo.repeat_interval,
-        repeat_days: newTodo.repeat_days
+        tags: snapshot.tags,
+        repeat_type: snapshot.repeat_type,
+        repeat_interval: snapshot.repeat_interval,
+        repeat_days: snapshot.repeat_days
       });
 
       setNewTodo(initialTodoState);
@@ -1501,6 +1504,7 @@ function App() {
           {christmasMode && <ChristmasDecorations />}
           <OnboardingTour ready={appReady} />
         </Suspense>
+        <TodoReferenceDialogs />
       </DragAnimationProvider>
     </ErrorProvider>
     </ThemeProvider>

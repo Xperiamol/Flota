@@ -1,5 +1,6 @@
 export const getEditedNoteIds = (action) => {
   if (!action || typeof action !== 'object') return []
+  if (['create_todo', 'create_todos'].includes(action.name) && action.args?.embed_in_note && action.args?.source_note_id != null) return [String(action.args.source_note_id)]
   if (action.name === 'edit_note' && action.args?.id != null) return [String(action.args.id)]
   if (action.name === 'edit_notes' && Array.isArray(action.args?.edits)) {
     return action.args.edits

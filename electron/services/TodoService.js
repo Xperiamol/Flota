@@ -90,7 +90,11 @@ class TodoService extends EventEmitter {
     this._ipc('todo:batchDelete', (ids) => { const c = this.batchDeleteTodos(ids); this.emit('todos-batch-deleted', ids); return c })
     this._ipc('todo:batchComplete', (ids) => { const c = this.batchCompleteTodos(ids); this.emit('todos-batch-completed', ids); return c })
     this._ipc('todo:getPriorityStats', () => this.getPriorityStats())
-    this._ipc('todo:getTagSuggestions', (q) => this.tagService.getTagSuggestions(q))
+    this._ipc('todo:getTagSuggestions', async (q) => {
+      const result = await this.tagService.getTagSuggestions(q)
+      if (!result.success) throw new Error(result.error || '获取标签建议失败')
+      return result.data
+    })
     this._ipc('todo:searchTags', (q) => this.tagService.searchTags(q))
     this._ipc('todo:getTodoTagStats', () => this.getTodoTagStats())
     this._ipc('todo:export', (o) => this.exportTodos(o))

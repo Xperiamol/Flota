@@ -1,3 +1,6 @@
+import { TransitionGroup } from 'react-transition-group'
+import { selectionAfterRemoval } from '../../utils/noteSelection'
+import NoteRowTransition from './NoteRowTransition'
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from '../../utils/i18n'
 import {
@@ -99,6 +102,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
     batchPermanentDeleteNotes: state.batchPermanentDeleteNotes,
   })))
 
+  const [showEmpty, setShowEmpty] = useState(false)
   const [anchorEl, setAnchorEl] = useState(null)
   const [selectedNote, setSelectedNote] = useState(null)
   const [isTransitioning, setIsTransitioning] = useState(false)
@@ -241,8 +245,14 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
       if (entry.isIntersecting) setRenderLimit((limit) => limit + RENDER_BATCH)
     }, { rootMargin: '600px' })
     observer.observe(node)
-    return () => observer.disconnect()
+  return () => observer.disconnect()
   }, [renderLimit, filteredNotes.length])
+
+  useEffect(() => {
+    if (filteredNotes.length) { setShowEmpty(false); return }
+    const timer = setTimeout(() => setShowEmpty(true), window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : 220)
+    return () => clearTimeout(timer)
+  }, [filteredNotes.length])
 
   const totalSelectedFilters =
     selectedTagFilters.length +
@@ -371,10 +381,10 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
 
   const handleDelete = useCallback(async () => {
     if (selectedNote) {
-      await deleteNote(selectedNote.id)
+      await deleteNote(selectedNote.id, { nextNoteId: selectionAfterRemoval(filteredNotes, selectedNoteId, [selectedNote.id]) })
       handleMenuClose()
     }
-  }, [selectedNote, deleteNote, handleMenuClose])
+  }, [selectedNote, deleteNote, handleMenuClose, filteredNotes, selectedNoteId])
 
   const handleDuplicateNote = useCallback(async () => {
     if (!selectedNote) return
@@ -546,12 +556,12 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
     
     const result = type === 'restore' 
       ? await batchRestoreNotes(ids)
-      : await batchDeleteNotes(ids)
+      : await batchDeleteNotes(ids, { nextNoteId: selectionAfterRemoval(filteredNotes, selectedNoteId, ids) })
     
     if (result.success) {
       multiSelect.clearSelection()
     }
-  }, [confirmDialog, batchRestoreNotes, batchDeleteNotes, multiSelect])
+  }, [confirmDialog, batchRestoreNotes, batchDeleteNotes, multiSelect, filteredNotes, selectedNoteId])
 
   const handleBatchPermanentDelete = useCallback(async (selectedIds) => {
     if (selectedIds.length === 0) return
@@ -869,7 +879,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
         {/* 笔记内容 */}
         <Fade in={!isTransitioning} timeout={200}>
           <Box>
-            {filteredNotes.length === 0 ? (
+            {showEmpty && filteredNotes.length === 0 && (
               <Box sx={{ p: 4, textAlign: 'center' }}>
                 {localSearchQuery || totalSelectedFilters ? <SearchIcon sx={{ fontSize: 36, color: 'text.secondary', mb: 2 }} /> : <NoteIcon sx={{ fontSize: 36, color: 'text.secondary', mb: 2 }} />}
                 <Typography variant="subtitle1" color="text.primary" sx={{ fontWeight: 600 }}>
@@ -879,11 +889,13 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                   {localSearchQuery || totalSelectedFilters ? t('notes.noResultsDesc') : showDeleted ? t('notes.trashEmptyDesc') : t('notes.noNotesDesc')}
                 </Typography>
               </Box>
-            ) : (
+            )}
               <List sx={{ py: 0, px: NOTE_LIST_GUTTER }}>
+                <TransitionGroup component={null} enter={false}>
                 {visibleNotes.map((note) => (
+                  <NoteRowTransition key={note.id}>
                   <NoteRow
-                    key={note.id}
+                    component="div"
                     note={note}
                     title={getNoteDisplayTitle(note)}
                     preview={noteListPreview ? getNotePreviewText(note) : null}
@@ -895,9 +907,10 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
                     checked={multiSelect.isSelected(note.id)}
                     actions={rowActions}
                   />
+                  </NoteRowTransition>
                 ))}
+                </TransitionGroup>
               </List>
-            )}
             {filteredNotes.length > renderLimit && (
               <Box ref={loadMoreRef} sx={{ height: 24 }} />
             )}

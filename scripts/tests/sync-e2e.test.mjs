@@ -474,3 +474,38 @@ test('空闲与只下载的同步不写云端，新设备首次同步不重写�
     assert.deepEqual(writes(cloud.sync('B')), [])
   } finally { cloud.cleanup() }
 })
+
+
+test('待办富文本图片跨设备同步，图片清理保留待办独占的引用', () => {
+  const cloud = createCloud()
+  const categories = { op: 'categories', value: ['notes', 'todos', 'images', 'settings'] }
+  const description = '**参考资料**\n\n![设计图](images/task-reference.png)\n\n[项目](app://note/stable-project)'
+  try {
+    cloud.run('A', [categories, { op: 'writeAsset', path: 'images/task-reference.png', text: 'test-image-bytes' }, { op: 'createTodo', content: '带图任务', description }, { op: 'sync' }])
+    const [syncResult, checked] = cloud.run('B', [categories, { op: 'sync' }, { op: 'inspectTodoAssets', path: 'images/task-reference.png', content: '带图任务' }])
+    assert.equal(syncResult.errors, 0)
+    assert.equal(checked.description, description)
+    assert.equal(checked.text, 'test-image-bytes')
+    assert.equal(checked.referenced, true)
+  } finally { cloud.cleanup() }
+})
+
+
+test('AI 从笔记创建任务并嵌入清单是一个事务，保存失败不留下半成品', () => {
+  const cloud = createCloud()
+  try {
+    const [failed] = cloud.run('A', [{ op: 'create', title: '事务来源', content: '会议行动项' }, { op: 'linkedTodoChecks', title: '事务来源', fail: true }])
+    assert.match(failed.error, /injected persistence failure/)
+    assert.equal(failed.created, 0)
+    assert.equal(failed.noteEvents, 0)
+    assert.equal(failed.todoEvents, 0)
+    assert.equal(failed.content, failed.beforeContent)
+    const [success] = cloud.run('A', [{ op: 'linkedTodoChecks', title: '事务来源' }])
+    assert.equal(success.created, 2)
+    assert.equal(success.noteEvents, 1)
+    assert.equal(success.todoEvents, 1)
+    assert.equal(success.result.count, 1)
+    assert.match(success.content, /app:\/\/todo-list\/note%2F/)
+    assert.ok(success.descriptions.every(text => text.includes('app://note/')))
+  } finally { cloud.cleanup() }
+})

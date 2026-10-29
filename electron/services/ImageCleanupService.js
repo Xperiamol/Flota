@@ -97,7 +97,7 @@ class ImageCleanupService {
       this.initialize();
     }
     // 含回收站里的笔记；按文件名在正文里查找，不依赖图片语法（见 imageReferences.js）
-    const notes = this.db.prepare("SELECT content FROM notes UNION ALL SELECT json_extract(snapshot, '$.content') AS content FROM note_versions").all();
+    const notes = this.db.prepare("SELECT content FROM notes UNION ALL SELECT description AS content FROM todos UNION ALL SELECT json_extract(snapshot, '$.content') AS content FROM note_versions").all();
     return collectReferencedImageNames(notes.map((note) => note.content));
   }
 

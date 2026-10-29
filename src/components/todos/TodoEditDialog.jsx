@@ -7,6 +7,8 @@ import { History as HistoryIcon, Close as CloseIcon, Add as AddIcon,
   ExpandMore as ExpandMoreIcon, ExpandLess as ExpandLessIcon,
   CheckCircleOutline as CompleteIcon, UndoRounded as UndoIcon,
   DeleteOutlineRounded as DeleteIcon, ChecklistRounded as ChecklistIcon } from '../common/AppIcons';
+import { notifyError } from '../../utils/notify';
+import RelatedNotes from './RelatedNotes';
 import TodoFormFields from './TodoFormFields';
 import TimeZoneUtils from '../../utils/timeZoneUtils';
 import { updateTodo, getTodoTagSuggestions, fetchSubtasks, createTodo, deleteTodo, toggleTodoComplete } from '../../api/todoAPI';
@@ -110,6 +112,8 @@ const mapTodoToForm = (todo) => {
 };
 
 const TodoEditDialog = ({ todo, open, onClose, onUpdated }) => {
+  const formRef = useRef(null);
+  const submitting = useRef(false);
   const [formData, setFormData] = useState(mapTodoToForm(todo));
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
@@ -280,8 +284,8 @@ const TodoEditDialog = ({ todo, open, onClose, onUpdated }) => {
     }
   };
 
-  const buildUpdatePayload = () => {
-    const { due_date, due_time, ...rest } = formData;
+  const buildUpdatePayload = (data = formData) => {
+    const { due_date, due_time, ...rest } = data;
     return {
       ...rest,
       due_date: due_date ? TimeZoneUtils.toUTC(due_date, due_time) : null
@@ -289,11 +293,13 @@ const TodoEditDialog = ({ todo, open, onClose, onUpdated }) => {
   };
 
   const handleSubmit = async () => {
+    if (submitting.current) return;
+    submitting.current = true; setSaving(true);
     try {
-      const validated = await todoSchema.validate(formData, { abortEarly: false });
+      const snapshot = await formRef.current?.getValue() || formData;
+      await todoSchema.validate(snapshot, { abortEarly: false });
       setErrors({});
-      setSaving(true);
-      const payload = buildUpdatePayload();
+      const payload = buildUpdatePayload(snapshot);
       const updated = await updateTodo(todo.id, payload);
 
       if (onUpdated) {
@@ -302,13 +308,16 @@ const TodoEditDialog = ({ todo, open, onClose, onUpdated }) => {
       if (onClose) {
         onClose();
       }
+      return true;
     } catch (error) {
       if (error.name === 'ValidationError') {
         setErrors(extractValidationErrors(error));
       } else {
-        console.error('更新待办事项失败:', error);
+        notifyError(error.message || '更新待办失败');
       }
+      return false;
     } finally {
+      submitting.current = false;
       setSaving(false);
     }
   };
@@ -330,28 +339,31 @@ const TodoEditDialog = ({ todo, open, onClose, onUpdated }) => {
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={saving ? undefined : onClose} maxWidth="sm" fullWidth>
       <DialogTitle>{dialog.editTitle}</DialogTitle>
       <DialogContent>
         <TodoFormFields
+          ref={formRef}
+          identity={todo.sync_id || todo.id}
           value={formData}
           onChange={handleFieldChange}
           mode="edit"
           errors={errors}
           getTagSuggestions={getTodoTagSuggestions}
         />
+        <RelatedNotes todo={todo} description={formData.description} onNavigate={handleSubmit} />
         {/* 子任务 */}
         <Box
           sx={{
             mt: 2,
-            p: 1.25,
+            p: 1.5,
             borderRadius: '12px',
             border: '1px solid',
             borderColor: 'divider',
             bgcolor: (theme) => theme.custom?.surface?.control || theme.palette.action.hover
           }}
         >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: subtasks.length > 0 ? 1 : 0.75 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: subtasks.length > 0 ? 1 : 0.75 }}>
             <ChecklistIcon sx={{ fontSize: 18, color: subtasks.length > 0 ? 'primary.main' : 'text.secondary' }} />
             <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700 }}>
               子任务
@@ -462,7 +474,7 @@ const TodoEditDialog = ({ todo, open, onClose, onUpdated }) => {
             />
             <IconButton size="small" onClick={handleAddSubtask} disabled={!newSubtask.trim()}
               aria-label="添加子任务"
-              sx={{ bgcolor: 'action.selected', borderRadius: '10px', width: 36, height: 36 }}>
+              sx={{ bgcolor: 'action.selected', borderRadius: '10px', width: 36, height: 36, alignSelf: 'center', flexShrink: 0 }}>
               <AddIcon fontSize="small" />
             </IconButton>
           </Box>

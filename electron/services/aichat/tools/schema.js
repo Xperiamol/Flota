@@ -354,6 +354,8 @@ const TOOLS = [
       parameters: {
         type: 'object',
         properties: {
+          source_note_id: { type: 'string', description: '来源笔记的 sync_id 或数据库 ID。把笔记内容转为行动项时填写；先读取原笔记确认来源。' },
+          embed_in_note: { type: 'boolean', description: '用户要求把任务放回笔记时设为 true，同时追加一个实时待办清单。' },
           content: { type: 'string', description: '待办内容' },
           description: { type: 'string', description: '详细描述（可选）' },
           due_date: { type: 'string', description: '截止日期，格式 YYYY-MM-DD 或 YYYY-MM-DD HH:mm' },
@@ -393,10 +395,12 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'create_todos',
-      description: '批量创建待办事项，用于把用户的模糊大目标（如"周末去武汉玩"、"准备下周述职"、"学习 React"）拆解为具体可执行的任务。需要层级时，每个主待办可包含 subtasks。调用前应先 search_memory 拉相关知识/偏好、search_todos 看未来一周已有事项以避免冲突；顶层任务通常提交 5-12 条，每条 content 必须是具体动作，不要"调研 X / 规划 Y / 确定 Z"这类空泛准备任务。所有 due_date 时间在 08:00-23:59 之间且不早于当前时间。',
+      description: '批量创建可执行的待办，可包含子任务和重复规则。需要从笔记提取行动项时，可关联来源笔记并在其中插入实时待办清单。数量和日期遵循用户要求，无需强行补齐。',
       parameters: {
         type: 'object',
         properties: {
+          source_note_id: { type: 'string', description: '来源笔记的 sync_id 或数据库 ID。把笔记内容转为行动项时填写；先读取原笔记确认来源。' },
+          embed_in_note: { type: 'boolean', description: '用户要求把任务放回笔记时设为 true，同时追加一个实时待办清单。' },
           intro: { type: 'string', description: '一句话说明本次规划的整体思路（可选，给用户预览时显示）' },
           todos: {
             type: 'array',

@@ -62,6 +62,7 @@ const RelatedContextPanel = ({
   selectedNoteId: selectedNoteIdProp,
   onSelectNote,
   onOpenTodo,
+  excludeTodos = [],
 }) => {
   const store = useStore(useShallow((state) => ({
     notes: state.notes,
@@ -94,13 +95,13 @@ const RelatedContextPanel = ({
 
   const relatedTodos = useMemo(() => (
     todos
-      .filter(todo => !isTodoCompleted(todo))
+      .filter(todo => !isTodoCompleted(todo) && !excludeTodos.some(linked => String(linked.sync_id || linked.id) === String(todo.sync_id || todo.id)))
       .map(todo => ({ todo, score: getTodoScore(todo, query) }))
       .filter(item => item.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, 3)
       .map(({ todo }) => todo)
-  ), [query, todos])
+  ), [query, todos, excludeTodos])
 
   useEffect(() => {
     const isExpanded = forceExpanded || expanded

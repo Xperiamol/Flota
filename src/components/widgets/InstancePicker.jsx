@@ -3,7 +3,7 @@ import {
   Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton,
   InputAdornment, List, ListItemButton, ListItemIcon, ListItemText, TextField, Typography
 } from '@mui/material'
-import { Add, ArrowBack, Check, Search, Storefront } from '../common/AppIcons'
+import { Add, ArrowBack, Check, Search, Storefront, CheckBox } from '../common/AppIcons'
 import FlotaAIIcon from '../common/FlotaAIIcon'
 import { useStore } from '../../store/useStore'
 import { useWidgetStore, ensureWidgetsLoaded } from '../../store/useWidgetStore'
@@ -21,7 +21,7 @@ const SIZE_LABEL = { compact: '卡片', medium: '嵌入', full: '全屏' }
  * @param {'compact'|'medium'|'full'} [props.requireSize] 只允许支持该尺寸的组件（首页卡片需要 compact）
  * @param {string} [props.initialWidgetId] 直接从某个组件的实例列表开始
  */
-export default function InstancePicker({ open, onClose, onSelect, title = '插入组件', confirmText = '插入', requireSize, initialWidgetId }) {
+export default function InstancePicker({ open, onClose, onSelect, title = '插入组件', confirmText = '插入', requireSize, initialWidgetId, onSelectTodo }) {
   const widgets = useWidgetStore((state) => state.widgets)
   const [query, setQuery] = useState('')
   const [widgetId, setWidgetId] = useState(null)
@@ -60,6 +60,7 @@ export default function InstancePicker({ open, onClose, onSelect, title = '插�
     .filter((item) => `${item.name} ${item.manifest?.description || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
     .sort((a, b) => Number(b.pinned) - Number(a.pinned) || String(a.name).localeCompare(String(b.name), 'zh-CN')), [widgets, query])
 
+  const showTodo = Boolean(onSelectTodo && '待办 任务 todo task'.includes(query.trim().toLowerCase()))
   const supports = (item) => !requireSize || (item.manifest?.sizes || []).includes(requireSize)
 
   const finish = async (instance) => {
@@ -107,6 +108,10 @@ export default function InstancePicker({ open, onClose, onSelect, title = '插�
             <TextField autoFocus fullWidth size="small" placeholder="搜索组件…" value={query} onChange={(e) => setQuery(e.target.value)}
               slotProps={{ input: { startAdornment: <InputAdornment position="start"><Search fontSize="small" /></InputAdornment> } }} />
             <List sx={{ height: 300, overflow: 'auto', mt: 1, ...editorScrollbarSx }}>
+              {showTodo && <ListItemButton onClick={() => { onClose(); onSelectTodo() }} sx={{ borderRadius: 2, mb: 0.5 }}>
+                <ListItemIcon sx={{ minWidth: 36 }}><CheckBox fontSize="small" /></ListItemIcon>
+                <ListItemText primary="待办" secondary="内置 · 引用或新建任务，直接勾选与编辑" />
+              </ListItemButton>}
               {candidates.map((item) => (
                 <ListItemButton key={item.id} disabled={!supports(item)} onClick={() => setWidgetId(item.id)} sx={{ borderRadius: 2, mb: 0.5 }}>
                   <ListItemIcon sx={{ minWidth: 36 }}><WidgetGlyph icon={item.manifest?.icon} fontSize="small" /></ListItemIcon>
@@ -118,7 +123,7 @@ export default function InstancePicker({ open, onClose, onSelect, title = '插�
                     slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }} />
                 </ListItemButton>
               ))}
-              {!candidates.length && (
+              {!candidates.length && !showTodo && (
                 <Box sx={{ py: 6, textAlign: 'center', color: 'text.secondary' }}>
                   <WidgetGlyph sx={{ fontSize: 36, mb: 1, opacity: 0.5 }} />
                   <Typography variant="body2">{query ? '没有找到匹配的组件' : '还没有组件，可以用 AI 生成，或从商店添加'}</Typography>

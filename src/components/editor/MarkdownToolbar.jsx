@@ -1,5 +1,7 @@
 import React from 'react'
 import NoteReferencePicker from './NoteReferencePicker'
+import TodoReferencePicker from '../todos/TodoReferencePicker'
+import { todoEmbedSelection } from '../../utils/todoReferences'
 import InstancePicker from '../widgets/InstancePicker'
 import {
   Box,
@@ -75,6 +77,7 @@ const ALL_TOOLBAR_ITEMS = {
   image:      { group: 'insert', label: '图片', type: 'image' },
   audio:      { group: 'insert', label: '录音', type: 'audio' },
   embedWhiteboard: { group: 'insert', label: '嵌入画布', icon: WhiteboardIcon, type: 'embedWhiteboard' },
+  embedTodo: { group: 'insert', label: '插入待办', icon: TaskListIcon, type: 'embedTodo' },
   embedWidget: { group: 'insert', label: '插入组件', icon: WidgetIcon, type: 'embedWidget' },
   wikiLink:   { group: 'ext', label: 'Wiki 链接', type: 'wikiLink' },
   colorText:  { group: 'ext', label: '彩色文本', icon: ColorIcon, type: 'colorMenu' },
@@ -94,7 +97,7 @@ const DEFAULT_TOOLBAR_ORDER = [
   'heading', '|',
   'bold', 'italic', 'highlight', 'strike', 'inlineCode', '|',
   'bulletList', 'orderedList', 'taskList', 'quote', '|',
-  'link', 'wikiLink', 'image', 'audio', 'embedWhiteboard', 'embedWidget', '|',
+  'link', 'wikiLink', 'image', 'audio', 'embedWhiteboard', 'embedWidget', 'embedTodo', '|',
   'table', 'codeBlock', 'inlineMath', 'blockMath', 'divider', '|',
   'colorText', 'callout', 'clearFormat', 'blockSelect',
 ]
@@ -194,6 +197,7 @@ function execWYSIWYGCommand(editor, def) {
 
 const MarkdownToolbar = ({
   onInsert,
+  sourceNote,
   onBlockFormat,
   disabled = false,
   viewMode,
@@ -205,6 +209,7 @@ const MarkdownToolbar = ({
 }) => {
   const [calloutAnchor, setCalloutAnchor] = React.useState(null)
   const [embedPickerOpen, setEmbedPickerOpen] = React.useState(false)
+  const [todoPickerOpen, setTodoPickerOpen] = React.useState(false)
   const [widgetPickerOpen, setWidgetPickerOpen] = React.useState(false)
   // 插入组件实例：[组件 · 实例](app://widget/<实例 id>)
   const insertWidget = ({ widget, instance }) => {
@@ -470,6 +475,8 @@ const MarkdownToolbar = ({
           }}
           sx={btnSx}
         />
+      case 'embedTodo':
+        return <Tooltip key={id} title="插入待办" placement="bottom"><span><IconButton size="small" aria-label="插入待办" disabled={disabled} onClick={() => editorMode === 'wysiwyg' && editor ? editor.commands.requestTodoReference() : setTodoPickerOpen(true)} sx={btnSx}><TaskListIcon /></IconButton></span></Tooltip>
       case 'embedWidget':
         return (
           <Tooltip key={id} title="插入组件" placement="bottom">
@@ -579,7 +586,8 @@ const MarkdownToolbar = ({
         }
         else onInsert(`\n\n[关联画布](app://whiteboard/${encodeURIComponent(reference)})\n\n`, '', '')
       }} />
-      <InstancePicker open={widgetPickerOpen} onClose={() => setWidgetPickerOpen(false)} onSelect={insertWidget} />
+      {todoPickerOpen && <TodoReferencePicker open onClose={() => setTodoPickerOpen(false)} sourceNote={sourceNote} onSelect={todo => onInsert(`\n\n${todoEmbedSelection(todo).markdown}\n\n`, '', '')} />}
+      <InstancePicker open={widgetPickerOpen} onSelectTodo={() => editorMode === 'wysiwyg' && editor ? editor.commands.requestTodoReference() : setTodoPickerOpen(true)} onClose={() => setWidgetPickerOpen(false)} onSelect={insertWidget} />
 
       <Box
         sx={{

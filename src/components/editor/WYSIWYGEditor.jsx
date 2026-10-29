@@ -28,6 +28,10 @@ import { WikiLinkSuggestion } from './extensions/WikiLinkSuggestion'
 import { InlineMath, BlockMath, MathAwareText } from './extensions/Math'
 import { WhiteboardEmbed } from './extensions/WhiteboardEmbed'
 import { WidgetEmbed } from './extensions/WidgetEmbed'
+import { TodoListEmbed } from './extensions/TodoListEmbed'
+import { todoEmbedSelection } from '../../utils/todoReferences'
+import { TodoEmbed } from './extensions/TodoEmbed'
+import TodoReferencePicker from '../todos/TodoReferencePicker'
 import { getClipboardLink, normalizePastedHtml, pasteEditorText, looksLikeMarkdown, isCodeEditorHtml } from '../../utils/editorClipboard'
 import { notifyError, notifyWithAction, promptInput } from '../../utils/notify'
 import { normalizeLinkUrl, markdownLinkDestination, openNoteLink } from '../../utils/linkUtils'
@@ -1920,6 +1924,7 @@ const SLASH_COMMANDS = [
   { id: 'bullet', title: '项目符号列表', hint: '无序列表', keywords: 'ul bullet list', run: (editor) => editor.chain().focus().toggleBulletList().run() },
   { id: 'ordered', title: '编号列表', hint: '有序列表', keywords: 'ol ordered list', run: (editor) => editor.chain().focus().toggleOrderedList().run() },
   { id: 'task', title: '任务列表', hint: '可勾选事项', keywords: 'todo task checkbox', run: (editor) => editor.chain().focus().toggleTaskList().run() },
+  { id: 'todo-reference', title: '待办组件', hint: '引用或新建任务，同步勾选', keywords: 'todo task 待办 任务', run: editor => editor.commands.requestTodoReference() },
   { id: 'quote', title: '引用', hint: '突出一段话', keywords: 'quote blockquote', run: (editor) => editor.chain().focus().toggleBlockquote().run() },
   { id: 'codeblock', title: '代码块', hint: '多行代码', keywords: 'code pre', run: (editor) => editor.chain().focus().setCodeBlock().run() },
   { id: 'table', title: '表格', hint: '3 x 3 表格', keywords: 'table grid', run: (editor) => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
@@ -1950,7 +1955,7 @@ const SlashCommandMenu = ({ editor, containerRef }) => {
   const query = slashState?.query?.toLowerCase() || ''
   const commands = SLASH_COMMANDS.filter((cmd) => {
     const haystack = `${cmd.title} ${cmd.hint} ${cmd.keywords}`.toLowerCase()
-    return haystack.includes(query)
+    return haystack.includes(query) && (cmd.id !== 'todo-reference' || editor.schema.nodes.todoEmbed)
   }).slice(0, 9)
   const rect = slashState ? getSelectionRect(editor) : null
   const { menuRef, position } = useFloatingMenuPosition(rect, {
@@ -2558,8 +2563,10 @@ const EditorContextMenu = ({ editor, menu, noteId, containerRef, undoBaseline, b
  * - lastExternalContentRef：记录最近一次从父组件收到/向父组件发出的内容，防止无意义 setContent
  * - editorRef：始终指向当前 editor 实例，供异步回调（粘贴/拖放）使用
  */
-const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, onBlockSelectModeChange, onWikiLinkClick, onOpenAI, placeholder = '开始输入...' }, ref) => {
+const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, onBlockSelectModeChange, onWikiLinkClick, onOpenAI, enableTodoReferences = true, placeholder = '开始输入...' }, ref) => {
   // 用 ref 追踪最新 onChange，避免在 useEditor 回调中因闭包失效而用到旧 handler
+  const [todoPickerOpen, setTodoPickerOpen] = useState(false)
+  const todoInsertRange = useRef(null)
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
 
@@ -2652,9 +2659,17 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
 
   // 始终指向最新 handleImageUpload，供 editorProps 闭包使用
   const handleImageUploadRef = useRef(null)
+  const pendingAssetUploads = useRef(new Set())
+  const assetUploadFailure = useRef(null)
+  const trackAssetUpload = (task) => {
+    pendingAssetUploads.current.add(task)
+    task.finally(() => pendingAssetUploads.current.delete(task))
+    return task
+  }
   // ── 图片保存并插入编辑器 ─────────────────────────────────────────────────────
   // pos 可选：指定插入位置（拖放时按鼠标落点；粘贴/工具栏时 undefined 表示当前光标）
   const handleImageUpload = async (blob, pos) => {
+    assetUploadFailure.current = null;
     const ed = editorRef.current
     if (!ed) return
     try {
@@ -2674,6 +2689,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
         }
       }
     } catch (error) {
+      assetUploadFailure.current = error
       console.error('[WYSIWYGEditor] 图片保存失败:', error)
       notifyError(`图片保存失败：${error.message}`)
     }
@@ -2708,8 +2724,10 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
   const handleAttachmentUploadRef = useRef(null)
 
   // 每次渲染都更新 ref，确保 editorProps 闭包用到的是最新版本
-  handleImageUploadRef.current = handleImageUpload
-  handleAttachmentUploadRef.current = handleAttachmentUpload
+  handleImageUploadRef.current = (...args) => {
+    return trackAssetUpload(handleImageUpload(...args))
+  }
+  handleAttachmentUploadRef.current = (...args) => trackAssetUpload(handleAttachmentUpload(...args))
 
   const editor = useEditor({
     extensions: [
@@ -2736,6 +2754,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       InlineMath,
       WhiteboardEmbed,
       WidgetEmbed,
+      ...(enableTodoReferences ? [TodoEmbed, TodoListEmbed] : []),
       BlockMath,
       MathAwareText,
       StableLink.configure({
@@ -2841,7 +2860,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
             if (hasTextualContent) return false
             event.preventDefault()
             const blob = items[i].getAsFile()
-            if (blob) handleImageUpload(blob)
+            if (blob) handleImageUploadRef.current?.(blob)
             return true
           }
         }
@@ -2905,16 +2924,18 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
         if (htmlText && /<img\b/i.test(htmlText) && /(?:data:image\/|blob:)/i.test(htmlText)) {
           event.preventDefault()
           const ed = editorRef.current
-          replaceDataImagesInHtml(htmlText).then((processedHtml) => {
+          const task = replaceDataImagesInHtml(htmlText).then((processedHtml) => {
             if (!ed || ed.isDestroyed || editorRef.current !== ed) return
             // 用替换后的 HTML 走 TipTap 默认 HTML 解析路径（pasteHTML）
             ed.commands.insertContent(processedHtml, {
               parseOptions: { preserveWhitespace: 'full' },
             })
           }).catch((err) => {
+            assetUploadFailure.current = err
             console.warn('[WYSIWYGEditor] 处理粘贴 data URL 图片失败:', err)
             notifyError(`图片持久化失败，未插入临时图片：${err.message}`)
           })
+          trackAssetUpload(task)
           return true
         }
 
@@ -2971,6 +2992,11 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
         const href = String(link.getAttribute('href') || '')
         if (!href) return false
 
+        if (/^app:\/\/(?:note|todo)\//i.test(href)) {
+          event.preventDefault(); event.stopPropagation()
+          openNoteLink(href).then(found => { if (!found) notifyError('引用内容已删除或尚未同步') }).catch(error => notifyError(error.message))
+          return true
+        }
         if (/^file:\/\//i.test(href)) {
           event.preventDefault()
           event.stopPropagation()
@@ -3217,9 +3243,20 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
     })
   }, [editor])
 
+  useEffect(() => {
+    if (!editor || !enableTodoReferences) return
+    const request = () => { todoInsertRange.current = { from: editor.state.selection.from, to: editor.state.selection.to }; setTodoPickerOpen(true) }
+    editor.on('todo-reference-request', request)
+    return () => editor.off('todo-reference-request', request)
+  }, [editor, enableTodoReferences])
+
   // ── 对外暴露接口 ─────────────────────────────────────────────────────────────
   useImperativeHandle(ref, () => ({
     getEditor: () => editor,
+    flushUploads: async () => {
+      while (pendingAssetUploads.current.size) await Promise.all([...pendingAssetUploads.current])
+      if (assetUploadFailure.current) { const error = assetUploadFailure.current; assetUploadFailure.current = null; throw error }
+    },
     getMarkdown: () => {
       if (markdownEmitTimerRef.current) {
         clearTimeout(markdownEmitTimerRef.current)
@@ -3520,6 +3557,14 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       />
       {/* 上下文 Bubble Menus：链接 / 表格 / Callout */}
       <LinkBubbleMenu editor={editor} containerRef={overlayContainerRef} />
+      {todoPickerOpen && <TodoReferencePicker open onClose={() => setTodoPickerOpen(false)}
+        initialText={todoInsertRange.current ? editor.state.doc.textBetween(todoInsertRange.current.from, todoInsertRange.current.to, ' ') : ''}
+        sourceNote={useStore.getState().notes.find(n => String(n.id) === String(noteId))}
+        onSelect={todo => {
+          if (editor.isDestroyed) throw new Error('编辑器已关闭')
+          const range = todoInsertRange.current
+          if (!editor.chain().focus().insertContentAt(range || editor.state.selection.from, [{ type: todoEmbedSelection(todo).type, attrs: todoEmbedSelection(todo).attrs }, { type: 'paragraph' }]).run()) throw new Error('当前位置无法插入待办')
+        }} />}
       <LinkEditorDialog editor={editor} />
       <TableBubbleMenu editor={editor} containerRef={overlayContainerRef} />
       <CalloutBubbleMenu editor={editor} containerRef={overlayContainerRef} />

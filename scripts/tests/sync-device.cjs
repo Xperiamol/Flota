@@ -232,9 +232,50 @@ class FolderDav {
         outputs.push({ op: 'measureSave', medianMs: samples[10], p95Ms: samples[18], maxMs: samples[19] })
         break
       }
-      case 'createTodo':
-        engine.storage.todoDAO.create({ content: op.content })
+      case 'linkedTodoChecks': {
+        const AIChatService = require('../../electron/services/aichat')
+        const service = Object.create(AIChatService.prototype)
+        service.noteDAO = notes.noteDAO
+        service._toolServices = () => ({ noteDAO: notes.noteDAO, todoDAO: engine.storage.todoDAO })
+        let noteEvents = 0, todoEvents = 0
+        service.setNotesChangedListener(() => noteEvents++)
+        service.setTodosChangedListener(() => todoEvents++)
+        const note = byTitle(op.title)
+        const before = db.prepare('SELECT count(*) AS n FROM todos').get().n
+        const originalUpdate = notes.noteDAO.update.bind(notes.noteDAO)
+        if (op.fail) notes.noteDAO.update = (...args) => { originalUpdate(...args); throw new Error('injected persistence failure') }
+        let result, error
+        try {
+          result = JSON.parse(await service._executeTool('create_todos', { source_note_id: note.sync_id, embed_in_note: true,
+            todos: [{ content: '关联行动', subtasks: [{ content: '执行步骤' }] }] }, { requireConfirmation: false }))
+        } catch (e) { error = e.message }
+        finally { notes.noteDAO.update = originalUpdate }
+        outputs.push({ result, error, noteEvents, todoEvents, created: db.prepare('SELECT count(*) AS n FROM todos').get().n - before,
+          beforeContent: note.content, content: byTitle(op.title).content,
+          descriptions: db.prepare('SELECT description FROM todos').all().map(t => t.description) })
         break
+      }
+      case 'createTodo':
+        engine.storage.todoDAO.create({ content: op.content, description: op.description || '' })
+        break
+      case 'writeAsset': {
+        const { getUserDataPath } = require('../../electron/utils/userDataPath')
+        const file = path.join(getUserDataPath(), op.path)
+        fs.mkdirSync(path.dirname(file), { recursive: true })
+        fs.writeFileSync(file, op.text)
+        break
+      }
+      case 'inspectTodoAssets': {
+        const { getUserDataPath } = require('../../electron/utils/userDataPath')
+        const ImageCleanupService = require('../../electron/services/ImageCleanupService')
+        const cleanup = new ImageCleanupService(); cleanup.initialize()
+        const { isImageReferenced } = require('../../electron/services/imageReferences')
+        const file = path.join(getUserDataPath(), op.path)
+        outputs.push({ description: db.prepare('SELECT description FROM todos WHERE content = ?').get(op.content)?.description,
+          text: fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null,
+          referenced: isImageReferenced(path.basename(op.path), cleanup.getReferencedImages()) })
+        break
+      }
       case 'deleteTodo': {
         const row = db.prepare('SELECT id FROM todos WHERE content = ?').get(op.content)
         engine.storage.todoDAO.softDelete(row.id)

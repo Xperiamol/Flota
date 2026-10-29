@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -6,12 +6,16 @@ import {
   DialogActions,
   Button
 } from '@mui/material';
+import { notifyError } from '../../utils/notify';
 import TodoFormFields from './TodoFormFields';
 import { todoSchema, extractValidationErrors } from '../../validators/todoValidation';
 import { getTodoTagSuggestions } from '../../api/todoAPI';
 import zhCN from '../../locales/zh-CN';
 
 const CreateTodoModal = ({ todo, onChange, onSubmit, onCancel }) => {
+  const formRef = useRef(null);
+  const submitting = useRef(false);
+  const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
   const { todo: { dialog: todoDialog } } = zhCN;
 
@@ -31,17 +35,20 @@ const CreateTodoModal = ({ todo, onChange, onSubmit, onCancel }) => {
   };
 
   const handleSubmit = async () => {
+    if (submitting.current) return;
+    submitting.current = true; setSaving(true);
     try {
-      await todoSchema.validate(todo, { abortEarly: false });
+      const snapshot = await formRef.current?.getValue() || todo;
+      await todoSchema.validate(snapshot, { abortEarly: false });
       setErrors({});
-      onSubmit();
+      await onSubmit(snapshot);
     } catch (error) {
       if (error.name === 'ValidationError') {
         setErrors(extractValidationErrors(error));
       } else {
-        console.error('创建待办事项验证失败:', error);
+        notifyError(error.message || '创建待办失败');
       }
-    }
+    } finally { submitting.current = false; setSaving(false); }
   };
 
   const handleCancel = () => {
@@ -50,10 +57,11 @@ const CreateTodoModal = ({ todo, onChange, onSubmit, onCancel }) => {
   };
 
   return (
-    <Dialog open={true} onClose={handleCancel} maxWidth="sm" fullWidth>
+    <Dialog open={true} onClose={saving ? undefined : handleCancel} maxWidth="sm" fullWidth>
       <DialogTitle>{todoDialog.createTitle}</DialogTitle>
       <DialogContent>
         <TodoFormFields
+          ref={formRef}
           value={todo}
           onChange={handleFieldChange}
           mode="create"
@@ -62,10 +70,10 @@ const CreateTodoModal = ({ todo, onChange, onSubmit, onCancel }) => {
         />
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleCancel}>
+        <Button disabled={saving} onClick={handleCancel}>
           {todoDialog.cancel}
         </Button>
-        <Button onClick={handleSubmit} variant="contained">
+        <Button disabled={saving} onClick={handleSubmit} variant="contained">
           {todoDialog.create}
         </Button>
       </DialogActions>

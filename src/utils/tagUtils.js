@@ -125,3 +125,9 @@ export default {
   validateTags,
   getTagColor
 };
+/** Accept tag arrays and legacy IPC envelopes, without rendering malformed entries. */
+export const normalizeTagSuggestions = (result) => {
+  const values = Array.isArray(result) ? result : result?.success !== false ? result?.data : [];
+  if (!Array.isArray(values)) return [];
+  return [...new Set(values.filter(value => typeof value === 'string').map(value => value.trim()).filter(Boolean))];
+};

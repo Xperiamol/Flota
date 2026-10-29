@@ -135,13 +135,13 @@ class PendingActionStore {
       case 'create_todo': {
         const subtaskCount = Array.isArray(args.subtasks) ? args.subtasks.length : 0;
         const parentLabel = args.parent_id != null ? `，作为待办 #${args.parent_id} 的子任务` : '';
-        return `创建待办「${args.content || '未命名待办'}」${repeatLabel(args)}${parentLabel}${subtaskCount ? `，含 ${subtaskCount} 个子任务` : ''}`;
+        return `创建待办「${args.content || '未命名待办'}」${repeatLabel(args)}${parentLabel}${args.source_note_id ? `，关联笔记 #${args.source_note_id}${args.embed_in_note ? '并插入待办清单' : ''}` : ''}${subtaskCount ? `，含 ${subtaskCount} 个子任务` : ''}`;
       }
       case 'create_todos': {
         const list = Array.isArray(args.todos) ? args.todos : [];
         const first = list[0]?.content || '';
         const subtaskCount = list.reduce((count, todo) => count + (Array.isArray(todo?.subtasks) ? todo.subtasks.length : 0), 0);
-        return `批量创建 ${list.length} 条待办${subtaskCount ? `，含 ${subtaskCount} 个子任务` : ''}${first ? `：${first}…` : ''}`;
+        return `批量创建 ${list.length} 条待办${subtaskCount ? `，含 ${subtaskCount} 个子任务` : ''}${first ? `：${first}…` : ''}${args.source_note_id ? `；关联笔记 #${args.source_note_id}${args.embed_in_note ? '并插入待办清单' : ''}` : ''}`;
       }
       case 'create_widget': return `生成组件：${String(args.instruction || '').slice(0, 60)}`;
       case 'update_widget': return `修改组件：${String(args.instruction || '').slice(0, 60)}`;

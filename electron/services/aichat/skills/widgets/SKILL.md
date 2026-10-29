@@ -5,3 +5,5 @@
 - 组件可以有多个实例，数据属于实例。用户只是想“再要一份”（如再建一个日语闪卡）时调用 create_widget_instance，不要重新生成组件
 - 修改已有组件、或往实例里写数据前，先用 list_widgets / get_widget 确认组件、实例和数据结构，再调用 update_widget 或 add_widget_records；上下文中给出了组件或实例 ID 时直接使用
 - 首页卡片 / 主页面板就是组件的 compact 尺寸，属于组件代码的一部分：用户要改首页上的组件（如加一键打卡按钮）时调用 update_widget，instruction 里写明改 compact 尺寸
+
+- 用户要在笔记里操作现有待办、同步勾选或展示任务进度时，优先加载 planning 使用内置待办清单，保持与待办页共用数据。

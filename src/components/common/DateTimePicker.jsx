@@ -1,3 +1,4 @@
+import InlinePropertyButton from './InlinePropertyButton';
 import { useState, useRef } from 'react';
 import {
   Box,
@@ -409,10 +410,12 @@ const DateTimePicker = ({
   disableDate = false,
   // dense：紧凑一行（弹层里用，不显示上方标签）；clearable：是否显示清除按钮
   dense = false,
+  compact = false,
   clearable = true,
   sx = {} 
 }) => {
   const theme = useTheme();
+  const PropertyButton = compact ? InlinePropertyButton : Button;
   const [dateAnchorEl, setDateAnchorEl] = useState(null);
   const [timeAnchorEl, setTimeAnchorEl] = useState(null);
   const dateButtonRef = useRef(null);
@@ -439,17 +442,17 @@ const DateTimePicker = ({
   };
 
   const formatDisplayDate = (dateStr) => {
-    if (!dateStr) return '选择日期';
+    if (!dateStr) return compact ? '截止日期' : '选择日期';
     try {
       const date = parseISO(dateStr);
-      return format(date, 'yyyy年MM月dd日', { locale: zhCN });
+      return format(date, compact ? 'MM/dd' : 'yyyy年MM月dd日', { locale: zhCN });
     } catch {
       return '选择日期';
     }
   };
 
   const formatDisplayTime = (timeStr) => {
-    if (!timeStr) return '选择时间';
+    if (!timeStr) return compact ? '时间' : '选择时间';
     return timeStr;
   };
 
@@ -463,8 +466,10 @@ const DateTimePicker = ({
           </Typography>
         )}
         <Box sx={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-          <Button
+          <PropertyButton
             ref={dateButtonRef}
+            aria-label={dateLabel}
+            title={dateValue || dateLabel}
             onClick={handleDateClick}
             variant="outlined"
             disabled={disableDate}
@@ -476,7 +481,7 @@ const DateTimePicker = ({
               borderRadius: dense ? '10px' : '12px',
               py: dense ? 0.625 : 1.5,
               px: dense ? 1.25 : 2,
-              pr: dateValue && clearable ? 6 : (dense ? 1.25 : 2),
+              pr: dateValue && clearable ? (compact ? 3.5 : 6) : (dense ? 1.25 : 2),
               fontSize: dense ? 13 : undefined,
               whiteSpace: 'nowrap',
               color: dateValue ? theme.palette.text.primary : theme.palette.text.secondary,
@@ -495,7 +500,7 @@ const DateTimePicker = ({
             }}
           >
             {formatDisplayDate(dateValue)}
-          </Button>
+          </PropertyButton>
           {dateValue && !disableDate && clearable && (
             <IconButton
               size="small"
@@ -507,7 +512,7 @@ const DateTimePicker = ({
               aria-label="清除日期"
               sx={{
                 position: 'absolute',
-                right: 8,
+                right: compact ? 2 : 8,
                 top: '50%',
                 transform: 'translateY(-50%)',
                 p: 0.5,
@@ -531,12 +536,14 @@ const DateTimePicker = ({
           </Typography>
         )}
         <Box sx={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-          <Button
+          <PropertyButton
             ref={timeButtonRef}
+            aria-label={timeLabel}
+            title={timeValue || timeLabel}
             onClick={handleTimeClick}
             variant="outlined"
             disabled={!dateValue && !disableDate}
-            startIcon={<TimeIcon />}
+            startIcon={compact && timeValue ? undefined : <TimeIcon />}
             sx={{
               width: '100%',
               justifyContent: 'flex-start',
@@ -544,7 +551,7 @@ const DateTimePicker = ({
               borderRadius: dense ? '10px' : '12px',
               py: dense ? 0.625 : 1.5,
               px: dense ? 1.25 : 2,
-              pr: timeValue && clearable ? 6 : (dense ? 1.25 : 2),
+              pr: timeValue && clearable ? (compact ? 3.5 : 6) : (dense ? 1.25 : 2),
               fontSize: dense ? 13 : undefined,
               whiteSpace: 'nowrap',
               color: timeValue ? theme.palette.text.primary : theme.palette.text.secondary,
@@ -563,7 +570,7 @@ const DateTimePicker = ({
             }}
           >
             {formatDisplayTime(timeValue)}
-          </Button>
+          </PropertyButton>
           {timeValue && clearable && (
             <IconButton
               size="small"
@@ -574,7 +581,7 @@ const DateTimePicker = ({
               aria-label="清除时间"
               sx={{
                 position: 'absolute',
-                right: 8,
+                right: compact ? 2 : 8,
                 top: '50%',
                 transform: 'translateY(-50%)',
                 p: 0.5,

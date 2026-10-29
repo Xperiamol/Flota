@@ -1,3 +1,4 @@
+import InlinePropertyButton from '../common/InlinePropertyButton';
 import { useState, useEffect } from 'react';
 import {
   Box,
@@ -17,7 +18,8 @@ import {
   ExpandMore as ExpandMoreIcon
 } from '../common/AppIcons';
 
-const RepeatSettings = ({ value = {}, onChange }) => {
+const RepeatSettings = ({ value = {}, onChange, compact = false }) => {
+  const PropertyButton = compact ? InlinePropertyButton : Button;
   const [repeatType, setRepeatType] = useState(value.repeat_type || 'none');
   const [repeatInterval, setRepeatInterval] = useState(value.repeat_interval || 1);
   const [repeatDays, setRepeatDays] = useState(value.repeat_days || '');
@@ -123,33 +125,38 @@ const RepeatSettings = ({ value = {}, onChange }) => {
   };
 
   return (
-    <Box sx={{ flex: 1, mb: 3 }}>
-      <Typography variant="body2" sx={{ mb: 1, color: theme.palette.text.secondary }}>
-        重复设置
-      </Typography>
-      <Button
+    <Box sx={{ flex: 1, minWidth: 0, mb: compact ? 0 : 3 }}>
+      {!compact && <Typography variant="body2" sx={{ mb: 1, color: theme.palette.text.secondary }}>重复设置</Typography>}
+      <PropertyButton
         onClick={handleClick}
+        aria-label="重复规则"
+        title={getRepeatDisplayText()}
         variant="outlined"
         startIcon={<RepeatIcon />}
         endIcon={<ExpandMoreIcon sx={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />}
         sx={{
           width: '100%',
-          justifyContent: 'space-between',
+          justifyContent: compact ? 'flex-start' : 'space-between',
+          minWidth: 0,
+          height: compact ? 34 : undefined,
+          fontSize: compact ? 12.5 : undefined,
+          '& .MuiButton-startIcon': compact ? { mr: 0.5, '& .MuiSvgIcon-root': { fontSize: 17 } } : {},
+          '& .MuiButton-endIcon': compact ? { ml: 'auto', '& .MuiSvgIcon-root': { fontSize: 16 } } : {},
           textTransform: 'none',
           borderRadius: '12px',
-          py: 1.5,
-          px: 2,
+          py: compact ? 0.5 : 1.5,
+          px: compact ? 0.75 : 2,
           color: repeatType !== 'none' ? theme.palette.text.primary : theme.palette.text.secondary,
-          borderColor: theme.palette.divider,
-          backgroundColor: theme.custom?.surface?.control,
+          borderColor: compact ? 'transparent' : theme.palette.divider,
+          backgroundColor: compact ? 'transparent' : theme.custom?.surface?.control,
           '&:hover': {
             borderColor: theme.palette.primary.main,
             backgroundColor: theme.custom?.surface?.controlHover || theme.palette.action.hover,
           },
         }}
       >
-        {getRepeatDisplayText()}
-      </Button>
+        <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getRepeatDisplayText()}</Box>
+      </PropertyButton>
 
       <Popover
         open={Boolean(anchorEl)}

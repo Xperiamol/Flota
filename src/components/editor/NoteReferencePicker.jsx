@@ -6,7 +6,7 @@ import { getCleanPreview } from '../../utils/notePreviewCache'
 import { editorScrollbarSx } from '../../styles/commonStyles'
 import { isImeComposing } from '../../utils/imeUtils'
 
-export default function NoteReferencePicker({ open, onClose, onSelect, whiteboards = false, excludeId }) {
+export default function NoteReferencePicker({ open, onClose, onSelect, whiteboards = false, excludeId, allowCreate = false, title, confirmText = '插入' }) {
   const notes = useStore(state => state.notes)
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState(null)
@@ -29,8 +29,8 @@ export default function NoteReferencePicker({ open, onClose, onSelect, whiteboar
     try {
       if (create) {
         if (!createdNote.current) {
-          const result = await useStore.getState().createNote({ title: query.trim() || '局部画布', note_type: 'whiteboard', selectAfterCreate: false,
-            content: JSON.stringify({ type: 'excalidraw', version: 2, elements: [], appState: {}, fileMap: {} }) })
+          const result = await useStore.getState().createNote({ title: query.trim() || (whiteboards ? '局部画布' : '未命名'), note_type: whiteboards ? 'whiteboard' : 'markdown', selectAfterCreate: false,
+            content: whiteboards ? JSON.stringify({ type: 'excalidraw', version: 2, elements: [], appState: {}, fileMap: {} }) : '' })
           if (!result.success || !result.data?.id) throw new Error(result.error || '创建失败')
           createdNote.current = result.data
         }
@@ -42,9 +42,9 @@ export default function NoteReferencePicker({ open, onClose, onSelect, whiteboar
   }
   const Icon = whiteboards ? Brush : Description
   return <Dialog open={open} onClose={busy ? undefined : onClose} fullWidth maxWidth="sm">
-    <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><Icon color="primary" />{whiteboards ? '嵌入画布' : '引用笔记'}</DialogTitle>
+    <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><Icon color="primary" />{title || (whiteboards ? '嵌入画布' : '引用笔记')}</DialogTitle>
     <DialogContent>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{whiteboards ? '选择已有画布或新建一张，编辑会保存到原画布。' : '插入笔记卡片，标题与摘要随原笔记更新。'}</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{whiteboards ? '选择已有画布或新建一张，编辑会保存到原画布。' : allowCreate ? '选择作为参考资料的笔记，或新建一篇。关联会保存为可跨设备打开的链接。' : '插入笔记卡片，标题与摘要随原笔记更新。'}</Typography>
       <TextField autoFocus fullWidth size="small" placeholder="搜索标题…" value={query} disabled={busy}
         slotProps={{ input: { startAdornment: <InputAdornment position="start"><Search fontSize="small" /></InputAdornment> } }}
         onChange={e => { setQuery(e.target.value); setSelectedId(null) }}
@@ -70,9 +70,9 @@ export default function NoteReferencePicker({ open, onClose, onSelect, whiteboar
       </List>
     </DialogContent>
     <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
-      {whiteboards && <Button startIcon={<Add />} disabled={busy} onClick={() => insert(null, true)}>新建并嵌入</Button>}
+      {(whiteboards || allowCreate) && <Button startIcon={<Add />} disabled={busy} onClick={() => insert(null, true)}>{whiteboards ? '新建并嵌入' : '新建并关联'}</Button>}
       <Box sx={{ flex: 1 }} /><Button disabled={busy} onClick={onClose}>取消</Button>
-      <Button variant="contained" disabled={busy || !selected} onClick={() => insert(selected)} startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}>插入</Button>
+      <Button variant="contained" disabled={busy || !selected} onClick={() => insert(selected)} startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}>{confirmText}</Button>
     </DialogActions>
   </Dialog>
 }
