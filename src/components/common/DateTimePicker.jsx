@@ -427,8 +427,11 @@ const DateTimePicker = ({
     }
   };
 
+  // 有日期才能选时间；日期被锁定（重复待办按周期走）时即使还没有日期也能选，由上层补上日期。
+  // 以前这里只认 dateValue，而按钮的 disabled 又放开了重复待办：没有日期的「每天」待办点时间没有任何反应。
+  const canPickTime = Boolean(dateValue) || disableDate
   const handleTimeClick = () => {
-    if (dateValue) {
+    if (canPickTime) {
       setTimeAnchorEl(timeButtonRef.current);
     }
   };
@@ -542,7 +545,7 @@ const DateTimePicker = ({
             title={timeValue || timeLabel}
             onClick={handleTimeClick}
             variant="outlined"
-            disabled={!dateValue && !disableDate}
+            disabled={!canPickTime}
             startIcon={compact && timeValue ? undefined : <TimeIcon />}
             sx={{
               width: '100%',
@@ -558,8 +561,8 @@ const DateTimePicker = ({
               borderColor: theme.palette.divider,
               backgroundColor: theme.custom?.surface?.control,
               '&:hover': {
-                borderColor: dateValue ? theme.palette.primary.main : theme.palette.divider,
-                backgroundColor: dateValue
+                borderColor: canPickTime ? theme.palette.primary.main : theme.palette.divider,
+                backgroundColor: canPickTime
                   ? (theme.custom?.surface?.controlHover || theme.palette.action.hover)
                   : theme.custom?.surface?.control,
               },
@@ -598,7 +601,9 @@ const DateTimePicker = ({
       </Box>
 
       {/* 日期选择器弹窗 */}
+      {/* 每次打开都重新挂载，弹层里显示的是当前值，而不是第一次打开时的值 */}
       <CustomDatePicker
+        key={dateAnchorEl ? `date-open-${dateValue}` : 'date-closed'}
         value={dateValue}
         onChange={onDateChange}
         onClose={handleDateClose}
@@ -607,6 +612,7 @@ const DateTimePicker = ({
 
       {/* 时间选择器弹窗 */}
       <CustomTimePicker
+        key={timeAnchorEl ? `time-open-${timeValue}` : 'time-closed'}
         value={timeValue}
         onChange={onTimeChange}
         onClose={handleTimeClose}

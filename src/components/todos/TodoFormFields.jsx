@@ -57,6 +57,11 @@ const TodoFormFields = forwardRef(({
   };
 
   const handleTimeChange = (time) => {
+    // 重复待办的日期是锁定的；还没有日期时（AI、小组件、快速记录建的「每天」待办常常没有），从今天开始算
+    if (time && !value.due_date) {
+      emitChange({ ...value, due_time: time, due_date: TimeZoneUtils.getTodayDateString() }, ['due_time', 'due_date']);
+      return;
+    }
     handleFieldChange('due_time', time);
   };
 

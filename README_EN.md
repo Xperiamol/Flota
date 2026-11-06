@@ -14,7 +14,7 @@
   </p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-4.5.2-5B8DEF?style=flat-square" alt="Version 4.5.2" />
+    <img src="https://img.shields.io/badge/version-4.5.3-5B8DEF?style=flat-square" alt="Version 4.5.3" />
     <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-2E3440?style=flat-square" alt="Platforms" />
     <img src="https://img.shields.io/badge/stack-React%20%2B%20Electron-61DAFB?style=flat-square" alt="React + Electron" />
     <img src="https://img.shields.io/badge/storage-SQLite-003B57?style=flat-square" alt="SQLite" />
@@ -476,6 +476,6 @@ runtime.onActivate(async () =&gt; {
 <hr />
 
 <div align="center">
-  <p><strong>Flota 4.5.2</strong> · Make note-taking more efficient and enjoyable.</p>
+  <p><strong>Flota 4.5.3</strong> · Make note-taking more efficient and enjoyable.</p>
   <p>If this project helps you, please give it a ⭐️.</p>
 </div>
