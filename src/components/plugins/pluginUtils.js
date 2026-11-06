@@ -58,3 +58,18 @@ export const permissionDescriptions = {
   'ai:inference': '调用 AI 服务进行推理（需用户配置 AI）',
   'ai:complete': '在组件内调用 AI（需用户配置 AI，每天有调用额度）'
 }
+
+// 旧版内置插件的名字带「(Built-in)」后缀（已安装的副本里还会保留），显示时去掉，改用「内置」标签
+const BUILTIN_SUFFIX = /\s*\(Built-in\)\s*$/i
+
+/** 插件显示名 */
+export const pluginDisplayName = (plugin) => {
+  // 市场里的名字优先：已安装的副本可能还是旧 manifest
+  const name = plugin?.name || plugin?.manifest?.name || plugin?.id || '未知插件'
+  return String(name).replace(BUILTIN_SUFFIX, '')
+}
+
+/** 是否 Flota 自带的插件 */
+export const isBuiltinPlugin = (plugin) => Boolean(
+  plugin?.builtin || plugin?.manifest?.builtin || BUILTIN_SUFFIX.test(plugin?.manifest?.name || plugin?.name || '')
+)

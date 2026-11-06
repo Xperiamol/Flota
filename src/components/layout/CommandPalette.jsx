@@ -30,6 +30,7 @@ import { WidgetsRounded } from '../common/AppIcons'
 import { askAIToCreateWidget } from '../../utils/widgets/askAI'
 import { clipUrlFromApp } from '../settings/ClipperSettings'
 import { BookmarkBorder } from '../common/AppIcons'
+import { reportResult } from '../../utils/notify'
 
 const PALETTE_TOP_OFFSET = 84
 const IS_MAC =
@@ -82,7 +83,8 @@ const CommandPalette = ({ open, onClose }) => {
       category: '笔记',
       icon: <NoteAddIcon />,
       action: async () => {
-        await createNote({ type: 'markdown' })
+        // 字段名是 note_type（store 会先填默认的 markdown，传 type 不起作用）
+        reportResult(await createNote({ note_type: 'markdown' }), '新建笔记')
         onClose()
       }
     },
@@ -93,7 +95,7 @@ const CommandPalette = ({ open, onClose }) => {
       category: '笔记',
       icon: <DashboardIcon />,
       action: async () => {
-        await createNote({ type: 'whiteboard' })
+        reportResult(await createNote({ note_type: 'whiteboard' }), '新建画布')
         onClose()
       }
     },

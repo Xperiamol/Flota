@@ -12,7 +12,8 @@ export function useErrorHandler() {
   });
 
   const showError = useCallback((error, customMessage = null) => {
-    console.error(error);
+    // 只传提示文字（如全局 notifyError）时没有错误对象，不打印无意义的 null
+    if (error) console.error(error);
     
     const message = customMessage || 
                    error?.message || 

@@ -573,7 +573,7 @@ const PluginStore = () => {
 				{isWidgetType ? (
 					<>
 						<Button variant="outlined" size="small" startIcon={<FlotaAIIcon sx={{ fontSize: 18 }} />} onClick={() => askAIToCreateWidget()}
-							sx={{ flexShrink: 0, borderRadius: '10px', height: 34 }}>
+							sx={{ flexShrink: 0, borderRadius: 1, height: 34 }}>
 							AI 生成
 						</Button>
 						<Tooltip title="从文件导入组件">

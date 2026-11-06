@@ -30,7 +30,7 @@ export function TodoListContent({ reference, title = '待办清单', editable = 
       setDraft('')
     } catch (e) { setError(e.message) } finally { setBusy(false) }
   }
-  return <Box sx={{ my: 1.5, border: '1px solid', borderColor: selected ? 'primary.main' : 'divider', borderRadius: 2.5, p: 1.5, bgcolor: 'background.paper' }}>
+  return <Box sx={{ my: 1.5, border: '1px solid', borderColor: selected ? 'primary.main' : 'divider', borderRadius: 1.5, p: 1.5, bgcolor: 'background.paper' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
         <Typography variant="body2" fontWeight={600} sx={{ flex: 1 }}>{title}</Typography>
         <Typography variant="caption" color="text.secondary">{completed} / {tasks.length}</Typography>
@@ -38,7 +38,7 @@ export function TodoListContent({ reference, title = '待办清单', editable = 
       </Box>
       <LinearProgress variant="determinate" value={tasks.length ? completed / tasks.length * 100 : 0} sx={{ height: 3, borderRadius: 2, mb: 1.5 }} />
       {(error || loadError) && <Alert severity="error" sx={{ mb: 1 }}>{error || loadError}</Alert>}
-      <Box sx={{ display: 'grid', gap: 0.75, maxHeight: 360, overflow: 'auto' }}>{visible.map(todo => <TodoReferenceCard key={todo.sync_id || todo.id} todo={todo} readOnly={!editable} />)}</Box>
+      <Box sx={{ display: 'grid', maxHeight: 360, overflow: 'auto', mx: -0.5 }}>{visible.map(todo => <TodoReferenceCard key={todo.sync_id || todo.id} todo={todo} readOnly={!editable} />)}</Box>
       {!visible.length && <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>{tasks.length ? '全部完成了' : '还没有待办，从下一步行动开始'}</Typography>}
       {editable && <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 1 }}>
         <TextField size="small" fullWidth variant="standard" placeholder="添加一条待办…" value={draft} disabled={busy} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); add() } }} />

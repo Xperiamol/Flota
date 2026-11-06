@@ -17,7 +17,8 @@ import {
   Fade,
   CircularProgress,
   Checkbox,
-  Collapse
+  Collapse,
+  alpha
 } from '@mui/material';
 import {
   CheckCircle as CheckCircleIcon,
@@ -741,9 +742,10 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
     }}>
       <ScheduleIcon sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
       <Typography variant="body2">
-        {localSearchQuery ? t('common.noResults') : t('todos.noTodos')}
+        {localSearchQuery ? t('common.noResults') : isExternalData ? t('todos.noTodosOnDay') : t('todos.noTodos')}
       </Typography>
-      {!localSearchQuery && (
+      {/* 日历里显示的是某一天的待办，空了不代表一条待办都没有，不再提示「创建第一个」 */}
+      {!localSearchQuery && !isExternalData && (
         <Typography variant="body2" sx={{ mt: 1, opacity: 0.7 }}>
           {t('todos.noTodosDesc')}
         </Typography>
@@ -777,7 +779,7 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
           sx={(theme) => ({
             '& .MuiOutlinedInput-root': {
               height: 36,
-              borderRadius: '10px',
+              borderRadius: 1,
               fontSize: '0.8125rem',
               paddingLeft: '8px',
               paddingRight: '4px',
@@ -1114,7 +1116,7 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                               color: getPriorityColor(todo.priority),
                               fontSize: '0.675rem',
                               height: 18,
-                              borderRadius: '8px'
+                              borderRadius: 1
                             }}
                           />
                           {todo.due_date && (
@@ -1122,11 +1124,12 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                               label={formatDate(todo.due_date)}
                               size="small"
                               sx={{
-                                backgroundColor: isOverdue(todo.due_date) ? '#f4433620' : '#2196f320',
-                                color: isOverdue(todo.due_date) ? '#f44336' : '#2196f3',
+                                // 截止日期：逾期用错误色，其余跟随主题色（不写死 MUI 默认蓝）
+                                backgroundColor: (theme) => alpha(isOverdue(todo.due_date) ? theme.palette.error.main : theme.palette.primary.main, 0.12),
+                                color: isOverdue(todo.due_date) ? 'error.main' : 'primary.main',
                                 fontSize: '0.675rem',
                                 height: 18,
-                                borderRadius: '8px'
+                                borderRadius: 1
                               }}
                             />
                           )}
@@ -1140,7 +1143,7 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
                                 color: '#9c27b0',
                                 fontSize: '0.675rem',
                                 height: 18,
-                                borderRadius: '8px'
+                                borderRadius: 1
                               }}
                             />
                           ))}
@@ -1218,14 +1221,7 @@ const TodoList = ({ onTodoSelect, showCompleted, onMultiSelectChange, onMultiSel
         }}
         slotProps={{
           paper: {
-            sx: (theme) => ({
-              backdropFilter: theme?.custom?.glass?.backdropFilter || 'blur(6px)',
-              backgroundColor: theme?.custom?.glass?.background || (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.4)'),
-              backgroundImage: theme?.custom?.glass?.backgroundImage,
-              border: theme?.custom?.glass?.border || `1px solid ${theme.palette.divider}`,
-              borderRadius: '12px',
-              boxShadow: theme?.custom?.glass?.boxShadow
-            })
+            sx: { minWidth: 180 }
           }
         }}
       >

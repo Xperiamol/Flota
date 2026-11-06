@@ -18,7 +18,6 @@ import {
   Skeleton,
   Fade,
   CircularProgress,
-  useTheme,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -63,6 +62,8 @@ import { formatRelativeNoteTime, parseNoteDate } from '../../utils/noteDateUtils
 import { usePrefsStore } from '../../store/usePrefsStore'
 import { getNoteDisplayTitle as getNoteDisplayTitleText, getNoteRowPreview } from '../../utils/notePreviewCache'
 import NoteRow, { NOTE_LIST_GUTTER } from './NoteRow'
+import { notifyWithAction, reportResult } from '../../utils/notify'
+import { referenceLink } from '../../utils/todoReferences'
 
 const NOTE_SCROLLBAR_COMPENSATION = '8px'
 
@@ -71,7 +72,6 @@ const RENDER_BATCH = 150
 const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefChange }) => {
   const { t } = useTranslation()
   const { showError, showSuccess } = useError()
-  const theme = useTheme()
   const {
     notes,
     selectedNoteId,
@@ -374,14 +374,14 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
 
   const handleTogglePin = useCallback(async () => {
     if (selectedNote) {
-      await togglePinNote(selectedNote.id)
+      reportResult(await togglePinNote(selectedNote.id), selectedNote.is_pinned ? '取消置顶' : '置顶')
       handleMenuClose()
     }
   }, [selectedNote, togglePinNote, handleMenuClose])
 
   const handleDelete = useCallback(async () => {
     if (selectedNote) {
-      await deleteNote(selectedNote.id, { nextNoteId: selectionAfterRemoval(filteredNotes, selectedNoteId, [selectedNote.id]) })
+      reportResult(await deleteNote(selectedNote.id, { nextNoteId: selectionAfterRemoval(filteredNotes, selectedNoteId, [selectedNote.id]) }), '删除笔记')
       handleMenuClose()
     }
   }, [selectedNote, deleteNote, handleMenuClose, filteredNotes, selectedNoteId])
@@ -415,7 +415,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
 
   const handleRestore = useCallback(async () => {
     if (selectedNote) {
-      await restoreNote(selectedNote.id)
+      reportResult(await restoreNote(selectedNote.id), '恢复笔记')
       handleMenuClose()
     }
   }, [selectedNote, restoreNote, handleMenuClose])
@@ -472,7 +472,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
         }
 
         const { permanentDeleteNote } = useStore.getState()
-        await permanentDeleteNote(selectedNote.id)
+        reportResult(await permanentDeleteNote(selectedNote.id), '永久删除')
         setPermanentDeleteConfirm(false)
         handleMenuClose()
       }
@@ -492,52 +492,24 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
     }
   }, [selectedNote, handleMenuClose, showError])
 
-  // 转换笔记为待办事项
+  // 新建一条关联这篇笔记的待办（笔记保留；以前是「转换」——建完待办把整篇笔记删掉，太危险）
   const handleConvertToTodo = useCallback(async () => {
     if (!selectedNote) return
-
+    handleMenuClose()
     try {
-      // 从笔记内容中提取第一行作为待办标题
-      let content = '未命名待办'
-      let description = ''
-
-      if (selectedNote.content) {
-        const lines = selectedNote.content.trim().split('\n').filter(line => line.trim())
-        if (lines.length > 0) {
-          content = lines[0].replace(/^#+\s*/, '').trim() // 移除 Markdown 标题符号
-          if (lines.length > 1) {
-            description = lines.slice(1).join('\n').trim()
-          }
-        }
-      }
-
-      // 创建待办事项 - 注意：TodoService 使用 content 字段而不是 title
-      const todoData = {
-        content: content.substring(0, 200), // 限制内容长度
-        description: description || selectedNote.content,
-        is_important: false,
-        is_urgent: false,
-        tags: '', // 可以根据笔记标签设置
-        due_date: null,
-        item_type: 'todo'
-      }
-
-      const result = await createTodo(todoData)
-
-      if (result) {
-        // 删除原笔记
-        await deleteNote(selectedNote.id)
-
-        // 显示成功提示
-        logger.log('已转换为待办事项:', result)
-      }
-
-      handleMenuClose()
+      const title = String(selectedNote.title || '').trim()
+      const firstLine = String(selectedNote.content || '').split('\n').map((line) => line.replace(/^#+\s*/, '').trim()).find(Boolean)
+      const content = (title && title !== '无标题' ? title : firstLine || '未命名待办').slice(0, 200)
+      const todo = await createTodo({ content, description: referenceLink('note', selectedNote) })
+      notifyWithAction(`已新建待办「${content.slice(0, 16)}」，关联到这篇笔记`, {
+        label: '查看',
+        onClick: () => window.dispatchEvent(new CustomEvent('flota:open-todo', { detail: todo })),
+      })
     } catch (error) {
-      console.error('转换为待办失败:', error)
-      showError(error, '转换为待办失败')
+      console.error('新建关联待办失败:', error)
+      showError(error, '新建关联待办失败')
     }
-  }, [selectedNote, deleteNote, handleMenuClose, showError])
+  }, [selectedNote, handleMenuClose, showError])
 
   // 批量操作处理函数
   const handleBatchRestore = useCallback(async (selectedIds) => {
@@ -680,7 +652,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
         position: 'absolute', inset: 6, zIndex: 20, pointerEvents: 'none',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         border: '2px dashed', borderColor: theme.palette.primary.main,
-        borderRadius: '12px', color: theme.palette.primary.main,
+        borderRadius: 1.5, color: theme.palette.primary.main,
         backgroundColor: theme.palette.mode === 'dark' ? 'rgba(22,22,24,0.94)' : 'rgba(250,250,250,0.94)',
         fontSize: 13, fontWeight: 600,
       },
@@ -710,7 +682,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
           sx={{
             '& .MuiOutlinedInput-root': {
               height: 36,
-              borderRadius: '10px',
+              borderRadius: 1,
               fontSize: '0.8125rem',
               paddingLeft: '8px',
               paddingRight: '4px',
@@ -927,14 +899,7 @@ const NoteList = ({ showDeleted = false, onMultiSelectChange, onMultiSelectRefCh
         anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
         slotProps={{
           paper: {
-            sx: (theme) => ({
-              backdropFilter: theme?.custom?.glass?.backdropFilter || 'blur(6px)',
-              backgroundColor: theme?.custom?.glass?.background || (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.4)'),
-              backgroundImage: theme?.custom?.glass?.backgroundImage || 'none',
-              border: theme?.custom?.glass?.border || `1px solid ${theme.palette.divider}`,
-              boxShadow: theme?.custom?.glass?.boxShadow,
-              borderRadius: 1.75
-            })
+            sx: { minWidth: 180 }
           }
         }}
       >

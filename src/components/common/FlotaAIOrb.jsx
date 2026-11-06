@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useId } from 'react'
 import { Box } from '@mui/material'
 import { alpha, useTheme } from '@mui/material/styles'
+import { BLUR } from '../../styles/materials'
 
 /**
  * 空状态英雄区的「流体生命」主视觉：gooey 粘性滤镜 + 形变呼吸 + 弹簧鼠标跟随 + 点击融合水滴。
@@ -249,8 +250,8 @@ const FlotaAIOrb = ({ sx }) => {
               height: 112,
               overflow: 'hidden',
               animation: 'flota-orb-morph-base 6s ease-in-out infinite',
-              backdropFilter: 'blur(8px)',
-              WebkitBackdropFilter: 'blur(8px)',
+              backdropFilter: BLUR.subtle,
+              WebkitBackdropFilter: BLUR.subtle,
               boxShadow: isDark
                 ? `inset 0 4px 12px ${alpha('#ffffff', 0.2)}, inset 0 -4px 12px ${alpha('#a5bcd9', 0.1)}, 0 12px 32px ${alpha('#000000', 0.3)}`
                 : `inset 0 4px 12px ${alpha('#ffffff', 0.6)}, inset 0 -4px 12px ${alpha('#a5bcd9', 0.2)}, 0 12px 32px ${alpha('#a5bcd9', 0.15)}`,
@@ -274,8 +275,8 @@ const FlotaAIOrb = ({ sx }) => {
               opacity: 0,
               transform: 'translate(0px, 0px) scale(0.6)',
               animation: 'flota-orb-morph-attractor 3s ease-in-out infinite',
-              backdropFilter: 'blur(8px)',
-              WebkitBackdropFilter: 'blur(8px)',
+              backdropFilter: BLUR.subtle,
+              WebkitBackdropFilter: BLUR.subtle,
               boxShadow: `inset 0 3px 8px ${alpha('#ffffff', 0.5)}`,
               transition: 'opacity 0.5s',
             }}
@@ -298,8 +299,8 @@ const FlotaAIOrb = ({ sx }) => {
                 width: 24,
                 height: 24,
                 transform: 'translate(62px) scale(0.4)',
-                backdropFilter: 'blur(8px)',
-                WebkitBackdropFilter: 'blur(8px)',
+                backdropFilter: BLUR.subtle,
+                WebkitBackdropFilter: BLUR.subtle,
                 boxShadow: `inset 0 2px 6px ${alpha('#ffffff', 0.5)}`,
                 transition: 'transform 0.8s cubic-bezier(0.16,1,0.3,1)',
               }}

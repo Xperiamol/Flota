@@ -1,20 +1,16 @@
 import { alpha } from '@mui/material/styles'
+import { createMaterials } from '../styles/materials'
 
 export const createWhiteboardSurfaceTokens = ({ isDark, primaryColor }) => {
   const accent = primaryColor || '#1976d2'
   const text = isDark ? '#f2f2f3' : '#1f1f22'
   const muted = isDark ? '#9d9da5' : '#6e6e76'
-  // 与 MUI 浮层共用同一档液态玻璃透明度，避免白板菜单变成独立的实心卡片。
-  const glassBackground = isDark ? alpha('#172033', 0.72) : alpha('#fafafa', 0.72)
-  const glassBackgroundImage = isDark
-    ? `linear-gradient(145deg, ${alpha('#ffffff', 0.075)} 0%, ${alpha('#ffffff', 0)} 48%, ${alpha(accent, 0.035)} 100%)`
-    : `linear-gradient(145deg, ${alpha('#ffffff', 0.42)} 0%, ${alpha('#ffffff', 0.04)} 48%, ${alpha(accent, 0.025)} 100%)`
-  const glassBorder = isDark
-    ? '1px solid rgba(255, 255, 255, 0.11)'
-    : '1px solid rgba(255, 255, 255, 0.68)'
-  const glassShadow = isDark
-    ? '0 16px 44px rgba(11,11,12, 0.34), inset 0 1px 0 rgba(255,255,255,0.055)'
-    : '0 16px 44px rgba(22,22,24, 0.13), inset 0 1px 0 rgba(255,255,255,0.74)'
+  // 与 MUI 浮层共用同一种材质（styles/materials.js 的 popover），白板菜单不做成独立的实心卡片。
+  const popover = createMaterials(isDark).popover
+  const glassBackground = popover.backgroundColor
+  const glassBackgroundImage = popover.backgroundImage
+  const glassBorder = popover.border
+  const glassShadow = popover.boxShadow
   const hover = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(22,22,24,0.04)'
   const pressed = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(22,22,24,0.10)'
   const selected = alpha(accent, isDark ? 0.22 : 0.12)
@@ -27,7 +23,7 @@ export const createWhiteboardSurfaceTokens = ({ isDark, primaryColor }) => {
     glassBackground,
     glassBackgroundImage,
     glassBorder,
-    glassBlur: 'blur(24px) saturate(165%)',
+    glassBlur: popover.backdropFilter,
     glassShadow,
     hover,
     pressed,

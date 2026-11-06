@@ -170,3 +170,24 @@ export function isFutureRecurringTodo(todo) {
   const dueDateStr = String(todo.due_date).substring(0, 10);
   return dueDateStr > getTodayStr();
 }
+
+const pad2 = (value) => String(value).padStart(2, '0');
+const localDayKey = (date) => `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+
+/**
+ * 截止时间的简短写法：今天 / 明天 / 11/7，带时间的加上 15:00
+ * @param {object} todo
+ * @returns {string}
+ */
+export function shortDueLabel(todo) {
+  if (!todo?.due_date) return '';
+  const raw = String(todo.due_date);
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(raw);
+  const date = dateOnly ? new Date(`${raw}T00:00:00`) : new Date(raw);
+  if (Number.isNaN(date.getTime())) return '';
+  const today = new Date();
+  const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+  const key = localDayKey(date);
+  const day = key === localDayKey(today) ? '今天' : key === localDayKey(tomorrow) ? '明天' : `${date.getMonth() + 1}/${date.getDate()}`;
+  return dateOnly ? day : `${day} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}

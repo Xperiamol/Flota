@@ -14,7 +14,7 @@
   </p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-4.5.1-5B8DEF?style=flat-square" alt="Version 4.5.1" />
+    <img src="https://img.shields.io/badge/version-4.5.2-5B8DEF?style=flat-square" alt="Version 4.5.2" />
     <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-2E3440?style=flat-square" alt="Platforms" />
     <img src="https://img.shields.io/badge/stack-React%20%2B%20Electron-61DAFB?style=flat-square" alt="React + Electron" />
     <img src="https://img.shields.io/badge/storage-SQLite-003B57?style=flat-square" alt="SQLite" />
@@ -72,14 +72,13 @@
   </tr>
 </table>
 
-## 4.5.1: Connect notes and todos
+## 4.5.2: Tasks in notes are todos
 
-- **Rich todo descriptions**: Paste or insert images, format lists, and link existing or new notes.
-- **Live todos inside notes**: Use “Insert todo” to embed a single todo or a list scoped to the current note, a tag, or all todos. Checking and editing update the original records.
-- **Quiet note details**: A small dot on the details button signals linked or referenced todos. Open details to view and manage them without a large banner above the note.
-- **AI-assisted planning**: Create linked todos from a note and insert their list into the source note after confirmation. AI requires your own configured service.
-- **Refined interactions**: Compact two-row todo properties, grouped priority buttons, more room for tags, and smoother note deletion.
-- **Fixes and sync**: Handle wrapped tag-suggestion responses safely; sync local images in todo descriptions and protect referenced images from cleanup.
+- **Turn a task into a todo**: Any checklist item in a note can be added to your todos. Checking and renaming then stay in sync both ways; deleting the line only unlinks it and keeps the todo.
+- **Rebuilt knowledge graph**: Wiki links, inserted note links and shared tags all connect notes. Click a node to see its summary and connections, double-click to open it, or jump in from a note with “View in graph”.
+- **More reliable AI chat**: A new chat engine makes tool calls, continuation and confirmation cards more dependable, and keeps the same conversation consistent across windows. AI requires your own configured service.
+- **Smoother timeline**: Jump to a day, edit in place, manage tags, convert to todos and merge a day's entries.
+- **A more consistent interface**: View switchers, menu and popover materials, corner radii and checkboxes now match across the app, with tidier plugin store, home copy and icons.
 
 These features describe the desktop release. Android is released separately. See the [changelog](./CHANGELOG.md) for details.
 
@@ -477,6 +476,6 @@ runtime.onActivate(async () =&gt; {
 <hr />
 
 <div align="center">
-  <p><strong>Flota 4.5.1</strong> · Make note-taking more efficient and enjoyable.</p>
+  <p><strong>Flota 4.5.2</strong> · Make note-taking more efficient and enjoyable.</p>
   <p>If this project helps you, please give it a ⭐️.</p>
 </div>

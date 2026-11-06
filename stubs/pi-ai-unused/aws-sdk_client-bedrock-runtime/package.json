@@ -1,0 +1,12 @@
+{
+  "name": "@aws-sdk/client-bedrock-runtime",
+  "version": "3.1127.0",
+  "private": true,
+  "license": "ISC",
+  "description": "Stub — Flota 只用 pi-ai 的 OpenAI Chat Completions 实现，这个 SDK 用不到，不打包",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./*": "./index.js"
+  }
+}

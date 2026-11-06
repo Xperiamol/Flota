@@ -1,5 +1,6 @@
 import QuickPromptShortcuts from './QuickPromptShortcuts'
-import { GENERAL_AI_QUICK_PROMPTS, NOTE_AI_QUICK_PROMPTS } from '../../utils/aiQuickPrompts'
+import { GENERAL_AI_QUICK_PROMPTS, NOTE_AI_QUICK_PROMPTS, TASK_PLANNING_QUICK_PROMPTS } from '../../utils/aiQuickPrompts'
+import { LoadingAvatarContent } from './aiToolIndicators'
 import AICapabilityTicker from './AICapabilityTicker'
 import { AI_ATTACHMENT_ACCEPT, MAX_AI_ATTACHMENTS, readAIAttachment, buildAttachmentMessage } from '../../utils/aiAttachments'
 import { releasePopoverFocus } from '../../utils/popoverFocus'
@@ -23,16 +24,8 @@ import {
   DragIndicator as DragIcon,
   Add as AddIcon,
   EditNote as NoteIcon,
-  Settings as SettingsIcon,
   Send as SendIcon,
   Stop as StopIcon,
-  Search as SearchIcon,
-  CheckCircle as CheckIcon,
-  Image as ImageIcon,
-  MenuBook as ReadIcon,
-  Edit as EditIcon,
-  Psychology as MemoryIcon,
-  CalendarToday as CalendarIcon,
   KeyboardArrowDownRounded as ArrowDownIcon,
   HistoryRounded as HistoryIcon,
   ContentCopyRounded as CopyIcon,
@@ -47,54 +40,19 @@ import FlotaAIIcon from '../common/FlotaAIIcon'
 import FlotaAIOrb from '../common/FlotaAIOrb'
 import { useStore } from '../../store/useStore'
 import { useShallow } from 'zustand/react/shallow'
-import useAIStream from '../../hooks/useAIStream'
 import useDraggableFloatingPanel from '../../hooks/useDraggableFloatingPanel'
+import useAIChatSession from '../../hooks/useAIChatSession'
 import { truncateText } from '../../utils/aiContextUtils'
-import { buildContext } from '../../utils/aiCore/contextBuilder'
-import {
-  getLatestConfirmableAction,
-  getMessagePendingActions,
-  getDisplayMessages,
-  isExplicitPendingActionConfirmation,
-  supersedeStalePendingActions,
-  toApiMessages,
-  stripInternalActionAnnotations,
-} from '../../utils/aiCore/pendingActions'
+import { getMessagePendingActions, stripInternalActionAnnotations } from '../../utils/aiCore/pendingActions'
 import PendingActionCard from './PendingActionCard'
 import MemoryUpdateNotice from './MemoryUpdateNotice'
-import { useUndoMemoryUpdate } from '../../hooks/useAutoMemoryNotices'
-import { messageText, parseToolResult, formatAssistantCompletion, buildMessageMetadata, createUserMessage, createAssistantMessage } from '../../utils/aiCore/messageModel'
-import usePendingActionExecution from '../../hooks/usePendingActionExecution'
-import logger from '../../utils/logger'
+import { messageText } from '../../utils/aiCore/messageModel'
 import { WHITEBOARD_AI_EXAMPLES } from '../../utils/whiteboardAIPrompts'
-import { notifyAINoteIdsUpdated } from '../../utils/aiCore/noteRefresh'
 import PanelIconButton from '../common/PanelIconButton'
-import { ThinkingDots, TypewriterText, pickThinkingPhrase } from './thinking'
+import { TypewriterText } from './thinking'
+import { glassSx } from '../../styles/materials'
 
 
-
-const TASK_PLANNING_PROMPTS = [
-  {
-    id: 'plan-today',
-    label: '规划今天',
-    prompt: '请读取我今天和已经逾期的待办，结合重要性、紧急度与截止时间，帮我规划今天的执行顺序。先给出简洁方案，需要调整或新建待办时统一列出并等我确认。'
-  },
-  {
-    id: 'break-down-goal',
-    label: '拆解目标',
-    prompt: '我有一个目标需要拆解成可执行的待办。请先询问目标、截止时间和限制条件，再按阶段生成具体任务，并合理设置重要性、紧急度与截止时间。'
-  },
-  {
-    id: 'plan-week',
-    label: '安排本周',
-    prompt: '请查看我现有的未完成待办，为本周制定一份现实可执行的计划。识别冲突、逾期和优先级问题，给出调整建议，并在我确认后更新待办。'
-  },
-  {
-    id: 'clean-backlog',
-    label: '整理积压',
-    prompt: '请帮我整理积压的未完成待办：找出重复、长期逾期、描述模糊或优先级不合理的项目，给出保留、拆解、延期或删除建议，等我确认后再执行修改。'
-  }
-]
 
 const mdComponents = {
   p: ({ children }) => (
@@ -191,8 +149,6 @@ const AICommandCenter = ({
   const inputRef = useRef(null)
   const scrollRef = useRef(null)
   const panelRef = useRef(null)
-  const messagesRef = useRef([])
-  const conversationIdRef = useRef(null)
 
   const {
     notes: storeNotes,
@@ -203,9 +159,6 @@ const AICommandCenter = ({
     aiActiveConvId,
     aiNoteConversationMap,
     aiNewChat,
-    aiEnsureNoteChat,
-    aiSetActiveConv,
-    aiUpdateConv,
     aiCommandRequest,
     aiClearCommandRequest,
     aiSwitchConv,
@@ -224,9 +177,6 @@ const AICommandCenter = ({
     aiActiveConvId: state.aiActiveConvId,
     aiNoteConversationMap: state.aiNoteConversationMap,
     aiNewChat: state.aiNewChat,
-    aiEnsureNoteChat: state.aiEnsureNoteChat,
-    aiSetActiveConv: state.aiSetActiveConv,
-    aiUpdateConv: state.aiUpdateConv,
     aiCommandRequest: state.aiCommandRequest,
     aiClearCommandRequest: state.aiClearCommandRequest,
     aiSwitchConv: state.aiSwitchConv,
@@ -254,40 +204,6 @@ const AICommandCenter = ({
     || currentConversation?.source === 'task-planning'
 
   const [input, setInput] = useState('')
-  const [messages, setMessages] = useState(() => currentConversation?.messages || [])
-  const [streamContent, setStreamContent] = useState('')
-  const [activeTool, setActiveTool] = useState(null)
-  // 工具执行可能极快（毫秒级），保证头像至少展示一段时间
-  const activeToolClearTimerRef = useRef(null)
-  const activeToolStartedAtRef = useRef(0)
-  const ACTIVE_TOOL_MIN_DURATION = 1500
-  const showActiveTool = useCallback((name) => {
-    if (activeToolClearTimerRef.current) {
-      window.clearTimeout(activeToolClearTimerRef.current)
-      activeToolClearTimerRef.current = null
-    }
-    activeToolStartedAtRef.current = Date.now()
-    setActiveTool(name || null)
-  }, [])
-  const clearActiveTool = useCallback(() => {
-    const elapsed = Date.now() - (activeToolStartedAtRef.current || 0)
-    const remaining = Math.max(0, ACTIVE_TOOL_MIN_DURATION - elapsed)
-    if (activeToolClearTimerRef.current) {
-      window.clearTimeout(activeToolClearTimerRef.current)
-      activeToolClearTimerRef.current = null
-    }
-    if (remaining === 0) {
-      setActiveTool(null)
-      return
-    }
-    activeToolClearTimerRef.current = window.setTimeout(() => {
-      setActiveTool(null)
-      activeToolClearTimerRef.current = null
-    }, remaining)
-  }, [])
-  useEffect(() => () => {
-    if (activeToolClearTimerRef.current) window.clearTimeout(activeToolClearTimerRef.current)
-  }, [])
   const [attachments, setAttachments] = useState([])
   const [attachmentLoading, setAttachmentLoading] = useState(false)
   const [attachmentError, setAttachmentError] = useState('')
@@ -336,22 +252,10 @@ const AICommandCenter = ({
     event.stopPropagation()
     ingestAttachments(files)
   }
-  const [streamingConversationIds, setStreamingConversationIds] = useState([])
-  const inFlightConversationsRef = useRef(new Set())
-  const streamDraftsRef = useRef(new Map())
-  const loading = streamingConversationIds.includes(currentConversationId)
   const [position, setPosition] = useState(null)
   const [panelSize, setPanelSize] = useState(() => readStoredPanelSize(positionPersistKey))
   const [resizing, setResizing] = useState(false)
   const resizeStateRef = useRef(null)
-  const [thinkingPhrase, setThinkingPhrase] = useState('Thinking… 思考中')
-  const displayMessages = useMemo(() => new Set(getDisplayMessages(messages)), [messages])
-  const executingActionIds = useMemo(() => new Set(messages.flatMap(getMessagePendingActions)
-    .filter(action => action.status === 'running').map(action => action.actionId)), [messages])
-
-  const { runStream, cancel } = useAIStream()
-  const undoMemoryUpdate = useUndoMemoryUpdate()
-  const handleUndoMemory = useCallback((msg) => undoMemoryUpdate(conversationIdRef.current, msg), [undoMemoryUpdate])
   const { dragging, handleDragStart, restorePosition } = useDraggableFloatingPanel({
     panelRef,
     position,
@@ -427,74 +331,58 @@ const AICommandCenter = ({
   )
 
   const isCanvas = currentNote?.note_type === 'whiteboard' && !isTaskPlanning
-  const quickPrompts = isTaskPlanning ? TASK_PLANNING_PROMPTS : isCanvas ? WHITEBOARD_AI_EXAMPLES : currentNote ? NOTE_AI_QUICK_PROMPTS : GENERAL_AI_QUICK_PROMPTS
+  const quickPrompts = isTaskPlanning ? TASK_PLANNING_QUICK_PROMPTS : isCanvas ? WHITEBOARD_AI_EXAMPLES : currentNote ? NOTE_AI_QUICK_PROMPTS : GENERAL_AI_QUICK_PROMPTS
 
-  const previousConversationIdRef = useRef(currentConversationId)
-  const pendingConversationIdRef = useRef(null)
-  useEffect(() => {
-    if (previousConversationIdRef.current !== currentConversationId) {
-      const isSendInitiatedSwitch = (
-        pendingConversationIdRef.current &&
-        pendingConversationIdRef.current === currentConversationId
-      )
-      attachmentEpochRef.current += 1
-      attachmentReadingRef.current = false
+  const defaultTitle = currentNote ? `关于「${truncateText(currentNote.title || '未命名', 18)}」` : '新对话'
+
+  const resetAttachments = () => {
+    attachmentEpochRef.current += 1
+    attachmentReadingRef.current = false
+    setAttachments([])
+    setAttachmentError('')
+    setAttachmentLoading(false)
+  }
+
+  // 会话、发送、流式、确认卡执行：与 AI 页面共用 useAIChatSession
+  const {
+    messages,
+    displayMessages,
+    executingActionIds,
+    awaitingConfirm,
+    loading,
+    streamContent,
+    activeTool,
+    thinkingPhrase,
+    send,
+    cancel: handleCancel,
+    retryLast: handleRetry,
+    executeAction: handleExecuteAction,
+    dismissAction: handleDismissAction,
+    restoreAction: handleRestoreAction,
+    undoMemory: handleUndoMemory,
+  } = useAIChatSession({
+    conversationId: currentConversationId,
+    noteId: selectedNoteId,
+    scene: 'floating_panel',
+    requestPrefix: 'aicc',
+    // 独立笔记窗口只有这一篇笔记；主窗口按当前页面判断
+    getLocation: () => (selectedNoteIdOverride !== undefined ? noteWindowLocation(selectedNoteIdOverride) : getUiLocation(useStore.getState())),
+    defaultTitle,
+    actionDeps: { currentNote, notes, createNote, deleteNote, updateNote, loadNotes, setSelectedNoteId },
+    onTodoUpdated,
+    onConversationSwitched: () => {
+      resetAttachments()
+      setInput('')
+    },
+    onSendAccepted: () => {
+      setInput('')
       setAttachments([])
       setAttachmentError('')
-      setAttachmentLoading(false)
-      previousConversationIdRef.current = currentConversationId
-      conversationIdRef.current = currentConversationId
-      if (isSendInitiatedSwitch) {
-        pendingConversationIdRef.current = null
-        return
-      }
-      setMessages(currentConversation?.messages || [])
-      messagesRef.current = currentConversation?.messages || []
-      setStreamContent(streamDraftsRef.current.get(currentConversationId) || '')
-      setInput('')
-    }
-  }, [cancel, currentConversation, currentConversationId])
-
-  useEffect(() => {
-    if (!currentConversationId || previousConversationIdRef.current !== currentConversationId || loading) return
-    setMessages(currentConversation?.messages || [])
-    messagesRef.current = currentConversation?.messages || []
-  }, [currentConversation, currentConversationId, loading])
-
-  useEffect(() => {
-    messagesRef.current = messages
-  }, [messages])
-
-  // loading 期间定时轮换 thinking 短语，间隔较长避免视觉抖动
-  useEffect(() => {
-    if (!loading) return undefined
-    const id = window.setInterval(() => setThinkingPhrase(pickThinkingPhrase()), 3500)
-    return () => window.clearInterval(id)
-  }, [loading])
-
-  const getConversationTitle = useCallback((nextMessages) => {
-    const firstUserMessage = nextMessages.find((message) => message.role === 'user')
-    if (!firstUserMessage?.content) {
-      return currentNote ? `关于「${truncateText(currentNote.title || '未命名', 18)}」` : '新对话'
-    }
-    // content 可能是多模态数组（文本 + 图片），直接 .replace 会抛 TypeError，这里兼容取文本。
-    const raw = Array.isArray(firstUserMessage.content)
-      ? (firstUserMessage.content.find((p) => p?.type === 'text')?.text || '[图片]')
-      : firstUserMessage.content
-    const text = String(raw).replace(/\n/g, ' ').trim()
-    return text.length > 24 ? `${text.slice(0, 24)}…` : text
-  }, [currentNote])
-
-  const noteScope = useMemo(() => (
-    selectedNoteId == null
-      ? { noteId: null, source: 'general' }
-      : { noteId: String(selectedNoteId), source: 'note' }
-  ), [selectedNoteId])
-
-  const persistConversation = useCallback((conversationId, msgs) => {
-    if (!conversationId) return
-    aiUpdateConv(conversationId, { messages: msgs, title: getConversationTitle(msgs), ...noteScope })
-  }, [aiUpdateConv, getConversationTitle, noteScope])
+      // 自己发出的消息总要看得到：回到底部并恢复自动跟随
+      window.requestAnimationFrame(() => scrollToBottom())
+    },
+    onSendSettled: () => window.setTimeout(() => inputRef.current?.focus(), 30),
+  })
 
   useEffect(() => {
     if (!open) return
@@ -546,16 +434,17 @@ const AICommandCenter = ({
     return () => window.cancelAnimationFrame(frame)
   }, [currentConversationId, open, scrollToBottom])
 
-  const handleCancel = useCallback(() => {
-    if (loading) cancel(currentConversationId)
-  }, [cancel, loading, currentConversationId])
-
-  const { execute: handleExecuteAction, dismiss: handleDismissAction } = usePendingActionExecution({
-    conversationIdRef, messagesRef, setMessages,
-    deps: { currentNote, notes, createNote, deleteNote, updateNote, loadNotes, setSelectedNoteId },
-    onTodoUpdated,
-  })
-
+  // 「修改」：把焦点交给输入框，用户直接说要改哪里；AI 给出新方案后旧卡自动失效
+  const handleReviseAction = useCallback(() => {
+    setInput((prev) => (prev.trim() ? prev : '改一下：'))
+    window.requestAnimationFrame(() => {
+      const node = inputRef.current
+      if (!node) return
+      node.focus()
+      const end = node.value.length
+      node.setSelectionRange?.(end, end)
+    })
+  }, [])
   const handleNewChat = useCallback(() => {
     if (selectedNoteId == null) {
       aiNewChat()
@@ -565,194 +454,16 @@ const AICommandCenter = ({
       noteId: selectedNoteId,
       title: currentNote ? `关于「${truncateText(currentNote.title || '未命名', 18)}」` : '新对话'
     })
-  }, [aiNewChat, currentNote, loading, selectedNoteId])
+  }, [aiNewChat, currentNote, selectedNoteId])
 
-  const handleSend = useCallback(async (overridePrompt, retryAttachments = null) => {
-    const sentAttachments = retryAttachments ?? attachments
+  // 发送：附件拼进消息内容，其余交给共用会话逻辑
+  const handleSend = useCallback((overridePrompt) => {
+    if (attachmentLoading || attachmentReadingRef.current) return false
+    const sentAttachments = overridePrompt != null ? [] : attachments
     const text = (overridePrompt ?? input).trim()
-    if ((!text && !sentAttachments.length) || loading || attachmentLoading || attachmentReadingRef.current) return
-
-    const pendingAction = !sentAttachments.length && isExplicitPendingActionConfirmation(text)
-      ? getLatestConfirmableAction(messagesRef.current)
-      : null
-    if (pendingAction) {
-      setInput('')
-      await handleExecuteAction(pendingAction)
-      inputRef.current?.focus()
-      return
-    }
-
-    let conversationId = currentConversationId
-    if (!conversationId) {
-      conversationId = selectedNoteId == null
-        ? aiNewChat()
-        : aiEnsureNoteChat(selectedNoteId, {
-          title: currentNote ? `关于「${truncateText(currentNote.title || '未命名', 18)}」` : '新对话'
-        })
-    } else {
-      // 仅高亮当前对话，绝不联动 selectedNoteId（否则会把编辑器正在显示的笔记切走/切成空白页）
-      aiSetActiveConv(conversationId)
-    }
-    pendingConversationIdRef.current = conversationId
-    conversationIdRef.current = conversationId
-
-    // 该请求归属的对话；用户切走后旧请求只更新持久化数据，不写当前视图，避免“串台”。
-    const isActiveView = () => conversationIdRef.current === conversationId
-    const readLatestMessages = () => useStore.getState().aiConversations.find(c => c.id === conversationId)?.messages
-
-    if (inFlightConversationsRef.current.has(conversationId)) return
-    inFlightConversationsRef.current.add(conversationId)
-    const userMsg = createUserMessage({
-      content: buildAttachmentMessage(text, sentAttachments),
-      metadata: buildMessageMetadata({
-        conversationId,
-        ...noteScope,
-      }),
-    })
-    const nextMessages = [...(messagesRef.current || []), userMsg]
-    messagesRef.current = nextMessages
-    setMessages(nextMessages)
-    setInput('')
-    setAttachments([])
-    setAttachmentError('')
-    setStreamContent('')
-    // 自己发出的消息总要看得到：回到底部并恢复自动跟随
-    window.requestAnimationFrame(() => scrollToBottom())
-    setThinkingPhrase(pickThinkingPhrase())
-    setStreamingConversationIds(ids => [...ids, conversationId])
-    persistConversation(conversationId, nextMessages)
-
-    let shouldReloadNotes = false
-    const editedNoteIds = new Set()
-    const pendingActions = []
-
-    try {
-      const apiMessages = toApiMessages(nextMessages)
-      // 独立笔记窗口只有这一篇笔记；主窗口按当前页面判断
-      const location = selectedNoteIdOverride !== undefined ? noteWindowLocation(selectedNoteIdOverride) : getUiLocation(useStore.getState())
-      const prepareContext = () => buildContext({ notes, selectedNoteId, query: text, scene: 'floating_panel', location })
-
-      const { result, content, cancelledByUser, requestId, contextPackage } = await runStream({
-        conversationId,
-        messages: apiMessages,
-        prepareContext,
-        requestPrefix: 'aicc',
-        options: {
-          scene: 'floating_panel',
-          memoryQuery: text,
-          requireConfirmation: true,
-          actionContext: {
-            selectedNoteId: noteScope.noteId,
-            source: noteScope.source,
-          },
-        },
-        onContent: (c) => { streamDraftsRef.current.set(conversationId, c); if (isActiveView()) setStreamContent(c) },
-        onChunk: (chunk) => {
-          if (chunk?.type === 'tool_call_prepare' || chunk?.type === 'tool_start') {
-            if (isActiveView()) showActiveTool(chunk.name || null)
-            return
-          }
-          if (chunk?.type !== 'tool_end') return
-          if (isActiveView()) clearActiveTool()
-          const parsed = parseToolResult(chunk.result)
-          if (parsed?.error || parsed?.success === false) {
-            logger.warn('[AICommandCenter] tool failed', { name: chunk.name, result: parsed })
-          }
-          if (parsed?.requiresConfirmation && parsed?.actionId) {
-            pendingActions.push({
-              actionId: parsed.actionId,
-              name: chunk.name,
-              args: parsed.args || {},
-              context: parsed.context || null,
-              summary: parsed.summary,
-              label: parsed.label,
-              ...(parsed.preview ? { preview: parsed.preview } : {})
-            })
-          }
-          if (['create_note', 'edit_note', 'edit_notes'].includes(chunk.name) && parsed?.success === true && !parsed?.requiresConfirmation) {
-            shouldReloadNotes = true
-            if (chunk.name === 'edit_note' && parsed.id != null) editedNoteIds.add(parsed.id)
-            if (chunk.name === 'edit_notes') {
-              parsed.results?.filter((item) => item?.success && item.id != null).forEach((item) => editedNoteIds.add(item.id))
-            }
-          }
-        },
-        onChunkError: (chunk) => { if (isActiveView()) setStreamContent(prev => prev + `\n\n⚠️ ${chunk.content}`) }
-      })
-
-      const stoppedByUser = Boolean(result?.cancelled && cancelledByUser)
-      const assistantContentBase = result?.cancelled
-        ? (content || (stoppedByUser ? '已停止生成。' : '❌ 生成已中断，请重试'))
-        : result?.success
-          ? (result.fullContent || content || '')
-          : (content || `❌ ${result?.error || '请求失败'}`)
-      const assistantContent = formatAssistantCompletion(assistantContentBase, result)
-
-      const latestMessages = readLatestMessages()
-      if (!latestMessages) return
-      const finalMessages = supersedeStalePendingActions([...latestMessages, createAssistantMessage({
-        content: assistantContent,
-        stopped: stoppedByUser,
-        actions: pendingActions,
-        metadata: buildMessageMetadata({
-          conversationId,
-          ...noteScope,
-          requestId,
-        }),
-      })])
-      if (isActiveView()) {
-        messagesRef.current = finalMessages
-        setMessages(finalMessages)
-        setStreamContent('')
-      }
-      persistConversation(conversationId, finalMessages)
-      if (shouldReloadNotes) {
-        await loadNotes?.()
-        notifyAINoteIdsUpdated([...editedNoteIds])
-      }
-    } catch (error) {
-      logger.warn('[AICommandCenter] chatStream failed', error)
-      const latestMessages = readLatestMessages()
-      if (!latestMessages) return
-      const errorMessages = [...latestMessages, {
-        role: 'assistant',
-        content: `❌ 发生错误: ${error?.message || '未知错误'}`
-      }]
-      if (isActiveView()) {
-        messagesRef.current = errorMessages
-        setMessages(errorMessages)
-        setStreamContent('')
-      }
-      persistConversation(conversationId, errorMessages)
-    } finally {
-      if (pendingConversationIdRef.current === conversationId) pendingConversationIdRef.current = null
-      inFlightConversationsRef.current.delete(conversationId)
-      streamDraftsRef.current.delete(conversationId)
-      setStreamingConversationIds(ids => ids.filter(id => id !== conversationId))
-      if (isActiveView()) setActiveTool(null)
-      if (isActiveView()) window.setTimeout(() => inputRef.current?.focus(), 30)
-    }
-  }, [aiEnsureNoteChat, aiNewChat, aiSetActiveConv, clearActiveTool, currentConversationId, currentNote, handleExecuteAction, input, attachments, attachmentLoading, loadNotes, loading, noteScope, notes, persistConversation, runStream, scrollToBottom, selectedNoteId, selectedNoteIdOverride, showActiveTool])
-
-  // 重新生成最后一条回复：去掉最后一轮的回复，用同一个问题再问一次
-  const handleRetry = useCallback(() => {
-    if (loading) return
-    const list = messagesRef.current || []
-    let lastUserIndex = -1
-    for (let i = list.length - 1; i >= 0; i -= 1) {
-      if (list[i].role === 'user') { lastUserIndex = i; break }
-    }
-    if (lastUserIndex < 0) return
-    const lastUser = list[lastUserIndex]
-    const text = messageText(lastUser.content)
-    if (!text.trim()) return
-    const trimmed = list.slice(0, lastUserIndex)
-    messagesRef.current = trimmed
-    setMessages(trimmed)
-    if (currentConversationId) persistConversation(currentConversationId, trimmed)
-    const images = Array.isArray(lastUser.content) ? lastUser.content.filter(part => part?.type === 'image_url').map((part, index) => ({ id: `retry-${index}`, kind: 'image', name: '图片', dataUrl: part.image_url.url })) : []
-    handleSend(text, images)
-  }, [currentConversationId, handleSend, loading, persistConversation])
+    if (!text && !sentAttachments.length) return false
+    return send({ text, content: sentAttachments.length ? buildAttachmentMessage(text, sentAttachments) : text })
+  }, [attachmentLoading, attachments, input, send])
 
   useEffect(() => {
     if (!open || !aiCommandRequest?.prompt) return
@@ -959,6 +670,8 @@ const AICommandCenter = ({
             executingActionIds={executingActionIds}
             onExecuteAction={handleExecuteAction}
             onDismissAction={handleDismissAction}
+            onRestoreAction={handleRestoreAction}
+            onReviseAction={handleReviseAction}
             isLastAssistant={index === lastAssistantIndex && !loading}
             onRetry={handleRetry}
             onContinue={() => handleSend('继续')}
@@ -1015,16 +728,7 @@ const AICommandCenter = ({
               height: 32,
               borderRadius: '50%',
               color: 'text.primary',
-              backgroundColor: dark ? 'rgba(44,44,50,0.55)' : 'rgba(255,255,255,0.6)',
-              backgroundImage: dark
-                ? 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0))'
-                : 'linear-gradient(180deg, rgba(255,255,255,0.75), rgba(255,255,255,0.15))',
-              backdropFilter: 'blur(16px) saturate(180%)',
-              WebkitBackdropFilter: 'blur(16px) saturate(180%)',
-              border: `1px solid ${dark ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.8)'}`,
-              boxShadow: dark
-                ? '0 6px 18px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1)'
-                : '0 6px 18px rgba(22,22,24,0.12), inset 0 1px 0 rgba(255,255,255,0.9)',
+              ...glassSx(theme, 'popover', { radius: '50%' }),
               opacity: atBottom ? 0 : 1,
               transform: atBottom ? 'translateY(6px) scale(0.9)' : 'translateY(0) scale(1)',
               pointerEvents: atBottom ? 'none' : 'auto',
@@ -1067,7 +771,7 @@ const AICommandCenter = ({
           pl: 1.5,
           pr: 0.75,
           py: 0.75,
-          borderRadius: '14px',
+          borderRadius: 1.5,
           border: `1px solid ${dark ? 'rgba(255,255,255,0.10)' : 'rgba(22,22,24,0.10)'}`,
           bgcolor: dark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.78)',
           boxShadow: dark
@@ -1091,7 +795,9 @@ const AICommandCenter = ({
           fullWidth
           multiline
           maxRows={5}
-          placeholder={isTaskPlanning
+          placeholder={awaitingConfirm
+            ? '回复「好的」即可确认，或说说要改哪里…'
+            : isTaskPlanning
             ? '告诉我你的目标、期限或当前困难…'
             : isCanvas ? '描述你想画什么、改哪里，或问问这张图…' : currentNote ? `就「${truncateText(currentNote.title || '未命名', 14)}」问点什么…` : '问 AI 任何问题…'}
           value={input}
@@ -1116,7 +822,7 @@ const AICommandCenter = ({
             flexShrink: 0,
             width: 30,
             height: 30,
-            borderRadius: '10px',
+            borderRadius: 1,
             bgcolor: loading
               ? alpha(theme.palette.error.main, 0.12)
               : (input.trim() ? theme.palette.primary.main : 'transparent'),
@@ -1149,7 +855,7 @@ const AICommandCenter = ({
         sx={{ zIndex: 1400 }}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-        slotProps={{ paper: { sx: { mt: 0.5, width: 280, maxHeight: 360, p: 0.75, borderRadius: '12px', display: 'flex', flexDirection: 'column' } } }}
+        slotProps={{ paper: { sx: { mt: 0.5, width: 280, maxHeight: 360, p: 0.75, borderRadius: 1.5, display: 'flex', flexDirection: 'column' } } }}
       >
         <Typography sx={{ px: 1, pt: 0.5, pb: 0.75, fontSize: 12, fontWeight: 600, color: 'text.secondary' }}>
           {currentNote ? `「${truncateText(currentNote.title || '未命名', 14)}」的对话` : '最近的对话'}
@@ -1164,7 +870,7 @@ const AICommandCenter = ({
               <ButtonBase key={conversation.id}
                 onClick={() => { closeHistory(); if (!active) aiSwitchConv(conversation.id) }}
                 sx={(theme) => ({
-                  width: '100%', justifyContent: 'flex-start', gap: 1, px: 1, py: 0.75, borderRadius: '8px', textAlign: 'left',
+                  width: '100%', justifyContent: 'flex-start', gap: 1, px: 1, py: 0.75, borderRadius: 1, textAlign: 'left',
                   bgcolor: active ? alpha(theme.palette.primary.main, 0.1) : 'transparent',
                   '&:hover': { bgcolor: active ? alpha(theme.palette.primary.main, 0.14) : 'action.hover' },
                 })}>
@@ -1241,7 +947,7 @@ const MessageAction = ({ title, onClick, children }) => (
   </PanelIconButton>
 )
 
-const ChatBubble = ({ msg, userAvatar, executingActionIds, onExecuteAction, onDismissAction, isLastAssistant, onRetry, onContinue, onUndoMemory }) => {
+const ChatBubble = ({ msg, userAvatar, executingActionIds, onExecuteAction, onDismissAction, onRestoreAction, onReviseAction, isLastAssistant, onRetry, onContinue, onUndoMemory }) => {
   const isUser = msg.role === 'user'
   const [copied, setCopied] = useState(false)
   const copy = async () => {
@@ -1330,6 +1036,8 @@ const ChatBubble = ({ msg, userAvatar, executingActionIds, onExecuteAction, onDi
                   executing={executingActionIds.has(action.actionId)}
                   onExecute={onExecuteAction}
                   onDismiss={onDismissAction}
+                  onRestore={onRestoreAction}
+                  onRevise={onReviseAction}
                 />
               ))}
             </Box>
@@ -1365,83 +1073,6 @@ const ChatBubble = ({ msg, userAvatar, executingActionIds, onExecuteAction, onDi
           <MemoryUpdateNotice variant="pill" updates={msg.memoryUpdates} onUndo={() => onUndoMemory?.(msg)} />
         </Box>
       )}
-    </Box>
-  )
-}
-
-const TOOL_AVATAR_ICON = {
-  read_note: ReadIcon,
-  read_skill: ReadIcon,
-  get_settings: SettingsIcon,
-  update_settings: SettingsIcon,
-  search_notes: SearchIcon,
-  web_search: SearchIcon,
-  get_current_note: NoteIcon,
-  read_current_note: ReadIcon,
-  read_note_image: ImageIcon,
-  search_in_current_note: SearchIcon,
-  summarize_current_note_section: ReadIcon,
-  create_note: NoteIcon,
-  edit_note: EditIcon,
-  edit_notes: EditIcon,
-  create_whiteboard: EditIcon,
-  update_whiteboard: EditIcon,
-  list_widgets: SearchIcon,
-  get_widget: ReadIcon,
-  create_widget: EditIcon,
-  update_widget: EditIcon,
-  create_widget_instance: EditIcon,
-  add_widget_records: EditIcon,
-  write_long_document: NoteIcon,
-  search_todos: CheckIcon,
-  get_today_todos: CalendarIcon,
-  create_todo: CheckIcon,
-  create_todos: CheckIcon,
-  search_memory: MemoryIcon,
-  add_memory: MemoryIcon,
-  update_memory: MemoryIcon,
-  list_memories: MemoryIcon,
-}
-
-// 头像内容根据 activeTool 在「三点动画」与「对应工具图标」之间淡入切换
-const LoadingAvatarContent = ({ activeTool }) => {
-  const hasToolIcon = Boolean(activeTool && TOOL_AVATAR_ICON[activeTool])
-  const [showDotsPhase, setShowDotsPhase] = useState(false)
-
-  useEffect(() => {
-    setShowDotsPhase(false)
-    if (!hasToolIcon) return undefined
-    let timer = null
-    let dots = false
-    const schedule = () => {
-      timer = window.setTimeout(() => {
-        dots = !dots
-        setShowDotsPhase(dots)
-        schedule()
-      }, dots ? 1400 : 1800)
-    }
-    schedule()
-    return () => {
-      if (timer) window.clearTimeout(timer)
-    }
-  }, [activeTool, hasToolIcon])
-
-  const targetKey = hasToolIcon && !showDotsPhase ? activeTool : '__dots__'
-  const Icon = targetKey !== '__dots__' ? TOOL_AVATAR_ICON[targetKey] : null
-  return (
-    <Box
-      key={targetKey}
-      sx={{
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        color: 'inherit',
-        animation: 'aicc-avatar-fade 280ms ease',
-        '@keyframes aicc-avatar-fade': {
-          '0%': { opacity: 0, transform: 'scale(0.85)' },
-          '100%': { opacity: 1, transform: 'scale(1)' }
-        }
-      }}
-    >
-      {Icon ? <Icon sx={{ fontSize: 14 }} /> : <ThinkingDots />}
     </Box>
   )
 }

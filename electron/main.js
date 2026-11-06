@@ -154,7 +154,6 @@ let windowManager
 let shortcutService
 let tray = null
 let pluginManager
-const activeAIStreams = new Map()
 let cspConfigured = false
 
 // 外部文件（双击 .md / .excalidraw、拖到 Dock、「打开方式」）
@@ -878,6 +877,16 @@ async function initializeServices() {
         services.webSearchService
       )
       services.aiChatService.setWidgetService(services.widgetService)
+      // AI 会话由主进程持有：发送、流式进度、结果保存都在这里完成，再广播给所有窗口
+      services.conversationSessions = new ConversationSessions({
+        dao: services.conversationService.dao,
+        aiChatService: services.aiChatService,
+        aiService: services.aiService,
+        logger,
+        broadcast: (channel, payload) => {
+          for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send(channel, payload)
+        },
+      })
       services.aiChatService.setTodosChangedListener(() => {
         for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send('todo:changed')
       })
@@ -1171,7 +1180,6 @@ if (!gotTheLock) {
           })
         }
 
-        console.log('[Protocol] 处理 app:// 请求:', relativePath)
 
         // 插件资源分支：app://plugin/<pluginId>/<relPath>
         if (normalized.startsWith('plugin/') || normalized.startsWith('plugin' + path.sep)) {
@@ -1216,7 +1224,8 @@ if (!gotTheLock) {
             '.html': 'text/html; charset=utf-8',
             '.txt': 'text/plain; charset=utf-8'
           }[ext] || 'application/octet-stream'
-          const data = fs.readFileSync(resolved)
+          // 异步读取：协议请求跑在主进程，同步读文件会卡住所有 IPC 和窗口响应
+          const data = await fs.promises.readFile(resolved)
           const headers = {
             'Content-Type': pluginMime,
             'Cache-Control': 'no-cache'
@@ -1239,7 +1248,6 @@ if (!gotTheLock) {
         } else {
           fullPath = services.imageService.getImagePath(relativePath)
         }
-        console.log('[Protocol] 完整路径:', fullPath)
 
         // 检查文件是否存在
         if (!fs.existsSync(fullPath)) {
@@ -1280,11 +1288,10 @@ if (!gotTheLock) {
           return net.fetch(fileUrl, { headers: request.headers })
         }
 
-        // 使用流式读取，提升大文件性能
-        const data = fs.readFileSync(fullPath)
-        
+        // 异步读取：协议请求跑在主进程，同步读大图会卡住所有 IPC 和窗口响应
+        const data = await fs.promises.readFile(fullPath)
+
         const isWallpaper = relativePath.startsWith('wallpaper/')
-        console.log('[Protocol] 返回文件，MIME:', mimeType)
         const headers = {
           'Content-Type': mimeType,
           'Accept-Ranges': 'bytes',
@@ -1447,6 +1454,7 @@ app.on('activate', () => {
 
 const { validateRelativePath } = require('./utils/ipcValidator')
 const { registerAIHandlers } = require('./ipc/aiHandlers')
+const ConversationSessions = require('./services/aichat/sessions/ConversationSessions')
 const { registerMem0Handlers } = require('./ipc/mem0Handlers')
 const { registerPluginStoreHandlers } = require('./ipc/pluginStoreHandlers')
 const { registerSystemMiscHandlers } = require('./ipc/systemMiscHandlers')
@@ -1495,7 +1503,7 @@ registerDataIOHandlers(services)
 // 本地备份/恢复 已迁至 systemMiscHandlers
 
 // AI 相关 IPC 处理
-registerAIHandlers(services, activeAIStreams)
+registerAIHandlers(services)
 
 // STT 相关 IPC
 registerSttHandlers(services)

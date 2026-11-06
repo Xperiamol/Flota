@@ -500,7 +500,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
             gap: 0,
             mb: 2,
             border: `1px solid ${theme.palette.divider}`,
-            borderRadius: '8px',
+            borderRadius: 1,
             overflow: 'hidden',
             minWidth: '560px',
             // 与下方日期格同一材质：面板内的分组底色，设了壁纸时不会变成一条白块
@@ -534,7 +534,7 @@ const CalendarView = ({ currentDate, onDateChange, onTodoSelect, selectedDate, o
         <Box
           sx={{
             border: `1px solid ${theme.palette.divider}`,
-            borderRadius: '8px',
+            borderRadius: 1,
             overflow: 'hidden',
             // 有壁纸时与首页卡片同一种分组底色，壁纸里的暗块不会透到日期格上
             backgroundColor: theme.custom?.onWallpaper ? theme.custom.surface.inset : 'transparent',

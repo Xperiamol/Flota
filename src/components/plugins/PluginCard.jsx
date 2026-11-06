@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import {
   Box,
   Typography,
@@ -10,19 +10,19 @@ import {
   Button,
   Chip,
   LinearProgress,
-  Avatar
+  Avatar,
+  Switch
 } from '@mui/material'
 import {
   CloudDownloadRounded,
   DeleteRounded,
-  PowerSettingsNewRounded,
-  RocketLaunchRounded,
-  CheckCircleOutline,
+  MoreHoriz,
   Extension,
   Computer,
   Cloud,
 } from '../common/AppIcons'
-import { getDisplayCategories } from './pluginUtils'
+import { getDisplayCategories, isBuiltinPlugin, pluginDisplayName } from './pluginUtils'
+import AppContextMenu from '../common/AppContextMenu'
 import { createSoftGlassCardSx } from '../../styles/commonStyles'
 
 const PluginCard = ({
@@ -44,8 +44,10 @@ const PluginCard = ({
   metaLabel, // null：不显示版本
   hideCategories = false
 }) => {
+  const [menuAnchor, setMenuAnchor] = useState(null)
   if (!plugin) return null
 
+  const name = pluginDisplayName(plugin)
   const categories = getDisplayCategories(plugin)
   const description = plugin.shortDescription || plugin.description || plugin.manifest?.description || '暂未提供描述'
 
@@ -71,41 +73,25 @@ const PluginCard = ({
               color: plugin.icon ? undefined : 'primary.contrastText',
               width: 48, height: 48,
               fontSize: '1.15rem', fontWeight: 600,
-              flexShrink: 0, borderRadius: '12px'
+              flexShrink: 0, borderRadius: 1.5
             }}
           >
-            {avatarContent || (!plugin.icon && ((plugin.name || '').trim().slice(0, 2).toUpperCase() || 'P'))}
+            {avatarContent || (!plugin.icon && (name.trim().slice(0, 2).toUpperCase() || 'P'))}
           </Avatar>
           <Box sx={{ flexGrow: 1, minWidth: 0 }}>
             <Typography variant="h6" component="div"
-              title={plugin.manifest?.name || plugin.name || '未知插件'}
+              title={name}
               sx={{ fontSize: '1.05rem', lineHeight: 1.35, fontWeight: 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {plugin.manifest?.name || plugin.name || '未知插件'}
+              {name}
             </Typography>
             <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mt: 0.5, flexWrap: 'wrap', gap: 0.5 }}>
-              {metaLabel !== null && (
-                <Typography variant="caption"
-                  sx={{ color: 'text.secondary', fontWeight: 500,
-                    backgroundColor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
-                    px: 0.75, py: 0.25, borderRadius: 0.5 }}>
-                  {metaLabel || `v${plugin.manifest?.version || plugin.version || '0.0.0'}`}
-                </Typography>
-              )}
-              {plugin.author?.name && (
-                <Typography variant="caption" sx={{ color: 'text.secondary' }}>by {plugin.author.name}</Typography>
-              )}
-              {/* 状态标签放在元信息行，不再绝对定位压住标题 */}
-              {statusChip !== undefined ? statusChip : isInstalled ? (
-                <Chip
-                  size="small"
-                  color={isEnabled ? 'success' : 'default'}
-                  icon={isEnabled ? <CheckCircleOutline fontSize="small" /> : <PowerSettingsNewRounded fontSize="small" />}
-                  label={isEnabled ? '已启用' : '已禁用'}
-                  sx={{ height: 20, fontSize: 11, fontWeight: 600, '& .MuiChip-icon': { fontSize: '0.8rem' } }}
-                />
-              ) : (
-                <Chip size="small" color="primary" variant="outlined" label="未安装" sx={{ height: 20, fontSize: 11, fontWeight: 600 }} />
-              )}
+              {/* 版本 · 作者，一行安静的灰字；启用状态看底部的开关，这里不再重复 */}
+              <Typography variant="caption" noWrap sx={{ color: 'text.secondary', minWidth: 0 }}>
+                {[metaLabel === null ? null : (metaLabel || `v${plugin.manifest?.version || plugin.version || '0.0.0'}`), plugin.author?.name].filter(Boolean).join(' · ')}
+              </Typography>
+              {statusChip !== undefined ? statusChip : isBuiltinPlugin(plugin) ? (
+                <Chip size="small" label="内置" sx={{ height: 20, fontSize: 11, fontWeight: 600 }} />
+              ) : null}
             </Stack>
           </Box>
         </Stack>
@@ -146,13 +132,13 @@ const PluginCard = ({
         display: 'flex', justifyContent: 'space-between', alignItems: 'center'
       })}>
         {detailLabel ? (
-          <Button size="small" color="primary" startIcon={<RocketLaunchRounded fontSize="small" />}
+          <Button size="small" color="primary"
             onClick={(e) => { e.stopPropagation(); onSelect(plugin.id) }}
-            sx={{ textTransform: 'none', fontWeight: 500 }}>
+            sx={{ textTransform: 'none', fontWeight: 500, ml: -0.75 }}>
             {detailLabel}
           </Button>
         ) : <span />}
-        <Stack direction="row" spacing={0.75} alignItems="center" onClick={(e) => e.stopPropagation()}>
+        <Stack direction="row" spacing={0.5} alignItems="center" onClick={(e) => e.stopPropagation()}>
           {actions}
           {!actions && !isInstalled && (
             <Button size="small" variant="contained" startIcon={<CloudDownloadRounded fontSize="small" />}
@@ -164,21 +150,24 @@ const PluginCard = ({
           )}
           {!actions && isInstalled && (
             <>
-              <Button size="small" variant={isEnabled ? 'outlined' : 'contained'}
-                color={isEnabled ? 'warning' : 'success'}
-                disabled={Boolean(pendingAction)}
-                startIcon={<PowerSettingsNewRounded fontSize="small" />}
-                onClick={(e) => { e.stopPropagation(); onEnableToggle(plugin.id, !isEnabled) }}
-                sx={{ textTransform: 'none', fontWeight: 500, minWidth: 72 }}>
-                {isEnabled ? '禁用' : '启用'}
-              </Button>
-              <Tooltip title="卸载插件">
-                <IconButton size="small" color="error" disabled={Boolean(pendingAction)}
-                  onClick={(e) => { e.stopPropagation(); onUninstall(plugin.id) }}
-                  sx={{ '&:hover': { backgroundColor: 'error.main', color: 'error.contrastText' } }}>
-                  <DeleteRounded fontSize="small" />
+              {/* 启用 / 停用用开关；卸载这种不常用又危险的操作收进「更多」 */}
+              <Typography component="label" htmlFor={`plugin-enable-${plugin.id}`} variant="caption" sx={{ color: 'text.secondary', cursor: 'pointer' }}>
+                {isEnabled ? '已启用' : '已停用'}
+              </Typography>
+              <Switch size="small" checked={Boolean(isEnabled)} disabled={Boolean(pendingAction)}
+                inputProps={{ id: `plugin-enable-${plugin.id}`, 'aria-label': `启用「${name}」` }}
+                onChange={(e) => onEnableToggle(plugin.id, e.target.checked)} />
+              <Tooltip title="更多">
+                <IconButton size="small" aria-label={`「${name}」的更多操作`} disabled={Boolean(pendingAction)}
+                  onClick={(e) => setMenuAnchor({ el: e.currentTarget })}>
+                  <MoreHoriz fontSize="small" />
                 </IconButton>
               </Tooltip>
+              <AppContextMenu
+                anchor={menuAnchor}
+                onClose={() => setMenuAnchor(null)}
+                items={[{ key: 'uninstall', label: '卸载', icon: <DeleteRounded fontSize="small" />, danger: true, onClick: () => onUninstall(plugin.id) }]}
+              />
             </>
           )}
         </Stack>

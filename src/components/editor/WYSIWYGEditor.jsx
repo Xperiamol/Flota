@@ -13,8 +13,8 @@ import Underline from '@tiptap/extension-underline'
 import Strike from '@tiptap/extension-strike'
 import Link from '@tiptap/extension-link'
 import { Image } from '@tiptap/extension-image'
-import TaskList from '@tiptap/extension-task-list'
-import TaskItem from '@tiptap/extension-task-item'
+import BaseTaskList from '@tiptap/extension-task-list'
+import { LinkedTaskItem, promoteAllTasks } from './extensions/LinkedTaskItem'
 import { Table } from '@tiptap/extension-table'
 import { TableRow } from '@tiptap/extension-table'
 import { TableHeader } from '@tiptap/extension-table'
@@ -30,7 +30,8 @@ import { WhiteboardEmbed } from './extensions/WhiteboardEmbed'
 import { WidgetEmbed } from './extensions/WidgetEmbed'
 import { TodoListEmbed } from './extensions/TodoListEmbed'
 import { todoEmbedSelection } from '../../utils/todoReferences'
-import { TodoEmbed } from './extensions/TodoEmbed'
+import AppContextMenu from '../common/AppContextMenu'
+import { editorTaskListSx } from '../../styles/taskListSx'
 import TodoReferencePicker from '../todos/TodoReferencePicker'
 import { getClipboardLink, normalizePastedHtml, pasteEditorText, looksLikeMarkdown, isCodeEditorHtml } from '../../utils/editorClipboard'
 import { notifyError, notifyWithAction, promptInput } from '../../utils/notify'
@@ -40,7 +41,7 @@ import LinkEditorDialog, { requestLinkEditor } from './LinkEditorDialog'
 import '../../markdown/markdown.css'
 import AIAssistSelection from './extensions/AIAssistSelection'
 import WikiLinkSuggestionPopup from './WikiLinkSuggestionPopup'
-import { Box, IconButton, Typography as MuiTypography, TextField, Tooltip, Portal, ButtonBase, Menu, MenuItem, ListItemIcon, ListItemText, Divider } from '@mui/material'
+import { Box, IconButton, Typography as MuiTypography, TextField, Tooltip, Portal, ButtonBase, Menu, MenuItem, ListItemIcon, ListItemText, Divider, Slider } from '@mui/material'
 import { Close as CloseIcon } from '../common/AppIcons'
 import { PlayArrow as PlayArrowIcon } from '../common/AppIcons'
 import { Pause as PauseIcon } from '../common/AppIcons'
@@ -62,7 +63,7 @@ import { RICH_TEXT_EMPTY_LINE_SENTINEL, finalizeMarkdownForStorage, prepareMarkd
 import { useStore } from '../../store/useStore'
 import { useLinkGraph } from '../../store/useLinkGraph'
 import { useBookmarks } from '../../store/useBookmarks'
-import { floatingGlassSx } from '../../utils/floatingGlassSx'
+import { BLUR, glassSxFor } from '../../styles/materials'
 import useFloatingTableScrollbar from '../../hooks/useFloatingTableScrollbar'
 import { useError } from '../common/ErrorProvider'
 import AIAssistPanel from '../ai/AIAssistPanel'
@@ -234,6 +235,21 @@ const CustomUnderline = Underline.extend({
 })
 
 // 普通列表和任务列表之间只隔一个空行时，Markdown 把它们读成同一个列表（`- a\n\n- [ ] b`）。
+// tiptap-markdown 只给无序 / 有序列表加了「紧凑」属性，任务列表保存时每项之间都会多一个空行。
+// 和它们一样：原文是紧凑列表（没有 <p>）就按紧凑写回。
+const TaskList = BaseTaskList.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      tight: {
+        default: true,
+        parseHTML: (element) => element.getAttribute('data-tight') === 'true' || !element.querySelector('p'),
+        renderHTML: (attributes) => ({ 'data-tight': attributes.tight ? 'true' : null }),
+      },
+    }
+  },
+})
+
 // tiptap-markdown 把整个列表标成 taskList，普通项装不进去，于是在笔记开头凭空多出一个空的 `- [ ]`，
 // 每保存一次多一个，重开后还显示成字面的 "[ ]"。解析时把混合列表拆成连续的普通段和任务段。
 const MixedTaskListSplit = Extension.create({
@@ -625,39 +641,30 @@ const AudioPlayerWidget = ({ src, selected, originalSrc, editor, getPos, nodeSiz
     else { a.play().then(() => setPlaying(true)).catch(() => {}) }
   }
 
-  const seek = e => {
+  const seek = (_event, value) => {
     const a = audioRef.current
     if (!a) return
-    a.currentTime = Number(e.target.value)
+    a.currentTime = Number(value)
     setCurrentTime(a.currentTime)
   }
-
-  const pct = duration > 0 ? (currentTime / duration) * 100 : 0
 
   return (
     <Box onContextMenu={onContextMenu} sx={{
       my: 1, borderRadius: '10px', backgroundColor: 'action.hover',
       p: '4px 10px', display: 'flex', alignItems: 'center', gap: 1,
-      outline: selected ? '2px solid #1976d2' : 'none',
-      '& input[type=range]': {
-        WebkitAppearance: 'none', appearance: 'none',
-        flex: 1, height: '4px', borderRadius: '2px', cursor: 'pointer',
-        border: 'none', outline: 'none', overflow: 'visible', padding: 0, margin: 0,
-        '&::-webkit-slider-thumb': {
-          WebkitAppearance: 'none',
-          width: '12px', height: '12px',
-          borderRadius: '50%', background: '#1976d2', cursor: 'pointer',
-        },
-      },
+      outline: selected ? '2px solid' : 'none',
+      outlineColor: 'primary.main',
     }}>
       <audio ref={audioRef} preload="metadata" src={src} />
       <IconButton size="small" onClick={toggle} sx={{ p: '2px', flexShrink: 0 }} aria-label="播放暂停">
         {playing ? <PauseIcon sx={{ fontSize: 20 }} /> : <PlayArrowIcon sx={{ fontSize: 20 }} />}
       </IconButton>
-      <input
-        type="range" min={0} max={duration || 1} step={0.01} value={currentTime}
+      {/* 与设置页滑块同一套主题样式 */}
+      <Slider
+        size="small" min={0} max={duration || 1} step={0.01} value={currentTime}
         onChange={seek}
-        style={{ background: `linear-gradient(to right,#1976d2 ${pct}%,rgba(0,0,0,.15) ${pct}%)` }}
+        aria-label="播放进度"
+        sx={{ flex: 1, mx: 0.5, py: 1 }}
       />
       <span style={{ fontSize: 11, minWidth: 70, textAlign: 'right', whiteSpace: 'nowrap', opacity: 0.55 }}>
         {fmt(currentTime)} / {fmt(duration)}
@@ -1042,7 +1049,7 @@ const CodeLanguageMenu = ({ anchorEl, filter, onFilterChange, languages, current
         data-code-language-menu
         contentEditable={false}
         sx={{
-          ...floatingGlassSx({ radius: '14px', shadow: 'menu' }),
+          ...glassSxFor('popover', { radius: 'md', shadow: 'menu' }),
           position: 'fixed',
           ...(pos.top != null ? { top: pos.top } : { bottom: pos.bottom }),
           left: pos.left,
@@ -1415,7 +1422,7 @@ const LinkBubbleMenu = ({ editor, containerRef }) => {
         alignItems: 'center',
         gap: 0.5,
         p: '4px 6px',
-        ...floatingGlassSx({ radius: '12px' }),
+        ...glassSxFor('popover', { radius: 'md' }),
         overflowX: 'auto',
       }}
       onMouseDown={(e) => e.preventDefault()}
@@ -1501,7 +1508,7 @@ const TableBubbleMenu = ({ editor, containerRef }) => {
         alignItems: 'center',
         gap: 0.5,
         p: '4px',
-        ...floatingGlassSx({ radius: '12px' }),
+        ...glassSxFor('popover', { radius: 'md' }),
         overflowX: 'auto',
       }}
       onMouseDown={(e) => e.preventDefault()}
@@ -1605,7 +1612,7 @@ const CalloutBubbleMenu = ({ editor, containerRef }) => {
         visibility: position.visibility,
         zIndex: 1300,
         display: 'flex', gap: 0.25, p: '3px 6px',
-        ...floatingGlassSx({ radius: '999px' }),
+        ...glassSxFor('popover', { radius: 'pill' }),
         overflowX: 'auto',
       }}
       onMouseDown={(e) => e.preventDefault()}
@@ -1924,7 +1931,8 @@ const SLASH_COMMANDS = [
   { id: 'bullet', title: '项目符号列表', hint: '无序列表', keywords: 'ul bullet list', run: (editor) => editor.chain().focus().toggleBulletList().run() },
   { id: 'ordered', title: '编号列表', hint: '有序列表', keywords: 'ol ordered list', run: (editor) => editor.chain().focus().toggleOrderedList().run() },
   { id: 'task', title: '任务列表', hint: '可勾选事项', keywords: 'todo task checkbox', run: (editor) => editor.chain().focus().toggleTaskList().run() },
-  { id: 'todo-reference', title: '待办组件', hint: '引用或新建任务，同步勾选', keywords: 'todo task 待办 任务', run: editor => editor.commands.requestTodoReference() },
+  { id: 'todo-reference', title: '引用待办', hint: '插入已有的或新建一条，两边同步', keywords: 'todo task 待办 任务 引用', run: editor => editor.commands.requestTodoReference('single') },
+  { id: 'todo-list-reference', title: '待办清单', hint: '按这篇笔记或标签动态列出', keywords: 'todo list 待办 清单', run: editor => editor.commands.requestTodoReference('list') },
   { id: 'quote', title: '引用', hint: '突出一段话', keywords: 'quote blockquote', run: (editor) => editor.chain().focus().toggleBlockquote().run() },
   { id: 'codeblock', title: '代码块', hint: '多行代码', keywords: 'code pre', run: (editor) => editor.chain().focus().setCodeBlock().run() },
   { id: 'table', title: '表格', hint: '3 x 3 表格', keywords: 'table grid', run: (editor) => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
@@ -1955,7 +1963,7 @@ const SlashCommandMenu = ({ editor, containerRef }) => {
   const query = slashState?.query?.toLowerCase() || ''
   const commands = SLASH_COMMANDS.filter((cmd) => {
     const haystack = `${cmd.title} ${cmd.hint} ${cmd.keywords}`.toLowerCase()
-    return haystack.includes(query) && (cmd.id !== 'todo-reference' || editor.schema.nodes.todoEmbed)
+    return haystack.includes(query) && (!cmd.id.startsWith('todo-') || editor.schema.nodes.todoListEmbed)
   }).slice(0, 9)
   const rect = slashState ? getSelectionRect(editor) : null
   const { menuRef, position } = useFloatingMenuPosition(rect, {
@@ -2012,7 +2020,7 @@ const SlashCommandMenu = ({ editor, containerRef }) => {
         visibility: position.visibility,
         zIndex: 1450,
         p: 0.65,
-        ...floatingGlassSx({ radius: '14px', shadow: 'menu' }),
+        ...glassSxFor('popover', { radius: 'md', shadow: 'menu' }),
       }}
       onMouseDown={(e) => e.preventDefault()}
     >
@@ -2201,7 +2209,7 @@ const BlockMultiSelectOverlay = ({
             gap: 0.75,
             p: '6px 8px',
             overflowX: 'auto',
-            ...floatingGlassSx({ radius: '14px', shadow: 'menu' }),
+            ...glassSxFor('popover', { radius: 'md', shadow: 'menu' }),
           }}
           onMouseDown={(e) => e.preventDefault()}
         >
@@ -2296,8 +2304,8 @@ const BlockMultiSelectOverlay = ({
                 bgcolor: selected ? 'primary.main' : 'rgba(255,255,255,0.78)',
                 color: selected ? 'primary.contrastText' : 'transparent',
                 boxShadow: '0 6px 18px rgba(22,22,24,0.14)',
-                backdropFilter: 'blur(12px)',
-                WebkitBackdropFilter: 'blur(12px)',
+                backdropFilter: BLUR.subtle,
+                WebkitBackdropFilter: BLUR.subtle,
                 cursor: dragState ? 'grabbing' : 'grab',
                 zIndex: 1510,
                 display: 'flex',
@@ -2437,6 +2445,7 @@ const EditorContextMenu = ({ editor, menu, noteId, containerRef, undoBaseline, b
     }
 
     // 选区跨多个段落时只取第一段，否则拼接后的文本在任何单个段落里都匹配不到，书签点了没反应
+    const selectedText = selection.empty ? '' : doc.textBetween(from, to, '\n', ' ')
     const firstSelectedLine = String(selectedText || '').split('\n').map(clean).find(Boolean) || ''
     // 顶层位置（图片/表格等 atom 节点旁）$from.parent 是 doc，textContent 会是整篇正文，不能当锚点；
     // 此时退回到选区内第一个有文字的段落
@@ -2480,7 +2489,7 @@ const EditorContextMenu = ({ editor, menu, noteId, containerRef, undoBaseline, b
           zIndex: 1400,
           pointerEvents: 'auto',
           p: 0.55,
-          ...floatingGlassSx({ radius: '14px', shadow: 'menu' }),
+          ...glassSxFor('popover', { radius: 'md', shadow: 'menu' }),
         }}
         onMouseDown={(e) => e.stopPropagation()}
         onContextMenu={(e) => e.preventDefault()}
@@ -2566,6 +2575,7 @@ const EditorContextMenu = ({ editor, menu, noteId, containerRef, undoBaseline, b
 const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, onBlockSelectModeChange, onWikiLinkClick, onOpenAI, enableTodoReferences = true, placeholder = '开始输入...' }, ref) => {
   // 用 ref 追踪最新 onChange，避免在 useEditor 回调中因闭包失效而用到旧 handler
   const [todoPickerOpen, setTodoPickerOpen] = useState(false)
+  const [linkedTaskMenu, setLinkedTaskMenu] = useState(null)
   const todoInsertRange = useRef(null)
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
@@ -2754,7 +2764,7 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       InlineMath,
       WhiteboardEmbed,
       WidgetEmbed,
-      ...(enableTodoReferences ? [TodoEmbed, TodoListEmbed] : []),
+      ...(enableTodoReferences ? [TodoListEmbed] : []),
       BlockMath,
       MathAwareText,
       StableLink.configure({
@@ -2771,7 +2781,11 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       // 使用自定义 Image（带 NodeView），序列化方式不变
       CustomImage.configure({ inline: false, allowBase64: true, noteId }),
       TaskList,
-      TaskItem.configure({ nested: true }),
+      LinkedTaskItem.configure({
+        nested: true,
+        linking: enableTodoReferences,
+        getSourceNote: () => useStore.getState().notes.find((note) => String(note.id) === String(noteId)) || null,
+      }),
       MixedTaskListSplit, // 必须排在 TaskList 之后：它会先把整个混合列表标成 taskList
       Table.configure({ resizable: true }),
       TableRow,
@@ -3245,9 +3259,14 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
 
   useEffect(() => {
     if (!editor || !enableTodoReferences) return
-    const request = () => { todoInsertRange.current = { from: editor.state.selection.from, to: editor.state.selection.to }; setTodoPickerOpen(true) }
+    const request = (detail) => { todoInsertRange.current = { from: editor.state.selection.from, to: editor.state.selection.to }; setTodoPickerOpen(detail?.kind || 'single') }
+    const openLinkedMenu = (detail) => setLinkedTaskMenu(detail)
     editor.on('todo-reference-request', request)
-    return () => editor.off('todo-reference-request', request)
+    editor.on('linked-task-menu', openLinkedMenu)
+    return () => {
+      editor.off('todo-reference-request', request)
+      editor.off('linked-task-menu', openLinkedMenu)
+    }
   }, [editor, enableTodoReferences])
 
   // ── 对外暴露接口 ─────────────────────────────────────────────────────────────
@@ -3277,6 +3296,14 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
     focus: () => editor?.commands?.focus?.(),
     toggleBlockSelect: toggleBlockSelectMode,
     exitBlockSelect: exitBlockSelectMode,
+    /** 把还没关联的未完成任务都加入待办，返回建了几条 */
+    promoteAllTasks: () => (editor ? promoteAllTasks(editor, useStore.getState().notes.find((note) => String(note.id) === String(noteId)) || null) : Promise.resolve(0)),
+    /** 还没关联的未完成任务有几条 */
+    countPromotableTasks: () => {
+      let count = 0
+      editor?.state.doc.descendants((node) => { if (node.type.name === 'taskItem' && !node.attrs.todoRef && !node.attrs.checked && node.firstChild?.textContent.trim()) count += 1 })
+      return count
+    },
     // 供外层（NoteEditor）的 onDrop 调用，与源码模式保持一致
     // pos 可选：外层若计算了鼠标落点可一并传入
     insertImageFiles: (files, pos) => {
@@ -3374,16 +3401,8 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
 
           // ── 列表 ──────────────────────────────────────────────────────────────
           '& ul, & ol': { paddingLeft: '1.5rem', margin: '0.25rem 0' },
-          '& ul[data-type="taskList"]': {
-            listStyle: 'none',
-            paddingLeft: 0,
-            '& li': {
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: '0.5rem',
-              '& > label': { marginTop: '2px' },
-            },
-          },
+          // 任务列表：勾选框和全应用一致；关联待办的行尾有小标记（见 LinkedTaskItem）
+          '& ul[data-type="taskList"]': editorTaskListSx,
 
           // ── 行内代码 ──────────────────────────────────────────────────────────
           '& code': {
@@ -3557,14 +3576,24 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
       />
       {/* 上下文 Bubble Menus：链接 / 表格 / Callout */}
       <LinkBubbleMenu editor={editor} containerRef={overlayContainerRef} />
-      {todoPickerOpen && <TodoReferencePicker open onClose={() => setTodoPickerOpen(false)}
+      {todoPickerOpen && <TodoReferencePicker open initialKind={todoPickerOpen === 'list' ? 'list' : 'single'} onClose={() => setTodoPickerOpen(false)}
         initialText={todoInsertRange.current ? editor.state.doc.textBetween(todoInsertRange.current.from, todoInsertRange.current.to, ' ') : ''}
         sourceNote={useStore.getState().notes.find(n => String(n.id) === String(noteId))}
         onSelect={todo => {
           if (editor.isDestroyed) throw new Error('编辑器已关闭')
           const range = todoInsertRange.current
-          if (!editor.chain().focus().insertContentAt(range || editor.state.selection.from, [{ type: todoEmbedSelection(todo).type, attrs: todoEmbedSelection(todo).attrs }, { type: 'paragraph' }]).run()) throw new Error('当前位置无法插入待办')
+          const { type, attrs, content } = todoEmbedSelection(todo)
+          if (!editor.chain().focus().insertContentAt(range || editor.state.selection.from, [{ type, attrs, content }, { type: 'paragraph' }]).run()) throw new Error('当前位置无法插入待办')
         }} />}
+      {/* 关联任务行尾标记的菜单 */}
+      <AppContextMenu
+        anchor={linkedTaskMenu ? { x: linkedTaskMenu.x, y: linkedTaskMenu.y } : null}
+        onClose={() => setLinkedTaskMenu(null)}
+        items={linkedTaskMenu ? [
+          { key: 'open', label: '打开待办详情', hidden: !linkedTaskMenu.todo, onClick: () => window.dispatchEvent(new CustomEvent('flota:open-todo', { detail: linkedTaskMenu.todo })) },
+          { key: 'unlink', label: linkedTaskMenu.todo ? '取消关联（待办保留）' : '变回普通任务', hidden: !editor?.isEditable, onClick: () => editor.chain().focus().unlinkTask(linkedTaskMenu.pos).run() },
+        ] : []}
+      />
       <LinkEditorDialog editor={editor} />
       <TableBubbleMenu editor={editor} containerRef={overlayContainerRef} />
       <CalloutBubbleMenu editor={editor} containerRef={overlayContainerRef} />
@@ -3618,8 +3647,8 @@ const WYSIWYGEditor = forwardRef(({ noteId, content, onChange, onEditorReady, on
             border: '1px solid',
             borderColor: 'warning.light',
             bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(245,158,11,0.12)' : 'rgba(254,243,199,0.95)',
-            backdropFilter: 'blur(10px)',
-            WebkitBackdropFilter: 'blur(10px)',
+            backdropFilter: BLUR.medium,
+            WebkitBackdropFilter: BLUR.medium,
             zIndex: 10,
             boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
           }}

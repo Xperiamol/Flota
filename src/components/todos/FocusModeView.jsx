@@ -31,6 +31,7 @@ import {
 } from '../../utils/priorityUtils';
 import { useStore } from '../../store/useStore';
 import { isTodoCompleted, isFutureRecurringTodo } from '../../utils/todoDisplayUtils';
+import { glassSxFor } from '../../styles/materials'
 
 const LONG_PRESS_DURATION = 1200;
 
@@ -837,13 +838,7 @@ const FocusModeView = ({
                 transform: 'translate(-50%, -50%)',
                 width: { xs: '90%', sm: 400 },
                 maxHeight: '60vh',
-                backgroundColor: (theme) => theme.custom?.glass?.background,
-                backgroundImage: (theme) => theme.custom?.glass?.backgroundImage,
-                backdropFilter: (theme) => theme.custom?.glass?.backdropFilter,
-                WebkitBackdropFilter: (theme) => theme.custom?.glass?.backdropFilter,
-                borderRadius: '16px',
-                border: (theme) => theme.custom?.glass?.border,
-                boxShadow: (theme) => theme.custom?.glass?.boxShadow,
+                ...glassSxFor('popover', { radius: 'lg' }),
                 overflow: 'hidden',
                 zIndex: 3
               }}

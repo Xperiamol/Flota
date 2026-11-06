@@ -81,11 +81,11 @@ const registerMediaHandlers = (services) => {
     try {
       validateString(fileName, 'fileName')
       const audioDir = path.join(app.getPath('userData'), 'audio')
-      if (!fs.existsSync(audioDir)) fs.mkdirSync(audioDir, { recursive: true })
+      await fs.promises.mkdir(audioDir, { recursive: true })
       const safeName = path.basename(fileName)
       if (safeName !== fileName && fileName.includes('..')) throw new Error('文件名不合法')
       const filePath = path.join(audioDir, safeName)
-      fs.writeFileSync(filePath, Buffer.from(buffer))
+      await fs.promises.writeFile(filePath, Buffer.from(buffer))
       return { success: true, data: `audio/${safeName}` }
     } catch (error) {
       console.error('保存音频失败:', error)

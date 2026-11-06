@@ -1,6 +1,7 @@
 {
 	"id": "random-note",
-	"name": "Random Note (Built-in)",
+	"name": "随机回顾",
+	"builtin": true,
 	"version": "1.0.0",
 	"description": "一键抽取一篇早已遗忘的笔记，并自动在主编辑器中打开，适合做周期复盘或灵感唤醒。可结合番茄工作法、复习计划使用，及时捕捉旧笔记里的宝藏。",
 	"author": {

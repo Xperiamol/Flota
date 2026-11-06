@@ -7,6 +7,7 @@ import {
   CircularProgress
 } from '@mui/material'
 import { useStore } from './store/useStore'
+import { useAISessionSync } from './hooks/useAISessionSync'
 import { createAppTheme } from './styles/theme'
 import './styles/index.css'
 import TitleBar from './components/layout/TitleBar'
@@ -86,6 +87,8 @@ const ChristmasDecorations = lazy(() => import('./components/common/ChristmasSno
 
 function StandaloneWindow() {
   const christmasMode = useStore(state => state.christmasMode)
+  // 笔记窗口里的「问 AI」：加载会话并订阅主进程广播，和主窗口看到的同一份会话
+  useAISessionSync({ loadConversations: true })
   useApplyEditorPrefs()
   const [windowType, setWindowType] = useState(null)
   const [windowData, setWindowData] = useState(null)

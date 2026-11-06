@@ -1,9 +1,10 @@
-import { imageUploadName } from '../../utils/editorImageSource'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   Box,
   Button,
+  ButtonBase,
   Chip,
+  ClickAwayListener,
   Divider,
   IconButton,
   InputBase,
@@ -13,7 +14,6 @@ import {
   MenuItem,
   Popover,
   Stack,
-  Tooltip,
   Typography,
   alpha,
   useTheme
@@ -31,32 +31,39 @@ import {
   Image,
   KeyboardVoice,
   LabelImportantOutline,
+  LocalOffer,
   Notes,
   OpenInNew,
   PushPin,
   PushPinOutlined,
   PriorityHigh,
   RadioButtonUnchecked,
-  Send,
+  TaskAlt,
   Visibility
 } from '../common/AppIcons'
 import { useStore } from '../../store/useStore'
-import { createTodo, deleteTodo, fetchTodos, toggleTodoComplete, updateTodo } from '../../api/todoAPI'
+import { createTodo, fetchTodos, getTodoTagSuggestions, toggleTodoComplete, updateTodo } from '../../api/todoAPI'
+import { formatTags, parseTags } from '../../utils/tagUtils'
+import TagEditorPopover from '../common/TagEditorPopover'
 import ImagePreviewModal, { canvasToPngBlob } from '../common/ImagePreviewModal'
 import { getImageResolver } from '../../utils/ImageProtocolResolver'
 import { stripMarkdownBlocks, stripMarkdownToPreviewText } from '../../utils/markdownTextUtils'
-import { confirmAction, notifyError } from '../../utils/notify'
-import { imageAPI } from '../../api/imageAPI'
-import { getLocalPathFromFileUrl } from '../../utils/fileUrl'
+import { notifyError } from '../../utils/notify'
+import { openNoteLink } from '../../utils/linkUtils'
 import { toListResult } from '../../utils/todoDisplayUtils'
 import { getWhiteboardPreviewUrl } from '../../utils/whiteboardPreview'
-import AudioRecordButton from '../editor/AudioRecordButton'
 import MarkdownPreview from '../editor/MarkdownPreview'
 import TodoEditDialog from '../todos/TodoEditDialog'
-import { isImeComposing } from '../../utils/imeUtils'
+import TimelineComposer from './timeline/TimelineComposer'
+import TimelineDayPicker from './timeline/TimelineDayPicker'
+import useTimelineItemActions from './timeline/useTimelineItemActions'
+import { IMAGE_EXT, TIMELINE_TAG, splitEditableContent } from './timeline/timelineContent'
+import { glassSx } from '../../styles/materials'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const DEFAULT_TIMELINE_TYPES = ['note', 'whiteboard', 'todo']
+// 每次渲染 / 往上加载的记录条数（按整天取，实际会略多）
+const RENDER_BATCH = 120
 const TIMELINE_IMAGE_LIMIT = 4
 const TIMELINE_AUDIO_LIMIT = 2
 const TIMELINE_FILE_LIMIT = 2
@@ -132,8 +139,6 @@ const isDefaultTimelineTypes = (types) => {
   return DEFAULT_TIMELINE_TYPES.every((type) => normalized.includes(type)) && normalized.length === DEFAULT_TIMELINE_TYPES.length
 }
 
-const getBadgesForDisplay = (item) => item?.badges || []
-
 const AUDIO_EXT = /\.(m4a|mp3|wav|ogg|aac|opus|flac|webm)(?:\?|$)/i
 
 const isAudioRef = (src) => {
@@ -142,8 +147,6 @@ const isAudioRef = (src) => {
   if (src.startsWith('audio/') || src.startsWith('app://audio/')) return true
   return AUDIO_EXT.test(src)
 }
-
-const IMAGE_EXT = /\.(png|jpg|jpeg|gif|webp|bmp|svg|avif|ico)(?:\?|$)/i
 
 // 应用内附件路径（attachments/xxx.ext 或 app://attachments/xxx.ext）
 // 注意：图片本身可能也存在 attachments 目录中（图片语法），但我们用扩展名兜底区分
@@ -156,9 +159,18 @@ const isAttachmentFileRef = (src) => {
   return true
 }
 
-// 任何"应放进 attachments 目录"的文件路径
+// Markdown 链接目标可能写成 <file:///含空格的路径>，先去掉尖括号
+const linkTarget = (raw) => {
+  const text = String(raw || '').trim()
+  return text.startsWith('<') && text.endsWith('>') ? text.slice(1, -1).trim() : text
+}
+
+// 应用内引用（关联画布、笔记、待办、组件）：不是附件，点了打开对应内容
+const APP_REFERENCE_LINK = /^app:\/\/(note|whiteboard|todo|todo-list|widget)\//i
+
+// 本机文件或应用内附件（file://、attachments/、audio/、app://attachments 等），不含应用内引用
 const isLocalFileLink = (src) => {
-  if (!src) return false
+  if (!src || APP_REFERENCE_LINK.test(src)) return false
   return src.startsWith('file://')
     || src.startsWith('app://')
     || /^(?:attachments|audio)\//.test(src)
@@ -174,8 +186,11 @@ const stripMarkdown = (content = '') => stripMarkdownToPreviewText(
       return ''
     })
     .replace(/\[([^\]]+)]\(([^)]+)\)/g, (_, label, url) => {
+      const target = linkTarget(url)
+      // 应用内引用在气泡里单独显示成可点的标签，正文里不再重复
+      if (APP_REFERENCE_LINK.test(target)) return ''
       // 本机 file://、应用内 attachments/、app:// 协议附件 → 全部当作附件占位（兼容老链接语法）
-      if (isLocalFileLink(String(url || ''))) return `[附件] ${label}`
+      if (isLocalFileLink(target)) return `[附件] ${label}`
       return label
     })
 )
@@ -309,13 +324,26 @@ const extractFiles = (content = '') => {
   const linkPattern = /(^|[^!])\[([^\]]+)]\(([^)]+)\)/g
   while ((m = linkPattern.exec(String(content)))) {
     const label = m[2]
-    const target = m[3]?.trim()
+    const target = linkTarget(m[3])
     if (!target) continue
     if (isLocalFileLink(target)) {
       files.push({ label, url: target })
     }
   }
   return files
+}
+
+// 应用内引用：[关联画布](app://whiteboard/<id>) 等，显示成可点的标签
+const extractReferences = (content = '') => {
+  const references = []
+  const pattern = /(^|[^!])\[([^\]]+)]\(([^)]+)\)/g
+  let m
+  while ((m = pattern.exec(String(content)))) {
+    const url = linkTarget(m[3])
+    const kind = APP_REFERENCE_LINK.exec(url)?.[1]?.toLowerCase()
+    if (kind) references.push({ label: m[2], url, kind })
+  }
+  return references
 }
 
 const summarizeWhiteboard = (content = '') => {
@@ -369,48 +397,64 @@ const getTodoTime = (todo) =>
   toTime(todo.created_at || todo.createdAt) ||
   Date.now()
 
+const buildNoteItemUncached = (note) => {
+  const time = toTime(note.updated_at || note.updatedAt || note.created_at || note.createdAt) || Date.now()
+  const isWhiteboard = note.note_type === 'whiteboard'
+  const whiteboardSummary = isWhiteboard ? summarizeWhiteboard(note.content) : null
+  const audios = extractAudios(note.content)
+  const images = isWhiteboard ? whiteboardSummary.images : extractImages(note.content)
+  const files = isWhiteboard ? whiteboardSummary.files : extractFiles(note.content)
+  const references = isWhiteboard ? [] : extractReferences(note.content)
+  const isVoice = !isWhiteboard && audios.length > 0
+  const notePreview = buildNotePreview({
+    note,
+    isWhiteboard,
+    whiteboardSummary,
+    audios,
+    images,
+    files
+  })
+  return {
+    id: `note-${note.id}`,
+    rawId: note.id,
+    type: isWhiteboard ? 'whiteboard' : 'note',
+    noteKind: isWhiteboard ? 'whiteboard' : 'note',
+    badges: [
+      isVoice ? '语音' : null,
+      images.length > 0 ? '图片' : null,
+      files.length > 0 ? '附件' : null
+    ].filter(Boolean),
+    title: notePreview.title,
+    body: notePreview.body,
+    fullBody: notePreview.fullBody,
+    images,
+    audios: isWhiteboard ? whiteboardSummary.audios : audios,
+    files,
+    references,
+    whiteboardPreviewUrl: isWhiteboard ? getWhiteboardPreviewUrl(note, time) : '',
+    time,
+    tags: parseTags(note.tags),
+    pinned: Boolean(note.is_pinned),
+    raw: note
+  }
+}
+
+// 笔记 → 时间轴条目的解析（正则抽图片 / 录音 / 附件、生成预览文字）比较重。
+// store 对没变的笔记保持同一个对象引用，所以按对象缓存：改一篇只重算那一篇。
+const noteItemCache = new WeakMap()
+
+const buildNoteItem = (note) => {
+  const cached = noteItemCache.get(note)
+  if (cached) return cached
+  const item = buildNoteItemUncached(note)
+  noteItemCache.set(note, item)
+  return item
+}
+
 const buildTimelineItems = (notes, todos) => {
   const noteItems = (notes || [])
     .filter((note) => !note.is_deleted)
-    .map((note) => {
-      const time = toTime(note.updated_at || note.updatedAt || note.created_at || note.createdAt) || Date.now()
-      const isWhiteboard = note.note_type === 'whiteboard'
-      const whiteboardSummary = isWhiteboard ? summarizeWhiteboard(note.content) : null
-      const audios = extractAudios(note.content)
-      const images = isWhiteboard ? whiteboardSummary.images : extractImages(note.content)
-      const files = isWhiteboard ? whiteboardSummary.files : extractFiles(note.content)
-      const isVoice = !isWhiteboard && audios.length > 0
-      const notePreview = buildNotePreview({
-        note,
-        isWhiteboard,
-        whiteboardSummary,
-        audios,
-        images,
-        files
-      })
-      return {
-        id: `note-${note.id}`,
-        rawId: note.id,
-        type: isWhiteboard ? 'whiteboard' : 'note',
-        noteKind: isWhiteboard ? 'whiteboard' : 'note',
-        badges: [
-          isVoice ? '语音' : null,
-          images.length > 0 ? '图片' : null,
-          files.length > 0 ? '附件' : null
-        ].filter(Boolean),
-        title: notePreview.title,
-        body: notePreview.body,
-        fullBody: notePreview.fullBody,
-        images,
-        audios: isWhiteboard ? whiteboardSummary.audios : audios,
-        files,
-        whiteboardPreviewUrl: isWhiteboard ? getWhiteboardPreviewUrl(note, time) : '',
-        time,
-        tags: Array.isArray(note.tags) ? note.tags : [],
-        pinned: Boolean(note.is_pinned),
-        raw: note
-      }
-    })
+    .map(buildNoteItem)
 
   const todoItems = (todos || []).map((todo) => {
     const time = getTodoTime(todo)
@@ -426,9 +470,7 @@ const buildTimelineItems = (notes, todos) => {
       files: [],
       badges: [],
       time,
-      tags: typeof todo.tags === 'string'
-        ? todo.tags.split(',').map((tag) => tag.trim()).filter(Boolean)
-        : [],
+      tags: parseTags(todo.tags),
       dueDate: todo.due_date,
       done: isTodoDone(todo),
       important: Boolean(todo.is_important),
@@ -471,68 +513,25 @@ const inDateRange = (time, range) => {
   return true
 }
 
-const appendDraftText = (current, text) => {
-  if (!text) return current
-  const base = current || ''
-  if (!base.trim()) return text.trimStart()
-  return `${base}${base.endsWith('\n') ? '' : '\n'}${text.trimStart()}`
-}
-
-const attachmentToMarkdown = (item) => {
-  if (item.type === 'image') return item.markdown
-  if (item.type === 'audio') return `![录音](${item.path})`
-  if (item.type === 'file') return `![${item.name}](${item.path})`
-  return ''
-}
-
-const getDroppedFilePath = (file) => {
-  try {
-    return window.electronAPI?.system?.getPathForFile?.(file) || file?.path || file?.webkitRelativePath || ''
-  } catch {
-    return file?.path || file?.webkitRelativePath || ''
-  }
-}
-
-const isImageFile = (file) => Boolean(
-  file && (String(file.type || '').startsWith('image/') || IMAGE_EXT.test(file.name || ''))
-)
-
-// 从剪贴板中取出文件（截图、Finder 复制的文件等）
-const getClipboardFiles = (clipboardData) => {
-  if (!clipboardData) return []
-  const files = Array.from(clipboardData.files || [])
-  if (files.length) return files
-  return Array.from(clipboardData.items || [])
-    .filter((item) => item.kind === 'file')
-    .map((item) => item.getAsFile())
-    .filter(Boolean)
-}
-
-
-const normalizeTodoInput = (content) => {
-  const text = content.trim()
-  const match = text.match(/^(?:todo|待办|事项)\s*[:：]\s*(.+)$/i) || text.match(/^-\s*\[\s*]\s+(.+)$/)
-  return match?.[1]?.trim() || null
-}
+// 原地编辑只给普通文字笔记，且不太长；长文、画布去编辑器里改更顺手
+const INLINE_EDIT_MAX_LENGTH = 5000
+const canEditInline = (item) => item?.type === 'note'
+  && typeof item.raw?.content === 'string'
+  && item.raw.content.length <= INLINE_EDIT_MAX_LENGTH
+const editableTextOf = (item) => splitEditableContent(item?.raw?.content).text
 
 const TimelineView = ({ onTodoUpdated }) => {
   const theme = useTheme()
   const notes = useStore((state) => state.notes)
   const loadNotes = useStore((state) => state.loadNotes)
   const createNote = useStore((state) => state.createNote)
-  const deleteNote = useStore((state) => state.deleteNote)
   const setCurrentView = useStore((state) => state.setCurrentView)
   const setSelectedNoteId = useStore((state) => state.setSelectedNoteId)
   const togglePinNote = useStore((state) => state.togglePinNote)
   const timelineFilter = useStore((state) => state.timelineFilter)
   const resetTimelineFilter = useStore((state) => state.resetTimelineFilter)
   const [todos, setTodos] = useState([])
-  const [draft, setDraft] = useState('')
-  const [attachments, setAttachments] = useState([])
-  const [submitting, setSubmitting] = useState(false)
-  const [importing, setImporting] = useState(false)
-  const [dragActive, setDragActive] = useState(false)
-  const [composerFocused, setComposerFocused] = useState(false)
+  const [composerHeight, setComposerHeight] = useState(80)
   const [contextMenu, setContextMenu] = useState(null)
   const [editingTodo, setEditingTodo] = useState(null)
   const [failedWhiteboardPreviews, setFailedWhiteboardPreviews] = useState({})
@@ -541,8 +540,14 @@ const TimelineView = ({ onTodoUpdated }) => {
   const [previewImage, setPreviewImage] = useState(null)
   const [resolvedImages, setResolvedImages] = useState({})
   const [resolvedAudios, setResolvedAudios] = useState({})
+  // 详情里的原地编辑：{ text, saving }；null 表示在看不在改
+  const [detailEdit, setDetailEdit] = useState(null)
+  const [dayPicker, setDayPicker] = useState(null) // { anchorEl, group }
+  const [tagEditor, setTagEditor] = useState(null) // { anchorEl, itemId }
   const scrollRef = useRef(null)
-  const clickTimerRef = useRef(null)
+  const composerRef = useRef(null)
+  const dayRefs = useRef(new Map())
+  const pendingScrollLatestRef = useRef(false)
 
   const getDisplayImageSrc = useCallback((src) => {
     if (!src) return null
@@ -566,6 +571,17 @@ const TimelineView = ({ onTodoUpdated }) => {
     refreshTodos()
   }, [loadNotes, refreshTodos])
 
+  const {
+    hiddenTodoIds,
+    deleteItem,
+    canConvertToTodo,
+    convertToTodo,
+    saveTags,
+    saveNoteText,
+    mergeableCount,
+    mergeDay,
+  } = useTimelineItemActions({ refreshTodos, onTodoUpdated })
+
   const allItems = useMemo(() => buildTimelineItems(notes, todos), [notes, todos])
 
   const timelineItems = useMemo(() => {
@@ -579,6 +595,7 @@ const TimelineView = ({ onTodoUpdated }) => {
     const now = Date.now()
 
     return allItems.filter((item) => {
+      if (item.type === 'todo' && hiddenTodoIds.has(item.rawId)) return false
       if (!types.includes(item.type)) return false
       if (item.type === 'todo' && !showCompleted && item.done) return false
       if (!showFuture && item.time > now) return false
@@ -593,7 +610,7 @@ const TimelineView = ({ onTodoUpdated }) => {
       }
       return true
     })
-  }, [allItems, timelineFilter])
+  }, [allItems, hiddenTodoIds, timelineFilter])
 
   const filterActive = Boolean(
     (timelineFilter?.search || '').trim() ||
@@ -605,7 +622,25 @@ const TimelineView = ({ onTodoUpdated }) => {
     (timelineFilter?.quickMode || 'all') !== 'all'
   )
 
-  const groupedItems = useMemo(() => groupItemsByDay(timelineItems), [timelineItems])
+  const allGroups = useMemo(() => groupItemsByDay(timelineItems), [timelineItems])
+  const dayCounts = useMemo(
+    () => new Map(allGroups.map((group) => [group.key, group.items.length])),
+    [allGroups]
+  )
+
+  // 只渲染最近的一部分（按整天切，不把一天拆开），往上滚到顶再加载更早的。
+  // 记录多的时候第一次打开不用把几千条一次性渲染出来。
+  const [renderLimit, setRenderLimit] = useState(RENDER_BATCH)
+  const groupedItems = useMemo(() => {
+    let count = 0
+    let start = allGroups.length
+    while (start > 0 && count < renderLimit) {
+      start -= 1
+      count += allGroups[start].items.length
+    }
+    return start === 0 ? allGroups : allGroups.slice(start)
+  }, [allGroups, renderLimit])
+  const hasEarlier = groupedItems.length < allGroups.length
 
   const timelineImageSources = useMemo(() => {
     const sources = new Set()
@@ -623,14 +658,20 @@ const TimelineView = ({ onTodoUpdated }) => {
     return [...sources]
   }, [timelineItems])
 
+  // 只解析还没解析过的图片：筛选、编辑等引起的列表变化不会重复请求全部图片。
+  // 结果晚到也照样合并（解析结果与列表无关），只在卸载后丢弃。
+  const requestedImagesRef = useRef(new Set())
+  const mountedRef = useRef(true)
+  useEffect(() => () => { mountedRef.current = false }, [])
   useEffect(() => {
-    if (timelineImageSources.length === 0) return
-    let cancelled = false
+    const pendingSources = timelineImageSources.filter((src) => !requestedImagesRef.current.has(src))
+    if (pendingSources.length === 0) return
+    pendingSources.forEach((src) => requestedImagesRef.current.add(src))
     const resolver = getImageResolver()
     Promise.allSettled(
-      timelineImageSources.map(async (src) => [src, await resolver.resolve(src)])
+      pendingSources.map(async (src) => [src, await resolver.resolve(src)])
     ).then((results) => {
-      if (cancelled) return
+      if (!mountedRef.current) return
       const next = {}
       results.forEach((result) => {
         if (result.status === 'fulfilled') {
@@ -640,31 +681,22 @@ const TimelineView = ({ onTodoUpdated }) => {
       })
       setResolvedImages((prev) => ({ ...prev, ...next }))
     })
-    return () => {
-      cancelled = true
-    }
   }, [timelineImageSources])
 
+  const requestedAudiosRef = useRef(new Set())
   useEffect(() => {
-    if (timelineAudioSources.length === 0) return
-    let cancelled = false
-    const pendingSources = timelineAudioSources.filter((src) => !resolvedAudios[src])
+    const pendingSources = timelineAudioSources.filter((src) => !requestedAudiosRef.current.has(src))
     if (pendingSources.length === 0) return
-
+    pendingSources.forEach((src) => requestedAudiosRef.current.add(src))
     Promise.allSettled(
       pendingSources.map(async (src) => {
-        if (/^(https?:|file:|data:audio)/i.test(src)) {
-          return [src, { url: src, missing: false }]
-        }
-
+        if (/^(https?:|file:|data:audio)/i.test(src)) return [src, { url: src, missing: false }]
         const result = await window.electronAPI?.audio?.resolveSource?.(src)
-        if (result?.success && result.data) {
-          return [src, { url: result.data, missing: false }]
-        }
+        if (result?.success && result.data) return [src, { url: result.data, missing: false }]
         return [src, { url: '', missing: true }]
       })
     ).then((results) => {
-      if (cancelled) return
+      if (!mountedRef.current) return
       const next = {}
       results.forEach((result) => {
         if (result.status === 'fulfilled') {
@@ -672,20 +704,9 @@ const TimelineView = ({ onTodoUpdated }) => {
           next[src] = resolved
         }
       })
-      if (Object.keys(next).length > 0) {
-        setResolvedAudios((prev) => ({ ...prev, ...next }))
-      }
+      if (Object.keys(next).length > 0) setResolvedAudios((prev) => ({ ...prev, ...next }))
     })
-    return () => {
-      cancelled = true
-    }
-  }, [timelineAudioSources, resolvedAudios])
-
-  useEffect(() => () => {
-    if (clickTimerRef.current) {
-      window.clearTimeout(clickTimerRef.current)
-    }
-  }, [])
+  }, [timelineAudioSources])
 
   const scrollToLatest = useCallback((behavior = 'smooth') => {
     const el = scrollRef.current
@@ -693,11 +714,106 @@ const TimelineView = ({ onTodoUpdated }) => {
     el.scrollTo({ top: el.scrollHeight, behavior })
   }, [])
 
+  // ── 滚动 ──
+  // 第一次有内容 / 换了筛选：绘制前直接定位到最新，不出现“从头滚到底”的动画。
+  // 停在底部时一直贴底：图片、录音加载完撑高内容也不会把最新一条顶上去。
+  // 往上看历史时不打扰；只有自己刚记了一条才平滑滚回最新。
+  const atBottomRef = useRef(true)
+  const prependAnchorRef = useRef(null) // 加载更早记录前，距底部的距离
+  const jumpToDayRef = useRef(null)
+  const filterKey = JSON.stringify(timelineFilter || {})
+  const positionedKeyRef = useRef(null)
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el || timelineItems.length === 0 || positionedKeyRef.current === filterKey) return
+    positionedKeyRef.current = filterKey
+    el.scrollTop = el.scrollHeight
+    atBottomRef.current = true
+  }, [filterKey, timelineItems.length])
+
+  // 换筛选时重新从最近一批开始渲染
+  useEffect(() => { setRenderLimit(RENDER_BATCH) }, [filterKey])
+
   useEffect(() => {
-    if (groupedItems.length === 0) return
-    const frame = window.requestAnimationFrame(() => scrollToLatest('auto'))
+    if (!pendingScrollLatestRef.current) return undefined
+    pendingScrollLatestRef.current = false
+    const frame = window.requestAnimationFrame(() => scrollToLatest('smooth'))
     return () => window.cancelAnimationFrame(frame)
-  }, [groupedItems.length, scrollToLatest])
+  }, [timelineItems, scrollToLatest])
+
+  // 加载更早的记录后，保持用户眼前的内容不动
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    const fromBottom = prependAnchorRef.current
+    if (!el || fromBottom == null) return
+    prependAnchorRef.current = null
+    el.scrollTop = el.scrollHeight - fromBottom
+  }, [groupedItems])
+
+  // 跳到某一天：直接定位（不播放长距离滚动），并短暂高亮那天的日期。
+  // 那天还没渲染时先扩大渲染范围，渲染出来后再定位。
+  const [flashDayKey, setFlashDayKey] = useState(null)
+  const scrollDayIntoView = useCallback((dayKey) => {
+    const node = dayRefs.current.get(dayKey)
+    if (!node) return false
+    atBottomRef.current = false
+    node.scrollIntoView({ block: 'start' })
+    setFlashDayKey(dayKey)
+    return true
+  }, [])
+  useEffect(() => {
+    if (!flashDayKey) return undefined
+    const timer = window.setTimeout(() => setFlashDayKey(null), 1200)
+    return () => window.clearTimeout(timer)
+  }, [flashDayKey])
+
+  useLayoutEffect(() => {
+    const dayKey = jumpToDayRef.current
+    if (dayKey && scrollDayIntoView(dayKey)) jumpToDayRef.current = null
+  }, [groupedItems, scrollDayIntoView])
+
+  const jumpToDay = useCallback((dayKey) => {
+    const index = allGroups.findIndex((group) => group.key === dayKey)
+    if (index < 0) return
+    const needed = allGroups.slice(index).reduce((sum, group) => sum + group.items.length, 0)
+    // 跳转期间不贴底：扩大渲染范围会撑高内容，贴底逻辑会把视图拉回最新
+    atBottomRef.current = false
+    if (needed > renderLimit) {
+      jumpToDayRef.current = dayKey
+      setRenderLimit(needed)
+    } else {
+      scrollDayIntoView(dayKey)
+    }
+  }, [allGroups, renderLimit, scrollDayIntoView])
+
+  const handleListScroll = useCallback((event) => {
+    const el = event.currentTarget
+    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    if (hasEarlier && el.scrollTop < 240 && prependAnchorRef.current == null) {
+      prependAnchorRef.current = el.scrollHeight - el.scrollTop
+      setRenderLimit((limit) => limit + RENDER_BATCH)
+    }
+  }, [hasEarlier])
+
+  // 输入框变高（多行、附件）会改变列表底部留白，停在底部时跟着贴底
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (el && atBottomRef.current) el.scrollTop = el.scrollHeight
+  }, [composerHeight])
+
+  // 内容高度变化时（图片解析、录音加载），停在底部的用户继续贴底
+  const listContentRef = useRef(null)
+  useEffect(() => {
+    const content = listContentRef.current
+    const el = scrollRef.current
+    if (!content || !el) return undefined
+    const observer = new ResizeObserver(() => {
+      if (atBottomRef.current && prependAnchorRef.current == null) el.scrollTop = el.scrollHeight
+    })
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     const handleScrollLatest = () => scrollToLatest('smooth')
@@ -714,34 +830,57 @@ const TimelineView = ({ onTodoUpdated }) => {
     }
   }
 
-  const openDetailPopover = useCallback((anchorEl, item) => {
+  const openDetailPopover = useCallback((anchorEl, item, { edit = false } = {}) => {
     if (!anchorEl || !item) return
     setDetailPopover({ anchorEl, item })
+    setDetailEdit(edit && canEditInline(item) ? { text: editableTextOf(item), saving: false } : null)
     setDetailOpen(true)
   }, [])
 
   const closeDetail = useCallback(() => {
     setDetailOpen(false)
+    setDetailEdit(null)
   }, [])
 
+  // 单击立即出详情（不再为了区分双击而等 200ms）；详情是非模态的，
+  // 所以双击仍能直接打开，点另一条记录会直接换成那条的详情。
   const handleShowDetail = (event, item) => {
-    const anchorEl = event.currentTarget
-    if (clickTimerRef.current) {
-      window.clearTimeout(clickTimerRef.current)
-    }
-    clickTimerRef.current = window.setTimeout(() => {
-      openDetailPopover(anchorEl, item)
-      clickTimerRef.current = null
-    }, 200)
+    if (detailOpen && detailPopover?.item?.id === item.id) return
+    openDetailPopover(event.currentTarget, item)
   }
 
   const handleDoubleClickItem = (item) => {
-    if (clickTimerRef.current) {
-      window.clearTimeout(clickTimerRef.current)
-      clickTimerRef.current = null
-    }
     closeDetail()
     handleOpenItem(item)
+  }
+
+  // 列表重新生成后（编辑保存、同步），详情里显示的条目跟着换成最新的
+  const detailItemId = detailPopover?.item?.id
+  useEffect(() => {
+    if (!detailItemId) return
+    const latest = allItems.find((item) => item.id === detailItemId)
+    if (!latest) closeDetail()
+    else setDetailPopover((current) => (current && current.item !== latest ? { ...current, item: latest } : current))
+  }, [allItems, closeDetail, detailItemId])
+
+  // 焦点不在详情里（比如刚点完气泡）时的 Esc
+  useEffect(() => {
+    if (!detailOpen) return undefined
+    const handleKey = (event) => {
+      if (event.key !== 'Escape') return
+      if (detailEdit) setDetailEdit(null)
+      else closeDetail()
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [closeDetail, detailEdit, detailOpen])
+
+  const saveDetailEdit = async () => {
+    const item = detailPopover?.item
+    if (!item || !detailEdit || detailEdit.saving) return
+    setDetailEdit((current) => current && { ...current, saving: true })
+    const ok = await saveNoteText(item, detailEdit.text)
+    setDetailEdit((current) => (ok ? null : current && { ...current, saving: false }))
   }
 
   const handleToggleTodo = async (item) => {
@@ -751,17 +890,13 @@ const TimelineView = ({ onTodoUpdated }) => {
       await refreshTodos()
       onTodoUpdated?.()
     } catch (error) {
-      console.error('切换待办状态失败:', error)
+      notifyError(`更新待办失败：${error?.message || '未知原因'}`)
     }
   }
 
   const handleOpenContextMenu = (event, item) => {
     event.preventDefault()
     event.stopPropagation()
-    if (clickTimerRef.current) {
-      window.clearTimeout(clickTimerRef.current)
-      clickTimerRef.current = null
-    }
     closeDetail()
     setContextMenu({
       mouseX: event.clientX + 2,
@@ -774,6 +909,17 @@ const TimelineView = ({ onTodoUpdated }) => {
   const closeContextMenu = useCallback(() => {
     setContextMenu(null)
   }, [])
+
+  // 标签弹层始终显示这条记录的最新标签（每次增删保存后列表会刷新）
+  const tagEditorItem = tagEditor ? allItems.find((item) => item.id === tagEditor.itemId) : null
+
+  const contextMenuDay = useMemo(() => {
+    const id = contextMenu?.item?.id
+    return id ? groupedItems.find((group) => group.items.some((item) => item.id === id)) : null
+  }, [contextMenu, groupedItems])
+  const contextMenuDayMergeCount = contextMenuDay && contextMenu?.item?.type === 'note'
+    ? mergeableCount(contextMenuDay.items)
+    : 0
 
   const copyImageToClipboard = useCallback(async (src) => {
     if (!src) return false
@@ -823,27 +969,6 @@ const TimelineView = ({ onTodoUpdated }) => {
     }
   }, [copyImageToClipboard])
 
-  const handleDeleteTimelineItem = useCallback(async (item) => {
-    if (!item) return
-    const itemLabel = item.title || (item.body ? truncateText(item.body, 18) : '此记录')
-    const confirmed = await confirmAction(item.type === 'todo'
-      ? { title: '删除待办', message: `确定删除待办“${itemLabel}”？`, confirmText: '删除', danger: true }
-      : { title: '删除记录', message: `确定删除“${itemLabel}”？删除后可在回收站恢复。`, confirmText: '删除', danger: true })
-    if (!confirmed) return
-    try {
-      if (item.type === 'todo') {
-        await deleteTodo(item.rawId)
-        await refreshTodos()
-        onTodoUpdated?.()
-      } else {
-        await deleteNote(item.rawId)
-      }
-    } catch (error) {
-      console.error('删除时间轴记录失败:', error)
-      notifyError(`删除失败：${error?.message || '未知原因'}`)
-    }
-  }, [deleteNote, onTodoUpdated, refreshTodos])
-
   const handleToggleTodoFlag = useCallback(async (item, field) => {
     if (item?.type !== 'todo') return
     const nextValue = field === 'is_important' ? !item.important : !item.urgent
@@ -852,17 +977,14 @@ const TimelineView = ({ onTodoUpdated }) => {
       await refreshTodos()
       onTodoUpdated?.()
     } catch (error) {
-      console.error('更新待办标记失败:', error)
+      notifyError(`更新待办失败：${error?.message || '未知原因'}`)
     }
   }, [onTodoUpdated, refreshTodos])
 
   const handleToggleTimelinePin = useCallback(async (item) => {
     if (!item || item.type === 'todo') return
-    try {
-      await togglePinNote(item.rawId)
-    } catch (error) {
-      console.error('切换时间轴置顶失败:', error)
-    }
+    const result = await togglePinNote(item.rawId)
+    if (result?.success === false) notifyError(`置顶失败：${result.error || '未知原因'}`)
   }, [togglePinNote])
 
   const handleEditTodoFromTimeline = useCallback((item) => {
@@ -877,51 +999,24 @@ const TimelineView = ({ onTodoUpdated }) => {
     onTodoUpdated?.()
   }, [onTodoUpdated, refreshTodos])
 
-  const handleSubmit = async () => {
-    const body = draft.trim()
-    const attachmentText = attachments.map(attachmentToMarkdown).filter(Boolean).join('\n')
-    const content = [body, attachmentText].filter(Boolean).join('\n\n').trim()
-    if (!content || submitting || importing) return
-    const todoContent = attachments.length === 0 ? normalizeTodoInput(content) : null
-    setSubmitting(true)
-    try {
-      if (todoContent) {
-        await createTodo({ content: todoContent, tags: '时间轴' })
-        await refreshTodos()
-        onTodoUpdated?.()
-      } else {
-        await createNote({
-          title: '',
-          content,
-          tags: ['时间轴']
-        })
-      }
-      setDraft('')
-      clearAttachments()
-    } catch (error) {
-      console.error('创建时间轴记录失败:', error)
-    } finally {
-      setSubmitting(false)
+  // 输入框提交：失败时抛错，输入框会保留内容并提示
+  const handleComposerSubmit = useCallback(async ({ kind, content }) => {
+    if (kind === 'todo') {
+      await createTodo({ content, tags: TIMELINE_TAG })
+      await refreshTodos()
+      onTodoUpdated?.()
+    } else {
+      const result = await createNote({ title: '', content, tags: [TIMELINE_TAG], selectAfterCreate: false })
+      if (!result?.success) throw new Error(result?.error || '保存失败')
     }
-  }
+    pendingScrollLatestRef.current = true
+  }, [createNote, onTodoUpdated, refreshTodos])
 
-  const addAttachment = (item) => {
-    setAttachments((prev) => [...prev, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, ...item }])
-  }
-
-  const removeAttachment = (id) => {
-    setAttachments((prev) => {
-      const target = prev.find((item) => item.id === id)
-      if (target?.ownsPreview) URL.revokeObjectURL(target.previewUrl)
-      return prev.filter((item) => item.id !== id)
-    })
-  }
-
-  const clearAttachments = () => {
-    setAttachments((prev) => {
-      prev.forEach((item) => { if (item.ownsPreview) URL.revokeObjectURL(item.previewUrl) })
-      return []
-    })
+  // 在时间轴任意位置松开文件，都交给输入框导入
+  const handleDropFiles = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    composerRef.current?.importFiles(Array.from(event.dataTransfer?.files || []))
   }
 
   const handleWhiteboardPreviewError = useCallback((previewUrl) => {
@@ -942,264 +1037,20 @@ const TimelineView = ({ onTodoUpdated }) => {
     })
   }, [timelineItems])
 
-  const importLocalFileAsAttachment = useCallback(async (filePath, fallbackName) => {
-    if (!filePath) return null
-    try {
-      const result = await window.electronAPI?.attachments?.saveFromPath?.(filePath, fallbackName)
-      if (result?.success && result.data?.relativePath) {
-        return {
-          name: result.data.displayName || fallbackName || '附件',
-          path: result.data.relativePath,
-          url: `app://${result.data.relativePath}`,
-        }
-      }
-      // 导入失败：明确告知用户，不再静默降级为 file://（避免变成不能云同步的本机链接）
-      const errMsg = result?.error || '未知原因'
-      console.warn('导入附件失败:', errMsg)
-      notifyError(`附件导入失败：${errMsg}`)
-      return null
-    } catch (error) {
-      console.error('导入附件异常:', error)
-      notifyError(`附件导入失败：${error.message}`)
-      return null
-    }
-  }, [])
-
-  // 统一的文件导入：图片走图片目录并带缩略图，其他文件走附件目录
-  const importFiles = useCallback(async (files = []) => {
-    if (!files.length) return
-    setImporting(true)
-    try {
-      for (const [index, file] of files.entries()) {
-        const filePath = getDroppedFilePath(file)
-        if (isImageFile(file)) {
-          try {
-            const fileName = file.name && file.name !== 'image.png'
-              ? file.name
-              : imageUploadName(file, 'clipboard')
-            const imagePath = filePath
-              ? await imageAPI.saveFromPath(filePath, fileName)
-              : await imageAPI.saveFromBuffer(new Uint8Array(await file.arrayBuffer()), fileName)
-            addAttachment({
-              type: 'image',
-              name: fileName,
-              path: imagePath,
-              markdown: `![${fileName}](${imagePath})`,
-              previewUrl: URL.createObjectURL(file),
-              ownsPreview: true
-            })
-          } catch (error) {
-            console.error('导入图片失败:', error)
-            notifyError(`图片导入失败：${error.message}`)
-          }
-          continue
-        }
-
-        let imported = null
-        if (filePath) {
-          imported = await importLocalFileAsAttachment(filePath, file.name)
-        } else {
-          // 无本地路径（如从网页复制的文件），直接按内容保存
-          try {
-            const result = await window.electronAPI?.attachments?.saveFromBuffer?.(
-              new Uint8Array(await file.arrayBuffer()),
-              file.name || '附件'
-            )
-            if (result?.success && result.data?.relativePath) {
-              imported = {
-                name: result.data.displayName || file.name || '附件',
-                path: result.data.relativePath,
-                url: `app://${result.data.relativePath}`
-              }
-            } else {
-              throw new Error(result?.error || '未知原因')
-            }
-          } catch (error) {
-            console.error('导入附件失败:', error)
-            notifyError(`附件导入失败：${error.message}`)
-          }
-        }
-        if (imported) addAttachment({ type: 'file', ...imported })
-      }
-    } finally {
-      setImporting(false)
-    }
-  }, [importLocalFileAsAttachment])
-
-  const handleAttachFile = async () => {
-    try {
-      const result = await window.electronAPI?.system?.showOpenDialog?.({
-        properties: ['openFile', 'multiSelections']
-      })
-      if (result?.canceled || !result?.filePaths?.length) return
-
-      setImporting(true)
-      try {
-        for (const filePath of result.filePaths) {
-          const fileName = filePath.split(/[\\/]/).pop() || '附件'
-          if (IMAGE_EXT.test(fileName)) {
-            try {
-              const imagePath = await imageAPI.saveFromPath(filePath, fileName)
-              // CSP 不允许 file://，缩略图走应用内图片解析
-              const previewUrl = await getImageResolver().resolve(imagePath).catch(() => null)
-              addAttachment({
-                type: 'image',
-                name: fileName,
-                path: imagePath,
-                markdown: `![${fileName}](${imagePath})`,
-                previewUrl: previewUrl || undefined
-              })
-              continue
-            } catch (error) {
-              console.warn('按图片导入失败，改为附件:', error)
-            }
-          }
-          const imported = await importLocalFileAsAttachment(filePath, fileName)
-          if (imported) addAttachment({ type: 'file', ...imported })
-        }
-      } finally {
-        setImporting(false)
-      }
-    } catch (error) {
-      console.error('选择时间轴附件失败:', error)
-    }
-  }
-
-  const handleDropFiles = async (event) => {
+  // 附件、本机文件、关联画布 / 笔记 / 待办等链接都交给编辑器同一个打开逻辑
+  const openTimelineLink = async (event, url) => {
     event.preventDefault()
     event.stopPropagation()
-    setDragActive(false)
-    await importFiles(Array.from(event.dataTransfer?.files || []))
-  }
-
-  const handleComposerPaste = (event) => {
-    const files = getClipboardFiles(event.clipboardData)
-    if (!files.length) return
-    // 有文件时拦截默认粘贴（否则会把文件名当文本粘进来）
-    event.preventDefault()
-    importFiles(files)
-  }
-
-  const openTimelineFile = async (event, fileUrl) => {
-    event.preventDefault()
-    event.stopPropagation()
+    if (!url) return
     try {
-      if (!fileUrl) return
-      if (fileUrl.startsWith('file://')) {
-        await window.electronAPI?.system?.openPath?.(getLocalPathFromFileUrl(fileUrl))
-      } else if (/^(?:attachments|audio|images)\//.test(fileUrl) || fileUrl.startsWith('app://')) {
-        // 应用内附件：用专用 IPC（system.openExternal 仅支持 http/https）
-        const cleaned = fileUrl.replace(/^app:\/\//, '')
-        const result = await window.electronAPI?.attachments?.open?.(cleaned)
-        if (result && result.success === false) {
-          notifyError(`打开失败：${result.error || '未知原因'}`)
-        }
-      } else {
-        await window.electronAPI?.system?.openExternal?.(fileUrl)
-      }
+      if (!(await openNoteLink(url))) notifyError('找不到链接指向的内容，可能已经被删除')
     } catch (error) {
-      console.error('打开时间轴附件失败:', error)
+      notifyError(`打开失败：${error?.message || '未知原因'}`)
     }
   }
 
-  const renderAttachmentQueue = () => {
-    if (!attachments.length) return null
-
-    return (
-      <Stack direction="row" spacing={0.75} sx={{ mb: 1, overflowX: 'auto', pb: 0.25 }}>
-        {attachments.map((item) => (
-          <Chip
-            key={item.id}
-            size="small"
-            label={
-              item.type === 'image' ? item.name || '图片'
-              : item.type === 'audio' ? '语音'
-              : item.name || '文件'
-            }
-            color={item.type === 'audio' ? 'success' : item.type === 'file' ? 'default' : 'primary'}
-            variant="outlined"
-            icon={
-              item.type === 'image' && item.previewUrl
-                ? <Box component="img" src={item.previewUrl} alt="" sx={{ width: 22, height: 22, borderRadius: '6px', objectFit: 'cover', ml: '4px !important' }} />
-                : item.type === 'image' ? <Image fontSize="small" />
-                : item.type === 'audio' ? <KeyboardVoice fontSize="small" />
-                : <AttachFile fontSize="small" />
-            }
-            onDelete={() => removeAttachment(item.id)}
-            deleteIcon={<Close fontSize="small" />}
-            sx={{
-              height: 30,
-              borderRadius: '999px',
-              flexShrink: 0,
-              maxWidth: 200,
-              px: 0.35,
-              color: 'text.primary',
-              backgroundColor: theme.palette.mode === 'dark'
-                ? alpha('#1f1f22', 0.84)
-                : alpha('#ffffff', 0.9),
-              borderColor: theme.palette.mode === 'dark'
-                ? alpha('#e6e6e8', 0.12)
-                : alpha('#ffffff', 0.75),
-              boxShadow: 'none',
-              '& .MuiChip-label': {
-                px: 1,
-                fontSize: 12
-              },
-              '& .MuiChip-deleteIcon': {
-                color: 'text.secondary'
-              }
-            }}
-          />
-        ))}
-      </Stack>
-    )
-  }
-
-  const glassPanel = {
-    backgroundColor: theme.custom?.glass?.background,
-    backgroundImage: theme.custom?.glass?.backgroundImage,
-    border: theme.custom?.glass?.border,
-    borderColor: theme.palette.divider,
-    backdropFilter: theme.custom?.glass?.backdropFilter,
-    WebkitBackdropFilter: theme.custom?.glass?.backdropFilter,
-    boxShadow: theme.custom?.glass?.boxShadow
-  }
-
-  const glassCard = {
-    backgroundColor: theme.palette.mode === 'dark'
-      ? alpha(theme.palette.background.paper, 0.82)
-      : alpha(theme.palette.background.paper, 0.92),
-    backgroundImage: 'none',
-    border: `1px solid ${theme.palette.mode === 'dark' ? alpha('#ffffff', 0.08) : alpha('#161618', 0.08)}`,
-    backdropFilter: 'blur(10px)',
-    WebkitBackdropFilter: 'blur(10px)',
-    boxShadow: theme.palette.mode === 'dark'
-      ? '0 3px 12px rgba(0,0,0,0.16)'
-      : '0 3px 12px rgba(22,22,24,0.05)'
-  }
-
-  const composerActionButtonSx = {
-    width: 36,
-    height: 36,
-    color: 'text.secondary',
-    borderRadius: '12px',
-    backgroundColor: theme.palette.mode === 'dark'
-      ? alpha('#1f1f22', 0.72)
-      : alpha('#ffffff', 0.88),
-    border: '1px solid',
-    borderColor: theme.palette.mode === 'dark'
-      ? alpha('#e6e6e8', 0.08)
-      : alpha('#ffffff', 0.58),
-    transition: 'background-color 160ms ease, color 160ms ease, border-color 160ms ease',
-    '&:hover': {
-      color: 'text.primary',
-      backgroundColor: theme.palette.mode === 'dark'
-        ? alpha('#3a3a40', 0.72)
-        : alpha('#fafafa', 0.98)
-    }
-  }
-
-  const canSubmit = Boolean(draft.trim() || attachments.length > 0) && !submitting && !importing
+  const glassPanel = { ...glassSx(theme, 'popover'), borderColor: theme.palette.divider }
+  const glassCard = glassSx(theme, 'card')
 
   const renderAudioPlayers = (audios = [], sx = {}) => {
     if (!audios.length) return null
@@ -1218,7 +1069,7 @@ const TimelineView = ({ onTodoUpdated }) => {
                 sx={{
                   px: 1.25,
                   py: 0.9,
-                  borderRadius: '12px',
+                  borderRadius: 1.5,
                   bgcolor: 'action.hover',
                   color: 'text.secondary',
                   fontSize: 13
@@ -1263,26 +1114,7 @@ const TimelineView = ({ onTodoUpdated }) => {
     )
   }
 
-  const renderAiBubble = (message) => (
-    <Box sx={{ display: 'flex', justifyContent: 'flex-start', mb: 1.25 }}>
-      <Box
-        sx={{
-          maxWidth: 'min(560px, 70%)',
-          px: 1.5,
-          py: 1.1,
-          borderRadius: '16px 16px 16px 6px',
-          color: 'text.primary',
-          ...glassCard
-        }}
-      >
-        <Typography sx={{ fontSize: 13, lineHeight: 1.65, color: 'text.secondary' }}>{message.text}</Typography>
-      </Box>
-    </Box>
-  )
-
   const renderBubble = (item) => {
-    if (item.type === 'ai') return renderAiBubble(item)
-
     const isTodo = item.type === 'todo'
     const showWhiteboardPreview = item.noteKind === 'whiteboard' && item.whiteboardPreviewUrl && !failedWhiteboardPreviews[item.whiteboardPreviewUrl]
     const timelineAudios = item.audios?.slice(0, TIMELINE_AUDIO_LIMIT) || []
@@ -1301,6 +1133,7 @@ const TimelineView = ({ onTodoUpdated }) => {
         }}
       >
         <Box
+          data-timeline-bubble=""
           onClick={(event) => handleShowDetail(event, item)}
           onDoubleClick={() => handleDoubleClickItem(item)}
           onContextMenu={(event) => handleOpenContextMenu(event, item)}
@@ -1320,6 +1153,11 @@ const TimelineView = ({ onTodoUpdated }) => {
               borderRadius: '16px 16px 6px 16px',
               color: 'text.primary',
               ...glassCard,
+              ...(detailOpen && detailPopover?.item?.id === item.id ? {
+                borderColor: alpha(theme.palette.primary.main, 0.45),
+                boxShadow: `0 0 0 3px ${alpha(theme.palette.primary.main, 0.12)}`
+              } : {}),
+              transition: 'border-color 150ms ease, box-shadow 150ms ease',
               cursor: 'pointer'
             }}
           >
@@ -1372,7 +1210,7 @@ const TimelineView = ({ onTodoUpdated }) => {
                 sx={{
                   mt: item.body ? 0.9 : 0.35,
                   width: 'min(320px, 100%)',
-                  borderRadius: '14px',
+                  borderRadius: 1.5,
                   overflow: 'hidden',
                   border: theme.palette.mode === 'dark'
                     ? '1px solid rgba(157,157,165,0.16)'
@@ -1436,8 +1274,24 @@ const TimelineView = ({ onTodoUpdated }) => {
                     component="a"
                     href={file.url}
                     clickable
-                    onClick={(event) => openTimelineFile(event, file.url)}
-                    sx={{ alignSelf: 'flex-start', borderRadius: '9px', maxWidth: 240 }}
+                    onClick={(event) => openTimelineLink(event, file.url)}
+                    sx={{ alignSelf: 'flex-start', borderRadius: 1, maxWidth: 240 }}
+                  />
+                ))}
+              </Stack>
+            )}
+{item.references?.length > 0 && (
+              <Stack direction="row" spacing={0.5} useFlexGap sx={{ mt: 0.75, flexWrap: 'wrap' }}>
+                {item.references.map((reference, index) => (
+                  <Chip
+                    key={`${reference.url}-${index}`}
+                    icon={reference.kind === 'whiteboard' ? <Brush fontSize="small" /> : reference.kind.startsWith('todo') ? <AddTask fontSize="small" /> : <Notes fontSize="small" />}
+                    label={reference.label}
+                    size="small"
+                    variant="outlined"
+                    clickable
+                    onClick={(event) => openTimelineLink(event, reference.url)}
+                    sx={{ borderRadius: 1, maxWidth: 240 }}
                   />
                 ))}
               </Stack>
@@ -1474,7 +1328,7 @@ const TimelineView = ({ onTodoUpdated }) => {
                         width: '100%',
                         height: 92,
                         objectFit: 'cover',
-                        borderRadius: '10px',
+                        borderRadius: 1,
                         border: theme.palette.mode === 'dark' ? '1px solid rgba(157,157,165,0.18)' : '1px solid rgba(22,22,24,0.08)',
                         bgcolor: theme.palette.mode === 'dark' ? 'rgba(157,157,165,0.08)' : 'rgba(22,22,24,0.03)',
                         cursor: 'zoom-in'
@@ -1504,7 +1358,7 @@ const TimelineView = ({ onTodoUpdated }) => {
 
   return (
     <Box
-      sx={{ height: '100%', display: 'flex', flexDirection: 'column', minWidth: 0 }}
+      sx={{ height: '100%', display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}
       onDragOver={(event) => {
         event.preventDefault()
         event.dataTransfer.dropEffect = 'copy'
@@ -1517,10 +1371,20 @@ const TimelineView = ({ onTodoUpdated }) => {
           flex: 1,
           minHeight: 0,
           px: { xs: 2, md: 5 },
-          py: 3,
-          overflow: 'auto'
+          pt: 3,
+          // 按悬浮输入框的实际高度留白：最后一条记录不会被盖住
+          pb: `${Math.ceil(composerHeight) + 16}px`,
+          overflow: 'auto',
+          overflowAnchor: 'none'
         }}
+        onScroll={handleListScroll}
       >
+        <Box ref={listContentRef} sx={{ minHeight: '100%' }}>
+        {hasEarlier && (
+          <Typography sx={{ textAlign: 'center', fontSize: 12, color: 'text.disabled', pb: 2 }}>
+            往上滑加载更早的记录
+          </Typography>
+        )}
         {groupedItems.length === 0 ? (
           <Box sx={{ height: '100%', display: 'grid', placeItems: 'center', color: 'text.secondary' }}>
             <Stack alignItems="center" spacing={1.25}>
@@ -1530,211 +1394,91 @@ const TimelineView = ({ onTodoUpdated }) => {
                 {filterActive ? '清空筛选后可以查看完整时间轴。' : '从底部输入一句话，开始记录这一刻。'}
               </Typography>
               {filterActive && (
-                <Button size="small" variant="outlined" onClick={resetTimelineFilter} sx={{ borderRadius: '10px' }}>
+                <Button size="small" variant="outlined" onClick={resetTimelineFilter} sx={{ borderRadius: 1 }}>
                   清空筛选
                 </Button>
               )}
             </Stack>
           </Box>
         ) : groupedItems.map((group) => (
-          <Box key={group.key} sx={{ mb: 2 }}>
+          <Box
+            key={group.key}
+            ref={(node) => { if (node) dayRefs.current.set(group.key, node); else dayRefs.current.delete(group.key) }}
+            sx={{ mb: 2, scrollMarginTop: 12 }}
+          >
             <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
-              <Chip
-                label={group.label}
-                size="small"
+              {/* 点日期：弹出月历跳到别的日子，或合并这一天的记录 */}
+              <ButtonBase
+                onClick={(event) => setDayPicker({ anchorEl: event.currentTarget, group })}
+                aria-label={`${group.label}，选择日期`}
                 sx={{
                   height: 24,
-                  borderRadius: '8px',
-                  bgcolor: theme.palette.mode === 'dark' ? 'rgba(157,157,165,0.16)' : 'rgba(22,22,24,0.06)',
-                  color: 'text.secondary',
-                  fontSize: 12
+                  px: 1,
+                  borderRadius: 1,
+                  bgcolor: flashDayKey === group.key
+                    ? alpha(theme.palette.primary.main, 0.18)
+                    : theme.palette.mode === 'dark' ? 'rgba(157,157,165,0.16)' : 'rgba(22,22,24,0.06)',
+                  color: flashDayKey === group.key ? 'primary.main' : 'text.secondary',
+                  fontSize: 12,
+                  transition: 'background-color 300ms ease, color 300ms ease',
+                  '&:hover': {
+                    color: 'text.primary',
+                    bgcolor: theme.palette.mode === 'dark' ? 'rgba(157,157,165,0.24)' : 'rgba(22,22,24,0.1)'
+                  }
                 }}
-              />
+              >
+                {group.label}
+              </ButtonBase>
             </Box>
             {group.items.map((item) => (
               <Box key={item.id}>{renderBubble(item)}</Box>
             ))}
           </Box>
         ))}
-      </Box>
-
-      <Box sx={{ px: { xs: 2, md: 5 }, pb: 2, pt: 1 }}>
-        {renderAttachmentQueue()}
-        <Box
-          sx={{
-            position: 'relative',
-            maxWidth: 920,
-            mx: 'auto',
-            minHeight: 78,
-            borderRadius: '16px',
-            display: 'flex',
-            alignItems: 'center',
-            px: 1,
-            py: 1,
-            gap: 1,
-            ...glassPanel,
-            borderColor: dragActive
-              ? theme.palette.primary.main
-              : composerFocused
-              ? theme.palette.mode === 'dark'
-                ? alpha(theme.palette.primary.light, 0.28)
-                : alpha(theme.palette.primary.main, 0.18)
-              : glassPanel.borderColor,
-            boxShadow: composerFocused
-              ? `0 0 0 2px ${alpha(theme.palette.primary.main, 0.12)}`
-              : theme.palette.mode === 'dark'
-                ? '0 4px 16px rgba(0,0,0,0.18)'
-                : '0 4px 16px rgba(22,22,24,0.06)',
-            transition: 'border-color 180ms ease, box-shadow 180ms ease'
-          }}
-          onDragOver={(event) => {
-            event.preventDefault()
-            event.dataTransfer.dropEffect = 'copy'
-            if (!dragActive) setDragActive(true)
-          }}
-          onDragLeave={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget)) setDragActive(false)
-          }}
-          onDrop={handleDropFiles}
-        >
-          <Stack
-            direction="row"
-            spacing={0.5}
-            sx={{
-              position: 'relative',
-              zIndex: 1,
-              flexShrink: 0,
-              p: 0.35,
-              borderRadius: '16px',
-              backgroundColor: theme.palette.mode === 'dark'
-                ? alpha('#0b0b0c', 0.18)
-                : alpha('#ffffff', 0.2),
-              border: '1px solid',
-              borderColor: theme.palette.mode === 'dark'
-                ? alpha('#e6e6e8', 0.06)
-                : alpha('#ffffff', 0.46)
-            }}
-          >
-            <Tooltip title="添加文件">
-              <span>
-                <IconButton
-                  size="small"
-                  disabled={submitting}
-                  onClick={handleAttachFile}
-                  sx={{
-                    ...composerActionButtonSx,
-                    '&:hover': {
-                      ...composerActionButtonSx['&:hover'],
-                      color: 'primary.main'
-                    }
-                  }}
-                >
-                  <AttachFile fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
-            <AudioRecordButton
-              disabled={submitting}
-              onAudioInsert={(audioPath) => addAttachment({ type: 'audio', path: audioPath })}
-              onTranscription={(text) => setDraft((prev) => appendDraftText(prev, text))}
-              sx={{
-                ...composerActionButtonSx,
-                '&:hover': {
-                  ...composerActionButtonSx['&:hover'],
-                  color: 'success.main'
-                }
-              }}
-            />
-          </Stack>
-          <Box
-            sx={{
-              position: 'relative',
-              zIndex: 1,
-              width: 1,
-              minWidth: 0,
-              px: 1.25,
-              py: 0.2,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1
-            }}
-          >
-            <InputBase
-              multiline
-              maxRows={4}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onFocus={() => setComposerFocused(true)}
-              onBlur={() => setComposerFocused(false)}
-              onPaste={handleComposerPaste}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey && !isImeComposing(event)) {
-                  event.preventDefault()
-                  handleSubmit()
-                }
-              }}
-              placeholder={dragActive ? '松开以添加文件' : importing ? '正在添加附件…' : '记点什么…（可粘贴或拖入图片、文件）'}
-              sx={{
-                flex: 1,
-                minWidth: 0,
-                fontSize: 14,
-                lineHeight: 1.7,
-                color: 'text.primary',
-                '& textarea': {
-                  py: 0.75
-                },
-                '& textarea::placeholder': {
-                  color: 'text.secondary',
-                  opacity: 0.92
-                }
-              }}
-            />
-          </Box>
-          <Tooltip title="发送">
-            <span>
-              <IconButton
-                disabled={!canSubmit}
-                onClick={handleSubmit}
-                sx={{
-                  position: 'relative',
-                  zIndex: 1,
-                  width: 44,
-                  height: 44,
-                  mr: 0.25,
-                  flexShrink: 0,
-                  color: canSubmit ? '#fff' : 'text.disabled',
-                  backgroundColor: canSubmit
-                    ? theme.palette.primary.main
-                    : theme.palette.mode === 'dark'
-                      ? alpha('#ffffff', 0.08)
-                      : alpha('#161618', 0.05),
-                  boxShadow: canSubmit
-                    ? `0 2px 8px ${alpha(theme.palette.primary.main, 0.22)}`
-                    : 'none',
-                  border: '1px solid',
-                  borderColor: canSubmit
-                    ? alpha('#ffffff', 0.24)
-                    : theme.palette.mode === 'dark'
-                      ? alpha('#e6e6e8', 0.08)
-                      : alpha('#ffffff', 0.58),
-                  transition: 'background-color 180ms ease, box-shadow 180ms ease',
-                  '&:hover': canSubmit ? {
-                    backgroundColor: theme.palette.primary.dark,
-                    boxShadow: `0 3px 10px ${alpha(theme.palette.primary.main, 0.24)}`
-                  } : undefined
-                }}
-              >
-                <Send sx={{ fontSize: 18 }} />
-              </IconButton>
-            </span>
-          </Tooltip>
         </Box>
       </Box>
+
+      {/* 输入区：与 AI 页面同一款悬浮玻璃输入框，记录从玻璃下方滑过 */}
+      <TimelineComposer ref={composerRef} onSubmit={handleComposerSubmit} onHeightChange={setComposerHeight} />
+
+      {/* 与笔记编辑器同一个「管理标签」弹层：输入、建议、插件扩展都一样 */}
+      <TagEditorPopover
+        anchorEl={tagEditorItem ? tagEditor.anchorEl : null}
+        onClose={() => setTagEditor(null)}
+        value={formatTags(tagEditorItem?.tags || [])}
+        onChange={(value) => saveTags(tagEditorItem, value)}
+        getSuggestions={tagEditorItem?.type === 'todo' ? getTodoTagSuggestions : undefined}
+        noteContent={tagEditorItem?.raw?.content || ''}
+        noteId={tagEditorItem?.type === 'todo' ? null : tagEditorItem?.rawId}
+      />
+
+      <TimelineDayPicker
+        anchorEl={dayPicker?.anchorEl || null}
+        onClose={() => setDayPicker(null)}
+        dayCounts={dayCounts}
+        activeTime={dayPicker?.group?.items?.[0]?.time}
+        onPick={(dayKey) => {
+          setDayPicker(null)
+          jumpToDay(dayKey)
+        }}
+        mergeCount={dayPicker ? mergeableCount(dayPicker.group.items) : 0}
+        onMerge={() => {
+          const items = dayPicker?.group?.items
+          setDayPicker(null)
+          if (items) mergeDay(items)
+        }}
+      />
 
       <Popover
         open={detailOpen}
         anchorEl={detailPopover?.anchorEl || null}
-        onClose={closeDetail}
+        // 焦点在详情里时 Esc 由这里处理（Modal 会拦下按键）：编辑中先退出编辑，再按一次才关闭
+        onClose={(_event, reason) => {
+          if (reason === 'escapeKeyDown' && detailEdit) setDetailEdit(null)
+          else closeDetail()
+        }}
+        // 非模态：不挡住时间轴的点击，点另一条记录直接换详情、双击直接打开
+        hideBackdrop
         disableAutoFocus
         disableEnforceFocus
         disableRestoreFocus
@@ -1743,17 +1487,16 @@ const TimelineView = ({ onTodoUpdated }) => {
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         transitionDuration={{ enter: 140, exit: 160 }}
         slotProps={{
-          backdrop: {
-            invisible: true
-          },
+          root: { sx: { pointerEvents: 'none' } },
           transition: {
             onExited: () => setDetailPopover(null)
           },
           paper: {
             sx: {
+              pointerEvents: 'auto',
               mt: 1,
               width: 'min(520px, calc(100vw - 24px))',
-              borderRadius: '14px',
+              borderRadius: 1.5,
               p: 1.25,
               position: 'relative',
               ...glassPanel,
@@ -1768,11 +1511,14 @@ const TimelineView = ({ onTodoUpdated }) => {
         }}
       >
         {detailPopover?.item && (
+          <ClickAwayListener
+            onClickAway={(event) => {
+              // 点记录气泡由气泡自己处理（换详情 / 双击打开）；编辑中点外面不丢内容
+              if (event.target?.closest?.('[data-timeline-bubble]') || detailEdit) return
+              closeDetail()
+            }}
+          >
           <Stack spacing={1}>
-            {(() => {
-              const detailBadges = getBadgesForDisplay(detailPopover.item)
-              return (
-                <>
             <IconButton
               size="small"
               onClick={closeDetail}
@@ -1818,9 +1564,9 @@ const TimelineView = ({ onTodoUpdated }) => {
             <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: -0.15, pr: 3.5 }}>
               {formatDay(detailPopover.item.time)} {formatClock(detailPopover.item.time)}
             </Typography>
-            {detailBadges.length > 0 && (
+            {(detailPopover.item.badges || []).length > 0 && (
               <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>
-                {detailBadges.map((badge) => (
+                {(detailPopover.item.badges || []).map((badge) => (
                   <Chip
                     key={badge}
                     label={badge}
@@ -1858,7 +1604,39 @@ const TimelineView = ({ onTodoUpdated }) => {
             )}
             <Box sx={{ pr: 0.25 }}>
               <Stack spacing={1}>
-                {(detailPopover.item.fullBody || detailPopover.item.body) && (
+                {detailEdit ? (
+                  <InputBase
+                    autoFocus
+                    multiline
+                    minRows={3}
+                    maxRows={14}
+                    value={detailEdit.text}
+                    disabled={detailEdit.saving}
+                    onChange={(event) => setDetailEdit((current) => current && { ...current, text: event.target.value })}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                        event.preventDefault()
+                        saveDetailEdit()
+                      }
+                    }}
+                    onFocus={(event) => {
+                      const end = event.target.value.length
+                      event.target.setSelectionRange(end, end)
+                    }}
+                    inputProps={{ 'aria-label': '编辑记录' }}
+                    sx={{
+                      px: 1,
+                      py: 0.75,
+                      fontSize: 14,
+                      lineHeight: 1.72,
+                      borderRadius: 1,
+                      border: '1px solid',
+                      borderColor: alpha(theme.palette.primary.main, 0.45),
+                      boxShadow: `0 0 0 3px ${alpha(theme.palette.primary.main, 0.1)}`,
+                      bgcolor: theme.palette.mode === 'dark' ? alpha('#000', 0.15) : alpha('#fff', 0.7)
+                    }}
+                  />
+                ) : (detailPopover.item.fullBody || detailPopover.item.body) && (
                   <Typography
                     sx={{
                       fontSize: 14,
@@ -1873,6 +1651,22 @@ const TimelineView = ({ onTodoUpdated }) => {
                   </Typography>
                 )}
                 {renderAudioPlayers(detailPopover.item.audios)}
+{detailPopover.item.references?.length > 0 && (
+              <Stack direction="row" spacing={0.5} useFlexGap sx={{ mt: 0.75, flexWrap: 'wrap' }}>
+                {detailPopover.item.references.map((reference, index) => (
+                  <Chip
+                    key={`${reference.url}-${index}`}
+                    icon={reference.kind === 'whiteboard' ? <Brush fontSize="small" /> : reference.kind.startsWith('todo') ? <AddTask fontSize="small" /> : <Notes fontSize="small" />}
+                    label={reference.label}
+                    size="small"
+                    variant="outlined"
+                    clickable
+                    onClick={(event) => openTimelineLink(event, reference.url)}
+                    sx={{ borderRadius: 1, maxWidth: '100%' }}
+                  />
+                ))}
+              </Stack>
+            )}
                 {detailPopover.item.files?.length > 0 && (
                   <Stack spacing={0.5}>
                     {detailPopover.item.files.map((file, index) => (
@@ -1885,8 +1679,8 @@ const TimelineView = ({ onTodoUpdated }) => {
                         component="a"
                         href={file.url}
                         clickable
-                        onClick={(event) => openTimelineFile(event, file.url)}
-                        sx={{ alignSelf: 'flex-start', borderRadius: '9px', maxWidth: '100%' }}
+                        onClick={(event) => openTimelineLink(event, file.url)}
+                        sx={{ alignSelf: 'flex-start', borderRadius: 1, maxWidth: '100%' }}
                       />
                     ))}
                   </Stack>
@@ -1894,7 +1688,7 @@ const TimelineView = ({ onTodoUpdated }) => {
                 {detailPopover.item.noteKind === 'whiteboard' && detailPopover.item.whiteboardPreviewUrl && !failedWhiteboardPreviews[detailPopover.item.whiteboardPreviewUrl] && (
                   <Box
                     sx={{
-                      borderRadius: '14px',
+                      borderRadius: 1.5,
                       overflow: 'hidden',
                       border: theme.palette.mode === 'dark'
                         ? '1px solid rgba(157,157,165,0.16)'
@@ -1934,7 +1728,7 @@ const TimelineView = ({ onTodoUpdated }) => {
                             width: 140,
                             height: 104,
                             objectFit: 'cover',
-                            borderRadius: '12px',
+                            borderRadius: 1.5,
                             flexShrink: 0,
                             cursor: 'zoom-in'
                           }}
@@ -1945,22 +1739,59 @@ const TimelineView = ({ onTodoUpdated }) => {
                 )}
               </Stack>
             </Box>
-            <Stack direction="row" spacing={1} justifyContent="flex-end" sx={{ pt: 0.25 }}>
-              <Button
-                size="small"
-                variant="contained"
-                onClick={() => {
-                  closeDetail()
-                  handleOpenItem(detailPopover.item)
-                }}
-              >
-                打开
-              </Button>
-            </Stack>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ pt: 0.25 }}>
+              {detailEdit ? (
+                <>
+                  <Typography sx={{ flex: 1, fontSize: 11.5, color: 'text.disabled' }}>
+                    {navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'} + Enter 保存 · Esc 取消
+                  </Typography>
+                  <Button size="small" color="inherit" disabled={detailEdit.saving} onClick={() => setDetailEdit(null)}
+                    sx={{ color: 'text.secondary' }}>
+                    取消
+                  </Button>
+                  <Button size="small" variant="contained" disableElevation disabled={detailEdit.saving} onClick={saveDetailEdit}>
+                    {detailEdit.saving ? '保存中…' : '保存'}
+                  </Button>
                 </>
-              )
-            })()}
+              ) : (
+                <>
+                  <Box sx={{ flex: 1 }} />
+                  {(canEditInline(detailPopover.item) || detailPopover.item.type === 'todo') && (
+                    <Button
+                      size="small"
+                      color="inherit"
+                      startIcon={<Edit sx={{ fontSize: '16px !important' }} />}
+                      onClick={() => {
+                        const item = detailPopover.item
+                        if (item.type === 'todo') {
+                          closeDetail()
+                          handleEditTodoFromTimeline(item)
+                        } else {
+                          setDetailEdit({ text: editableTextOf(item), saving: false })
+                        }
+                      }}
+                      sx={{ color: 'text.secondary' }}
+                    >
+                      编辑
+                    </Button>
+                  )}
+                  <Button
+                    size="small"
+                    variant="contained"
+                    disableElevation
+                    onClick={() => {
+                      const item = detailPopover.item
+                      closeDetail()
+                      handleOpenItem(item)
+                    }}
+                  >
+                    {detailPopover.item.type === 'todo' ? '去待办' : '打开'}
+                  </Button>
+                </>
+              )}
+            </Stack>
           </Stack>
+          </ClickAwayListener>
         )}
       </Popover>
       {previewImage && (
@@ -1979,7 +1810,7 @@ const TimelineView = ({ onTodoUpdated }) => {
           paper: {
             sx: {
               minWidth: 196,
-              borderRadius: '14px',
+              borderRadius: 1.5,
               py: 0.75,
               ...glassPanel,
               boxShadow: theme.palette.mode === 'dark'
@@ -1988,7 +1819,7 @@ const TimelineView = ({ onTodoUpdated }) => {
               '& .MuiMenuItem-root': {
                 minHeight: 38,
                 fontSize: 13,
-                borderRadius: '10px',
+                borderRadius: 1,
                 mx: 0.75,
                 px: 1.1
               }
@@ -2014,6 +1845,17 @@ const TimelineView = ({ onTodoUpdated }) => {
           <ListItemIcon><Visibility fontSize="small" /></ListItemIcon>
           <ListItemText>查看详情</ListItemText>
         </MenuItem>
+        {canEditInline(contextMenu?.item) && (
+          <MenuItem
+            onClick={() => {
+              openDetailPopover(contextMenu?.anchorEl, contextMenu?.item, { edit: true })
+              closeContextMenu()
+            }}
+          >
+            <ListItemIcon><Edit fontSize="small" /></ListItemIcon>
+            <ListItemText>编辑</ListItemText>
+          </MenuItem>
+        )}
         <MenuItem
           onClick={async () => {
             await copyTimelineItem(contextMenu?.item)
@@ -2088,11 +1930,47 @@ const TimelineView = ({ onTodoUpdated }) => {
             <ListItemText>{contextMenu?.item?.pinned ? '取消置顶' : '置顶记录'}</ListItemText>
           </MenuItem>
         )}
+        {/* 整理：加标签后就离开「待整理」；纯文字记录可以直接变成待办；一天的碎片可以合并 */}
+        <MenuItem
+          onClick={() => {
+            const { item, anchorEl } = contextMenu || {}
+            closeContextMenu()
+            if (item && anchorEl) setTagEditor({ anchorEl, itemId: item.id })
+          }}
+        >
+          <ListItemIcon><LocalOffer fontSize="small" /></ListItemIcon>
+          <ListItemText>{contextMenu?.item?.tags?.some((tag) => tag !== TIMELINE_TAG) ? '编辑标签' : '加标签'}</ListItemText>
+        </MenuItem>
+        {canConvertToTodo(contextMenu?.item) && (
+          <MenuItem
+            onClick={() => {
+              const item = contextMenu?.item
+              closeContextMenu()
+              convertToTodo(item)
+            }}
+          >
+            <ListItemIcon><TaskAlt fontSize="small" /></ListItemIcon>
+            <ListItemText>转为待办</ListItemText>
+          </MenuItem>
+        )}
+        {contextMenuDayMergeCount >= 2 && (
+          <MenuItem
+            onClick={() => {
+              const items = contextMenuDay?.items
+              closeContextMenu()
+              if (items) mergeDay(items)
+            }}
+          >
+            <ListItemIcon><Notes fontSize="small" /></ListItemIcon>
+            <ListItemText>合并这天的 {contextMenuDayMergeCount} 条记录</ListItemText>
+          </MenuItem>
+        )}
         <Divider sx={{ my: 0.5 }} />
         <MenuItem
-          onClick={async () => {
-            await handleDeleteTimelineItem(contextMenu?.item)
+          onClick={() => {
+            const item = contextMenu?.item
             closeContextMenu()
+            deleteItem(item)
           }}
           sx={{ color: 'error.main' }}
         >

@@ -26,6 +26,18 @@ const notify = (severity) => (message) => {
 }
 
 export const notifyError = notify('error')
+
+/**
+ * store 的写操作失败时返回 { success: false, error } 而不是抛错。
+ * 调用方用它把失败告诉用户：成功返回 true，失败提示「<动作>失败：原因」并返回 false。
+ * @param {{ success?: boolean, error?: string }|undefined} result
+ * @param {string} action 例如「删除笔记」
+ */
+export const reportResult = (result, action) => {
+  if (result && result.success !== false) return true
+  notifyError(`${action}失败：${result?.error || '未知原因'}`)
+  return false
+}
 export const notifyWarning = notify('warning')
 export const notifySuccess = notify('success')
 export const notifyInfo = notify('info')

@@ -16,6 +16,10 @@ import useFloatingTableScrollbar from '../../hooks/useFloatingTableScrollbar'
 import { getLocalPathFromFileUrl } from '../../utils/fileUrl'
 import { openNoteLink } from '../../utils/linkUtils'
 import { editorScrollbarSx } from '../../styles/commonStyles'
+import { previewTaskListSx } from '../../styles/taskListSx'
+import useTodoReferences, { findTodoByReference, refreshTodoReferences } from '../../hooks/useTodoReferences'
+import { isFutureRecurringTodo, isTodoCompleted } from '../../utils/todoDisplayUtils'
+import { fetchSubtasks, toggleTodoComplete } from '../../api/todoAPI'
 
 const MarkdownPreview = ({
   content,
@@ -328,7 +332,7 @@ const MarkdownPreview = ({
             card.style.cssText = 'display:inline-flex;align-items:center;gap:8px;margin:6px 0;padding:8px 12px;border-radius:10px;background:var(--md-audio-bg,rgba(0,0,0,.04));cursor:pointer;max-width:100%;overflow:hidden;'
             card.title = `打开 ${filename}`
             const icon = document.createElement('span')
-            icon.style.cssText = 'flex-shrink:0;width:32px;height:32px;border-radius:6px;background:#1976d2;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;letter-spacing:.5px;'
+            icon.style.cssText = 'flex-shrink:0;width:32px;height:32px;border-radius:6px;background:var(--flota-primary,#1976d2);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;letter-spacing:.5px;'
             icon.textContent = extLabel
             const name = document.createElement('span')
             name.style.cssText = 'font-size:13px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
@@ -371,13 +375,19 @@ const MarkdownPreview = ({
             const wrapper = document.createElement('div')
             wrapper.style.cssText = 'margin:8px 0;padding:6px 12px;background:var(--md-audio-bg,rgba(0,0,0,.04));border-radius:10px;'
 
-            // 注入 range thumb 样式（仅首次）
+            // 注入进度条样式（仅首次）：与主题滑块（MuiSlider）同一套材质，颜色跟随主题色变量 --flota-primary
             if (!document.getElementById('_md-audio-style')) {
               const _s = document.createElement('style')
               _s.id = '_md-audio-style'
-              _s.textContent = '.md-ap-range{-webkit-appearance:none;appearance:none;flex:1;height:4px;border-radius:2px;cursor:pointer;border:none;outline:none;overflow:visible;padding:0;margin:0}.md-ap-range::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:#1976d2;cursor:pointer}'
+              _s.textContent = [
+                '.md-ap-range{-webkit-appearance:none;appearance:none;flex:1;height:4px;border-radius:999px;cursor:pointer;border:none;outline:none;overflow:visible;padding:0;margin:0;box-shadow:inset 0 1px 1px rgba(22,22,24,.08)}',
+                '.md-ap-range::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#fff;cursor:pointer;box-shadow:0 1px 2px rgba(22,22,24,.16),0 3px 8px rgba(22,22,24,.14);transition:transform 160ms ease}',
+                '.md-ap-range:active::-webkit-slider-thumb{transform:scale(1.08)}',
+                '.md-ap-range:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 3px color-mix(in srgb,var(--flota-primary,#1976d2) 28%,transparent)}',
+              ].join('')
               document.head.appendChild(_s)
             }
+            const RAIL = 'rgba(120,120,128,.24)'
 
             const audio = document.createElement('audio')
             audio.preload = 'metadata'
@@ -394,7 +404,7 @@ const MarkdownPreview = ({
             progressEl.type = 'range'
             progressEl.min = 0; progressEl.max = 1; progressEl.step = '0.01'; progressEl.value = 0
             progressEl.className = 'md-ap-range'
-            progressEl.style.background = 'rgba(0,0,0,.15)'
+            progressEl.style.background = RAIL
 
             const timeEl = document.createElement('span')
             timeEl.textContent = '0:00 / –:--'
@@ -407,7 +417,7 @@ const MarkdownPreview = ({
               const pct = dur > 0 ? (audio.currentTime / dur) * 100 : 0
               progressEl.max = dur || 1
               progressEl.value = audio.currentTime
-              progressEl.style.background = `linear-gradient(to right,#1976d2 ${pct}%,rgba(0,0,0,.15) ${pct}%)`
+              progressEl.style.background = `linear-gradient(to right,var(--flota-primary,#1976d2) ${pct}%,${RAIL} ${pct}%)`
               timeEl.textContent = `${_fmt(audio.currentTime)} / ${_fmt(audio.duration)}`
             }
             let _pl = false
@@ -593,6 +603,44 @@ const MarkdownPreview = ({
     }
   }, [renderedHTML, showSuccess, showError])
 
+  // 关联任务：勾选状态按待办的实时状态显示，点勾写回待办
+  const hasLinkedTasks = /\]\(<?app:\/\/todo\//.test(content || '')
+  const { todos: referencedTodos } = useTodoReferences({ enabled: hasLinkedTasks })
+  useEffect(() => {
+    const root = previewRef.current
+    if (!root || !hasLinkedTasks) return
+    root.querySelectorAll('.task-list-item[data-todo-ref]').forEach((item) => {
+      const todo = findTodoByReference(referencedTodos, item.getAttribute('data-todo-ref'))
+      const input = item.querySelector(':scope > .task-list-checkbox input')
+      if (!todo || !input) return
+      const done = isTodoCompleted(todo)
+      input.checked = done
+      input.disabled = !done && isFutureRecurringTodo(todo)
+      item.setAttribute('data-checked', String(done))
+    })
+  }, [renderedHTML, referencedTodos, hasLinkedTasks])
+  useEffect(() => {
+    const root = previewRef.current
+    if (!root || !hasLinkedTasks) return undefined
+    const onChange = async (event) => {
+      const input = event.target
+      const item = input.closest?.('.task-list-item[data-todo-ref]')
+      if (!item || !input.matches('.task-list-checkbox input')) return
+      const todo = findTodoByReference(referencedTodos, item.getAttribute('data-todo-ref'))
+      if (!todo) { input.checked = !input.checked; return }
+      try {
+        if (input.checked && (await fetchSubtasks(todo.sync_id)).some((child) => !child.is_completed)) throw new Error('这条待办还有没完成的子任务，先在待办里处理')
+        await toggleTodoComplete(todo.id)
+        await refreshTodoReferences()
+      } catch (error) {
+        input.checked = !input.checked
+        notifyError(error?.message || '操作失败')
+      }
+    }
+    root.addEventListener('change', onChange)
+    return () => root.removeEventListener('change', onChange)
+  }, [referencedTodos, hasLinkedTasks, renderedHTML])
+
   // 处理图片双击预览
   useEffect(() => {
     const handleImageDoubleClick = (e) => {
@@ -719,6 +767,8 @@ const MarkdownPreview = ({
         '& li': {
           marginBottom: 0.5
         },
+        // 任务列表（勾选框外观与全应用一致）
+        '&': previewTaskListSx,
         '& blockquote': {
           borderLeft: '4px solid',
           borderColor: 'primary.main',

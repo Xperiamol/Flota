@@ -1,6 +1,7 @@
 {
   "id": "auto-tag-creator",
-  "name": "Auto Tag Creator (Built-in)",
+  "name": "自动标签",
+  "builtin": true,
   "version": "1.0.0",
   "description": "根据笔记内容自动创建和管理标签",
   "icon": "icon.svg",

@@ -39,6 +39,7 @@ const repositoryUrl = (pkg) => {
 
 // 只在构建期使用、不随应用发布的依赖（误放在 dependencies 里），连同只被它们引用的包一起排除
 const BUILD_ONLY = new Set(['vite', '@vitejs/plugin-react'])
+const STUBS_DIR = path.join(root, 'stubs') + path.sep
 
 // 按 Node 的查找规则从 fromDir 向上找依赖包目录
 const resolvePackageDir = (name, fromDir) => {
@@ -57,7 +58,8 @@ const runtimePackageDirs = () => {
   while (queue.length) {
     const [name, from] = queue.shift()
     const dir = resolvePackageDir(name, from)
-    if (!dir || dirs.has(dir)) continue
+    // stubs/ 下是 Flota 自己的空包（替换掉用不到的 SDK），不是第三方代码
+    if (!dir || dirs.has(dir) || dir.startsWith(STUBS_DIR)) continue
     dirs.add(dir)
     const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'))
     for (const dep of Object.keys({ ...pkg.dependencies, ...pkg.optionalDependencies })) queue.push([dep, dir])

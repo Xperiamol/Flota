@@ -380,28 +380,6 @@ const compactHistoryWithLLM = async (
   return trimMessagesToBudget(systemPrompt, messages, maxTokens);
 };
 
-/**
- * 在多轮 toolLoop 内部对已完成的旧工具轮次（非最新一轮 tool 输出）做原位 L1 结构化压缩，
- * 避免连续读取多篇长笔记或技能说明后撑爆上下文，同时保留当前用户提问与最新工具结果完整。
- */
-const compactMessagesInPlace = (messages) => {
-  if (!Array.isArray(messages) || messages.length <= 2) return messages;
-  let lastToolAssistantIdx = -1;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i]?.role === 'assistant' && Array.isArray(messages[i].tool_calls) && messages[i].tool_calls.length > 0) {
-      lastToolAssistantIdx = i;
-      break;
-    }
-  }
-  if (lastToolAssistantIdx <= 0) return messages;
-  for (let i = 0; i < lastToolAssistantIdx; i++) {
-    if (messages[i]?.role === 'tool') {
-      messages[i] = { ...messages[i], content: compactToolMessageContent(messages[i].content) };
-    }
-  }
-  return messages;
-};
-
 module.exports = {
   isEnabledSetting,
   getLocalDateKey,
@@ -414,6 +392,5 @@ module.exports = {
   compactToolMessageContent,
   compactEarlyTurnMessage,
   trimMessagesToBudget,
-  compactHistoryWithLLM,
-  compactMessagesInPlace
+  compactHistoryWithLLM
 };

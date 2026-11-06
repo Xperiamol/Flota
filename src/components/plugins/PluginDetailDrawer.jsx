@@ -26,7 +26,7 @@ import {
   ErrorOutline,
   FolderOpenRounded
 } from '../common/AppIcons'
-import { getDisplayCategories, formatPermissions, permissionDescriptions } from './pluginUtils'
+import { getDisplayCategories, formatPermissions, permissionDescriptions, pluginDisplayName } from './pluginUtils'
 
 const PluginDetailDrawer = ({
   plugin,
@@ -62,11 +62,11 @@ const PluginDetailDrawer = ({
               color: plugin.icon ? undefined : 'primary.contrastText',
               width: 56, height: 56, borderRadius: '14px', fontSize: avatarContent ? 28 : undefined
             }}>
-            {avatarContent || (!plugin.icon && ((plugin.name || '').trim().slice(0, 2).toUpperCase() || 'P'))}
+            {avatarContent || (!plugin.icon && (pluginDisplayName(plugin).trim().slice(0, 2).toUpperCase() || 'P'))}
           </Avatar>
           <Box>
             <Typography variant="h5" sx={{ lineHeight: 1.2 }}>
-              {plugin.manifest?.name || plugin.name || '未知插件'}
+              {pluginDisplayName(plugin)}
             </Typography>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5 }}>
               <Chip size="small" label={metaLabel || `版本 ${plugin.manifest?.version || plugin.version || '未知'}`} />

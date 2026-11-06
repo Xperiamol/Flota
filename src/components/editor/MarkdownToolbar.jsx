@@ -20,9 +20,11 @@ import {
   Code as CodeIcon,
   Link as LinkIcon,
   Functions as MathIcon,
+  CalculateRounded as BlockMathIcon,
   FormatListBulleted as BulletListIcon,
   FormatListNumbered as NumberListIcon,
   CheckBox as TaskListIcon,
+  AddTaskRounded as EmbedTodoIcon,
   FormatQuote as QuoteIcon,
   TableChart as TableIcon,
   Edit as EditIcon,
@@ -40,7 +42,7 @@ import {
   Translate as TranslateIcon,
   AutoAwesome as ContinueIcon,
   Chat as ChatIcon,
-  InsertLink as WikiLinkIcon,
+  DataArrayRounded as WikiLinkIcon,
   DataObject as CodeBlockIcon,
   Checklist as MeetingTodoIcon,
   Email as FollowupEmailIcon,
@@ -70,16 +72,16 @@ const ALL_TOOLBAR_ITEMS = {
   blockSelect:{ group: 'list', label: '块多选', icon: BlockSelectIcon, type: 'blockSelect' },
   link:       { group: 'insert', label: '链接', icon: LinkIcon, inline: ['[', '](url)', '链接文本'] },
   inlineMath: { group: 'insert', label: '行内公式 $…$', icon: MathIcon, inline: ['$', '$', 'E = mc^2'] },
-  blockMath:  { group: 'insert', label: '独立公式 $$…$$', icon: MathIcon, inline: ['\n$$\n', '\n$$\n', '\\frac{a}{b}'] },
+  blockMath:  { group: 'insert', label: '独立公式 $$…$$', icon: BlockMathIcon, inline: ['\n$$\n', '\n$$\n', '\\frac{a}{b}'] },
   table:      { group: 'insert', label: '表格', icon: TableIcon, insert: '| 列1 | 列2 | 列3 |\n|-----|-----|-----|\n| 内容1 | 内容2 | 内容3 |\n' },
   codeBlock:  { group: 'insert', label: '代码块', type: 'codeBlock' },
   divider:    { group: 'insert', label: '分割线', icon: DividerIcon, insert: '\n---\n' },
   image:      { group: 'insert', label: '图片', type: 'image' },
   audio:      { group: 'insert', label: '录音', type: 'audio' },
   embedWhiteboard: { group: 'insert', label: '嵌入画布', icon: WhiteboardIcon, type: 'embedWhiteboard' },
-  embedTodo: { group: 'insert', label: '插入待办', icon: TaskListIcon, type: 'embedTodo' },
+  embedTodo: { group: 'insert', label: '引用待办', icon: EmbedTodoIcon, type: 'embedTodo' },
   embedWidget: { group: 'insert', label: '插入组件', icon: WidgetIcon, type: 'embedWidget' },
-  wikiLink:   { group: 'ext', label: 'Wiki 链接', type: 'wikiLink' },
+  wikiLink:   { group: 'ext', label: '双链 [[…]]', icon: WikiLinkIcon, type: 'wikiLink' },
   colorText:  { group: 'ext', label: '彩色文本', icon: ColorIcon, type: 'colorMenu' },
   callout:    { group: 'ext', label: '提示框', icon: CalloutIcon, type: 'calloutMenu' },
   clearFormat: { group: 'ext', label: '清除格式', icon: ClearFormatIcon, type: 'clearFormat' },
@@ -97,7 +99,7 @@ const DEFAULT_TOOLBAR_ORDER = [
   'heading', '|',
   'bold', 'italic', 'highlight', 'strike', 'inlineCode', '|',
   'bulletList', 'orderedList', 'taskList', 'quote', '|',
-  'link', 'wikiLink', 'image', 'audio', 'embedWhiteboard', 'embedWidget', 'embedTodo', '|',
+  'link', 'wikiLink', 'image', 'audio', 'embedWhiteboard', 'embedWidget', '|',
   'table', 'codeBlock', 'inlineMath', 'blockMath', 'divider', '|',
   'colorText', 'callout', 'clearFormat', 'blockSelect',
 ]
@@ -222,6 +224,13 @@ const MarkdownToolbar = ({
 
   const [colorAnchor, setColorAnchor] = React.useState(null)
   const [headingAnchor, setHeadingAnchor] = React.useState(null)
+  const [taskAnchor, setTaskAnchor] = React.useState(null)
+  const [todoPickerKind, setTodoPickerKind] = React.useState('single')
+  // 引用待办 / 插入待办清单：所见即所得模式交给编辑器自己的选择器（插在光标处）
+  const requestTodo = (kind = 'single') => {
+    if (editorMode === 'wysiwyg' && editor) editor.commands.requestTodoReference(kind)
+    else { setTodoPickerKind(kind); setTodoPickerOpen(true) }
+  }
 
   // 订阅 WYSIWYG editor 状态变化（光标移动、选区变化），让 active 高亮即时刷新
   const [, forceTick] = React.useState(0)
@@ -383,6 +392,36 @@ const MarkdownToolbar = ({
       )
     }
 
+    // 任务：按钮直接切换任务列表；旁边的小箭头里是「引用已有待办」「插入待办清单」
+    if (id === 'taskList') {
+      return (
+        <React.Fragment key={id}>
+          <Box sx={{ display: 'inline-flex', alignItems: 'center' }}>
+            <Tooltip title="任务列表" placement="bottom">
+              <span><IconButton size="small" aria-label="任务列表" disabled={disabled} onClick={() => applyBlock(def.block)} sx={{ ...btnSx, ...activeSx, width: 28, borderTopRightRadius: 0, borderBottomRightRadius: 0 }}><TaskListIcon /></IconButton></span>
+            </Tooltip>
+            <Tooltip title="更多任务选项" placement="bottom">
+              <span><IconButton size="small" aria-label="更多任务选项" aria-haspopup="menu" disabled={disabled} onClick={toggleAnchor(setTaskAnchor)} sx={{ ...btnSx, width: 16, ml: '-2px', borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}><DropdownIcon sx={{ fontSize: '14px !important' }} /></IconButton></span>
+            </Tooltip>
+          </Box>
+          <Menu anchorEl={taskAnchor} open={Boolean(taskAnchor)} onClose={() => setTaskAnchor(null)}>
+            <MenuItem onClick={() => { setTaskAnchor(null); applyBlock(def.block) }}>
+              <ListItemIcon><TaskListIcon fontSize="small" /></ListItemIcon>
+              <ListItemText primary="任务列表" secondary="勾选框，需要时再加入待办" />
+            </MenuItem>
+            <MenuItem onClick={() => { setTaskAnchor(null); requestTodo('single') }}>
+              <ListItemIcon><EmbedTodoIcon fontSize="small" /></ListItemIcon>
+              <ListItemText primary="引用待办…" secondary="插入已有的或新建一条，两边同步" />
+            </MenuItem>
+            <MenuItem onClick={() => { setTaskAnchor(null); requestTodo('list') }}>
+              <ListItemIcon><MeetingTodoIcon fontSize="small" /></ListItemIcon>
+              <ListItemText primary="待办清单…" secondary="按这篇笔记或标签动态列出" />
+            </MenuItem>
+          </Menu>
+        </React.Fragment>
+      )
+    }
+
     // 块级格式（列表、引用）
     if (def.block) {
       const Icon = def.icon
@@ -476,7 +515,7 @@ const MarkdownToolbar = ({
           sx={btnSx}
         />
       case 'embedTodo':
-        return <Tooltip key={id} title="插入待办" placement="bottom"><span><IconButton size="small" aria-label="插入待办" disabled={disabled} onClick={() => editorMode === 'wysiwyg' && editor ? editor.commands.requestTodoReference() : setTodoPickerOpen(true)} sx={btnSx}><TaskListIcon /></IconButton></span></Tooltip>
+        return <Tooltip key={id} title="引用待办" placement="bottom"><span><IconButton size="small" aria-label="引用待办" disabled={disabled} onClick={() => requestTodo('single')} sx={btnSx}><EmbedTodoIcon /></IconButton></span></Tooltip>
       case 'embedWidget':
         return (
           <Tooltip key={id} title="插入组件" placement="bottom">
@@ -491,8 +530,8 @@ const MarkdownToolbar = ({
         )
       case 'wikiLink':
         return (
-          <Tooltip key={id} title="Wiki 链接 [[Note]]" placement="bottom">
-            <span><IconButton size="small" disabled={disabled} onClick={() => insertText('[[', ']]', '笔记标题')} sx={btnSx}>
+          <Tooltip key={id} title="双链 [[笔记标题]]" placement="bottom">
+            <span><IconButton size="small" aria-label="双链" disabled={disabled} onClick={() => insertText('[[', ']]', '笔记标题')} sx={btnSx}>
               <WikiLinkIcon />
             </IconButton></span>
           </Tooltip>
@@ -586,8 +625,8 @@ const MarkdownToolbar = ({
         }
         else onInsert(`\n\n[关联画布](app://whiteboard/${encodeURIComponent(reference)})\n\n`, '', '')
       }} />
-      {todoPickerOpen && <TodoReferencePicker open onClose={() => setTodoPickerOpen(false)} sourceNote={sourceNote} onSelect={todo => onInsert(`\n\n${todoEmbedSelection(todo).markdown}\n\n`, '', '')} />}
-      <InstancePicker open={widgetPickerOpen} onSelectTodo={() => editorMode === 'wysiwyg' && editor ? editor.commands.requestTodoReference() : setTodoPickerOpen(true)} onClose={() => setWidgetPickerOpen(false)} onSelect={insertWidget} />
+      {todoPickerOpen && <TodoReferencePicker open initialKind={todoPickerKind} onClose={() => setTodoPickerOpen(false)} sourceNote={sourceNote} onSelect={todo => onInsert(`\n\n${todoEmbedSelection(todo).markdown}\n\n`, '', '')} />}
+      <InstancePicker open={widgetPickerOpen} onSelectTodo={() => requestTodo('list')} onClose={() => setWidgetPickerOpen(false)} onSelect={insertWidget} />
 
       <Box
         sx={{

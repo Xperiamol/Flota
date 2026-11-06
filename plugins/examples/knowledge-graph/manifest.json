@@ -1,8 +1,9 @@
 {
 	"id": "knowledge-graph",
-	"name": "Knowledge Graph (Built-in)",
-	"version": "1.2.0",
-	"description": "以力导向图展示笔记之间的双向链接关系，支持搜索、聚焦、缩放、孤立点过滤等交互。启用后，主侧栏会出现「图谱」入口。",
+	"name": "知识图谱",
+	"builtin": true,
+	"version": "1.3.0",
+	"description": "把笔记之间的关联（双链、插入的笔记链接、相同的标签）画成一张图：点一个节点看它连着什么，双击打开。启用后，主侧栏会出现「图谱」入口，笔记的「更多」菜单里可以「在图谱中查看」。",
 	"author": {
 		"name": "Flota 团队",
 		"email": "team@Flota.app",

@@ -281,7 +281,7 @@ const enUS = {
     exitFullscreen: 'Exit Fullscreen',
     collapseToolbar: 'Collapse toolbar (⌘/Ctrl + .)',
     expandToolbar: 'Expand toolbar (⌘/Ctrl + .)',
-    convertToTodo: 'Convert to Todo',
+    convertToTodo: 'New linked todo',
     openInNewWindow: 'Open in new window',
     duplicateNote: 'Duplicate Note',
     duplicateSuccess: 'Note duplicated',
@@ -342,7 +342,8 @@ const enUS = {
     focusView: 'Focus View',
     calendarView: 'Calendar View',
     noTodos: 'No todos yet',
-    noTodosDesc: 'Click the + button to create your first todo',
+    noTodosDesc: 'Click "New" to add a todo',
+    noTodosOnDay: 'Nothing due this day',
     searching: 'Searching...',
     noResults: 'No results found',
     convertToNote: 'Convert to Note'

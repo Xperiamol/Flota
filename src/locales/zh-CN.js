@@ -281,7 +281,7 @@ const zhCN = {
     exitFullscreen: '退出全屏',
     collapseToolbar: '折叠工具栏 (⌘/Ctrl + .)',
     expandToolbar: '展开工具栏 (⌘/Ctrl + .)',
-    convertToTodo: '转换为待办事项',
+    convertToTodo: '新建关联待办',
     openInNewWindow: '在独立窗口打开',
     duplicateNote: '复制笔记',
     duplicateSuccess: '笔记已复制',
@@ -342,7 +342,8 @@ const zhCN = {
     focusView: '专注视图',
     calendarView: '日历视图',
     noTodos: '暂无待办事项',
-    noTodosDesc: '点击 + 按钮创建您的第一个待办事项',
+    noTodosDesc: '点「新建」添加一条待办',
+    noTodosOnDay: '这天没有待办',
     searching: '搜索中...',
     noResults: '未找到结果',
     convertToNote: '转换为笔记'

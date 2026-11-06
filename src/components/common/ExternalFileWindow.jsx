@@ -40,7 +40,8 @@ import { useError } from './ErrorProvider'
 import { registerEditorSaver } from '../../utils/editorSaveRegistry'
 import { replaceDataImagesInMarkdown } from '../../utils/dataUrlImage'
 import { usePrefsStore } from '../../store/usePrefsStore'
-import { editorScrollbarSx, segmentedButtonSx, segmentedControlSx } from '../../styles/commonStyles'
+import { editorScrollbarSx } from '../../styles/commonStyles'
+import SegmentedControl from './SegmentedControl'
 
 const ExternalWhiteboardView = lazy(() => import('./ExternalWhiteboardView'))
 
@@ -650,21 +651,17 @@ export default function ExternalFileWindow({ filePath }) {
           )}
 
           <Tooltip title={file && !file.writable ? (isDocument ? `${file.sourceLabel}只能预览，导入为笔记后可以编辑` : '文件是只读的，无法编辑') : ''}>
-            <Box sx={[segmentedControlSx, { height: 32, boxSizing: 'border-box', p: '2px', gap: '2px', borderRadius: '10px' }]}>
-              {[{ value: 'preview', label: '预览', Icon: Visibility }, { value: 'edit', label: '编辑', Icon: Edit }].map((item) => (
-                <Button
-                  key={item.value}
-                  disableRipple
-                  disabled={!file || (item.value === 'edit' && !file.writable)}
-                  aria-pressed={mode === item.value}
-                  onClick={() => switchMode(item.value)}
-                  sx={[segmentedButtonSx(mode === item.value), { height: 26, minHeight: 26, px: 1.1, py: 0, borderRadius: '7px', lineHeight: 1 }]}
-                >
-                  <item.Icon sx={{ fontSize: 14, mr: 0.5 }} />
-                  {item.label}
-                </Button>
-              ))}
-            </Box>
+            <span>
+              <SegmentedControl
+                ariaLabel="查看方式"
+                value={mode}
+                onChange={switchMode}
+                options={[
+                  { value: 'preview', label: '预览', icon: Visibility, disabled: !file },
+                  { value: 'edit', label: '编辑', icon: Edit, disabled: !file || !file.writable },
+                ]}
+              />
+            </span>
           </Tooltip>
 
           <Tooltip title="更多">

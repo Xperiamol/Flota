@@ -16,6 +16,7 @@ import {
 } from '../common/AppIcons';
 import { FlotaTagIcon as LabelIcon } from '../common/FlotaIcons';
 import BatchExportButton from '../notes/BatchExportButton';
+import { glassSx } from '../../styles/materials'
 
 /**
  * 通用多选工具栏组件
@@ -95,12 +96,8 @@ const MultiSelectToolbar = ({
         sx={(theme) => ({
           borderBottom: 1,
           borderColor: theme.palette.mode === 'dark' ? 'rgba(157,157,165,0.14)' : 'rgba(22,22,24,0.08)',
-          backgroundColor: theme.palette.mode === 'dark'
-            ? 'rgba(31,31,34,0.78)'
-            : 'rgba(250,250,250,0.82)',
+          ...glassSx(theme, 'bar'),
           color: 'text.primary',
-          backdropFilter: 'blur(18px) saturate(160%)',
-          WebkitBackdropFilter: 'blur(18px) saturate(160%)'
         })}
       >
         <Toolbar

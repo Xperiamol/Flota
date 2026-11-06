@@ -170,16 +170,6 @@ export default function MCPSettings({ enabled, onEnabledChange }) {
         }
     };
 
-    // 处理启用/禁用
-    const handleToggle = async (newValue) => {
-        if (newValue && !installed) {
-            // 需要先安装
-            setErrorDialog({ open: true, message: '请先安装 MCP Server' });
-            return;
-        }
-        onEnabledChange(newValue);
-    };
-
     if (loading && !installing) {
         return <LinearProgress />;
     }

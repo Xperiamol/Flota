@@ -79,8 +79,8 @@ const buildConversationIndexForPersist = (conversations) => {
     }))
 }
 
-// 把单条会话完整写入主进程 SQLite（fire-and-forget）。失败仅记日志，
-// 不阻塞 UI——内存态仍是 source of truth，下次写入会再次尝试落盘。
+// 把会话的元数据（标题 / 归属笔记 / 来源）写入主进程 SQLite（fire-and-forget）。
+// 消息内容只由主进程的会话服务写入，渲染层不会覆盖它。
 const persistConversationToDisk = (conversation) => {
     if (!conversation?.id) return
     Promise.resolve()
@@ -89,7 +89,6 @@ const persistConversationToDisk = (conversation) => {
             title: conversation.title || '',
             noteId: conversation.noteId ?? null,
             source: conversation.source || (conversation.noteId ? 'note' : 'general'),
-            messages: Array.isArray(conversation.messages) ? conversation.messages : [],
             createdAt: conversation.createdAt ?? null,
             updatedAt: conversation.updatedAt ?? null
         }))
@@ -127,6 +126,8 @@ const useStore = create(
                 notes: [],
                 selectedNoteId: null,
                 searchQuery: '',
+                // 「在图谱中查看」：知识图谱插件打开时读取并清空 { noteId, at }
+                graphFocusRequest: null,
 
                 // 画布元素数量实时状态（用于预览更新）
                 whiteboardElementCounts: {}, // noteId -> elementCount
@@ -150,6 +151,9 @@ const useStore = create(
 
                 // AI 聊天对话状态
                 aiConversations: [], // [{id, title, messages, createdAt, updatedAt}]
+                // 生成中的会话：conversationId → { requestId, draft: { streamContent, toolCalls, steps, activeTool } }
+                // 由主进程广播（ai:session-stream）驱动，所有窗口看到的都一样
+                aiStreams: {},
                 aiActiveConvId: null,
                 aiNoteConversationMap: {},
                 aiMessageMultiSelectRequest: null,
@@ -357,6 +361,24 @@ const useStore = create(
                 // 仅把某对话标记为活动态，不联动 selectedNoteId。
                 // 用于「发送消息时」同步高亮当前对话，但绝不把编辑器正在显示的笔记切走 / 切成空白。
                 aiSetActiveConv: (id) => set({ aiActiveConvId: id }),
+                // 主进程广播的会话内容：替换消息与标题，保留渲染层自己的字段（如任务规划模式）
+                aiApplyConversation: (conversation) => {
+                    if (!conversation?.id) return
+                    set(state => {
+                        const index = state.aiConversations.findIndex(c => c.id === conversation.id)
+                        if (index === -1) return { aiConversations: [conversation, ...state.aiConversations] }
+                        const next = state.aiConversations.slice()
+                        next[index] = { ...next[index], ...conversation }
+                        return { aiConversations: next }
+                    })
+                },
+                aiSetStream: (conversationId, stream) => set(state => {
+                    if (!conversationId) return {}
+                    const next = { ...state.aiStreams }
+                    if (stream) next[conversationId] = stream
+                    else delete next[conversationId]
+                    return { aiStreams: next }
+                }),
                 aiUpdateConv: (id, data) => {
                     let updatedConv = null
                     set(state => ({
@@ -817,7 +839,7 @@ const useStore = create(
                     }
                 },
 
-                permanentDeleteNote: async (id) => {
+                permanentDeleteNote: async (id, options = {}) => {
                     try {
                         const result = await permanentDeleteNoteAPI(id)
                         if (result?.success || result === true) {
@@ -908,7 +930,7 @@ const useStore = create(
                 },
 
                 // 批量永久删除笔记
-                batchPermanentDeleteNotes: async (ids) => {
+                batchPermanentDeleteNotes: async (ids, options = {}) => {
                     try {
                         const result = await batchPermanentDeleteNotesAPI(ids)
                         if (result?.success || result === true) {

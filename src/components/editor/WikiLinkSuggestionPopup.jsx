@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Typography, Portal, ButtonBase } from '@mui/material'
 import { Article as ArticleIcon } from '../common/AppIcons'
 import { Add as AddIcon } from '../common/AppIcons'
-import { floatingGlassSx } from '../../utils/floatingGlassSx'
+import { glassSxFor } from '../../styles/materials'
 import { isImeComposing } from '../../utils/imeUtils'
 
 const MAX_ITEMS = 8
@@ -161,7 +161,7 @@ const WikiLinkSuggestionPopup = ({ state, allTitles, onSelect, onClose, avoidRec
           maxWidth: 360,
           overflow: 'hidden',
           p: 0.55,
-          ...floatingGlassSx({ radius: '14px', shadow: 'menu' }),
+          ...glassSxFor('popover', { radius: 'md', shadow: 'menu' }),
         }}
         onMouseDown={(e) => e.preventDefault()}
       >

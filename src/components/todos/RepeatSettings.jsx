@@ -177,8 +177,6 @@ const RepeatSettings = ({ value = {}, onChange, compact = false }) => {
               mt: 1,
               minWidth: 320,
               maxWidth: 400,
-              borderRadius: '12px',
-              boxShadow: theme.custom?.glass?.boxShadow,
             }
           }
         }}

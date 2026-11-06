@@ -16,6 +16,7 @@ import tagPlugin from './plugins/tag.js'
 import customContainerPlugin from './plugins/customContainer.js'
 import mathPlugin, { transformOutsideMath } from './plugins/math.js'
 import { expandFlotaTableBlocks } from '../utils/flotaTableFormat.js'
+import taskListPlugin from './plugins/taskList.js'
 
 export const RICH_TEXT_EMPTY_LINE_SENTINEL = '\u200B'
 const RICH_TEXT_SPACE_SENTINEL = '\u00A0'
@@ -303,6 +304,7 @@ export function createMarkdownRenderer(options = {}) {
   md.use(wikiLinkPlugin, { onClick: onWikiLinkClick, ...pluginOptions.wikiLink })
   md.use(tagPlugin, { onClick: onTagClick, ...pluginOptions.tag })
   md.use(customContainerPlugin, pluginOptions.customContainer)
+  md.use(taskListPlugin)
 
   return md
 }

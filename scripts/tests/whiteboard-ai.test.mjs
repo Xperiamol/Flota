@@ -3,21 +3,32 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
-const { extractTextResponse } = require('../../electron/services/aiResponse.js')
+const AIService = require('../../electron/services/AIService.js')
 const { ImageStorageService } = require('../../electron/services/ImageStorageService.js')
 
-const response = (content, finish_reason = 'stop', extra = {}) => ({ choices: [{ message: { content, ...extra }, finish_reason }] })
-test('非流式响应识别空正文、只有推理、截断、审核拒答', () => {
-  assert.throws(() => extractTextResponse(response(null)), /空正文/)
-  assert.throws(() => extractTextResponse(response('', 'stop', { reasoning_content: 'thinking' })), /仅返回推理/)
-  assert.throws(() => extractTextResponse(response('<svg>', 'length')), /截断/)
-  assert.throws(() => extractTextResponse(response(null, 'content_filter')), /审核/)
-  assert.throws(() => extractTextResponse(response(null, 'stop', { refusal: 'no' })), /审核/)
+// 非流式生成（画布 / SVG 等）：空正文、只有推理、截断、审核拦截都不能当成功结果
+const sseOf = (...choices) => new Response(choices.map(choice => `data: ${JSON.stringify({ choices: [choice] })}\n\n`).join('') + 'data: [DONE]\n\n')
+const chatWith = async (reply, options = {}) => {
+  const original = global.fetch
+  global.fetch = async () => reply()
+  try {
+    const service = Object.assign(Object.create(AIService.prototype), {
+      logger: { error() {}, warn() {} }, _checkRateLimit() {}, normalizeApiUrl: v => v,
+      getConfig: async () => ({ success: true, data: { enabled: true, provider: 'custom', model: 'm', apiUrl: 'https://t.test/v1', apiKey: 'k' } }),
+    })
+    return await service.chat([{ role: 'user', content: '画一张图' }], options)
+  } finally { global.fetch = original }
+}
+test('非流式生成识别空正文、只有推理、截断、审核拦截', async () => {
+  assert.match((await chatWith(() => sseOf({ delta: {}, finish_reason: 'stop' }))).error, /空正文/)
+  assert.match((await chatWith(() => sseOf({ delta: { reasoning_content: '思考中' } }, { delta: {}, finish_reason: 'stop' }))).error, /仅返回推理/)
+  assert.match((await chatWith(() => sseOf({ delta: { content: '<svg>' }, finish_reason: 'length' }), { maxTokens: 10 })).error, /截断/)
+  assert.match((await chatWith(() => sseOf({ delta: {}, finish_reason: 'content_filter' }))).error, /审核/)
 })
-test('兼容文本块及 Qwen 两种响应格式', () => {
-  assert.equal(extractTextResponse(response([{ type: 'text', text: '<svg/>' }])).content, '<svg/>')
-  assert.equal(extractTextResponse({ output: { text: 'hello' } }, 'qwen').content, 'hello')
-  assert.equal(extractTextResponse({ output: response('hello') }, 'qwen').content, 'hello')
+test('非流式生成正常返回正文', async () => {
+  const result = await chatWith(() => sseOf({ delta: { content: '<svg/>' }, finish_reason: 'stop' }))
+  assert.equal(result.success, true)
+  assert.equal(result.data.content, '<svg/>')
 })
 test('图片部分落盘失败必须报错，不能返回残缺索引冒充成功', async () => {
   const service = Object.create(ImageStorageService.prototype)

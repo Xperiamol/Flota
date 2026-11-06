@@ -532,7 +532,7 @@ const TodoView = ({ viewMode, showCompleted, onViewModeChange, onShowCompletedCh
                     minHeight: 0,
                     display: 'flex',
                     flexDirection: 'column',
-                    borderRadius: '14px',
+                    borderRadius: 1.5,
                     backgroundColor: theme.custom?.surface?.inset,
                     border: '1px solid transparent',
                     transition: createTransitionString(ANIMATIONS.hover),

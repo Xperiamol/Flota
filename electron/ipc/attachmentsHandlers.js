@@ -31,27 +31,31 @@ const registerAttachmentsHandlers = (services) => {
     }
   }
 
-  const writeAttachmentBuffer = (buf, originalName) => {
+  // 文件读写都用异步：这些处理器跑在主进程，同步读写几十 MB 的附件会卡住所有窗口
+  const writeAttachmentBuffer = async (buf, originalName) => {
     const dir = path.join(app.getPath('userData'), 'attachments')
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    await fs.promises.mkdir(dir, { recursive: true })
     const displayName = sanitizeAttachmentName(originalName)
     const sha1 = crypto.createHash('sha1').update(buf).digest('hex')
     const ext = path.extname(displayName).toLowerCase()
     const fileName = ext ? `${sha1}${ext}` : sha1
     const fullPath = path.join(dir, fileName)
-    if (!fs.existsSync(fullPath)) fs.writeFileSync(fullPath, buf)
+    // 内容寻址：同名即同内容，已存在就不再写
+    await fs.promises.writeFile(fullPath, buf, { flag: 'wx' }).catch((error) => {
+      if (error.code !== 'EEXIST') throw error
+    })
     return { relativePath: `attachments/${fileName}`, displayName }
   }
 
   ipcMain.handle('attachments:save-from-path', async (_event, sourcePath, displayName) => {
     try {
       validateString(sourcePath, 'sourcePath')
-      if (!fs.existsSync(sourcePath)) throw new Error('源文件不存在')
-      const stat = fs.statSync(sourcePath)
+      const stat = await fs.promises.stat(sourcePath).catch(() => null)
+      if (!stat) throw new Error('源文件不存在')
       if (!stat.isFile()) throw new Error('源不是文件')
       await assertAttachmentSize(stat.size)
-      const buf = fs.readFileSync(sourcePath)
-      return { success: true, data: writeAttachmentBuffer(buf, displayName || path.basename(sourcePath)) }
+      const buf = await fs.promises.readFile(sourcePath)
+      return { success: true, data: await writeAttachmentBuffer(buf, displayName || path.basename(sourcePath)) }
     } catch (error) {
       console.error('保存附件失败:', error)
       return { success: false, error: error.message }
@@ -63,7 +67,7 @@ const registerAttachmentsHandlers = (services) => {
       validateString(fileName, 'fileName')
       const buf = Buffer.from(buffer)
       await assertAttachmentSize(buf.length)
-      return { success: true, data: writeAttachmentBuffer(buf, fileName) }
+      return { success: true, data: await writeAttachmentBuffer(buf, fileName) }
     } catch (error) {
       console.error('保存附件失败:', error)
       return { success: false, error: error.message }
@@ -111,7 +115,7 @@ const registerAttachmentsHandlers = (services) => {
       const mimeMap = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' }
       const mime = mimeMap[ext]
       if (!mime) throw new Error('非图片类型')
-      const buf = fs.readFileSync(fullPath)
+      const buf = await fs.promises.readFile(fullPath)
       return { success: true, data: `data:${mime};base64,${buf.toString('base64')}` }
     } catch (error) {
       return { success: false, error: error.message }

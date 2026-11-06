@@ -48,9 +48,14 @@ import { useShallow } from 'zustand/react/shallow'
 import { useStandaloneContext } from '../common/StandaloneProvider'
 import { zhCN } from 'date-fns/locale/zh-CN'
 import { parseTags, formatTags } from '../../utils/tagUtils'
-import { notifyError } from '../../utils/notify'
+import { notifyError, notifyInfo, notifySuccess, notifyWithAction, reportResult } from '../../utils/notify'
+import { createTodo } from '../../api/todoAPI'
+import { referenceLink } from '../../utils/todoReferences'
+import { countPromotableTasks, promoteTasksInMarkdown } from '../../utils/linkedTasks'
+import { AddTaskRounded as PromoteTasksIcon, HubRounded as GraphIcon } from '../common/AppIcons'
+import { usePluginViewByNavId } from '../../store/usePluginViews'
 import shortcutManager from '../../utils/ShortcutManager'
-import TagInput from '../common/TagInput'
+import TagEditorPopover from '../common/TagEditorPopover'
 import useAIAutoAnnotate from '../../hooks/useAIAutoAnnotate'
 import MarkdownPreview from './MarkdownPreview'
 import RelatedTodos from '../todos/RelatedTodos'
@@ -84,7 +89,9 @@ import { replaceDataImagesInMarkdown } from '../../utils/dataUrlImage'
 import { insertIntoTextarea, placeCursorAfterInsert } from '../../utils/textareaInsert'
 import { useRecentNotes } from '../../store/useRecentNotes'
 import { exportNoteAs } from '../../utils/noteExport'
-import { editorScrollbarSx, segmentedButtonSx, segmentedControlSx } from '../../styles/commonStyles'
+import { editorScrollbarSx } from '../../styles/commonStyles'
+import SegmentedControl from '../common/SegmentedControl'
+import { glassSx, glassSxFor } from '../../styles/materials'
 import PanelIconButton from '../common/PanelIconButton'
 
 const WYSIWYGEditor = lazy(() => import('./WYSIWYGEditor'))
@@ -323,6 +330,18 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     return result
   }
 
+  // 切换笔记 / 关闭编辑器时的后台保存：编辑缓冲区马上会被新笔记替换，
+  // 所以失败时必须告诉用户，并提供用同一份内容重试的入口，否则修改会无声丢失。
+  const saveInBackground = (noteId, payload, reason) => {
+    const run = () => saveQueue.add(noteId, async () => ensureUpdateSucceeded(await updateNote(noteId, payload)))
+      .catch((error) => {
+        console.error(`[NoteEditor] ${reason}保存失败:`, error)
+        const title = payload.title || useStore.getState().notes.find((note) => String(note.id) === String(noteId))?.title || '上一篇笔记'
+        notifyWithAction(`「${title}」的修改没保存上：${error?.message || '未知原因'}`, { label: '重试', onClick: run }, 'error')
+      })
+    run()
+  }
+
   const createSavePayload = (state) => ({
     title: (state.title || '').trim(),
     content: (state.noteType || 'markdown') === 'markdown'
@@ -537,12 +556,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
         cancelSave()
 
         // 使用保存队列立即保存，确保按顺序执行
-        saveQueue.add(oldNoteId, async () => {
-          logger.log('[NoteEditor] 切换笔记前保存:', oldNoteId);
-          ensureUpdateSucceeded(await updateNote(oldNoteId, stateToSave));
-        }).catch(error => {
-          console.error('[NoteEditor] 切换笔记时保存失败:', error);
-        });
+        saveInBackground(oldNoteId, stateToSave, '切换笔记时')
       }
     }
 
@@ -755,9 +769,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
         }
         const payload = createSavePayload(prevStateRef.current)
         if (payload.note_type === 'whiteboard') delete payload.content
-        saveQueue.add(noteId, async () => ensureUpdateSucceeded(await updateNote(noteId, payload))).catch(error => {
-          console.error('组件卸载时保存失败:', error)
-        })
+        saveInBackground(noteId, payload, '关闭编辑器时')
       }
     }
   }, [])
@@ -820,6 +832,43 @@ const NoteEditor = ({ onCollapseSidebar }) => {
 
 
 
+  // 知识图谱插件启用时，可以从笔记直接跳到图谱里看它周围的内容
+  const graphView = usePluginViewByNavId('graph')
+  const openInGraph = () => {
+    setActionMenuAnchor(null)
+    useStore.setState({ graphFocusRequest: { noteId: selectedNoteId, at: Date.now() } })
+    useStore.getState().setCurrentView('graph')
+  }
+
+  // 笔记里还没关联的未完成任务，一次都加入待办（之后两边同步）
+  const handlePromoteAllTasks = async () => {
+    setActionMenuAnchor(null)
+    try {
+      let created = 0
+      if (editorMode === 'wysiwyg' && wysiwygEditorRef.current?.promoteAllTasks) {
+        if (!wysiwygEditorRef.current.countPromotableTasks()) { notifyInfo('这篇笔记里没有可以加入待办的任务'); return }
+        created = await wysiwygEditorRef.current.promoteAllTasks()
+      } else {
+        if (!countPromotableTasks(content)) { notifyInfo('这篇笔记里没有可以加入待办的任务'); return }
+        const source = useStore.getState().notes.find((note) => String(note.id) === String(selectedNoteId))
+        const result = await promoteTasksInMarkdown(content, (text) => createTodo({
+          content: text.slice(0, 200),
+          description: source ? referenceLink('note', source) : '',
+        }))
+        created = result.created
+        if (created) {
+          setContent(result.markdown)
+          setHasUnsavedChanges(true)
+          prevStateRef.current.content = result.markdown
+          debouncedSave()
+        }
+      }
+      if (created) notifySuccess(`已把 ${created} 条任务加入待办，勾选和改名会两边同步`)
+    } catch (error) {
+      notifyError(`加入待办失败：${error?.message || '未知原因'}`)
+    }
+  }
+
   const handleManualSave = async () => {
     if (!selectedNoteId) return
 
@@ -838,7 +887,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
 
   const handleTogglePin = async () => {
     if (selectedNoteId) {
-      await togglePinNote(selectedNoteId)
+      reportResult(await togglePinNote(selectedNoteId), '切换置顶')
     }
   }
 
@@ -1609,7 +1658,6 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     try {
       const imageMarkdowns = []
       if (imageItems.length > 0) {
-        const timestamp = Date.now()
         for (let i = 0; i < imageItems.length; i++) {
           const blob = imageItems[i].getAsFile()
           if (!blob) continue
@@ -1863,15 +1911,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
     lineHeight: 1.2,
     letterSpacing: '0.01em',
     color: 'text.disabled',
-    bgcolor: (theme) => theme.palette.mode === 'dark'
-      ? 'rgba(22,22,24, 0.34)'
-      : 'rgba(255, 255, 255, 0.52)',
-    border: '1px solid',
-    borderColor: (theme) => theme.palette.mode === 'dark'
-      ? 'rgba(157,157,165, 0.10)'
-      : 'rgba(157,157,165, 0.16)',
-    backdropFilter: 'blur(10px)',
-    WebkitBackdropFilter: 'blur(10px)',
+    ...glassSxFor('chip'),
     userSelect: 'none',
   }
   const wordStatsBadge = (showWordCount || showReadingTime) && (
@@ -2134,14 +2174,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
               top: 8,
               right: 8,
               zIndex: 10,
-              borderRadius: '8px',
-              backgroundColor: theme.palette.mode === 'dark'
-                ? 'rgba(22,22,24, 0.55)'
-                : 'rgba(255, 255, 255, 0.7)',
-              border: '1px solid',
-              borderColor: 'divider',
-              backdropFilter: 'blur(8px)',
-              WebkitBackdropFilter: 'blur(8px)',
+              ...glassSx(theme, 'chip', { radius: 'sm' }),
               opacity: 0.62,
               transition: 'opacity 160ms ease',
               '&:hover': {
@@ -2409,42 +2442,17 @@ const NoteEditor = ({ onCollapseSidebar }) => {
         </Box>
 
         {/* 笔记类型切换 - 移到工具栏 */}
-        <Box ref={typeSwitchRef} sx={[segmentedControlSx, {
-          flexShrink: 0,
-          height: 32,
-          boxSizing: 'border-box',
-          p: '2px',
-          gap: '2px',
-          // 外圆角 = 内圆角 + 内边距 + 边框，内外两层圆角保持同心
-          borderRadius: '10px',
-        }]}>
-          {[{ value: 'markdown', Icon: ArticleIcon, label: 'Markdown' },
-            { value: 'whiteboard', Icon: WhiteboardIcon, label: '画布' }].map((item) => {
-            const isActive = noteType === item.value;
-            return (
-              <Button
-                key={item.value}
-                disableElevation
-                disableRipple
-                variant="text"
-                aria-label={item.label}
-                aria-pressed={isActive}
-                onClick={() => isActive ? null : handleNoteTypeChange(item.value)}
-                sx={[segmentedButtonSx(isActive), {
-                  px: compactToolbar ? 0 : 1.25, py: 0,
-                  width: compactToolbar ? 30 : 'auto',
-                  // 32 高的外框减去 1px 边框和 2px 内边距，按钮只剩 26
-                  height: 26, minHeight: 26, minWidth: compactToolbar ? 30 : 0,
-                  borderRadius: '7px',
-                  lineHeight: 1,
-                }]}
-              >
-                <item.Icon sx={{ fontSize: 15, mr: compactToolbar ? 0 : 0.5 }} />
-                {!compactToolbar && item.label}
-              </Button>
-            );
-          })}
-        </Box>
+        <SegmentedControl
+          ref={typeSwitchRef}
+          ariaLabel="笔记类型"
+          iconOnly={compactToolbar}
+          value={noteType}
+          onChange={handleNoteTypeChange}
+          options={[
+            { value: 'markdown', icon: ArticleIcon, label: 'Markdown' },
+            { value: 'whiteboard', icon: WhiteboardIcon, label: '画布' },
+          ]}
+        />
 
         <Box sx={(theme) => ({
           display: 'flex', alignItems: 'center', gap: 0,
@@ -2521,6 +2529,18 @@ const NoteEditor = ({ onCollapseSidebar }) => {
               try { await saveNow(); await flushEditorSaves(); setHistoryOpen(true) }
               catch (e) { notifyError(e.message || '请先保存当前内容') }
             }}><ListItemIcon><HistoryOutlined fontSize="small" /></ListItemIcon><ListItemText>历史版本</ListItemText></MenuItem>
+            {noteType === 'markdown' && (
+              <MenuItem onClick={handlePromoteAllTasks}>
+                <ListItemIcon><PromoteTasksIcon fontSize="small" /></ListItemIcon>
+                <ListItemText>把未完成的任务都加入待办</ListItemText>
+              </MenuItem>
+            )}
+            {graphView && selectedNoteId && (
+              <MenuItem onClick={openInGraph}>
+                <ListItemIcon><GraphIcon fontSize="small" /></ListItemIcon>
+                <ListItemText>在图谱中查看</ListItemText>
+              </MenuItem>
+            )}
             {overflowActions.map((action) => (
               <MenuItem
                 key={action.key}
@@ -2638,11 +2658,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
               py: 0.75,
               borderBottom: 1,
               borderColor: 'divider',
-              backgroundColor: theme.palette.mode === 'dark'
-                ? 'rgba(22,22,24, 0.88)'
-                : 'rgba(255, 255, 255, 0.92)',
-              backdropFilter: 'blur(10px)',
-              WebkitBackdropFilter: 'blur(10px)'
+              ...glassSx(theme, 'bar'),
             })}
           >
             <Typography sx={{ fontSize: 11, fontWeight: 700, color: 'text.disabled', letterSpacing: '0.04em', mr: 0.5, flexShrink: 0 }}>
@@ -2690,11 +2706,7 @@ const NoteEditor = ({ onCollapseSidebar }) => {
               py: 0.75,
               borderBottom: 1,
               borderColor: 'divider',
-              backgroundColor: theme.palette.mode === 'dark'
-                ? 'rgba(22,22,24, 0.88)'
-                : 'rgba(255, 255, 255, 0.92)',
-              backdropFilter: 'blur(10px)',
-              WebkitBackdropFilter: 'blur(10px)'
+              ...glassSx(theme, 'bar'),
             })}
           >
             <Typography sx={{ fontSize: 11, fontWeight: 700, color: 'text.disabled', letterSpacing: '0.04em', mr: 0.5 }}>
@@ -2941,54 +2953,15 @@ const NoteEditor = ({ onCollapseSidebar }) => {
         )}
       </Box>
 
-      <Popover
-        open={tagPopoverOpen}
+      <TagEditorPopover
         anchorEl={tagAnchorEl}
         onClose={() => setTagAnchorEl(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'center' }}
-        slotProps={{
-          paper: {
-            sx: (theme) => ({
-              mt: 0.75,
-              width: 360,
-              maxWidth: 'calc(100vw - 32px)',
-              borderRadius: '12px',
-              border: theme.custom?.glass?.border,
-              backgroundColor: theme.custom?.glass?.background,
-              backgroundImage: theme.custom?.glass?.backgroundImage,
-              backdropFilter: theme.custom?.glass?.backdropFilter,
-              WebkitBackdropFilter: theme.custom?.glass?.backdropFilter,
-              boxShadow: theme.custom?.glass?.boxShadow,
-              overflow: 'visible',
-            })
-          }
-        }}
-      >
-        <Box sx={{ p: 1.25 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-            <Box sx={{ minWidth: 0 }}>
-              <Typography sx={{ fontSize: 12, fontWeight: 800, color: 'text.disabled', letterSpacing: '0.04em' }}>
-                管理标签
-              </Typography>
-            </Box>
-            <PanelIconButton title="关闭标签" onClick={() => setTagAnchorEl(null)}>
-              <CloseIcon />
-            </PanelIconButton>
-          </Box>
-
-          <TagInput
-            value={tags}
-            onChange={handleTagsChange}
-            placeholder={t('common.tagsPlaceholder')}
-            maxTags={5}
-            showSuggestions={true}
-            noteContent={content}
-            noteId={selectedNoteId}
-            sx={{ width: '100%' }}
-          />
-        </Box>
-      </Popover>
+        value={tags}
+        onChange={handleTagsChange}
+        placeholder={t('common.tagsPlaceholder')}
+        noteContent={content}
+        noteId={selectedNoteId}
+      />
 
       <Popover
         open={relatedOpen}
@@ -2999,20 +2972,12 @@ const NoteEditor = ({ onCollapseSidebar }) => {
         disableRestoreFocus
         slotProps={{
           paper: {
-            sx: (theme) => ({
+            sx: {
               mt: 0.25,
               width: 336,
               maxWidth: 'calc(100vw - 32px)',
-              borderRadius: '14px',
               overflow: 'hidden',
-              border: theme.custom?.glass?.border,
-              backgroundColor: theme.custom?.glass?.background,
-              backgroundImage: theme.custom?.glass?.backgroundImage,
-              backdropFilter: theme.custom?.glass?.backdropFilter,
-              WebkitBackdropFilter: theme.custom?.glass?.backdropFilter,
-              boxShadow: theme.custom?.glass?.boxShadow,
-              backgroundClip: 'padding-box',
-            })
+            }
           }
         }}
       >

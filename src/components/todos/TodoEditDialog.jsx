@@ -3,7 +3,7 @@ import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Box, Typogra
   TextField, IconButton, ListItemIcon, ListItemText, Checkbox,
   Menu, MenuItem, Divider, DialogContentText, LinearProgress, CircularProgress } from '@mui/material';
 import { History as HistoryIcon, Close as CloseIcon, Add as AddIcon,
-  CheckBoxOutlineBlank, CheckBox as CheckBoxIcon, MoreHoriz as MoreHorizIcon,
+  MoreHoriz as MoreHorizIcon,
   ExpandMore as ExpandMoreIcon, ExpandLess as ExpandLessIcon,
   CheckCircleOutline as CompleteIcon, UndoRounded as UndoIcon,
   DeleteOutlineRounded as DeleteIcon, ChecklistRounded as ChecklistIcon } from '../common/AppIcons';
@@ -428,8 +428,6 @@ const TodoEditDialog = ({ todo, open, onClose, onUpdated }) => {
                       <Checkbox
                         size="small"
                         checked={Boolean(sub.is_completed)}
-                        icon={<CheckBoxOutlineBlank sx={{ fontSize: 18 }} />}
-                        checkedIcon={<CheckBoxIcon sx={{ fontSize: 18 }} />}
                         onChange={() => handleToggleSubtask(sub)}
                         sx={{ width: 30, height: 30, p: 0 }}
                       />
@@ -546,20 +544,13 @@ const TodoEditDialog = ({ todo, open, onClose, onUpdated }) => {
             transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
             slotProps={{
               paper: {
-                sx: (theme) => ({
+                sx: {
                   minWidth: 220,
                   maxWidth: 260,
                   mb: 1,
                   p: 0.625,
-                  borderRadius: '12px',
                   overflow: 'visible',
-                  backdropFilter: theme.custom?.glass?.backdropFilter,
-                  WebkitBackdropFilter: theme.custom?.glass?.backdropFilter,
-                  backgroundColor: theme.custom?.glass?.background,
-                  backgroundImage: theme.custom?.glass?.backgroundImage,
-                  border: theme.custom?.glass?.border,
-                  boxShadow: theme.custom?.glass?.boxShadow
-                })
+                }
               }
             }}
           >

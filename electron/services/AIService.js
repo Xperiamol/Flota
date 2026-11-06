@@ -6,7 +6,9 @@
 const { EventEmitter } = require('events');
 const { getInstance: getLogger } = require('./LoggerService');
 const { encryptValue, decryptValue, isEncryptedValue } = require('../utils/secureValue');
-const { extractTextResponse, mergeContinuationContent, getTokenCandidates, accumulateUsage } = require('./aiResponse');
+const { buildModel, buildRequestOptions } = require('./llm/model');
+const { generateText } = require('./llm/generateText');
+const { normalizeModelError } = require('./llm/errors');
 
 const { isEnabledSetting } = require('./aichat/utils');
 
@@ -19,7 +21,6 @@ class AIService extends EventEmitter {
     // 速率限制：滑动窗口
     this._requestTimestamps = [];
     this._maxRequestsPerMinute = 20;
-    this._requestTimeoutMs = 120000; // 120s
   }
 
   /**
@@ -32,50 +33,6 @@ class AIService extends EventEmitter {
       throw new Error('AI请求过于频繁，请稍后再试');
     }
     this._requestTimestamps.push(now);
-  }
-
-  /**
-   * 长连接 dispatcher：禁用 undici 自带的 headers/body 内部超时，
-   * 让请求时长完全由我们的 AbortController 控制。
-   * 否则大体量（如画布规划）非流式响应会在 undici 默认 ~300s 处被
-   * 提前中断，并抛出信息被吞掉的通用 `fetch failed`。
-   */
-  _getLongRequestDispatcher() {
-    if (this._longDispatcher !== undefined) return this._longDispatcher;
-    try {
-      const { Agent } = require('undici');
-      this._longDispatcher = new Agent({ headersTimeout: 0, bodyTimeout: 0, connectTimeout: 30000 });
-    } catch (_) {
-      this._longDispatcher = null;
-    }
-    return this._longDispatcher;
-  }
-
-  /**
-   * 超时覆盖响应头和正文读取的非流式请求
-   */
-  async _fetchTextWithTimeout(url, options, timeoutMs) {
-    const effective = timeoutMs && timeoutMs > 0 ? timeoutMs : this._requestTimeoutMs;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), effective);
-    const dispatcher = this._getLongRequestDispatcher();
-    try {
-      const response = await fetch(url, {
-        ...options,
-        signal: options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal,
-        ...(dispatcher ? { dispatcher } : {}),
-      });
-      return { ok: response.ok, status: response.status, text: await response.text() };
-    } catch (e) {
-      if (options.signal?.aborted) throw new Error('已停止生成');
-      if (e.name === 'AbortError') throw new Error(`AI请求超时（${Math.round(effective / 1000)}秒），请检查网络或API服务状态`);
-      // undici 把真实原因藏在 e.cause 里，原样 throw 会只剩 "fetch failed"
-      const cause = e?.cause?.message || e?.cause?.code || '';
-      if (cause) throw new Error(`${e.message}: ${cause}`);
-      throw e;
-    } finally {
-      clearTimeout(timer);
-    }
   }
 
   /**
@@ -286,66 +243,23 @@ class AIService extends EventEmitter {
   }
 
   /**
-   * 通用 API 测试（内部方法）
-   */
-  async _testAPI(url, apiKey, body, label, errorExtractor = json => json.error?.message) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 15000);
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body: JSON.stringify(body),
-        signal: controller.signal
-      });
-      if (response.ok) return { success: true, message: `${label}连接测试成功` };
-      let errorMessage = `连接失败 (${response.status})`;
-      try {
-        const text = await response.text();
-        if (text) errorMessage = errorExtractor(JSON.parse(text)) || errorMessage;
-      } catch (_) {}
-      return { success: false, error: errorMessage };
-    } catch (error) {
-      if (error.name === 'AbortError') return { success: false, error: '连接超时（15 秒）' };
-      return { success: false, error: error.message };
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
-  /**
-   * 测试AI连接
+   * 测试 AI 连接：用传入的（可能还没保存的）配置发一条极短的请求
    */
   async testConnection(config) {
+    const { provider, apiKey, apiUrl } = config || {};
+    if (!apiKey) return { success: false, error: '请先配置API密钥' };
+    if (provider === 'custom' && !apiUrl) return { success: false, error: '请先配置自定义API地址' };
+    const label = this.getProviders().data.find((item) => item.id === provider)?.name || 'AI';
     try {
-      const { provider, apiKey, apiUrl, model } = config;
-      if (!apiKey) return { success: false, error: '请先配置API密钥' };
-
-      const stdBody = (m) => ({ model: m, messages: [{ role: 'user', content: 'Hello' }], max_tokens: 10 });
-      const qwenBody = (m) => ({ model: m, input: { messages: [{ role: 'user', content: 'Hello' }] }, parameters: { max_tokens: 10 } });
-
-      switch (provider) {
-        case 'openai':
-          return await this._testAPI('https://api.openai.com/v1/chat/completions', apiKey, stdBody(model || 'gpt-3.5-turbo'), 'OpenAI');
-        case 'deepseek':
-          return await this._testAPI('https://api.deepseek.com/v1/chat/completions', apiKey, stdBody(model || 'deepseek-chat'), 'DeepSeek');
-        case 'qwen':
-          return await this._testAPI(
-            'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
-            apiKey, qwenBody(model || 'qwen-turbo'), '通义千问', json => json.message
-          );
-        case 'custom':
-          if (!apiUrl) return { success: false, error: '请先配置自定义API地址' };
-          return await this._testAPI(
-            this.normalizeApiUrl(apiUrl), apiKey, stdBody(model || 'gpt-3.5-turbo'),
-            '自定义API', json => json.error?.message || json.message
-          );
-        default:
-          return { success: false, error: '不支持的AI提供商' };
-      }
+      const testConfig = { ...config, model: config.model || this.getProviders().data.find((item) => item.id === provider)?.models?.[0] || 'gpt-3.5-turbo' };
+      await generateText({
+        model: buildModel(testConfig, this),
+        messages: [{ role: 'user', content: 'Hello' }],
+        requestOptions: buildRequestOptions(testConfig, { maxTokens: 10, timeoutMs: 15000 }),
+      });
+      return { success: true, message: `${label}连接测试成功` };
     } catch (error) {
-      this.logger.error('AI', 'Failed to test connection', error);
-      return { success: false, error: error.message };
+      return { success: false, error: normalizeModelError(error) };
     }
   }
 
@@ -393,49 +307,13 @@ class AIService extends EventEmitter {
   }
 
   /**
-   * 通用 API 聊天（内部方法）
-   */
-  async _chatAPI(url, apiKey, body, responseExtractor, timeoutMs, signal) {
-    // 网关瞬时故障（502/503/504）与限流（429）通常重试即可恢复：退避重试，不要一次失败就报错。
-    const RETRYABLE = new Set([429, 502, 503, 504]);
-    const MAX_ATTEMPTS = 3;
-    let lastErr;
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      if (signal?.aborted) throw new Error('已停止生成');
-      const response = await this._fetchTextWithTimeout(url, {
-        method: 'POST',
-        signal,
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body: JSON.stringify(body)
-      }, timeoutMs);
-
-      if (!response.ok) {
-        let errorMessage = `请求失败 (${response.status})`;
-        try {
-          const text = response.text;
-          if (text) { const e = JSON.parse(text); errorMessage = e.error?.message || e.message || errorMessage; }
-        } catch (_) {}
-        if (RETRYABLE.has(response.status) && attempt < MAX_ATTEMPTS) {
-          lastErr = Object.assign(new Error(errorMessage), { status: response.status });
-          const backoff = 800 * attempt;
-          this.logger.warn('AI', `网关瞬时错误 ${response.status}，${backoff}ms 后重试（${attempt}/${MAX_ATTEMPTS - 1}）`);
-          await new Promise((r) => setTimeout(r, backoff));
-          continue;
-        }
-        throw Object.assign(new Error(errorMessage), { status: response.status });
-      }
-
-      const text = response.text;
-      if (!text) throw new Error('API 返回空响应');
-      let data;
-      try { data = JSON.parse(text); } catch (e) { throw new Error('解析 API 响应失败: ' + e.message); }
-      return { success: true, data: responseExtractor(data) };
-    }
-    throw lastErr || new Error('请求失败');
-  }
-
-  /**
-   * 调用AI完成任务（供后续功能使用）
+   * 非流式文本生成（画布、组件、MCP、插件等）：内部仍是流式请求，拿到完整结果后一次返回。
+   *
+   * 默认自动续写：没有显式限长、输出因长度被截断时从断点接着写（最多 8 次）。
+   * 最终仍被截断、或模型没有返回正文时报错，不把半截内容当成功结果。
+   *
+   * @param {Array} messages OpenAI 格式消息
+   * @param {object} [options] temperature / maxTokens / bypassTokenLimit / autoContinue / timeoutMs / signal
    */
   async chat(messages, options = {}) {
     try {
@@ -447,119 +325,32 @@ class AIService extends EventEmitter {
 
       this._checkRateLimit();
 
-      const customTimeoutMs = typeof options.timeoutMs === 'number' && options.timeoutMs > 0
-        ? Math.min(options.timeoutMs, 600000)
-        : undefined;
-
-      const temp = Math.min(Math.max(options.temperature ?? config.temperature, 0), 2);
-      const limitMaxTokensEnabled = isEnabledSetting(config.limitMaxTokens);
-      const hasExplicitMaxTokens = options.maxTokens != null;
-      // bypassTokenLimit：结构化生成（如画布规划）忽略用户的小额 token 上限，避免输出被截断；
-      // 默认省略 max_tokens；需要兼容网关时由共享额度策略处理。
-      const maxTk = hasExplicitMaxTokens
+      // bypassTokenLimit：结构化生成（如画布规划）忽略用户的小额 token 上限，避免输出被截断
+      const maxTokens = options.maxTokens != null
         ? options.maxTokens
-        : (options.bypassTokenLimit ? undefined : (limitMaxTokensEnabled ? config.maxTokens : undefined));
-      // 未显式限长（maxTk == null）时，若服务商单次默认输出上限触发 finish_reason=length，自动从断点续写（最多 8 次）
-      const maxContinuations = options.autoContinue === false || maxTk != null
-        ? 0
-        : (Number.isInteger(options.maxContinuations) ? Math.max(0, options.maxContinuations) : 8);
-
-      // Anthropic/Claude 接口必填 max_tokens，兼容网关在省略该字段时常注入 4096/8192 默认值，
-      // 开启 Extended Thinking 时会被内部推理耗尽导致正文为空（finish_reason=length, content=""）。
-      const tokenCandidates = getTokenCandidates(config.model, maxTk);
-
-      const requestSingleBudget = async (turnMessages, allowTruncated, candidateMaxTk) => {
-        const stdBody = {
-          model: config.model,
-          messages: turnMessages,
-          temperature: temp,
-          ...(candidateMaxTk != null ? { max_tokens: candidateMaxTk } : {})
-        };
-        const qwenBody = {
-          model: config.model,
-          input: { messages: turnMessages },
-          parameters: {
-            temperature: temp,
-            ...(candidateMaxTk != null ? { max_tokens: candidateMaxTk } : {})
-          }
-        };
-
-        const openAIExtract = (data) => extractTextResponse(data, 'openai', { allowTruncated });
-        const qwenExtract = (data) => extractTextResponse(data, 'qwen', { allowTruncated });
-
-        switch (config.provider) {
-          case 'openai':
-            return await this._chatAPI('https://api.openai.com/v1/chat/completions', config.apiKey, stdBody, openAIExtract, customTimeoutMs, options.signal);
-          case 'deepseek':
-            return await this._chatAPI('https://api.deepseek.com/v1/chat/completions', config.apiKey, stdBody, openAIExtract, customTimeoutMs, options.signal);
-          case 'qwen':
-            return await this._chatAPI(
-              'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
-              config.apiKey, qwenBody, qwenExtract, customTimeoutMs, options.signal
-            );
-          case 'custom':
-            return await this._chatAPI(this.normalizeApiUrl(config.apiUrl), config.apiKey, stdBody, openAIExtract, customTimeoutMs, options.signal);
-          default:
-            return { success: false, error: '不支持的AI提供商' };
-        }
-      };
-
-      const requestTurn = async (turnMessages, allowTruncated) => {
-        let lastError;
-        for (let i = 0; i < tokenCandidates.length; i++) {
-          const candidateMaxTk = tokenCandidates[i];
-          const hasNext = i < tokenCandidates.length - 1;
-          try {
-            return await requestSingleBudget(turnMessages, allowTruncated, candidateMaxTk);
-          } catch (err) {
-            lastError = err;
-            // 若自动注入的高 max_tokens 被上游以 400 拒绝，降档重试
-            if (hasNext && maxTk == null && candidateMaxTk != null && err?.status === 400) {
-              continue;
-            }
-            // 若省略 max_tokens 时网关默认额度被思考过程耗尽（返回空正文 + finish_reason=length），升档显式传入大额度重试
-            if (hasNext && maxTk == null && candidateMaxTk == null && err?.code === 'EMPTY_TRUNCATED_RESPONSE') {
-              continue;
-            }
-            throw err;
-          }
-        }
-        throw lastError || new Error('请求失败');
-      };
-
-      let content = '';
-      let usage = null;
-      let finishReason = null;
-      let previousAdded = null;
-      for (let part = 0; part <= maxContinuations; part++) {
-        const turnMessages = part === 0 ? messages : [
-          ...messages,
-          { role: 'assistant', content },
-          { role: 'user', content: '上一条回复在末尾因单次输出长度上限截断了。请从中断的位置直接接着写：不要重复已经输出的内容，不要重新开始，不要加代码块围栏或任何解释。' }
-        ];
-        const turnResult = await requestTurn(turnMessages, part < maxContinuations);
-        if (!turnResult?.success) return turnResult;
-        const data = turnResult.data;
-        finishReason = data.finishReason;
-        usage = accumulateUsage(usage, data.usage);
-        if (part === 0) {
-          content = data.content;
-          previousAdded = data.content;
-        } else {
-          const merged = mergeContinuationContent(content, data.content);
-          if (!merged.added.trim() || merged.added === previousAdded) {
-            throw new Error('模型输出被 token 上限截断，请提高模型输出额度或缩小生成内容');
-          }
-          content = merged.content;
-          previousAdded = merged.added;
-        }
-        if (finishReason !== 'length') break;
+        : (options.bypassTokenLimit || !isEnabledSetting(config.limitMaxTokens) ? undefined : config.maxTokens);
+      const result = await generateText({
+        model: buildModel(config, this),
+        messages,
+        requestOptions: buildRequestOptions(config, {
+          temperature: options.temperature ?? config.temperature,
+          maxTokens,
+          timeoutMs: options.timeoutMs,
+          signal: options.signal,
+        }),
+        autoContinue: options.autoContinue !== false && maxTokens == null,
+      });
+      if (!result.content.trim()) {
+        throw new Error(result.reasoningOnly
+          ? '模型仅返回推理过程，未返回正文，请检查模型输出额度或更换模型'
+          : '模型返回空正文，请检查 AI 服务配置后重试');
       }
-
-      return { success: true, data: { content, usage, finishReason } };
+      if (result.truncated) throw new Error('模型输出被 token 上限截断，请提高模型输出额度或缩小生成内容');
+      return { success: true, data: { content: result.content, usage: result.usage, finishReason: result.finishReason } };
     } catch (error) {
+      if (options.signal?.aborted || error?.name === 'AbortError') return { success: false, error: '已停止生成' };
       this.logger.error('AI', 'Chat failed', error);
-      return { success: false, error: error.message };
+      return { success: false, error: normalizeModelError(error) };
     }
   }
 }

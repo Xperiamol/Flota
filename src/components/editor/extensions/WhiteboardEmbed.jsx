@@ -5,7 +5,7 @@ import { Alert, Box, Button, ButtonBase, CircularProgress, IconButton, Portal, T
 import { Brush, Check, ContentCopy, DeleteOutline, DragIndicator, Edit, ExpandLess, ExpandMore, OpenInNew } from '../../common/AppIcons'
 import { useStore } from '../../../store/useStore'
 import { openNoteLink } from '../../../utils/linkUtils'
-import { floatingGlassSx } from '../../../utils/floatingGlassSx'
+import { glassSxFor } from '../../../styles/materials'
 
 const WhiteboardEditor = lazy(() => import('../WhiteboardEditor'))
 const MENU_WIDTH = 210
@@ -117,7 +117,7 @@ function EmbedView({ node, editor, getPos, selected }) {
         </Box>}
     </Box>
     {menu && <Portal><Box data-editor-context-menu onMouseDown={(event) => event.stopPropagation()} onContextMenu={(event) => event.preventDefault()}
-      sx={{ position: 'fixed', top: menu.y, left: menu.x, zIndex: 1400, width: MENU_WIDTH, p: 0.55, ...floatingGlassSx({ radius: '14px', shadow: 'menu' }) }}>
+      sx={{ position: 'fixed', top: menu.y, left: menu.x, zIndex: 1400, width: MENU_WIDTH, p: 0.55, ...glassSxFor('popover', { radius: 'md', shadow: 'menu' }) }}>
       {!editing && editor.isEditable && <CanvasMenuAction icon={<Edit />} onClick={() => runMenuAction(beginEditing)}>编辑画布</CanvasMenuAction>}
       <CanvasMenuAction icon={<OpenInNew />} onClick={() => runMenuAction(() => openNoteLink(referenceUrl))}>打开原画布</CanvasMenuAction>
       <CanvasMenuAction icon={expanded ? <ExpandLess /> : <ExpandMore />} onClick={() => runMenuAction(() => setExpanded(value => !value))}>{expanded ? '收起' : '展开'}</CanvasMenuAction>

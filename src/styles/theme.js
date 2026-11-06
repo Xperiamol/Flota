@@ -3,6 +3,8 @@ import { createTheme, alpha } from '@mui/material/styles';
 import { ArrowDropDown, CheckCircle, Error as ErrorIcon, Info, Warning } from '../components/common/AppIcons';
 import { choiceChipStyles } from './choiceChipStyles';
 import { EASING, DURATION_MS } from '../utils/animationConfig';
+import { createMaterials, glassSx, RADIUS } from './materials';
+import { checkboxParts } from './checkboxStyles';
 
 const checkboxIcon = React.createElement('span', { className: 'FlotaCheckbox-icon' });
 const checkboxCheckedIcon = React.createElement('span', { className: 'FlotaCheckbox-icon FlotaCheckbox-iconChecked' });
@@ -29,29 +31,13 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2', { onWal
     const backgroundDefault = isDark ? '#161618' : '#f4f4f2';
     const backgroundPaper = isDark ? '#1f1f22' : '#ffffff';
 
-    // 全局浮层材质（菜单 / 弹窗 / 对话框）统一使用液态玻璃：
-    // 半透明底让壁纸和内容透出，背景模糊负责可读性，顶部高光负责材质边界。
-    // 所有 MUI 浮层和 AppContextMenu 都从 custom.glass 读取这一组 token。
-    const glassBackground = isDark ? 'rgba(31,31,35,0.72)' : 'rgba(255,255,255,0.72)';
-    const glassBorder = isDark
-        ? '1px solid rgba(255, 255, 255, 0.14)'
-        : '1px solid rgba(255, 255, 255, 0.72)';
-    const glassBlur = 'blur(24px) saturate(165%)';
-    const glassBackgroundImage = isDark
-        ? 'linear-gradient(135deg, rgba(255,255,255,0.075), rgba(255,255,255,0) 48%, rgba(120,150,255,0.035))'
-        : 'linear-gradient(135deg, rgba(255,255,255,0.52), rgba(255,255,255,0.06) 48%, rgba(120,150,255,0.025))';
-    const glassShadow = isDark
-        ? '0 12px 32px rgba(0, 0, 0, 0.45)'
-        : '0 12px 32px rgba(0, 0, 0, 0.10), 0 2px 6px rgba(0, 0, 0, 0.04)';
-    const glassMenuShadow = isDark
-        ? '0 18px 56px rgba(0, 0, 0, 0.48), 0 4px 16px rgba(0, 0, 0, 0.18)'
-        : '0 18px 56px rgba(22,22,24, 0.18), 0 4px 16px rgba(22,22,24, 0.08)';
+    // 全应用的材质（菜单 / 弹窗 / 浮窗 / 横条 …）定义在 materials.js，组件用 glassSx(theme, 材质名) 取用。
+    const materials = createMaterials(isDark);
+    const checkboxLook = checkboxParts({ isDark, primaryColor });
+    const popoverSx = glassSx({ custom: { material: materials } }, 'popover');
 
     // Surface tokens — 用于替换全应用的 rgba(255,255,255,0.x) / rgba(0,0,0,0.x) 硬编码
     const surface = {
-        // 玻璃态：浅/重两档
-        glassLight: isDark ? alpha('#1f1f22', 0.58) : alpha('#ffffff', 0.74),
-        glassHeavy: isDark ? alpha('#1f1f22', 0.82) : alpha('#ffffff', 0.92),
         // 半透明覆盖：用于 hover/active/selected 等
         hover:    isDark ? 'rgba(255,255,255,0.06)' : 'rgba(22,22,24,0.04)',
         active:   isDark ? 'rgba(255,255,255,0.10)' : 'rgba(22,22,24,0.06)',
@@ -168,6 +154,10 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2', { onWal
         components: {
             MuiCssBaseline: {
                 styleOverrides: {
+                    // 不经过 React / MUI 的界面（如预览里直接拼 DOM 的音频播放器）用它跟随主题色
+                    ':root': {
+                        '--flota-primary': primaryColor,
+                    },
                     body: {
                         backgroundColor: backgroundDefault,
                         // 很淡的中性明暗过渡：让浮在上面的玻璃外框有东西可透，不引入颜色
@@ -208,7 +198,7 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2', { onWal
             MuiButton: {
                 styleOverrides: {
                     root: {
-                        borderRadius: 10,
+                        borderRadius: RADIUS.sm,
                         boxShadow: 'none',
                         transition: 'background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, color 160ms ease',
                         // 禁止 hover 位移/缩放：有些页面会在 sx 里写 transform，这里统一压掉，避免“按钮飘动”
@@ -348,6 +338,60 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2', { onWal
                     },
                 },
             },
+            MuiSlider: {
+                // 与开关同一套材质：底槽带内阴影，已选段用主题色，白色滑块带投影；没有涟漪光圈，键盘聚焦显示描边
+                styleOverrides: {
+                    root: {
+                        color: primaryColor,
+                        height: 4,
+                        padding: '13px 0',
+                        '&.MuiSlider-sizeSmall': { height: 3 },
+                    },
+                    rail: {
+                        opacity: 1,
+                        backgroundColor: isDark ? 'rgba(120,120,128,0.32)' : 'rgba(120,120,128,0.2)',
+                        boxShadow: isDark ? 'inset 0 1px 2px rgba(0,0,0,0.35)' : 'inset 0 1px 1px rgba(22,22,24,0.08)',
+                    },
+                    track: {
+                        border: 'none',
+                    },
+                    thumb: {
+                        width: 18,
+                        height: 18,
+                        backgroundColor: '#ffffff',
+                        boxShadow: isDark
+                            ? '0 1px 2px rgba(0,0,0,0.4), 0 3px 8px rgba(0,0,0,0.3)'
+                            : '0 1px 2px rgba(22,22,24,0.14), 0 3px 8px rgba(22,22,24,0.12)',
+                        transition: 'transform 160ms ease, box-shadow 160ms ease',
+                        '&::before': { boxShadow: 'none' },
+                        '&:hover, &.Mui-active': {
+                            boxShadow: isDark
+                                ? '0 1px 2px rgba(0,0,0,0.45), 0 4px 10px rgba(0,0,0,0.35)'
+                                : '0 1px 2px rgba(22,22,24,0.16), 0 4px 10px rgba(22,22,24,0.16)',
+                        },
+                        '&.Mui-active': { transform: 'translate(-50%, -50%) scale(1.08)' },
+                        '&.Mui-focusVisible': {
+                            boxShadow: `0 0 0 3px ${alpha(primaryColor, 0.28)}`,
+                        },
+                        '.MuiSlider-sizeSmall &': { width: 14, height: 14 },
+                    },
+                    mark: {
+                        width: 3,
+                        height: 3,
+                        borderRadius: '50%',
+                        backgroundColor: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(22,22,24,0.25)',
+                    },
+                    markActive: { backgroundColor: 'rgba(255,255,255,0.85)' },
+                    markLabel: { fontSize: 11, color: isDark ? 'rgba(235,235,240,0.55)' : 'rgba(22,22,24,0.5)' },
+                    valueLabel: {
+                        fontSize: 11,
+                        fontWeight: 600,
+                        borderRadius: 6,
+                        padding: '2px 6px',
+                        backgroundColor: isDark ? 'rgba(60,60,66,0.95)' : 'rgba(22,22,24,0.85)',
+                    },
+                },
+            },
             MuiCheckbox: {
                 defaultProps: {
                     icon: checkboxIcon,
@@ -360,34 +404,9 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2', { onWal
                         padding: 6,
                         borderRadius: 8,
                         transition: 'background-color 150ms ease',
-                        '& .FlotaCheckbox-icon': {
-                            position: 'relative',
-                            display: 'inline-block',
-                            width: 18,
-                            height: 18,
-                            boxSizing: 'border-box',
-                            borderRadius: 6,
-                            border: `1.5px solid ${alpha(isDark ? '#d1d1d5' : '#4d4d55', isDark ? 0.58 : 0.68)}`,
-                            backgroundColor: isDark ? 'rgba(255,255,255,0.025)' : 'rgba(255,255,255,0.42)',
-                            transition: 'background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease',
-                        },
-                        '& .FlotaCheckbox-iconChecked, & .FlotaCheckbox-iconIndeterminate': {
-                            borderColor: primaryColor,
-                            backgroundColor: primaryColor,
-                            boxShadow: 'none',
-                        },
-                        '& .FlotaCheckbox-iconChecked::after': {
-                            content: '""',
-                            position: 'absolute',
-                            left: 6,
-                            top: 2.5,
-                            width: 4.5,
-                            height: 8.5,
-                            border: 'solid #ffffff',
-                            borderWidth: '0 2px 2px 0',
-                            transform: 'rotate(45deg)',
-                            transformOrigin: 'center',
-                        },
+                        '& .FlotaCheckbox-icon': checkboxLook.box,
+                        '& .FlotaCheckbox-iconChecked, & .FlotaCheckbox-iconIndeterminate': checkboxLook.checked,
+                        '& .FlotaCheckbox-iconChecked::after': checkboxLook.checkmark,
                         '& .FlotaCheckbox-iconIndeterminate::after': {
                             content: '""',
                             position: 'absolute',
@@ -402,7 +421,7 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2', { onWal
                             backgroundColor: isDark ? 'rgba(255,255,255,0.055)' : 'rgba(22,22,24,0.045)',
                         },
                         '&.Mui-focusVisible .FlotaCheckbox-icon': {
-                            boxShadow: `0 0 0 3px ${alpha(primaryColor, 0.22)}`,
+                            boxShadow: checkboxLook.focusRing,
                         },
                         '&.Mui-disabled': {
                             opacity: 0.4,
@@ -463,7 +482,7 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2', { onWal
             MuiOutlinedInput: {
                 styleOverrides: {
                     root: {
-                        borderRadius: 10,
+                        borderRadius: RADIUS.sm,
                         backgroundColor: surface.control,
                         transition: 'background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease',
                         '&:hover': {
@@ -481,13 +500,8 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2', { onWal
             MuiDialog: {
                 styleOverrides: {
                     paper: {
-                        backdropFilter: glassBlur,
-                        WebkitBackdropFilter: glassBlur,
-                        backgroundColor: glassBackground,
-                        backgroundImage: glassBackgroundImage,
-                        border: glassBorder,
-                        borderRadius: 14,
-                        boxShadow: glassShadow,
+                        ...popoverSx,
+                        borderRadius: RADIUS.lg,
                     }
                 }
             },
@@ -524,52 +538,32 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2', { onWal
             MuiMenu: {
                 styleOverrides: {
                     paper: {
-                        backdropFilter: glassBlur,
-                        WebkitBackdropFilter: glassBlur,
-                        backgroundColor: glassBackground,
-                        backgroundImage: glassBackgroundImage,
-                        border: glassBorder,
-                        borderRadius: 14,
-                        boxShadow: glassShadow,
+                        ...popoverSx,
+                        borderRadius: RADIUS.md,
                     }
                 }
             },
             MuiPopover: {
                 styleOverrides: {
                     paper: {
-                        backdropFilter: glassBlur,
-                        WebkitBackdropFilter: glassBlur,
-                        backgroundColor: glassBackground,
-                        backgroundImage: glassBackgroundImage,
-                        border: glassBorder,
-                        borderRadius: 14,
-                        boxShadow: glassShadow,
+                        ...popoverSx,
+                        borderRadius: RADIUS.md,
                     }
                 }
             },
             MuiAutocomplete: {
                 styleOverrides: {
                     paper: {
-                        backdropFilter: glassBlur,
-                        WebkitBackdropFilter: glassBlur,
-                        backgroundColor: glassBackground,
-                        backgroundImage: glassBackgroundImage,
-                        border: glassBorder,
-                        borderRadius: 14,
-                        boxShadow: glassShadow,
+                        ...popoverSx,
+                        borderRadius: RADIUS.md,
                     }
                 }
             },
             MuiSnackbarContent: {
                 styleOverrides: {
                     root: {
-                        backdropFilter: glassBlur,
-                        WebkitBackdropFilter: glassBlur,
-                        backgroundColor: glassBackground,
-                        backgroundImage: glassBackgroundImage,
-                        border: glassBorder,
-                        borderRadius: 12,
-                        boxShadow: glassShadow,
+                        ...popoverSx,
+                        borderRadius: RADIUS.md,
                         color: isDark ? '#fafafa' : '#1f1f22',
                     }
                 }
@@ -588,7 +582,7 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2', { onWal
                         minHeight: 40,
                         fontSize: '0.875rem',
                         lineHeight: 1.6,
-                        borderRadius: 10,
+                        borderRadius: RADIUS.sm,
                         marginLeft: 6,
                         marginRight: 6,
                         marginTop: 2,
@@ -632,7 +626,7 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2', { onWal
             MuiChip: {
                 styleOverrides: {
                     root: ({ ownerState, theme }) => ({
-                        borderRadius: 8,
+                        borderRadius: RADIUS.sm,
                         fontWeight: 500,
                         // 统一可点击选项；状态和可删除标签仍保留各自的语义色。
                         ...(['default', 'primary'].includes(ownerState.color || 'default') && {
@@ -674,7 +668,7 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2', { onWal
             MuiListItemButton: {
                 styleOverrides: {
                     root: {
-                        borderRadius: 12,
+                        borderRadius: RADIUS.sm,
                         margin: '4px 8px',
                         transition: 'background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease',
                         '&:hover': {
@@ -723,14 +717,8 @@ export const createAppTheme = (mode = 'light', primaryColor = '#1976d2', { onWal
         },
         // Custom theme properties for easy access in components
         custom: {
-            glass: {
-                background: glassBackground,
-                backgroundImage: glassBackgroundImage,
-                backdropFilter: glassBlur,
-                border: glassBorder,
-                boxShadow: glassShadow,
-                menuShadow: glassMenuShadow,
-            },
+            material: materials,
+            radius: RADIUS,
             surface,
             onWallpaper,
             gradients: {

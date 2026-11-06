@@ -1,6 +1,6 @@
 {
   "name": "flota",
-  "version": "4.5.1",
+  "version": "4.5.2",
   "description": "Flota - 简洁高效的记录应用",
   "main": "electron/main.js",
   "homepage": "./",
@@ -51,15 +51,21 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@anthropic-ai/sdk": "file:stubs/pi-ai-unused/anthropic-ai_sdk",
+    "@aws-sdk/client-bedrock-runtime": "file:stubs/pi-ai-unused/aws-sdk_client-bedrock-runtime",
+    "@earendil-works/pi-agent-core": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@excalidraw/excalidraw": "^0.18.0",
     "@excalidraw/mermaid-to-excalidraw": "^2.2.2",
+    "@google/genai": "file:stubs/pi-ai-unused/google_genai",
     "@googleapis/calendar": "^14.2.0",
     "@modelcontextprotocol/sdk": "^1.25.2",
     "@mozilla/readability": "^0.6.0",
     "@mui/icons-material": "^7.3.1",
     "@mui/material": "^7.3.1",
+    "@smithy/node-http-handler": "file:stubs/pi-ai-unused/smithy_node-http-handler",
     "@tiptap/extension-code-block-lowlight": "^3.20.0",
     "@tiptap/extension-hard-break": "^3.22.5",
     "@tiptap/extension-highlight": "^3.10.7",
@@ -91,6 +97,7 @@
     "form-data": "^4.0.0",
     "google-auth-library": "^10.6.1",
     "htm": "^3.1.1",
+    "http-proxy-agent": "file:stubs/pi-ai-unused/http-proxy-agent",
     "https-proxy-agent": "^7.0.6",
     "i18next": "^25.6.3",
     "ical.js": "^2.2.1",
@@ -139,7 +146,15 @@
   "overrides": {
     "protobufjs": "^7.5.5",
     "nanoid": "^5.0.9",
-    "lodash-es": "^4.18.1"
+    "lodash-es": "^4.18.1",
+    "@earendil-works/pi-ai": {
+      "@google/genai": "$@google/genai",
+      "@anthropic-ai/sdk": "$@anthropic-ai/sdk",
+      "@aws-sdk/client-bedrock-runtime": "$@aws-sdk/client-bedrock-runtime",
+      "@smithy/node-http-handler": "$@smithy/node-http-handler",
+      "http-proxy-agent": "$http-proxy-agent",
+      "https-proxy-agent": "file:../../../stubs/pi-ai-unused/https-proxy-agent"
+    }
   },
   "build": {
     "appId": "com.flota.app",
@@ -351,7 +366,12 @@
       "!node_modules/xlsx/dist/*.map",
       "!node_modules/xlsx/dist/cpexcel.full.mjs",
       "!node_modules/xlsx/dist/*.d.ts",
-      "!node_modules/xlsx/types"
+      "!node_modules/xlsx/types",
+      "!node_modules/@earendil-works/**/*.map",
+      "!node_modules/@earendil-works/**/*.d.ts",
+      "!node_modules/@earendil-works/**/*.d.mts",
+      "!node_modules/@earendil-works/**/*.d.cts",
+      "!node_modules/@earendil-works/**/*.md"
     ],
     "asarUnpack": [
       "node_modules/better-sqlite3/**/*",

@@ -34,7 +34,7 @@ import Toolbar from './components/layout/Toolbar'
 import NoteEditor from './components/editor/NoteEditor'
 import { TrashNotePreview } from './components/notes/TrashView'
 import { usePageTitle, useSyncDocumentTitle } from './utils/pageTitle'
-import { useAutoMemoryNotices } from './hooks/useAutoMemoryNotices'
+import { useAISessionSync } from './hooks/useAISessionSync'
 import { usePrefsStore, useApplyEditorPrefs } from './store/usePrefsStore'
 import WidgetHomeView from './components/widgets/WidgetHomeView'
 import WidgetProbeHost from './components/widgets/WidgetProbeHost'
@@ -53,7 +53,7 @@ import AICommandCenter from './components/ai/AICommandCenter'
 import NoteNavigator from './components/editor/NoteNavigator'
 import { ErrorProvider } from './components/common/ErrorProvider'
 import logger from './utils/logger'
-import { notifyWithAction } from './utils/notify'
+import { notifyWithAction, reportResult } from './utils/notify'
 
 // 懒加载非首屏组件，减少初始bundle大小
 const TodoView = lazy(() => import('./components/todos/TodoView'))
@@ -138,7 +138,8 @@ function App() {
   const showDeleted = useStore((state) => state.noteTrashOpen)
   const setShowDeleted = useStore((state) => state.setNoteTrashOpen)
   useSyncDocumentTitle(usePageTitle())
-  useAutoMemoryNotices()
+  // AI 会话由主进程持有，这里订阅它的广播（会话内容、生成中的草稿）
+  useAISessionSync()
   useApplyEditorPrefs()
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [aiCommandCenterPortalContainer, setAiCommandCenterPortalContainer] = useState(null)
@@ -730,8 +731,7 @@ function App() {
         // 监听创建新笔记事件
         window.electronAPI.ipcRenderer.on('create-new-note', async () => {
           try {
-            await createNote()
-            setCurrentView('notes')
+            if (reportResult(await createNote(), '新建笔记')) setCurrentView('notes')
           } catch (error) {
             console.error('创建笔记失败:', error)
           }

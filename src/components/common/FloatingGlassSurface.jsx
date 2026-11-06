@@ -1,5 +1,6 @@
 import { forwardRef } from 'react'
-import { Box, ClickAwayListener, Fade, Paper, Portal, alpha } from '@mui/material'
+import { Box, ClickAwayListener, Fade, Paper, Portal } from '@mui/material'
+import { glassSx } from '../../styles/materials'
 
 export const FLOATING_LAYER_Z_INDEX = {
   contextMenu: 1500,
@@ -7,40 +8,12 @@ export const FLOATING_LAYER_Z_INDEX = {
   aiPanel: 1340
 }
 
-const getGlassSx = (theme, density = 'regular') => {
-  const dark = theme.palette.mode === 'dark'
-  const compact = density === 'compact'
-  const glass = theme.custom?.glass
-
-  return {
-    borderRadius: compact ? 1.25 : 1.5,
-    overflow: 'hidden',
-    bgcolor: glass?.background || (dark
-      ? alpha(theme.palette.background.paper, 0.72)
-      : alpha(theme.palette.background.paper, 0.78)),
-    backgroundImage: glass?.backgroundImage || 'none',
-    backdropFilter: glass?.backdropFilter || 'blur(20px) saturate(165%)',
-    WebkitBackdropFilter: glass?.backdropFilter || 'blur(20px) saturate(165%)',
-    border: glass?.border || `1px solid ${dark ? alpha('#ffffff', 0.11) : alpha('#ffffff', 0.68)}`,
-    boxShadow: glass?.boxShadow || (dark
-      ? '0 16px 44px rgba(11,11,12,0.34)'
-      : '0 16px 44px rgba(22,22,24,0.13)'),
-    transformOrigin: 'top left'
-  }
-}
-
-/** 毛玻璃：半透明底 + 背景模糊，透出后面的列表和壁纸（筛选器、AI 小窗等可拖动浮窗共用） */
-export const getFrostedSx = (theme) => {
-  const dark = theme.palette.mode === 'dark'
-  return {
-    bgcolor: dark ? alpha('#26262a', 0.62) : alpha('#ffffff', 0.58),
-    backgroundImage: 'none',
-    backdropFilter: 'blur(28px) saturate(180%)',
-    WebkitBackdropFilter: 'blur(28px) saturate(180%)',
-    border: `1px solid ${dark ? alpha('#ffffff', 0.12) : alpha('#ffffff', 0.7)}`,
-    boxShadow: dark ? '0 10px 30px rgba(0,0,0,0.32)' : '0 10px 30px rgba(20,20,24,0.10)',
-  }
-}
+// solid：与菜单 / 弹出框同一种材质；frosted：更透的浮窗材质（AI 小窗、筛选器等可拖动浮窗）
+const getSurfaceSx = (theme, { density, material }) => ({
+  ...glassSx(theme, material === 'frosted' ? 'floating' : 'popover', { radius: density === 'compact' ? 'sm' : 'md' }),
+  overflow: 'hidden',
+  transformOrigin: 'top left',
+})
 
 const FloatingGlassSurface = forwardRef(function FloatingGlassSurface({
   open = true,
@@ -83,8 +56,7 @@ const FloatingGlassSurface = forwardRef(function FloatingGlassSurface({
           pointerEvents: 'auto',
           // 浮窗可能覆盖系统标题栏，交互不能被 Electron 的窗口拖动区域截走。
           WebkitAppRegion: 'no-drag',
-          ...getGlassSx(theme, density),
-          ...(material === 'frosted' ? getFrostedSx(theme) : null),
+          ...getSurfaceSx(theme, { density, material }),
           ...(typeof sx === 'function' ? sx(theme) : sx)
         })}
       >

@@ -16,7 +16,6 @@ import {
   MenuItem,
   TextField,
   InputAdornment,
-  Button,
   Divider,
   alpha
 } from '@mui/material';
@@ -54,7 +53,8 @@ import CalendarNotesPanel from '../notes/CalendarNotesPanel';
 import TodoList from '../todos/TodoList';
 import MyDayPanel from '../todos/MyDayPanel';
 import { t } from '../../utils/i18n';
-import { compactGlassPanelSx, thinScrollbarSx, segmentedButtonSx, segmentedControlSx } from '../../styles/commonStyles';
+import { compactGlassPanelSx, thinScrollbarSx } from '../../styles/commonStyles';
+import SegmentedControl from '../common/SegmentedControl';
 import { PANE_GAP, liquidGlassSx, usePaneOpacity } from '../../styles/paneStyles';
 
 const DEFAULT_TIMELINE_TYPES = ['note', 'whiteboard', 'todo'];
@@ -192,7 +192,7 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
 
   // 侧栏条目：选中只用浅底色 + 主色文字，不加描边
   const sidebarItemSx = (active = false) => ({
-    borderRadius: '8px',
+    borderRadius: 1,
     mb: 0.25,
     px: 1,
     py: 0.25,
@@ -427,7 +427,7 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
               sx={{
                 '& .MuiOutlinedInput-root': {
                   height: 34,
-                  borderRadius: '8px',
+                  borderRadius: 1,
                   bgcolor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.09 : 0.06),
                   '& fieldset': { borderColor: 'transparent' },
                   '&:hover fieldset': { borderColor: 'transparent' },
@@ -537,7 +537,7 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
                 onChange={event => setTimelineTagSearch(event.target.value)}
                 slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon sx={{ fontSize: 16 }} /></InputAdornment> } }}
                 sx={{ mb: 1, '& .MuiOutlinedInput-root': {
-                  height: 30, fontSize: 12.5, borderRadius: '8px',
+                  height: 30, fontSize: 12.5, borderRadius: 1,
                   bgcolor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.09 : 0.06),
                   '& fieldset': { borderColor: 'transparent' },
                   '&:hover fieldset': { borderColor: 'transparent' },
@@ -548,7 +548,7 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
                   <Box
                     sx={(themeObj) => ({
                       py: 3,
-                      borderRadius: '12px',
+                      borderRadius: 1.5,
                       textAlign: 'center',
                       color: 'text.secondary',
                       bgcolor: themeObj.palette.mode === 'dark' ? 'rgba(157,157,165,0.06)' : 'rgba(22,22,24,0.035)'
@@ -604,18 +604,14 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
             ...compactPanelSx(theme)
           })}>
             {/* 插件扩展 Flota 本身；组件是可以放进笔记、侧边栏和首页的小应用 */}
-            <Box sx={(theme) => ({ ...segmentedControlSx(theme), display: 'flex', mb: 1 })}>
-              {[{ id: 'plugin', label: '插件' }, { id: 'widget', label: '组件' }].map((option) => {
-                const active = (pluginStoreFilters.type || 'plugin') === option.id;
-                return (
-                  <Button key={option.id} disableElevation disableRipple variant="text" aria-pressed={active}
-                    onClick={() => setPluginStoreType(option.id)}
-                    sx={(theme) => ({ ...segmentedButtonSx(active)(theme), flex: 1 })}>
-                    {option.label}
-                  </Button>
-                );
-              })}
-            </Box>
+            <SegmentedControl
+              fullWidth
+              ariaLabel="插件类型"
+              value={pluginStoreFilters.type || 'plugin'}
+              onChange={setPluginStoreType}
+              options={[{ value: 'plugin', label: '插件' }, { value: 'widget', label: '组件' }]}
+              sx={{ mb: 1 }}
+            />
 
             <Stack direction="row" spacing={0.75} sx={{ mb: 1.25 }}>
               {tabs.map((tab) => (
@@ -626,7 +622,7 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
                   variant={pluginStoreFilters.tab === tab.id ? 'filled' : 'outlined'}
                   onClick={() => setPluginStoreTab(tab.id)}
                   size="small"
-                  sx={{ cursor: 'pointer', borderRadius: '9px', fontWeight: 650 }}
+                  sx={{ cursor: 'pointer', borderRadius: 1, fontWeight: 650 }}
                 />
               ))}
             </Stack>

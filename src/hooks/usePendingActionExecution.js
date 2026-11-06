@@ -1,48 +1,46 @@
 import { useCallback, useMemo } from 'react'
-import { useStore } from '../store/useStore'
-import { dismissConversationAction, executeConversationAction } from '../utils/aiCore/pendingActions'
 import { runPendingAction } from '../utils/aiCore/pendingActionExecutor'
 import { notifyAINotesUpdated } from '../utils/aiCore/noteRefresh'
+import { notifyError } from '../utils/notify'
 
-// 两个聊天入口共用同一执行状态；异步结果始终写回发起会话。
-// 返回 { execute, dismiss }：execute 用于确认 / 重试，dismiss 用于忽略卡片。
-export default function usePendingActionExecution({ conversationIdRef, messagesRef, setMessages, deps, onTodoUpdated }) {
-  const bindConversation = useCallback(() => {
-    const conversationId = conversationIdRef.current
-    if (!conversationId) return null
-    const read = () => useStore.getState().aiConversations.find(c => c.id === conversationId)?.messages
-    const write = (messages) => {
-      useStore.getState().aiUpdateConv(conversationId, { messages })
-      if (conversationIdRef.current === conversationId) {
-        messagesRef.current = messages
-        setMessages(messages)
-      }
-    }
-    return { read, write }
-  }, [conversationIdRef, messagesRef, setMessages])
-
+// 确认卡的执行。卡片状态由主进程的会话服务维护（所有窗口同步）：
+//   beginAction：只有待确认 / 失败 / 已停止的卡能开始，同一张卡在多个窗口里只会被执行一次
+//   runPendingAction：在渲染层执行（画布、组件等需要渲染层能力）
+//   finishAction：写回结果，成功时追加结果消息并记进完整记录
+// 返回 { execute, dismiss, restore }。
+export default function usePendingActionExecution({ conversationIdRef, deps, onTodoUpdated }) {
   const execute = useCallback(async (action, overrides = null) => {
-    const bound = bindConversation()
-    if (!bound || !action?.actionId) return
-    const result = await executeConversationAction({
-      actionId: action.actionId, ...bound,
-      execute: storedAction => runPendingAction({ action: storedAction, overrides, deps }),
-    })
+    const session = window.electronAPI?.ai?.session
+    const conversationId = conversationIdRef.current
+    if (!session || !conversationId || !action?.actionId) return
+    const begin = await session.beginAction(conversationId, action.actionId)
+    if (!begin?.success) return
+
+    let result
+    try {
+      result = await runPendingAction({ action: begin.action, overrides, deps })
+    } catch (error) {
+      result = { success: false, error: error.message, message: `操作失败：${error.message}` }
+    }
+    const { success, cancelled, message, error, resultNoteId, resultData } = result || {}
+    const saved = await session.finishAction(conversationId, action.actionId, { success, cancelled, message, error, resultNoteId, resultData })
+    if (saved?.success === false) notifyError(`保存执行结果失败：${saved.error || '未知原因'}`)
     if (result?.reloadTodos) onTodoUpdated?.()
     if (result?.reloadNotes) {
       await deps.loadNotes?.()
       notifyAINotesUpdated(result.finalAction)
     }
-  }, [bindConversation, deps, onTodoUpdated])
+  }, [conversationIdRef, deps, onTodoUpdated])
 
   const dismiss = useCallback((action) => {
-    const bound = bindConversation()
-    if (!bound || !action?.actionId) return
-    if (dismissConversationAction({ actionId: action.actionId, ...bound })) {
-      // 同时丢弃后端暂存的动作，避免之后被文字确认或重建执行
-      window.electronAPI?.ai?.consumePendingAction?.(action.actionId)?.catch?.(() => {})
-    }
-  }, [bindConversation])
+    const conversationId = conversationIdRef.current
+    if (conversationId && action?.actionId) window.electronAPI?.ai?.session?.dismissAction(conversationId, action.actionId)
+  }, [conversationIdRef])
 
-  return useMemo(() => ({ execute, dismiss }), [execute, dismiss])
+  const restore = useCallback((action) => {
+    const conversationId = conversationIdRef.current
+    if (conversationId && action?.actionId) window.electronAPI?.ai?.session?.restoreAction(conversationId, action.actionId)
+  }, [conversationIdRef])
+
+  return useMemo(() => ({ execute, dismiss, restore }), [execute, dismiss, restore])
 }

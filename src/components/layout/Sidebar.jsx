@@ -383,7 +383,7 @@ const Sidebar = () => {
         height: '100%',
         boxSizing: 'border-box',
         // 浮在背景上的圆角胶囊，和其他面板同一种材质
-        ...liquidGlassSx(theme, { opacity: paneOpacityValue, radius: 18 }),
+        ...liquidGlassSx(theme, { opacity: paneOpacityValue }),
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',

@@ -1,6 +1,7 @@
 {
 	"id": "web-clipper",
-	"name": "网页剪藏 (Built-in)",
+	"name": "网页剪藏",
+	"builtin": true,
 	"version": "1.0.0",
 	"description": "配合 Flota 浏览器扩展，把网页全文、选中内容或书签一键剪藏为笔记：自动下载图片、按链接去重，可选 AI 摘要与标签。停用本插件后，浏览器扩展将无法再向 Flota 发送内容。",
 	"author": {

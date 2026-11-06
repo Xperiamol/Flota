@@ -44,7 +44,6 @@ import {
     Warning as WarningIcon,
     Code as CodeIcon,
     Visibility as VisibilityIcon,
-    Language as LanguageIcon,
     Image as ImageIcon,
     ContentCopy as ContentCopyIcon
 } from '../common/AppIcons';
@@ -62,6 +61,8 @@ import { SettingRow, SettingGroupLabel } from './SettingRow';
 import AppUpdateCard from './AppUpdateCard';
 import { usePrefsStore } from '../../store/usePrefsStore';
 import SettingsSearch from './SettingsSearch';
+import SegmentedControl from '../common/SegmentedControl';
+import { glassSx } from '../../styles/materials';
 import FileTypesSetting from './FileTypesSetting';
 import OpenSourceLicenses from './OpenSourceLicenses';
 import ClipperSettings from './ClipperSettings';
@@ -80,7 +81,7 @@ import { useError } from '../common/ErrorProvider';
 import { ALL_TOOLBAR_ITEMS, DEFAULT_TOOLBAR_ORDER, DEFAULT_FLOATING_ORDER } from '../editor/MarkdownToolbar';
 import { ALL_CONTEXT_MENU_ITEMS, CONTEXT_MENU_ITEM_LABELS, DEFAULT_CONTEXT_MENU_ITEMS } from '../editor/contextMenuConfig';
 import { TEXTURE_STYLES, getPatternBackgroundStyle, normalizeTextureId } from '../../utils/patternStyles';
-import { sectionTitleSx, settingsRowSx, settingsSectionSx, colorPresetSwatchSx } from '../../styles/commonStyles';
+import { sectionTitleSx, settingsSectionSx, colorPresetSwatchSx } from '../../styles/commonStyles';
 import logger from '../../utils/logger';
 import { useHomeStore, STARTUP_VIEWS } from '../../store/useHomeStore';
 
@@ -1092,20 +1093,14 @@ const Settings = () => {
         }
     };
 
-    const chipRowSx = { display: 'flex', flexWrap: 'wrap', gap: 0.75 };
-    /** 通用 Chip 选择器 */
+    /** 设置里的单选：统一用小号分段控件 */
     const ChipSelector = ({ options, value, onChange, getKey = o => o.value, getLabel = o => o.label, getIcon }) => (
-        <Box sx={chipRowSx}>
-            {options.map((o) => {
-                const k = getKey(o)
-                return (
-                    <Chip key={k} icon={getIcon?.(o)} label={getLabel(o)}
-                        variant="filled" aria-pressed={value === k}
-                        onClick={() => onChange(k)} size="small"
-                        color={value === k ? 'primary' : 'default'} />
-                )
-            })}
-        </Box>
+        <SegmentedControl
+            size="small"
+            value={value}
+            onChange={onChange}
+            options={options.map((o) => ({ value: getKey(o), label: getLabel(o), icon: getIcon?.(o) }))}
+        />
     );
     const themeOptions = [
         { value: 'light', icon: <Brightness7 />, label: t('settings.themeLight') },
@@ -1212,7 +1207,7 @@ const Settings = () => {
         >
             {/* 内容区域 */}
             <Box ref={settingsContentRef} sx={{ flex: 1, minWidth: 0, overflow: 'auto', scrollPaddingTop: '80px' }}>
-                <Box sx={theme => ({ position: 'sticky', top: 0, zIndex: 3, px: 3, py: 1.5, bgcolor: alpha(theme.palette.background.default, .8), backdropFilter: 'blur(20px)', borderBottom: 1, borderColor: 'divider' })}>
+                <Box sx={theme => ({ position: 'sticky', top: 0, zIndex: 3, px: 3, py: 1.5, ...glassSx(theme, 'bar'), borderBottom: 1, borderColor: 'divider' })}>
                     <SettingsSearch onNavigate={navigateSearch} />
                 </Box>
                 {/* 通用设置 */}
@@ -1314,7 +1309,7 @@ const Settings = () => {
                             secondary={t('settings.languageDesc')}
                             action={<ChipSelector options={SUPPORTED_LANGUAGES} value={settings.language}
                                 onChange={v => handleSettingChange('language', v)}
-                                getKey={o => o.code} getLabel={o => o.nativeName} getIcon={() => <LanguageIcon />} />}
+                                getKey={o => o.code} getLabel={o => o.nativeName} />}
                         />
                     </List>
                     </Paper>

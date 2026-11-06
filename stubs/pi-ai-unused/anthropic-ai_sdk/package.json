@@ -1,0 +1,12 @@
+{
+  "name": "@anthropic-ai/sdk",
+  "version": "0.129.0",
+  "private": true,
+  "license": "ISC",
+  "description": "Stub — Flota 只用 pi-ai 的 OpenAI Chat Completions 实现，这个 SDK 用不到，不打包",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./*": "./index.js"
+  }
+}

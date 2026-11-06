@@ -12,6 +12,7 @@ import { useStore } from '../../store/useStore'
 import { notifyError } from '../../utils/notify'
 import { formatRelativeNoteTime, parseNoteDate } from '../../utils/noteDateUtils'
 import { zhCN as dateFnsZhCN } from 'date-fns/locale/zh-CN'
+import { pluginDisplayName } from '../plugins/pluginUtils'
 
 // ---------- 卡片外壳：细边框、无投影；标题是小号灰字，数字才是主角 ----------
 
@@ -19,7 +20,7 @@ export const homeCardSx = (clickable) => (theme) => ({
   height: '100%',
   boxSizing: 'border-box',
   p: '16px 18px 16px',
-  borderRadius: '14px',
+  borderRadius: 1.5,
   // 放在白色主面板里：用略深的分组底色，不加边框
   bgcolor: theme.custom?.surface?.inset,
   transition: 'background-color 150ms ease',
@@ -194,32 +195,44 @@ export function TodayTodosCard({ onOpen, onChanged }) {
     }
   }
 
-  const visible = (items || []).slice(0, MAX_TODOS)
-  const more = (items?.length || 0) - visible.length
+  // 今天的排在前面，逾期的单独一组放在下面：卡片和首页副标题（「今天没有待办，1 项已逾期」）说的是同一件事
+  const todayItems = (items || []).filter((todo) => !todo.overdue)
+  const overdueItems = (items || []).filter((todo) => todo.overdue)
+  const visibleToday = todayItems.slice(0, MAX_TODOS)
+  const visibleOverdue = overdueItems.slice(0, Math.max(0, MAX_TODOS - visibleToday.length))
+  const more = (items?.length || 0) - visibleToday.length - visibleOverdue.length
+
+  const renderRow = (todo) => {
+    const checked = done.includes(todo.id)
+    const due = dueLabel(todo, todo.overdue)
+    return (
+      <Box key={todo.id} onClick={stop}
+        sx={{ display: 'flex', alignItems: 'center', minHeight: 34, borderRadius: 1, pr: 0.5, '&:hover': { bgcolor: 'action.hover' }, '&:hover .focus-button': { opacity: 1 } }}>
+        <Checkbox size="small" checked={checked} disabled={checked} onChange={() => complete(todo)}
+          inputProps={{ 'aria-label': `完成「${todo.content}」` }} sx={{ p: 0.75 }} />
+        <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: 14, color: checked ? 'text.disabled' : 'text.primary', textDecoration: checked ? 'line-through' : 'none' }}>
+          {todo.content}
+        </Typography>
+        {due && <Typography sx={{ fontSize: 12, ml: 1, color: todo.overdue ? 'error.main' : 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>{due}</Typography>}
+        <PanelIconButton title="开始专注" size="sm" className="focus-button" aria-label={`专注「${todo.content}」`} onClick={() => startFocus(todo)}
+          sx={{ ml: 0.5, opacity: 0, '&:focus-visible': { opacity: 1 } }}>
+          <PlayArrowRounded />
+        </PanelIconButton>
+      </Box>
+    )
+  }
 
   return (
-    <HomeCard icon={Today} title="今日待办" meta={items?.length || null} onOpen={onOpen}>
-      {items && !items.length && <Typography sx={{ fontSize: 14, color: 'text.secondary', pb: 1 }}>今天没有待办</Typography>}
+    <HomeCard icon={Today} title="今日待办" meta={todayItems.length || null} onOpen={onOpen}>
+      {items && !todayItems.length && <Typography sx={{ fontSize: 14, color: 'text.secondary', pb: 1 }}>今天没有待办</Typography>}
       <Box sx={{ mx: -1 }}>
-        {visible.map((todo) => {
-          const checked = done.includes(todo.id)
-          const due = dueLabel(todo, todo.overdue)
-          return (
-            <Box key={todo.id} onClick={stop}
-              sx={{ display: 'flex', alignItems: 'center', minHeight: 34, borderRadius: '8px', pr: 0.5, '&:hover': { bgcolor: 'action.hover' }, '&:hover .focus-button': { opacity: 1 } }}>
-              <Checkbox size="small" checked={checked} disabled={checked} onChange={() => complete(todo)}
-                inputProps={{ 'aria-label': `完成「${todo.content}」` }} sx={{ p: 0.75 }} />
-              <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: 14, color: checked ? 'text.disabled' : 'text.primary', textDecoration: checked ? 'line-through' : 'none' }}>
-                {todo.content}
-              </Typography>
-              {due && <Typography sx={{ fontSize: 12, ml: 1, color: todo.overdue ? 'error.main' : 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>{due}</Typography>}
-              <PanelIconButton title="开始专注" size="sm" className="focus-button" aria-label={`专注「${todo.content}」`} onClick={() => startFocus(todo)}
-                sx={{ ml: 0.5, opacity: 0, '&:focus-visible': { opacity: 1 } }}>
-                <PlayArrowRounded />
-              </PanelIconButton>
-            </Box>
-          )
-        })}
+        {visibleToday.map(renderRow)}
+        {visibleOverdue.length > 0 && (
+          <Typography sx={{ px: 1, pt: visibleToday.length ? 1 : 0, pb: 0.25, fontSize: 12, fontWeight: 600, color: 'error.main' }}>
+            已逾期 {overdueItems.length}
+          </Typography>
+        )}
+        {visibleOverdue.map(renderRow)}
       </Box>
       {more > 0 && (
         <ButtonBase onClick={(event) => { stop(event); onOpen() }} sx={{ mt: 0.5, fontSize: 13, color: 'text.secondary', borderRadius: 1, '&:hover': { color: 'text.primary' } }}>
@@ -249,7 +262,7 @@ export function FocusCard({ stats, onOpen }) {
   return (
     <HomeCard icon={TrendingUp} title="专注时长" onOpen={onOpen}
       action={(
-        <ButtonBase onClick={begin} sx={(theme) => ({ height: 26, px: 1.25, borderRadius: '8px', fontSize: 12.5, fontWeight: 600, color: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.1), '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.16) } })}>
+        <ButtonBase onClick={begin} sx={(theme) => ({ height: 26, px: 1.25, borderRadius: 1, fontSize: 12.5, fontWeight: 600, color: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.1), '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.16) } })}>
           <PlayArrowRounded sx={{ fontSize: 16, mr: 0.25 }} />开始专注
         </ButtonBase>
       )}>
@@ -282,7 +295,7 @@ const noteDisplayTitle = (note) => {
 
 const NoteLink = ({ note, meta }) => (
   <ButtonBase onClick={(event) => { stop(event); openNote(note) }}
-    sx={{ width: '100%', justifyContent: 'flex-start', gap: 1, py: 0.75, px: 1, borderRadius: '8px', textAlign: 'left', '&:hover': { bgcolor: 'action.hover' } }}>
+    sx={{ width: '100%', justifyContent: 'flex-start', gap: 1, py: 0.75, px: 1, borderRadius: 1, textAlign: 'left', '&:hover': { bgcolor: 'action.hover' } }}>
     <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: 14 }}>{noteDisplayTitle(note)}</Typography>
     {meta && <Typography sx={{ flexShrink: 0, fontSize: 12, color: 'text.secondary' }}>{meta}</Typography>}
   </ButtonBase>
@@ -380,7 +393,7 @@ export function HeatmapCard({ days, notes, onOpen }) {
       </Box>
       <Popover open={Boolean(picked)} anchorEl={picked?.el} onClose={() => setPicked(null)} onClick={stop}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }} transformOrigin={{ vertical: 'top', horizontal: 'center' }}
-        slotProps={{ paper: { sx: { width: 280, p: 1, borderRadius: '12px' } } }}>
+        slotProps={{ paper: { sx: { width: 280, p: 1, borderRadius: 1.5 } } }}>
         {picked && (
           <>
             <Typography sx={{ fontSize: 12, fontWeight: 600, color: 'text.secondary', px: 1, pt: 0.5, pb: 0.75 }}>
@@ -424,7 +437,7 @@ export function PluginsCard({ plugins, onOpen }) {
       {plugins.slice(0, 5).map((plugin) => (
         <Box key={plugin.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.5 }}>
           <Box sx={{ width: 6, height: 6, borderRadius: 99, flexShrink: 0, bgcolor: plugin.enabled === false ? 'text.disabled' : 'success.main' }} />
-          <Typography noWrap sx={{ fontSize: 14, flex: 1, minWidth: 0 }}>{(plugin.manifest?.name || plugin.id).replace(/\s*\(Built-in\)$/i, '')}</Typography>
+          <Typography noWrap sx={{ fontSize: 14, flex: 1, minWidth: 0 }}>{pluginDisplayName(plugin)}</Typography>
         </Box>
       ))}
       {plugins.length > 5 && <Typography sx={{ fontSize: 13, color: 'text.secondary', pt: 0.5 }}>还有 {plugins.length - 5} 个</Typography>}
@@ -459,7 +472,7 @@ export function QuickNoteCard() {
       <ButtonBase onClick={() => openNote(saved)} sx={{ fontSize: 12, color: 'success.main', borderRadius: 1 }}>已保存 · 打开</ButtonBase>
     ) : null}>
       <Box onClick={stop} sx={(theme) => ({
-        borderRadius: '10px', px: 1.25, py: 0.75, bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.06 : 0.7),
+        borderRadius: 1.5, px: 1.25, py: 0.75, bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.06 : 0.7),
         border: `1px solid ${theme.palette.divider}`, transition: 'border-color 150ms ease, box-shadow 150ms ease',
         '&:focus-within': { borderColor: alpha(theme.palette.primary.main, 0.55), boxShadow: `0 0 0 3px ${alpha(theme.palette.primary.main, 0.1)}` },
       })}>
@@ -473,7 +486,7 @@ export function QuickNoteCard() {
           <Typography sx={{ fontSize: 11.5, color: 'text.disabled' }}>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'} + Enter 保存</Typography>
           <ButtonBase onClick={save} disabled={!draft.trim() || saving}
             sx={(theme) => ({
-              height: 26, px: 1.25, borderRadius: '8px', fontSize: 12.5, fontWeight: 600,
+              height: 26, px: 1.25, borderRadius: 1, fontSize: 12.5, fontWeight: 600,
               color: draft.trim() ? 'primary.contrastText' : 'text.disabled',
               bgcolor: draft.trim() ? 'primary.main' : alpha(theme.palette.text.primary, 0.06),
               transition: 'background-color 150ms ease',
@@ -634,7 +647,7 @@ export function TagsCard({ onOpen }) {
         {tags.map(([tag, count]) => (
           <ButtonBase key={tag} onClick={(event) => { stop(event); useStore.getState().openNoteSearch(tag) }}
             sx={(theme) => ({
-              height: 26, px: 1, gap: 0.5, borderRadius: '8px', fontSize: 13,
+              height: 26, px: 1, gap: 0.5, borderRadius: 1, fontSize: 13,
               bgcolor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.07 : 0.05),
               '&:hover': { bgcolor: alpha(theme.palette.primary.main, 0.1), color: 'primary.main' },
             })}>

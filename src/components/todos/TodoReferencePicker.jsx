@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, List, ListItemButton, ListItemText, TextField, Typography, ToggleButton, ToggleButtonGroup } from '@mui/material'
+import { Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, List, ListItemButton, ListItemText, TextField, Typography } from '@mui/material'
+import SegmentedControl from '../common/SegmentedControl'
 import useTodoReferences from '../../hooks/useTodoReferences'
 import { createTodo } from '../../api/todoAPI'
 import { referenceLink, tasksForScope } from '../../utils/todoReferences'
 
-export default function TodoReferencePicker({ open, onClose, onSelect, sourceNote, initialText = '' }) {
+export default function TodoReferencePicker({ open, onClose, onSelect, sourceNote, initialText = '', initialKind = 'single' }) {
   const { todos, loading, error: loadError } = useTodoReferences()
-  const [kind, setKind] = useState('single')
+  const [kind, setKind] = useState(initialKind)
   const [scope, setScope] = useState(sourceNote ? 'note' : 'all')
   const [tag, setTag] = useState('')
   const [query, setQuery] = useState('')
@@ -34,15 +35,14 @@ export default function TodoReferencePicker({ open, onClose, onSelect, sourceNot
   const listTasks = tasksForScope(todos, listReference, sourceNote ? [sourceNote] : [])
   const candidates = todos.filter(todo => todo.content.toLowerCase().includes(query.trim().toLowerCase()))
   return <Dialog open={open} onClose={busy ? undefined : onClose} fullWidth maxWidth="sm">
-    <DialogTitle>插入待办</DialogTitle>
+    <DialogTitle>{kind === 'list' ? '插入待办清单' : '引用待办'}</DialogTitle>
     <DialogContent>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>引用已有任务，或新建一条。勾选与编辑会同步到待办页。</Typography>
-      <ToggleButtonGroup exclusive size="small" value={kind} onChange={(_, value) => value && setKind(value)} sx={{ mb: 2 }}><ToggleButton value="single">单条待办</ToggleButton><ToggleButton value="list">待办清单</ToggleButton></ToggleButtonGroup>
+      <SegmentedControl size="small" ariaLabel="插入方式" value={kind} onChange={setKind} options={[{ value: 'single', label: '单条待办' }, { value: 'list', label: '待办清单' }]} sx={{ mb: 2 }} />
       {(error || loadError) && <Alert severity="error" sx={{ mb: 1 }}>{error || loadError}</Alert>}
       {kind === 'list' ? <Box sx={{ minHeight: 280 }}>
-        <ToggleButtonGroup exclusive size="small" value={scope} onChange={(_, value) => value && setScope(value)} sx={{ display: 'flex', mb: 2 }}>
-          {sourceNote && <ToggleButton value="note">当前笔记</ToggleButton>}<ToggleButton value="tag">标签</ToggleButton><ToggleButton value="all">全部</ToggleButton>
-        </ToggleButtonGroup>
+        <SegmentedControl size="small" fullWidth ariaLabel="清单范围" value={scope} onChange={setScope} sx={{ mb: 2 }}
+          options={[...(sourceNote ? [{ value: 'note', label: '当前笔记' }] : []), { value: 'tag', label: '标签' }, { value: 'all', label: '全部' }]} />
         {scope === 'tag' && <TextField autoFocus fullWidth size="small" label="标签" value={tag} onChange={e => setTag(e.target.value)} sx={{ mb: 2 }} />}
         <Typography variant="body2" color="text.secondary">{listTasks.length} 条任务；清单会随新增、勾选和编辑自动更新。</Typography>
       </Box> : <>

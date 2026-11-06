@@ -3,7 +3,7 @@ import { Box, Typography, Stack, Portal } from '@mui/material'
 import { DescriptionOutlined as DescriptionOutlinedIcon } from '../common/AppIcons'
 import { useStore } from '../../store/useStore'
 import { stripMarkdownToPreviewText } from '../../utils/markdownTextUtils'
-import { floatingGlassSx } from '../../utils/floatingGlassSx'
+import { glassSxFor } from '../../styles/materials'
 import { getWhiteboardPreviewUrl } from '../../utils/whiteboardPreview'
 
 const HOVER_OPEN_DELAY = 280
@@ -195,7 +195,7 @@ const WikiLinkHoverPreview = () => {
           maxHeight: PREVIEW_MAX_HEIGHT,
           overflow: 'hidden',
           cursor: noteId ? 'pointer' : 'default',
-          ...floatingGlassSx({ radius: '14px', shadow: 'menu' }),
+          ...glassSxFor('popover', { radius: 'md', shadow: 'menu' }),
         }}
       >
         <Box sx={{ px: 1.25, py: 0.85, display: 'flex', alignItems: 'center', gap: 0.75, borderBottom: '1px solid', borderColor: 'divider' }}>

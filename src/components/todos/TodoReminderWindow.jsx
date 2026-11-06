@@ -8,6 +8,7 @@ import {
   SnoozeRounded as SnoozeIcon
 } from '../common/AppIcons';
 import TimeZoneUtils from '../../utils/timeZoneUtils';
+import { glassSx } from '../../styles/materials'
 
 const TodoReminderWindow = ({ initialData = {} }) => {
   const [data, setData] = useState(initialData || {});
@@ -42,12 +43,6 @@ const TodoReminderWindow = ({ initialData = {} }) => {
     };
   }, [todo?.due_date]);
 
-  const accent = todo?.is_urgent
-    ? 'error.main'
-    : todo?.is_important
-      ? 'warning.main'
-      : 'primary.main';
-
   const sendAction = async (type, extra = {}) => {
     if (!window.electronAPI?.todoReminder?.action || pendingAction) return;
     setPendingAction(type);
@@ -73,17 +68,7 @@ const TodoReminderWindow = ({ initialData = {} }) => {
           flexDirection: 'column',
           px: 1.5,
           py: 1.25,
-          borderRadius: '16px',
-          border: '1px solid',
-          borderColor: theme.palette.mode === 'dark'
-            ? 'rgba(255,255,255,0.14)'
-            : 'rgba(22,22,24,0.11)',
-          bgcolor: theme.palette.mode === 'dark'
-            ? 'rgba(31,31,34,0.96)'
-            : 'rgba(255,255,255,0.96)',
-          backdropFilter: 'blur(24px) saturate(165%)',
-          WebkitBackdropFilter: 'blur(24px) saturate(165%)',
-          boxShadow: 'none'
+          ...glassSx(theme, 'window', { radius: 'lg' }),
         })}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 22, gap: 0.75 }}>

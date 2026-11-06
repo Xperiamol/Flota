@@ -705,7 +705,7 @@ class TodoDAO {
     `);
     const dueTodayStmt = db.prepare(`
       SELECT COUNT(*) as count FROM todos 
-      WHERE ${mainTodoWhere} AND is_completed = 0 AND ${DUE_ON_DAY_SQL}
+      WHERE ${mainTodoWhere} AND is_completed = 0 AND ${DUE_ON_DAY_SQL} AND NOT ${OVERDUE_SQL}
     `);
     const todayCompletedStmt = db.prepare(`
       SELECT COUNT(*) as count FROM todos
@@ -764,7 +764,8 @@ class TodoDAO {
     const completedOnTime = completedOnTimeStmt.get().count;
     const completedWithDueDate = completedWithDueDateStmt.get().count;
     const overdue = overdueStmt.get(todayKey, nowUTC).count;
-    const dueToday = dueTodayStmt.get(todayKey, todayStart, todayEnd).count;
+    // 今天到期但时间已过的算逾期，不再同时算进「今天到期」（否则首页会说「还有 1 项待办，1 项已逾期」却只有一条）
+    const dueToday = dueTodayStmt.get(todayKey, todayStart, todayEnd, todayKey, nowUTC).count;
     const todayCompleted = todayCompletedStmt.get(todayStart, todayEnd).count
       + todayRecurringCompletedStmt.get(`%${todayKey}%`).count;
     const todayWorkload = todayCompleted + dueToday + overdue;

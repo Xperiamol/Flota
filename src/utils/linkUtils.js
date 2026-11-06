@@ -63,7 +63,12 @@ export const openNoteLink = async (href) => {
     else if (/^\/[a-z]:\//i.test(path)) path = path.slice(1)
     await window.electronAPI?.system?.openPath?.(path)
   } else if (/^app:/i.test(url)) {
-    await window.electronAPI?.attachments?.open?.(url.replace(/^app:\/\//i, ''))
+    // 应用内附件：打不开（文件丢失、路径不合法）时告诉用户，不要点了没反应
+    const result = await window.electronAPI?.attachments?.open?.(url.replace(/^app:\/\//i, ''))
+    if (result?.success === false) {
+      const { notifyError } = await import('./notify')
+      notifyError(`打开失败：${result.error || '未知原因'}`)
+    }
   } else if (window.electronAPI?.system?.openExternal) {
     await window.electronAPI.system.openExternal(url)
   } else {

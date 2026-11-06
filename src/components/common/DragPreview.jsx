@@ -5,7 +5,7 @@ import { Note as NoteIcon } from './AppIcons';
 import { Checklist as ChecklistIcon } from './AppIcons';
 import { Launch as LaunchIcon } from './AppIcons';
 import { CenterFocusStrong as FocusIcon } from './AppIcons';
-import { getFrostedSx } from './FloatingGlassSurface';
+import { glassSx } from '../../styles/materials';
 import { useStore } from '../../store/useStore';
 import { isPlaceholderOnlyPreview, stripMarkdownToPreviewText } from '../../utils/markdownTextUtils'
 
@@ -175,14 +175,13 @@ const DragPreview = ({ state, previewRef }) => {
       >
         <Box
           sx={(t) => ({
-            ...getFrostedSx(t),
-            borderRadius: '12px',
+            ...glassSx(t, 'floating', { radius: 'md' }),
             px: 1.75,
             py: 1.25,
             transformOrigin: `${grabOffset.x}px ${grabOffset.y}px`,
             transform: cardTransform,
             opacity: cardOpacity,
-            boxShadow: lifted ? liftedShadow : getFrostedSx(t).boxShadow,
+            boxShadow: lifted ? liftedShadow : glassSx(t, 'floating').boxShadow,
             borderColor: overTarget ? alpha(primaryColor, 0.9) : undefined,
             transition: reducedMotion
               ? 'opacity 120ms linear'

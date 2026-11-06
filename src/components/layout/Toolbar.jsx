@@ -30,12 +30,18 @@ import { useShallow } from 'zustand/react/shallow'
 import DropdownMenu from '../common/DropdownMenu'
 import { executePluginCommand } from '../../api/pluginAPI'
 import { getPluginCommandIcon } from '../../utils/pluginCommandUtils.jsx'
-import { segmentedButtonSx, segmentedControlSx } from '../../styles/commonStyles'
+import SegmentedControl from '../common/SegmentedControl'
 import { wallpaperControlGlassSx } from '../../styles/paneStyles'
 import { t } from '../../utils/i18n'
-import logger from '../../utils/logger'
 
 // 工具栏左侧的文字按钮（新建、随手记、回收站的全部恢复 / 清空）统一尺寸
+const TIMELINE_RANGES = [
+  { value: 'all', label: '全部' },
+  { value: 'today', label: '今天' },
+  { value: 'week', label: '本周' },
+  { value: 'month', label: '本月' },
+]
+
 const TOOLBAR_PILL_SX = {
   ml: 0.5,
   height: '30px',
@@ -397,7 +403,7 @@ const Toolbar = ({
   const leftGroupRef = useRef(null)
   const centerGroupRef = useRef(null)
   const [centerPinned, setCenterPinned] = useState(false)
-  const hasCenterGroup = Boolean(viewConfig.customButtons?.some((button) =>
+  const hasCenterGroup = currentView === 'timeline' || Boolean(viewConfig.customButtons?.some((button) =>
     (button.type === 'calendarViewMode' && button.position === 'right') ||
     (button.type === 'viewToggle' && button.position === 'center')
   ))
@@ -448,12 +454,13 @@ const Toolbar = ({
         '& .MuiIconButton-root': { minWidth: 32, minHeight: 32 },
         // 设了壁纸时，工具栏上没有底色的按钮垫一层轻玻璃，避免文字和图标融进壁纸
         ...(onWallpaper ? {
-          // 分段切换器自带底座，里面的按钮不再单独垫玻璃
-          '& :is(.MuiIconButton-root, .MuiButton-text, .MuiButton-outlined):not(.flota-segmented *)': {
+          // 分段控件的按钮不是 MuiButton，只给它的底座垫玻璃
+          '& .flota-segmented': wallpaperControlGlassSx(theme),
+          '& :is(.MuiIconButton-root, .MuiButton-text, .MuiButton-outlined)': {
             ...wallpaperControlGlassSx(theme),
             '&:hover': { backgroundColor: theme.palette.mode === 'dark' ? 'rgba(52,52,58,0.7)' : 'rgba(255,255,255,0.8)' },
           },
-          '& :is(.MuiButton-text, .MuiButton-outlined):not(.flota-segmented *)': { color: 'text.primary', borderColor: 'transparent' },
+          '& :is(.MuiButton-text, .MuiButton-outlined)': { color: 'text.primary', borderColor: 'transparent' },
         } : {}),
       })}
     >
@@ -603,8 +610,8 @@ const Toolbar = ({
 
 
 
-      {/* 居中区域 - 日历视图模式选择器和待办视图切换 */}
-      {viewConfig.customButtons && (
+      {/* 居中区域：各页面的视图切换（待办视图、日历视图、时间轴范围）统一放在顶部栏正中 */}
+      {(viewConfig.customButtons || currentView === 'timeline') && (
         <Box
           ref={centerGroupRef}
           sx={{
@@ -623,7 +630,15 @@ const Toolbar = ({
             })
           }}
         >
-          {viewConfig.customButtons
+          {currentView === 'timeline' && (
+            <SegmentedControl
+              ariaLabel="时间范围"
+              options={TIMELINE_RANGES}
+              value={timelineFilter?.dateRange || 'all'}
+              onChange={(value) => setTimelineFilter({ dateRange: value })}
+            />
+          )}
+          {(viewConfig.customButtons || [])
             .filter(button =>
               (button.type === 'calendarViewMode' && button.position === 'right') ||
               (button.type === 'viewToggle' && button.position === 'center')
@@ -631,51 +646,24 @@ const Toolbar = ({
             .map((button, index) => {
               if (button.type === 'calendarViewMode') {
                 return (
-                  <Box key={index} className="flota-segmented" sx={segmentedControlSx}>
-                    {button.options.map((option) => {
-                      const isActive = (calendarViewMode || 'todos') === option.value;
-                      return (
-                        <Button
-                          key={option.value}
-                          disableElevation
-                          disableRipple
-                          variant="text"
-                          aria-pressed={isActive}
-                          onClick={() => {
-                            logger.log('Calendar view mode clicked:', option.value);
-                            if (onCalendarViewModeChange) {
-                              onCalendarViewModeChange(option.value);
-                            }
-                          }}
-                          sx={segmentedButtonSx(isActive)}
-                        >
-                          {option.label}
-                        </Button>
-                      );
-                    })}
-                  </Box>
+                  <SegmentedControl
+                    key={index}
+                    ariaLabel="日历视图"
+                    options={button.options}
+                    value={calendarViewMode || 'todos'}
+                    onChange={(value) => onCalendarViewModeChange?.(value)}
+                  />
                 );
               }
               if (button.type === 'viewToggle') {
                 return (
-                  <Box key={index} className="flota-segmented" sx={segmentedControlSx}>
-                    {button.options.map((option) => {
-                      const isActive = todoViewMode === option.value;
-                      return (
-                        <Button
-                          key={option.value}
-                          disableElevation
-                          disableRipple
-                          variant="text"
-                          aria-pressed={isActive}
-                          onClick={() => onTodoViewModeChange && onTodoViewModeChange(option.value)}
-                          sx={segmentedButtonSx(isActive)}
-                        >
-                          {option.label}
-                        </Button>
-                      );
-                    })}
-                  </Box>
+                  <SegmentedControl
+                    key={index}
+                    ariaLabel="待办视图"
+                    options={button.options}
+                    value={todoViewMode}
+                    onChange={(value) => onTodoViewModeChange?.(value)}
+                  />
                 );
               } else if (button.type === 'calendarNavigation') {
                 return <CalendarNavButtons key={index} button={button} />;
@@ -733,46 +721,14 @@ const Toolbar = ({
         )}
 
         {currentView === 'timeline' && (
-          <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 0.75, mr: 0.75 }}>
-            <Box className="flota-segmented" sx={segmentedControlSx}>
-              {[
-                { value: 'all', label: '全部' },
-                { value: 'today', label: '今天' },
-                { value: 'week', label: '本周' },
-                { value: 'month', label: '本月' },
-              ].map((option) => {
-                const active = (timelineFilter?.dateRange || 'all') === option.value
-                return (
-                  <Button
-                    key={option.value}
-                    disableElevation
-                    disableRipple
-                    variant="text"
-                    aria-pressed={active}
-                    onClick={() => setTimelineFilter({ dateRange: option.value })}
-                    sx={segmentedButtonSx(active)}
-                  >
-                    {option.label}
-                  </Button>
-                )
-              })}
-            </Box>
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={handleTimelineScrollLatest}
-              sx={{
-                borderRadius: '10px',
-                height: 33,
-                minHeight: 33,
-                boxSizing: 'border-box',
-                px: 1.25,
-                fontSize: '0.8125rem'
-              }}
-            >
-              最新
-            </Button>
-          </Box>
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={handleTimelineScrollLatest}
+            sx={{ height: 32, minHeight: 32, boxSizing: 'border-box', px: 1.25, mr: 0.5, fontSize: '0.8125rem' }}
+          >
+            最新
+          </Button>
         )}
 
         {/* 插件命令按钮 */}

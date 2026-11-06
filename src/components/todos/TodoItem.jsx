@@ -144,7 +144,7 @@ const TodoItem = ({
       px: 2,
       position: 'relative',
       overflow: 'hidden',
-      borderRadius: '12px', // Consistent border radius
+      borderRadius: 1.5, // Consistent border radius
       transition: 'background-color 0.18s cubic-bezier(0.32,0.72,0,1), box-shadow 0.18s cubic-bezier(0.32,0.72,0,1), opacity 0.18s cubic-bezier(0.32,0.72,0,1)',
       '&:hover': {
         backgroundColor: theme.palette.action.hover,
@@ -449,7 +449,7 @@ const TodoItem = ({
           py: 1.05,
           minHeight: 46,
           boxSizing: 'border-box',
-          borderRadius: '10px',
+          borderRadius: 1,
           bgcolor: theme.custom?.surface?.control,
           border: `1px solid ${dark ? 'rgba(255,255,255,0.065)' : 'rgba(22,22,24,0.055)'}`,
           transition: createTransitionString(ANIMATIONS.hover),

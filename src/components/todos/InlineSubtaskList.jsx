@@ -6,6 +6,7 @@ import {
   ExpandMoreRounded as ExpandIcon,
   RadioButtonUncheckedRounded as PendingIcon
 } from '../common/AppIcons';
+import { glassSx } from '../../styles/materials'
 
 
 export const SubtaskExpandButton = React.memo(({
@@ -132,12 +133,7 @@ const InlineSubtaskList = ({
         sx={(theme) => ({
           minWidth: 0,
           overflow: 'hidden',
-          borderRadius: '10px',
-          border: `1px solid ${alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.1 : 0.075)}`,
-          bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.3 : 0.52),
-          backdropFilter: 'blur(12px) saturate(135%)',
-          WebkitBackdropFilter: 'blur(12px) saturate(135%)',
-          boxShadow: `inset 0 1px 0 ${alpha('#ffffff', theme.palette.mode === 'dark' ? 0.035 : 0.48)}`
+          ...glassSx(theme, 'chip', { radius: 'md' }),
         })}
       >
         {subtasks.map((subtask, index) => {

@@ -9,7 +9,7 @@ const { referencesFromMessages } = require('../aiReferences');
  *
  * 模块划分：
  *   - tools/schema + tools/dispatcher：工具 schema 与 handler registry
- *   - stream/streamRequest + stream/sseParser + stream/toolLoop：流式 chat 的请求/解析/工具循环
+ *   - agent/：基于 pi-agent-core + pi-ai 的对话循环与模型请求（runChat / generateText）
  *   - systemPrompt：系统提示词与上下文注入
  *   - noteSummary：当前笔记摘要（共享）
  *   - PendingActionStore：写入类工具的二次确认
@@ -22,35 +22,27 @@ const { WRITE_TOOL_NAMES, MAX_CONTEXT_TOKENS } = require('./constants');
 
 // 会改动笔记内容 / 标题 / 标签的工具（白板由渲染层执行器自行保存并刷新）
 const NOTE_WRITE_TOOLS = new Set(['create_note', 'edit_note', 'edit_notes', 'write_long_document']);
-const { isEnabledSetting, safeJsonParse, trimMessagesToBudget, compactHistoryWithLLM } = require('./utils');
+const { isEnabledSetting, safeJsonParse } = require('./utils');
 const { dispatchTool } = require('./tools/dispatcher');
 const { getSystemPrompt, buildContextSection } = require('./systemPrompt');
 const { enrichContextPackageWithMemories } = require('./memoryContext');
-const { streamRequest } = require('./stream/streamRequest');
-const { handleToolCalls } = require('./stream/toolLoop');
+const { buildModel, buildRequestOptions } = require('../llm/model');
+const { generateText } = require('../llm/generateText');
+const { normalizeModelError } = require('../llm/errors');
+const { runChat } = require('./agent/runChat');
+const { toAgentMessages } = require('../llm/messages');
+const { compactTranscript } = require('./sessions/transcript');
 const PendingActionStore = require('./PendingActionStore');
 const { MemoryExtractor } = require('./memoryExtractor');
 
 // 本轮已经由模型显式调用过记忆工具时，不再做对话后自动提取，避免同一信息写两遍
 const MEMORY_TOOLS = new Set(['add_memory', 'update_memory']);
 
-const isContentBlockedError = (error) => /blocked|content.*blocked|machine outputted|安全|拦截|审核|风控/i.test(String(error?.message || error || ''));
-const isGatewayError = (error) => /请求失败 \((?:429|502|503|504)\)|\b(?:429|502|503|504)\b|bad gateway|gateway timeout|service unavailable|too many requests|rate limit/i.test(String(error?.message || error || ''));
-const isNetworkError = (error) => /fetch failed|network|网络|ECONN|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|socket|timeout|超时/i.test(String(error?.message || error || ''));
-
-const normalizeChatErrorMessage = (error) => {
-  if (isContentBlockedError(error)) return '模型内容审核拦截，请调整表述后重试';
-  if (isGatewayError(error)) return 'AI 服务暂时不可用，请稍后重试';
-  if (isNetworkError(error)) return '网络请求失败，请检查网络或 AI 配置后重试';
-  return error?.message || String(error || '请求失败');
-};
-
 const isToolDisabled = (options, name) =>
   Array.isArray(options?.disabledTools) && options.disabledTools.includes(name);
 
 // 模型有时只在文字里说“已准备好，请确认执行”却没有调用写入工具，前端没有确认卡可显示，
 // 用户反复重试也只会得到同样的空话。本次请求没产生待确认动作、回复却声称有确认卡时追加一轮纠正。
-// 判定与渲染层 utils/aiCore/pendingActions.js 的 toApiMessages 保持一致。
 const CONFIRMATION_CLAIM_RE = /确认卡|确认执行|点(?:击)?确认/;
 const PHANTOM_CONFIRMATION_NUDGE = '（系统提示）你刚才的回复声称已准备好确认卡，但本轮没有调用任何写入工具，用户看不到确认卡。现在按需 read_skill 加载对应能力并调用写入工具生成确认卡，不要先输出说明文字。';
 
@@ -106,29 +98,24 @@ class AIChatService {
     if (!config.enabled) throw new Error('AI功能未启用，请在设置中开启');
     if (!config.apiKey) throw new Error('请先在设置中配置API密钥');
 
-    const temp = Math.min(Math.max(typeof opts.temperature === 'number' ? opts.temperature : (config.temperature || 0.7), 0), 2);
     // 与主聊天一致：关闭限长时不发送 max_tokens，由服务商决定单次输出长度。
     const limitMaxTokensEnabled = isEnabledSetting(config.limitMaxTokens);
-    const maxTk = Number(opts.maxTokens) > 0
+    const maxTokens = Number(opts.maxTokens) > 0
       ? Math.floor(opts.maxTokens)
       : (opts.bypassTokenLimit ? undefined : (limitMaxTokensEnabled ? config.maxTokens : undefined));
-    const onToken = typeof opts.onToken === 'function' ? opts.onToken : null;
 
-    const innerOnChunk = (chunk) => {
-      if (chunk && chunk.type === 'content' && onToken) onToken(chunk.content);
-    };
-
-    const result = await streamRequest(
-      config, messages, temp, maxTk, innerOnChunk, opts.abortSignal,
-      { disableTools: true, timeoutMs: opts.timeoutMs, autoContinue: Boolean(opts.autoContinue) }, this.aiService
-    );
-
-    return {
-      content: result.content,
-      finishReason: result.finishReason,
-      truncated: result.finishReason === 'length',
-      usage: result.usage
-    };
+    return generateText({
+      model: buildModel(config, this.aiService),
+      messages,
+      requestOptions: buildRequestOptions(config, {
+        temperature: typeof opts.temperature === 'number' ? opts.temperature : (config.temperature || 0.7),
+        maxTokens,
+        timeoutMs: opts.timeoutMs,
+        signal: opts.abortSignal,
+      }),
+      onToken: typeof opts.onToken === 'function' ? opts.onToken : null,
+      autoContinue: Boolean(opts.autoContinue),
+    });
   }
 
   /**
@@ -300,9 +287,34 @@ class AIChatService {
     return { success: true, action };
   }
 
-  /** 流式聊天，支持工具调用 */
+  /**
+   * 旧的按 OpenAI 格式历史调用的入口：把历史转成完整记录后走 runTurn。
+   * @param {Array} messages OpenAI 格式历史，最后一条是本次用户消息
+   */
   async chatStream(messages, onChunk, options = {}) {
-    const referenceImages = referencesFromMessages(messages);
+    const history = Array.isArray(messages) ? messages : [];
+    const last = history.at(-1);
+    const configResult = await this.aiService.getConfig();
+    const model = buildModel(configResult?.data || {}, this.aiService);
+    return this.runTurn({
+      transcript: toAgentMessages(last?.role === 'user' ? history.slice(0, -1) : history, model),
+      userContent: last?.role === 'user' ? last.content : '',
+      onChunk,
+      options,
+    });
+  }
+
+  /**
+   * 一轮带工具的对话。
+   * @param {object} params
+   * @param {Array}  params.transcript   完整记录（pi 消息，不含本次用户消息）
+   * @param {string|Array} params.userContent  本次用户消息（文字或 OpenAI 格式多模态数组）
+   * @param {(chunk) => void} params.onChunk
+   * @param {object} params.options      scene / memoryQuery / contextPackage / actionContext / requireConfirmation / disabledTools / disableTools / abortSignal / conversationId / requestId
+   * @returns 结果中 newMessages 是本轮新增的消息，contextPackage 是补充记忆后的上下文
+   */
+  async runTurn({ transcript = [], userContent, onChunk, options = {} }) {
+    const referenceImages = referencesFromMessages([{ role: 'user', content: userContent }]);
     options = { ...options, actionContext: { ...options.actionContext, referenceImages } };
     let accumulatedContent = '';
     let pendingActionCreated = false;
@@ -329,7 +341,6 @@ class AIChatService {
 
       this.aiService._checkRateLimit();
 
-      const temp = Math.min(Math.max(options.temperature || config.temperature, 0), 2);
       const limitMaxTokensEnabled = isEnabledSetting(config.limitMaxTokens);
       const hasExplicitMaxTokens = options.maxTokens != null;
       const userOutputLimitApplied = hasExplicitMaxTokens || limitMaxTokensEnabled;
@@ -350,15 +361,18 @@ class AIChatService {
         options = { ...options, disabledTools: [...(options.disabledTools || []), 'read_note_image'] };
       }
 
-      options.toolSession = createSkillSession({
+      const toolSession = createSkillSession({
         disabledTools: options.disabledTools,
         webSearchEnabled: isEnabledSetting(config.webSearchEnabled) && Boolean(config.webSearchApiKey),
         memoryEnabled: Boolean(this.mem0Service?.isAvailable?.()),
       });
 
+      const model = buildModel(config, this.aiService, { vision: imageReadingEnabled });
+      const [prompt] = toAgentMessages([{ role: 'user', content: userContent }], model);
       const systemPrompt = `${await getSystemPrompt({ mem0Service: this.mem0Service, imageReadingEnabled })}${buildContextSection(enrichedPackage)}`;
       this._compactionCache ||= new Map();
-      const budgetedHistory = await compactHistoryWithLLM(systemPrompt, messages, MAX_CONTEXT_TOKENS, {
+      // 完整记录可能很长：按预算压缩后再发（压缩只影响本次请求，不改动保存的记录）
+      const compacted = await compactTranscript(systemPrompt, [...transcript, prompt], MAX_CONTEXT_TOKENS, {
         cache: this._compactionCache,
         cacheKey: options.conversationId || 'default',
         summarize: async (summaryMessages) => {
@@ -371,93 +385,67 @@ class AIChatService {
           });
           return res?.content || '';
         },
-      });
-      const fullMessages = [
-        { role: 'system', content: systemPrompt },
-        ...budgetedHistory
-      ];
+      }, model);
 
-      const stream = (cfg, msgs, t, mt, oc, ab, opts) => streamRequest(
-        cfg, msgs, t, mt, oc, ab, { ...opts, autoContinue: !userOutputLimitApplied }, this.aiService
-      );
-      const runToolLoop = (prevResult, chunkHandler) => handleToolCalls({
-        config,
-        messages: fullMessages,
-        prevResult,
-        onChunk: chunkHandler,
-        temp,
-        maxTk,
+      const result = await runChat({
+        model,
+        requestOptions: buildRequestOptions(config, { temperature: options.temperature || config.temperature, maxTokens: maxTk }),
+        systemPrompt,
+        history: compacted.slice(0, -1),
+        prompt: compacted.at(-1),
+        toolSession,
+        disableTools: options.disableTools === true,
         abortSignal: options.abortSignal,
-        options,
-        streamRequest: stream,
-        executeTool: (name, args, opts) => {
-          if (!options.toolSession.canExecute(name)) return JSON.stringify({ success: false, error: '工具尚未开放或已禁用。请先用 read_skill 加载对应技能，不要猜测调用。' });
-          if (name === 'read_skill') return JSON.stringify(options.toolSession.read(args?.skill));
-          return this._executeTool(name, args, { ...opts, contextPackage: options.contextPackage });
+        onChunk: wrappedOnChunk,
+        executeTool: (name, args, runtime) => {
+          if (!toolSession.canExecute(name)) return JSON.stringify({ success: false, error: '工具尚未开放或已禁用。请先用 read_skill 加载对应技能，不要猜测调用。' });
+          if (name === 'read_skill') return JSON.stringify(toolSession.read(args?.skill));
+          return this._executeTool(name, args, {
+            requireConfirmation: options.requireConfirmation !== false,
+            disabledTools: options.disabledTools,
+            actionContext: options.actionContext || null,
+            contextPackage: options.contextPackage,
+            onChunk: runtime.onChunk,
+            abortSignal: runtime.abortSignal,
+          });
         },
-        logger: this.logger
+        // 回复声称已准备好确认卡、本轮却没有调用写入工具：追加一轮纠正
+        phantomNudge: (text) => (options.requireConfirmation !== false && CONFIRMATION_CLAIM_RE.test(text) ? PHANTOM_CONFIRMATION_NUDGE : null),
       });
-      const toFinalResult = (streamResult) => ({
-        success: true,
-        fullContent: streamResult.content,
-        usage: streamResult.usage,
-        finishReason: streamResult.finishReason,
-        truncated: streamResult.finishReason === 'length',
-        outputLimitApplied: userOutputLimitApplied
-      });
-
-      const result = await stream(config, fullMessages, temp, maxTk, wrappedOnChunk, options.abortSignal, options);
-      const path = result.toolCalls && result.toolCalls.length > 0 ? 'toolLoop' : 'direct';
-      let finalResult = path === 'toolLoop'
-        ? await runToolLoop(result, wrappedOnChunk)
-        : toFinalResult(result);
-
-      const claimedText = String(finalResult.fullContent || '');
-      if (!pendingActionCreated
-        && finalResult.taskStatus !== 'incomplete'
-        && options.requireConfirmation !== false
-        && options.disableTools !== true
-        && CONFIRMATION_CLAIM_RE.test(claimedText)) {
-        this.logger.warn('AIChatService', 'Phantom confirmation claim, retrying', {
+      if (result.retriedPhantomClaim) {
+        this.logger.warn('AIChatService', 'Phantom confirmation claim, retried', {
           requestId: options.requestId || null,
           conversationId: options.conversationId || null,
-          path,
         });
-        fullMessages.push(
-          { role: 'assistant', content: claimedText },
-          { role: 'user', content: PHANTOM_CONFIRMATION_NUDGE }
-        );
-        // 纠正轮的文字接在上一段之后，首段内容前补一个空行分隔
-        let separated = false;
-        const retryOnChunk = (chunk) => {
-          if (!separated && chunk?.type === 'content' && chunk.content) {
-            separated = true;
-            wrappedOnChunk({ type: 'content', content: '\n\n' });
-          }
-          return wrappedOnChunk(chunk);
-        };
-        const retry = await stream(config, fullMessages, temp, maxTk, retryOnChunk, options.abortSignal, options);
-        finalResult = retry.toolCalls && retry.toolCalls.length > 0
-          ? await runToolLoop(retry, retryOnChunk)
-          : toFinalResult(retry);
       }
-
-      const finalContent = accumulatedContent || finalResult.fullContent;
+      const finalContent = accumulatedContent || result.content;
       this.logger.info('AIChatService', 'Stream chat result', {
         requestId: options.requestId || null,
         conversationId: options.conversationId || null,
-        path,
-        finishReason: finalResult.finishReason || null,
+        path: result.newMessages.some((message) => message.role === 'toolResult') ? 'toolLoop' : 'direct',
+        finishReason: result.finishReason || null,
         maxTk: maxTk ?? null,
         contentLen: String(finalContent || '').length,
         pendingActionCreated,
       });
-      return { ...finalResult, fullContent: finalContent, memoryToolUsed };
+      return {
+        success: true,
+        fullContent: finalContent,
+        usage: result.usage,
+        finishReason: result.finishReason,
+        truncated: result.truncated,
+        outputLimitApplied: userOutputLimitApplied,
+        ...(result.taskStatus ? { taskStatus: result.taskStatus } : {}),
+        ...(result.stopReason ? { stopReason: result.stopReason } : {}),
+        memoryToolUsed,
+        newMessages: result.newMessages,
+        contextPackage: enrichedPackage,
+      };
     } catch (error) {
       if (error?.name === 'AbortError' || /aborted|取消|cancel/i.test(error?.message || '')) {
         return { success: false, cancelled: true, error: '已取消生成', fullContent: accumulatedContent };
       }
-      const normalizedError = normalizeChatErrorMessage(error);
+      const normalizedError = normalizeModelError(error);
       this.logger.error('AIChatService', 'Stream chat failed', {
         requestId: options.requestId || null,
         conversationId: options.conversationId || null,

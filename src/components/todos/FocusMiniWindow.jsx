@@ -6,6 +6,7 @@ import {
   PauseRounded as PauseIcon,
   PlayArrowRounded as ResumeIcon
 } from '../common/AppIcons';
+import { glassSx } from '../../styles/materials'
 
 const formatSeconds = (seconds) => {
   const total = Math.max(0, Math.floor(Number(seconds) || 0));
@@ -91,19 +92,7 @@ const FocusMiniWindow = ({ initialData = {} }) => {
           justifyContent: 'space-between',
           px: 1.25,
           py: 1,
-          borderRadius: '14px',
-          border: '1px solid',
-          borderColor: theme.palette.mode === 'dark'
-            ? 'rgba(255,255,255,0.13)'
-            : 'rgba(22,22,24,0.10)',
-          backgroundColor: theme.palette.mode === 'dark'
-            ? 'rgba(31,31,34,0.96)'
-            : 'rgba(255,255,255,0.96)',
-          backdropFilter: 'blur(22px) saturate(160%)',
-          WebkitBackdropFilter: 'blur(22px) saturate(160%)',
-          boxShadow: theme.palette.mode === 'dark'
-            ? '0 8px 26px rgba(11,11,12,0.42), inset 0 1px 0 rgba(255,255,255,0.06)'
-            : '0 8px 26px rgba(22,22,24,0.16), inset 0 1px 0 rgba(255,255,255,0.76)',
+          ...glassSx(theme, 'window', { radius: 'lg' }),
           WebkitAppRegion: 'drag'
         })}
       >

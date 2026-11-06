@@ -88,7 +88,8 @@ test('ordinary chat never loads business tools and unopened tool calls cannot cr
   await mocked([tool('update_settings', { changes: [{ key: 'theme', value: 'dark' }] }), '需要先加载相关能力。'], async () => {
     await chat.chatStream([{ role: 'user', content: '改设置' }], chunk => chunks.push(chunk))
     assert.equal(chat._pendingActions._pendingActions.size, 0)
-    assert.match(JSON.parse(chunks.find(c => c.type === 'tool_end').result).error, /尚未开放/)
+    // 没开放的工具不在工具列表里，pi 直接返回「找不到工具」，不会执行，也不会生成确认卡
+    assert.match(JSON.parse(chunks.find(c => c.type === 'tool_end').result).error, /not found/)
   })
 })
 
@@ -112,7 +113,9 @@ test('repeated discovery is bounded and disabled business tools remain unavailab
     assert.equal(result.success, true)
     assert.equal(requests.length, 5)
     assert.ok(requests.every(request => !request.tools?.some(t => t.function.name === 'edit_note')))
-    assert.equal(requests.at(-1).tools, undefined)
+    // 重复无进展后停止调用工具：最后一轮只允许写文字
+    assert.equal(requests.at(-1).tool_choice, 'none')
+    assert.equal(result.stopReason, 'no_progress')
   })
 })
 
@@ -136,7 +139,9 @@ test('a pending write ends the action phase instead of soliciting duplicate writ
   await mocked([tool('read_skill', { skill: 'settings' }), tool('update_settings', { changes: [{ key: 'theme', value: 'dark' }] }), '请确认。'], async requests => {
     const result = await chat.chatStream([{ role: 'user', content: '改深色主题' }], () => {})
     assert.equal(result.taskStatus, 'awaiting_confirmation')
-    assert.equal(requests.at(-1).tools, undefined)
+    // 收尾轮只写文字：工具声明保留（避免发空 tools 数组），但不允许再调用
+    assert.equal(requests.at(-1).tool_choice, 'none')
+    assert.ok(requests.slice(0, -1).every(request => request.tool_choice === undefined))
     assert.equal(chat._pendingActions._pendingActions.size, 1)
   })
 })
@@ -149,16 +154,15 @@ test('unconfigured memory tools are not exposed after loading other skills', () 
 })
 
 test('context budget stops continued retrieval with explicit incomplete state', async () => {
-  const { handleToolCalls } = require('../../electron/services/aichat/stream/toolLoop')
   const { MAX_CONTEXT_TOKENS } = require('../../electron/services/aichat/constants')
-  let finalOptions
-  const result = await handleToolCalls({
-    config: {}, messages: [{ role: 'user', content: 'x'.repeat(MAX_CONTEXT_TOKENS * 2) }],
-    prevResult: { toolCalls: [tool('read_note', { id: 1 })] }, onChunk() {}, options: {},
-    executeTool: async () => JSON.stringify({ content: 'new page' }),
-    streamRequest: async (...args) => { finalOptions = args.at(-1); return { content: '尚未读取完毕。' } },
+  const chat = service()
+  // 单条工具结果就超过上下文预算：下一轮不再调用工具，追加说明，标记未完成
+  chat._executeTool = async () => JSON.stringify({ content: '字'.repeat(MAX_CONTEXT_TOKENS * 2) })
+  await mocked([tool('read_skill', { skill: 'notes' }), tool('read_note', { id: 1 }), '尚未读取完毕。'], async requests => {
+    const result = await chat.chatStream([{ role: 'user', content: '读完这篇' }], () => {}, { contextPackage: {} })
+    assert.equal(result.taskStatus, 'incomplete')
+    assert.equal(result.stopReason, 'context_budget')
+    assert.equal(requests.at(-1).tool_choice, 'none')
+    assert.match(requests.at(-1).messages.at(-1).content, /达到上下文\/执行预算而停止/)
   })
-  assert.equal(result.taskStatus, 'incomplete')
-  assert.equal(result.stopReason, 'context_budget')
-  assert.equal(finalOptions.disableTools, true)
 })

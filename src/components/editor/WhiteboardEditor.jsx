@@ -43,6 +43,7 @@ import { Tune, CenterFocusStrong, VisibilityOff } from '../common/AppIcons'
 import { openNoteLink } from '../../utils/linkUtils'
 import { createWhiteboardSurfaceSx, createWhiteboardSurfaceTokens } from '../../utils/whiteboardSurfaceTheme'
 import WhiteboardToolbar from './WhiteboardToolbar'
+import { glassSx, glassSxFor, RADIUS } from '../../styles/materials'
 
 const createMermaidDialogSlotProps = ({ isDark, primaryColor }) => {
   const tokens = createWhiteboardSurfaceTokens({ isDark, primaryColor })
@@ -56,15 +57,11 @@ const createMermaidDialogSlotProps = ({ isDark, primaryColor }) => {
         WebkitBackdropFilter: tokens.glassBlur,
         border: tokens.glassBorder,
         boxShadow: tokens.glassShadow,
-        borderRadius: '16px',
+        borderRadius: `${RADIUS.lg}px`,
       },
     },
     backdrop: {
-      sx: {
-        backgroundColor: isDark ? 'rgba(0,0,0,.36)' : 'rgba(22,22,24,.18)',
-        backdropFilter: 'blur(4px)',
-        WebkitBackdropFilter: 'blur(4px)',
-      },
+      sx: (theme) => glassSx(theme, 'scrim'),
     },
   }
 }
@@ -1735,13 +1732,8 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
                 zIndex: 5,
                 width: 34,
                 height: 34,
-                borderRadius: '9px',
                 color: 'text.secondary',
-                bgcolor: isDark ? 'rgba(35, 35, 41, 0.88)' : 'rgba(255, 255, 255, 0.88)',
-                border: '1px solid',
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(22,22,24, 0.10)',
-                backdropFilter: 'blur(10px)',
-                WebkitBackdropFilter: 'blur(10px)',
+                ...glassSxFor('chip', { radius: 'sm' }),
                 '&:hover': {
                   color: 'primary.main',
                   bgcolor: isDark ? 'rgba(45, 45, 53, 0.96)' : 'rgba(255, 255, 255, 0.98)',

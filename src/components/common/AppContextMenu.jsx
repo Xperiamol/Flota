@@ -1,15 +1,7 @@
 import { Divider, ListItemIcon, ListItemText, Menu, MenuItem } from '@mui/material'
 
-// 与笔记列表右键菜单一致的玻璃质感
-const paperSx = (theme) => ({
-  backdropFilter: theme?.custom?.glass?.backdropFilter || 'blur(6px)',
-  backgroundColor: theme?.custom?.glass?.background || (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.4)'),
-  backgroundImage: theme?.custom?.glass?.backgroundImage || 'none',
-  border: theme?.custom?.glass?.border || `1px solid ${theme.palette.divider}`,
-  boxShadow: theme?.custom?.glass?.boxShadow,
-  borderRadius: 1.75,
-  minWidth: 180,
-})
+// 材质和圆角来自主题的 MuiMenu（popover 材质）
+const paperSx = { minWidth: 180 }
 
 /**
  * 应用内统一的上下文菜单（右键或“···”按钮）。

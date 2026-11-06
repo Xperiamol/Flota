@@ -12,7 +12,7 @@ const loadFrontend = async (file) => {
 }
 const { default: ImageResolver } = await loadFrontend('src/utils/ImageProtocolResolver.js')
 const { imageAPI } = await loadFrontend('src/api/imageAPI.js')
-const { messageText, parseToolResult } = await loadFrontend('src/utils/aiCore/messageModel.js')
+const { messageText } = await loadFrontend('src/utils/aiCore/messageModel.js')
 const pathSource = await readFile(new URL('../../electron/utils/userDataPath.js', import.meta.url), 'utf8')
 const loadPathResolver = (platform, env, electron) => {
   const context = {
@@ -97,14 +97,10 @@ test('image API wrappers preserve arguments, results and both failure modes', as
   }
 })
 
-test('message text preserves multimodal text order and tool result compatibility', () => {
+test('message text preserves multimodal text order', () => {
   assert.equal(messageText('hello'), 'hello')
   assert.equal(messageText(null), '')
   assert.equal(messageText([null, { type: 'text', text: 'first' }, { type: 'image_url', image_url: { url: 'image' } }, { type: 'text', text: 'second' }]), 'first\nsecond')
-  const object = { success: true }
-  assert.equal(parseToolResult(object), object)
-  assert.deepEqual(parseToolResult('{"success":true}'), object)
-  assert.equal(parseToolResult('invalid JSON'), null)
 })
 
 

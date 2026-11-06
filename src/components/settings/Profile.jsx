@@ -103,7 +103,7 @@ const HomeGridItem = ({ wide, fullWidth, editing, dragOver, onDragStart, onDragO
         onDragEnd={onDragEnd}
         sx={(theme) => ({
           position: 'relative',
-          borderRadius: '14px',
+          borderRadius: 1.5,
           outline: editing ? `1.5px ${dragOver ? 'solid' : 'dashed'} ${alpha(theme.palette.primary.main, dragOver ? 0.9 : 0.4)}` : 'none',
           outlineOffset: 2,
           cursor: editing ? 'grab' : undefined,
@@ -115,7 +115,7 @@ const HomeGridItem = ({ wide, fullWidth, editing, dragOver, onDragStart, onDragO
           // 操作条骑在卡片上边框上（卡片内边距之外），不遮挡卡片标题和按钮
           <Box sx={(theme) => ({
             position: 'absolute', top: -13, right: 14, zIndex: 2, display: 'flex', gap: '2px', p: '2px',
-            borderRadius: '8px', bgcolor: 'background.paper', border: `1px solid ${theme.palette.divider}`,
+            borderRadius: 1, bgcolor: 'background.paper', border: `1px solid ${theme.palette.divider}`,
             boxShadow: theme.palette.mode === 'dark' ? '0 2px 8px rgba(0,0,0,0.4)' : '0 2px 8px rgba(22,22,24,0.1)',
             animation: 'homeEditPop 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
             '@keyframes homeEditPop': { from: { opacity: 0, transform: 'scale(0.85)' }, to: { opacity: 1, transform: 'scale(1)' } },
@@ -308,7 +308,8 @@ const Profile = () => {
     return t('profile.greetingNight');
   };
 
-  const displayName = userName || t('profile.defaultUser');
+  // 没设名字时只问候，不显示「用户」这样的占位词
+  const displayName = userName?.trim() || '';
 
   const renderBuiltinCard = (cardId) => {
     const open = () => openCardTarget(cardId);
@@ -367,7 +368,7 @@ const Profile = () => {
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>{dateLabel}</Typography>
             <Typography component="h1" sx={{ fontSize: 26, fontWeight: 650, letterSpacing: '-0.015em', mt: 0.5 }} noWrap>
-              {getGreeting()}，{displayName}
+              {displayName ? `${getGreeting()}，${displayName}` : getGreeting()}
             </Typography>
             <Typography sx={{ fontSize: 14, color: 'text.secondary', mt: 0.5 }}>{todaySummary}</Typography>
           </Box>
@@ -420,7 +421,7 @@ const Profile = () => {
         {/* 与 AI 小窗同一个入口：回车直接发送；可以本次隐藏或永久隐藏 */}
         {showAiBar && (
         <Box sx={(theme) => ({
-          height: 46, mb: 2.5, pl: 1.75, pr: 0.75, display: 'flex', alignItems: 'center', gap: 1.25, borderRadius: '12px',
+          height: 46, mb: 2.5, pl: 1.75, pr: 0.75, display: 'flex', alignItems: 'center', gap: 1.25, borderRadius: 1.5,
           // 半透明：设了壁纸时不是一整条白块
           bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.5 : 0.72), border: `1px solid ${theme.palette.divider}`,
           transition: 'border-color 150ms ease', '&:focus-within': { borderColor: alpha(theme.palette.primary.main, 0.6) },
@@ -435,7 +436,7 @@ const Profile = () => {
             inputProps={{ 'aria-label': '问 FlotaAI' }}
             sx={{ fontSize: 14.5 }}
           />
-          <Button size="small" onClick={sendToAI} sx={{ flexShrink: 0, borderRadius: '8px', minWidth: 0, px: 1.5, color: aiDraft.trim() ? 'primary.main' : 'text.secondary' }}>
+          <Button size="small" onClick={sendToAI} sx={{ flexShrink: 0, borderRadius: 1, minWidth: 0, px: 1.5, color: aiDraft.trim() ? 'primary.main' : 'text.secondary' }}>
             {aiDraft.trim() ? '发送' : '打开 AI'}
           </Button>
           <PanelIconButton title="隐藏输入框" size="sm" onClick={(event) => setAiBarMenu({ el: event.currentTarget })} sx={{ mr: 0.25 }}>
@@ -488,7 +489,7 @@ const Profile = () => {
                 <Box
                   onDragOver={(event) => { event.preventDefault(); setDragOverId(null); }}
                   onDrop={() => { if (dragId) moveCard(dragId, null); setDragId(null); }}
-                  sx={{ height: 64, borderRadius: '14px', border: '1.5px dashed', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'text.secondary', fontSize: 13 }}
+                  sx={{ height: 64, borderRadius: 1.5, border: '1.5px dashed', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'text.secondary', fontSize: 13 }}
                 >
                   拖到这里放到最后
                 </Box>

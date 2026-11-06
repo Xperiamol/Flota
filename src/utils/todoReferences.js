@@ -1,3 +1,4 @@
+import { linkedTaskLabel } from './linkedTasks.js'
 // Stable references travel with Markdown and resolve through sync_id on each device.
 export const referenceUrl = (kind, id) => `app://${kind}/${encodeURIComponent(String(id))}`
 export const referenceLink = (kind, item) => `[${String(item.title || item.content || '未命名').replace(/[\\[\]\r\n]/g, ' ')}](${referenceUrl(kind, item.sync_id || item.id)})`
@@ -40,11 +41,20 @@ export function tasksForScope(todos, reference, notes = []) {
   }
   return []
 }
+// 插入引用：单条待办是一行关联任务（- [ ] [文字](app://todo/…)），待办清单是一块动态列表
 export function todoEmbedSelection(item) {
-  const list = item.kind === 'list'
-  const reference = list ? item.reference : String(item.sync_id || item.id)
-  const title = item.content || '待办清单'
-  return { type: list ? 'todoListEmbed' : 'todoEmbed', attrs: { reference, title }, markdown: referenceLink(list ? 'todo-list' : 'todo', { sync_id: reference, content: title }) }
+  if (item.kind === 'list') {
+    const title = item.content || '待办清单'
+    return { type: 'todoListEmbed', attrs: { reference: item.reference, title }, markdown: referenceLink('todo-list', { sync_id: item.reference, content: title }) }
+  }
+  const reference = String(item.sync_id || item.id)
+  const title = item.content || '待办'
+  const checked = Boolean(item.is_completed)
+  return {
+    type: 'taskList',
+    content: [{ type: 'taskItem', attrs: { checked, todoRef: reference }, content: [{ type: 'paragraph', content: [{ type: 'text', text: title }] }] }],
+    markdown: `- [${checked ? 'x' : ' '}] ${linkedTaskLabel(title, reference)}`,
+  }
 }
 
 // One relationship model drives both the note-details badge and its task section.

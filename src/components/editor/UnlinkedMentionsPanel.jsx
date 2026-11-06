@@ -5,6 +5,7 @@ import { Link as LinkIcon } from '../common/AppIcons'
 import { useStore } from '../../store/useStore'
 import { useLinkGraph } from '../../store/useLinkGraph'
 import { stripMarkdownToPreviewText } from '../../utils/markdownTextUtils'
+import { reportResult } from '../../utils/notify'
 
 // 把字符串里的正则元字符转义
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -104,7 +105,7 @@ const UnlinkedMentionsPanel = ({ noteTitle, currentNoteId }) => {
     try {
       const { newContent, count } = convertUnlinkedToLinks(note.content || '', noteTitle)
       if (count > 0 && newContent !== note.content) {
-        await updateNote(item.id, { content: newContent })
+        reportResult(await updateNote(item.id, { content: newContent }), '转为双链')
       }
     } catch (err) {
       console.warn('[UnlinkedMentionsPanel] 转链失败:', err)

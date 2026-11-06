@@ -6,7 +6,7 @@ import { FlotaPinIcon as PinIcon, FlotaWhiteboardIcon as WhiteboardIcon } from '
 import { rowActionRevealSx } from '../../styles/commonStyles'
 
 export const NOTE_LIST_GUTTER = '10px'
-const NOTE_ITEM_RADIUS = '12px'
+const NOTE_ITEM_RADIUS = 1.5
 
 /**
  * 笔记列表的一行（笔记列表与回收站共用）。memo：选中别的笔记、搜索框输入、后台刷新时，内容没变的行不重渲染

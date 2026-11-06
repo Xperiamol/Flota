@@ -1,3 +1,5 @@
+import { BLUR } from './materials';
+
 /**
  * 通用样式常量 - 统一管理组件间重复的 sx 样式
  * 减少样式碎片化，提高可维护性
@@ -25,8 +27,8 @@ export const rowActionRevealSx = {
       opacity: 0,
       borderRadius: '50%',
       background: 'transparent',
-      backdropFilter: 'blur(9px)',
-      WebkitBackdropFilter: 'blur(9px)',
+      backdropFilter: BLUR.halo,
+      WebkitBackdropFilter: BLUR.halo,
       maskImage: 'radial-gradient(ellipse closest-side, #000 35%, rgba(0,0,0,0.65) 60%, transparent 100%)',
       transition: 'opacity 150ms ease',
       pointerEvents: 'none',
@@ -179,68 +181,6 @@ export const sectionDescriptionSx = {
   color: 'text.secondary',
 };
 
-// 分段控件：液态玻璃底（半透明 + 模糊 + 顶部高光边），选中项是实心的小块
-export const segmentedControlSx = (muiTheme) => {
-  const dark = muiTheme.palette.mode === 'dark'
-  return {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '3px',
-    p: '3px',
-    borderRadius: '11px',
-    border: `1px solid ${dark ? 'rgba(255,255,255,0.09)' : 'rgba(22,22,24,0.07)'}`,
-    backgroundColor: dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.45)',
-    backgroundImage: dark
-      ? 'linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0))'
-      : 'linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0.1))',
-    backdropFilter: 'blur(16px) saturate(170%)',
-    WebkitBackdropFilter: 'blur(16px) saturate(170%)',
-    boxShadow: dark
-      ? 'inset 0 1px 0 rgba(255,255,255,0.08)'
-      : 'inset 0 1px 0 rgba(255,255,255,0.9), 0 1px 2px rgba(22,22,24,0.04)',
-  }
-};
-
-export const segmentedButtonSx = (active) => (muiTheme) => ({
-  px: 1.5,
-  py: 0.4,
-  minWidth: 0,
-  borderRadius: '7px',
-  border: '1px solid transparent',
-  textTransform: 'none',
-  lineHeight: 1.5,
-  fontSize: '0.78rem',
-  fontWeight: 650,
-  letterSpacing: '0.01em',
-  transition: 'background-color 180ms cubic-bezier(0.32,0.72,0,1), color 180ms cubic-bezier(0.32,0.72,0,1), box-shadow 180ms cubic-bezier(0.32,0.72,0,1)',
-  ...(active ? {
-    bgcolor: muiTheme.palette.mode === 'dark'
-      ? 'rgba(255,255,255,0.105)'
-      : 'rgba(255,255,255,0.82)',
-    color: muiTheme.palette.text.primary,
-    borderColor: muiTheme.palette.mode === 'dark'
-      ? 'rgba(255,255,255,0.1)'
-      : 'rgba(22,22,24,0.09)',
-    backgroundImage: 'none',
-    boxShadow: muiTheme.palette.mode === 'dark'
-      ? '0 1px 3px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.05)'
-      : '0 1px 4px rgba(22,22,24,0.07), inset 0 1px 0 rgba(255,255,255,0.8)',
-    '&:hover': {
-      bgcolor: muiTheme.palette.mode === 'dark'
-        ? 'rgba(255,255,255,0.13)'
-        : 'rgba(255,255,255,0.94)',
-    },
-  } : {
-    color: muiTheme.palette.text.secondary,
-    bgcolor: 'transparent',
-    '&:hover': {
-      bgcolor: muiTheme.palette.mode === 'dark'
-        ? 'rgba(255,255,255,0.06)'
-        : 'rgba(22,22,24,0.055)',
-      color: muiTheme.palette.text.primary,
-    },
-  }),
-});
 
 export const emptyStateSx = (muiTheme) => ({
   ...modernSurfaceSx(muiTheme),

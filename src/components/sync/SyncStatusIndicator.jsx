@@ -404,16 +404,9 @@ const SyncStatusIndicator = () => {
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         slotProps={{
           paper: {
-            sx: (theme) => ({
-              backdropFilter: theme.custom?.glass?.backdropFilter,
-              WebkitBackdropFilter: theme.custom?.glass?.backdropFilter,
-              backgroundColor: theme.custom?.glass?.background,
-              backgroundImage: theme.custom?.glass?.backgroundImage,
-              border: theme.custom?.glass?.border,
-              boxShadow: theme.custom?.glass?.boxShadow,
-              borderRadius: '8px',
+            sx: {
               maxHeight: '80vh'
-            })
+            }
           }
         }}
       >

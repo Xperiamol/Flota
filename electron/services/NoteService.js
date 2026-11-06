@@ -789,7 +789,6 @@ class NoteService extends EventEmitter {
 
       // 规范化标签
       const normalizedTags = tags.filter(tag => tag && tag.trim()).map(tag => tag.trim());
-      const tagsString = TagService.formatTags(normalizedTags);
 
       let updatedCount = 0;
       const errors = [];

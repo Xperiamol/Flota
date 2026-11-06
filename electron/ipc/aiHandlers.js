@@ -1,18 +1,14 @@
 /**
  * AI 相关 IPC handler：
  *   - ai:get-config / save-config / test-connection / test-web-search / get-providers / chat
- *   - ai:execute-pending-action
- *   - ai:chat-stream / ai:cancel-stream（流式 + 取消）
+ *   - ai:execute-pending-action / ai:consume-pending-action
+ *   - ai:session-*：会话由主进程持有（发送、停止、重新生成、确认卡状态），结果广播给所有窗口
  */
 
-const { BrowserWindow } = require('electron');
 const { registerIpcHandlers, createTryCatchHandler } = require('./helpers');
 const { getInstance: getLogger } = require('../services/LoggerService');
 
-// 只有完整对话入口做对话后自动记忆；划词面板是一次性操作，不算对话
-const AUTO_MEMORY_SCENES = new Set(['chat_panel', 'floating_panel']);
-
-const registerAIHandlers = (services, activeAIStreams) => {
+const registerAIHandlers = (services) => {
   const logger = getLogger();
   const activeGenerations = new Map();
   registerIpcHandlers([
@@ -100,91 +96,41 @@ const registerAIHandlers = (services, activeAIStreams) => {
         }
       }
     },
-    {
-      channel: 'ai:chat-stream',
-      handler: async (event, { messages, options }) => {
-        const requestId = options?.requestId || `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-        const conversationId = options?.conversationId || null;
-        const abortController = new AbortController();
-        activeAIStreams.set(requestId, abortController);
-        const startedAt = Date.now();
-        logger.info('AIChatService', 'chat-stream start', {
-          requestId,
-          conversationId,
-          scene: options?.scene || null,
-          messageCount: Array.isArray(messages) ? messages.length : 0,
-        });
+    ...sessionHandlers(services, logger),
+  ]);
+};
 
-        try {
-          if (!services.aiChatService) {
-            return { success: false, error: 'AI助手服务尚未初始化，请稍后重试' };
-          }
-
-          const win = BrowserWindow.fromWebContents(event.sender);
-          const result = await services.aiChatService.chatStream(
-            messages,
-            (chunk) => {
-              if (win && !win.isDestroyed()) {
-                win.webContents.send('ai:chat-chunk', { ...chunk, requestId, conversationId });
-              }
-            },
-            { ...options, requestId, conversationId, abortSignal: abortController.signal }
-          );
-
-          if (abortController.signal.aborted && !result?.success) {
-            logger.info('AIChatService', 'chat-stream cancelled', { requestId, conversationId, durationMs: Date.now() - startedAt });
-            return { success: false, cancelled: true, requestId, error: '已取消生成' };
-          }
-
-          logger.info('AIChatService', 'chat-stream done', {
-            requestId,
-            conversationId,
-            success: result?.success,
-            durationMs: Date.now() - startedAt,
-            truncated: result?.truncated,
-          });
-
-          // 对话后自动记忆：不阻塞本次回复，有变更时单独通知界面（带 requestId 便于挂到对应消息上）
-          if (result?.success && !result.memoryToolUsed && AUTO_MEMORY_SCENES.has(options?.scene)) {
-            services.aiChatService.processTurnMemories({
-              conversationId,
-              messages,
-              assistantText: result.fullContent,
-            }).then((changes) => {
-              if (changes.length > 0 && win && !win.isDestroyed()) {
-                win.webContents.send('mem0:auto-updated', { requestId, conversationId, changes });
-              }
-            }).catch((error) => {
-              logger.warn('AIChatService', 'auto memory failed', { requestId, error: error.message });
-            });
-          }
-          return { ...result, requestId };
-        } catch (error) {
-          if (abortController.signal.aborted) {
-            return { success: false, cancelled: true, requestId, error: '已取消生成' };
-          }
-          logger.error('AIChatService', 'chat-stream failed', { requestId, conversationId, error: error.message });
-          return { success: false, requestId, error: error.message };
-        } finally {
-          activeAIStreams.delete(requestId);
-        }
+// 会话服务在 AI 服务初始化完成后才创建；未就绪时统一返回提示
+const sessionHandlers = (services, logger) => {
+  const call = (name, method) => ({
+    channel: name,
+    handler: async (_event, ...args) => {
+      const sessions = services.conversationSessions;
+      if (!sessions) return { success: false, error: 'AI助手服务尚未初始化，请稍后重试' };
+      try {
+        return await method(sessions, ...args);
+      } catch (error) {
+        logger.error('ConversationSessions', `${name} failed`, { error: error.message });
+        return { success: false, error: error.message };
       }
     },
-    {
-      channel: 'ai:cancel-stream',
-      handler: async (_event, requestId) => {
-        try {
-          const controller = activeAIStreams.get(requestId);
-          if (!controller) return { success: false, error: '请求不存在或已结束' };
-          controller.abort();
-          logger.info('AIChatService', 'cancel-stream', { requestId });
-          return { success: true, requestId };
-        } catch (error) {
-          return { success: false, error: error.message };
-        }
-      }
-    }
-  ]);
+  });
+  return [
+    call('ai:session-send', (sessions, payload) => sessions.send(payload || {})),
+    call('ai:session-cancel', (sessions, conversationId) => sessions.cancel(conversationId)),
+    call('ai:session-retry', (sessions, payload) => sessions.retry(payload || {})),
+    call('ai:session-active-streams', (sessions) => ({ success: true, data: sessions.activeStreams() })),
+    call('ai:session-action-begin', (sessions, conversationId, actionId) => sessions.beginAction(conversationId, actionId)),
+    call('ai:session-action-finish', (sessions, conversationId, actionId, outcome) => sessions.finishAction(conversationId, actionId, outcome)),
+    call('ai:session-action-dismiss', (sessions, conversationId, actionId) => {
+      const result = sessions.dismissAction(conversationId, actionId);
+      // 同时丢弃后端暂存的动作；恢复后执行时会用卡片里保存的参数重建
+      if (result.success) services.aiChatService?.consumePendingAction?.(actionId);
+      return result;
+    }),
+    call('ai:session-action-restore', (sessions, conversationId, actionId) => sessions.restoreAction(conversationId, actionId)),
+    call('ai:session-memory-reverted', (sessions, conversationId, requestId) => sessions.markMemoryReverted(conversationId, requestId)),
+  ];
 };
 
 module.exports = { registerAIHandlers };
