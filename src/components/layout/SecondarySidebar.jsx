@@ -110,7 +110,7 @@ const clampSidebarWidth = (value, fallback) => {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(n)));
 };
 
-const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, onShowCompletedChange, viewMode, showCompleted, onMultiSelectChange, onMultiSelectRefChange, todoRefreshTrigger, todoSortBy, onTodoSortByChange, showDeleted, selectedDate, calendarRefreshTrigger, onTodoUpdated, calendarViewMode = 'todos' }) => {
+const SecondarySidebar = ({ open, overlay = false, width = 304, onTodoSelect, onViewModeChange, onShowCompletedChange, viewMode, showCompleted, onMultiSelectChange, onMultiSelectRefChange, todoRefreshTrigger, todoSortBy, onTodoSortByChange, showDeleted, selectedDate, calendarRefreshTrigger, onTodoUpdated, calendarViewMode = 'todos' }) => {
   const theme = useTheme();
   const [timelineTagSearch, setTimelineTagSearch] = useState('');
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -121,14 +121,30 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
       return width;
     }
   });
+  const containerRef = useRef(null);
+  const [availableWidth, setAvailableWidth] = useState(0);
+  useEffect(() => {
+    const parent = containerRef.current?.parentElement;
+    if (!parent) return;
+    const update = () => setAvailableWidth(parent.clientWidth);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(parent);
+    return () => observer.disconnect();
+  }, []);
+  // 只限制显示宽度，不改写用户拖动保存的宽度，拉宽窗口后可恢复。
+  const widthLimit = availableWidth > 0
+    ? Math.max(SIDEBAR_MIN_WIDTH, availableWidth - (overlay ? 48 : 480) - PANE_GAP)
+    : SIDEBAR_MAX_WIDTH;
+  const displayedWidth = Math.min(sidebarWidth, widthLimit);
   const [resizing, setResizing] = useState(false);
   const resizeStateRef = useRef(null);
 
   const handleResizeStart = useCallback((event) => {
     event.preventDefault();
-    resizeStateRef.current = { startX: event.clientX, startWidth: sidebarWidth };
+    resizeStateRef.current = { startX: event.clientX, startWidth: displayedWidth };
     setResizing(true);
-  }, [sidebarWidth]);
+  }, [displayedWidth]);
 
   useEffect(() => {
     if (!resizing) return undefined;
@@ -853,10 +869,12 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
 
   return (
     <Box
+      ref={containerRef}
+      data-secondary-sidebar
       sx={{
-        width: shouldShow ? sidebarWidth : 0,
-        minWidth: shouldShow ? sidebarWidth : 0,
-        maxWidth: shouldShow ? sidebarWidth : 0,
+        width: shouldShow ? displayedWidth : 0,
+        minWidth: shouldShow ? displayedWidth : 0,
+        maxWidth: shouldShow ? displayedWidth : 0,
         // 与主内容区之间的间隙，收起时一起收掉
         mr: shouldShow ? `${PANE_GAP}px` : 0,
         height: '100%',
@@ -866,7 +884,8 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
         pointerEvents: shouldShow ? 'auto' : 'none',
         flexShrink: 0,
         zIndex: 50,
-        position: 'relative',
+        position: overlay ? 'absolute' : 'relative',
+        ...(overlay ? { top: 0, bottom: 0, left: 0 } : {}),
         opacity: shouldShow ? 1 : 0,
         transition: resizing
           ? 'none'
@@ -879,7 +898,7 @@ const SecondarySidebar = ({ open, width = 304, onTodoSelect, onViewModeChange, o
       <Box
         sx={(themeObj) => ({
           ...liquidGlassSx(themeObj, { opacity: paneOpacityValue }),
-          width: sidebarWidth,
+          width: displayedWidth,
           height: '100%',
           boxSizing: 'border-box',
           display: 'flex',

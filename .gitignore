@@ -91,3 +91,8 @@ Flota_导出_*.json
 # 第三方许可清单（dev / build 前由 scripts/generate-third-party-licenses.cjs 生成）
 src/generated/
 build/THIRD_PARTY_NOTICES.txt
+
+# README supporting guides and historical archive
+!docs/DEVELOPMENT.md
+!docs/images/README.md
+!docs/history/README.md

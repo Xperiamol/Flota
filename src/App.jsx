@@ -132,8 +132,10 @@ function App() {
   const setAppVersion = useStore((state) => state.setAppVersion)
   const checkForUpdates = useStore((state) => state.checkForUpdates)
   const [appReady, setAppReady] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [secondarySidebarOpen, setSecondarySidebarOpen] = useState(true)
+  const [compactSidebarOpen, setCompactSidebarOpen] = useState(false)
+  const selectedSettingsTab = useStore(state => state.settingsTabValue)
+  const activeConversationId = useStore(state => state.aiActiveConvId)
   // 回收站开关放在 store 里：标题栏要显示「回收站」
   const showDeleted = useStore((state) => state.noteTrashOpen)
   const setShowDeleted = useStore((state) => state.setNoteTrashOpen)
@@ -276,6 +278,23 @@ function App() {
   }, [resolvedTheme])
 
   const isMobile = useMediaQuery(appTheme.breakpoints.down('md'))
+  const visibleSecondarySidebar = isMobile ? compactSidebarOpen : secondarySidebarOpen
+  const toggleSecondarySidebar = useCallback(() => {
+    if (isMobile) setCompactSidebarOpen(open => !open)
+    else setSecondarySidebarOpen(open => !open)
+  }, [isMobile])
+  const closeSecondarySidebar = () => {
+    setCompactSidebarOpen(false)
+    if (!isMobile) setSecondarySidebarOpen(false)
+  }
+  // 窄窗的临时抽屉不覆盖桌面布局偏好；选中内容后让出阅读空间。
+  useEffect(() => { setCompactSidebarOpen(false) }, [isMobile, currentView, selectedNoteId, selectedSettingsTab, activeConversationId])
+  useEffect(() => {
+    if (!isMobile || !compactSidebarOpen) return
+    const dismiss = event => { if (event.key === 'Escape') setCompactSidebarOpen(false) }
+    window.addEventListener('keydown', dismiss)
+    return () => window.removeEventListener('keydown', dismiss)
+  }, [isMobile, compactSidebarOpen])
   const paneOpacityValue = paneOpacity(maskOpacity, backgroundPattern)
 
   // 主题壁纸 - 注入/更新背景花纹CSS
@@ -852,7 +871,7 @@ function App() {
             state.setNoteNavigatorOpen(!state.noteNavigatorOpen)
             break
           case 'toggle-sidebar':
-            setSidebarOpen((open) => !open)
+            toggleSecondarySidebar()
             break
           default:
             break
@@ -862,7 +881,7 @@ function App() {
       }
     })
     return () => unsubscribe?.()
-  }, [])
+  }, [toggleSecondarySidebar])
 
   useEffect(() => {
     const unsubscribe = subscribePluginUiRequests((payload) => {
@@ -1041,12 +1060,7 @@ function App() {
   const handleTodoCreateFormClose = () => {
     setShowTodoCreateForm(false)
     setInitialTodoData(null)
-  }  // 在移动端自动隐藏侧边栏
-  useEffect(() => {
-    if (isMobile) {
-      setSidebarOpen(false)
-    }
-  }, [isMobile])
+  }
 
   return (
     // ErrorProvider 放在 ThemeProvider 里面：它渲染的确认框 / 输入框需要拿到应用主题（深色模式、主色）
@@ -1062,7 +1076,7 @@ function App() {
           {/* 主应用区域：左侧栏、二级侧栏、主内容区是放在背景上的三块圆角面板 */}
           <Box sx={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden', gap: `${PANE_GAP}px`, px: `${PANE_GAP}px`, pb: `${PANE_GAP}px` }}>
             {/* 主侧边栏 */}
-            <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+            <Sidebar />
 
             {/* 工具栏和内容区域 */}
             <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, minWidth: 0 }}>
@@ -1077,8 +1091,8 @@ function App() {
                 }}
               >
                 <Toolbar
-                  onToggleSidebar={() => setSecondarySidebarOpen(!secondarySidebarOpen)}
-                  sidebarOpen={secondarySidebarOpen}
+                  onToggleSidebar={toggleSecondarySidebar}
+                  sidebarOpen={visibleSecondarySidebar}
                   showDeleted={showDeleted}
                   onToggleDeleted={() => {
                     // 回收站有自己的列表和选中项：进出回收站不再清空正在编辑的笔记
@@ -1086,6 +1100,7 @@ function App() {
                     setShowDeleted(newShowDeleted);
                     if (newShowDeleted) {
                       setSecondarySidebarOpen(true);
+                      if (isMobile) setCompactSidebarOpen(true);
                       useStore.getState().loadTrash();
                     }
                   }}
@@ -1264,12 +1279,17 @@ function App() {
               )}
 
               {/* 内容区域 */}
-              <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
+              <Box sx={{ display: 'flex', flex: 1, minHeight: 0, minWidth: 0, position: 'relative' }}>
+                {isMobile && visibleSecondarySidebar && (
+                  <Box component="button" aria-label="关闭侧栏" onClick={() => setCompactSidebarOpen(false)}
+                    sx={{ position: 'absolute', inset: 0, zIndex: 49, border: 0, p: 0, bgcolor: 'rgba(0,0,0,.16)', borderRadius: 2, cursor: 'default' }} />
+                )}
                 {/* 二级侧边栏 - 始终渲染以支持动画 */}
                 <Suspense fallback={<LoadingFallback />}>
                   <SecondarySidebar
-                    open={secondarySidebarOpen}
-                    onClose={() => setSecondarySidebarOpen(false)}
+                    open={visibleSecondarySidebar}
+                    overlay={isMobile}
+                    onClose={closeSecondarySidebar}
                     onTodoSelect={setSelectedTodo}
                     onViewModeChange={setTodoViewMode}
                     onShowCompletedChange={currentView === 'calendar' ? setCalendarShowCompleted : setTodoShowCompleted}
@@ -1297,7 +1317,7 @@ function App() {
                 })}>
                   {currentView === 'notes' && (showDeleted
                     ? <TrashNotePreview />
-                    : <NoteEditor onCollapseSidebar={() => setSecondarySidebarOpen(false)} />
+                    : <NoteEditor onCollapseSidebar={closeSecondarySidebar} />
                   )}
                   <Suspense fallback={<LoadingFallback />}>
                     {currentView === 'todo' && (
