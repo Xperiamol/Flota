@@ -110,18 +110,24 @@ const SvgSourceDialog = ({
     <DialogTitle>{title}</DialogTitle>
     <DialogContent>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{description}</Typography>
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1.25fr) minmax(280px, 0.75fr)' }, gap: 2 }}>
+      {/* 编辑区固定高度：源码在输入框内部滚动，右侧预览始终完整显示并居中，不随源码长度变高或跟着滚走 */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1.25fr) minmax(280px, 0.75fr)' }, gridTemplateRows: { xs: '320px 280px', md: 'min(62vh, 600px)' }, gap: 2 }}>
         <TextField
           autoFocus
           fullWidth
           multiline
-          minRows={18}
           value={source}
           onChange={(event) => onChange(event.target.value)}
           placeholder={placeholder}
           disabled={busy}
+          sx={{
+            height: '100%',
+            minHeight: 0,
+            '& .MuiInputBase-root': { height: '100%', alignItems: 'stretch', p: 0 },
+            '& textarea': { height: '100% !important', overflow: 'auto !important', boxSizing: 'border-box', p: '14px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12.5, lineHeight: 1.55 },
+          }}
         />
-        <Box sx={{ minHeight: 360, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 2, bgcolor: 'background.default', display: 'grid', placeItems: 'center', overflow: 'hidden' }}>
+        <Box sx={{ minHeight: 0, height: '100%', p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 2, bgcolor: 'background.default', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
           <SvgSourcePreview source={source} />
         </Box>
       </Box>

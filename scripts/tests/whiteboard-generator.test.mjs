@@ -12,10 +12,12 @@ const DIAGRAM_THEME = { canvas: '#ffffff' }
 const renderMermaidNative = async code => globalThis.__renderMermaid(code)
 const renderComposer = tree => globalThis.__renderComposer(tree)
 const createSvgAsset = text => globalThis.__createSvgAsset(text)
+const isAiCanvasSvgAllowed = async () => globalThis.__svgAllowed !== false
 ` + source
-const { aiGenerateExcalidrawElements: generate } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
+const { aiGenerateExcalidrawElements: generate, buildComposerMessages } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
 const setup = replies => {
   const calls = []
+  globalThis.__svgAllowed = true
   globalThis.window = { electronAPI: { ai: { chat: async messages => { calls.push(messages); return replies.shift() } } } }
   globalThis.__renderMermaid = () => ({ elements: [{ id: 'mermaid' }] })
   globalThis.__renderComposer = () => ({ elements: [{ id: 'composer' }] })
@@ -155,4 +157,35 @@ const logger = { log() {}, warn() {} }
   assert.match(sanitized, /subgraph sg_2 \["核心处理层"\]/)
   assert.doesNotMatch(sanitized, /EmptyGroup/)
   assert.match(sanitized, /style sg_2 fill:#f9f,stroke:#333/)
+})
+
+test('关闭 AI SVG：整张 SVG 请求改走原生图元，说明里不再出现 svg 原语', async () => {
+  const calls = setup([ok(JSON.stringify({ children: [{ type: 'card', props: { title: '海报' } }] }))])
+  globalThis.__svgAllowed = false
+  const result = await generate('用 SVG 画 NTU 海报')
+  assert.equal(result.elements[0].id, 'composer')
+  assert.equal(calls.length, 1)
+  const system = calls[0][0].content
+  assert.doesNotMatch(system, /^- svg \{/m)
+  assert.doesNotMatch(system, /急救处置/)
+  assert.doesNotMatch(system, /穿插 svg/)
+  assert.match(system, /关闭 AI 绘制 SVG/)
+  assert.match(system, /stat \{/)
+})
+test('关闭 AI SVG：模型仍输出 svg 节点时替换成卡片，不发起 SVG 生成请求', async () => {
+  const tree = { children: [{ type: 'svg', props: { id: 'visual', prompt: '插画' } }, { type: 'card', props: { title: 'A' } }] }
+  const calls = setup([ok(JSON.stringify(tree))])
+  globalThis.__svgAllowed = false
+  let rendered
+  globalThis.__renderComposer = value => { rendered = value; return { elements: [{ id: 'card' }] } }
+  const result = await generate('做一张学习计划')
+  assert.equal(calls.length, 1)
+  assert.equal(rendered.children[0].type, 'card')
+  assert.equal(rendered.children[0].props.id, 'visual')
+  assert.match(result.warnings.join(), /关闭 AI 绘制 SVG/)
+})
+test('默认开启：说明里保留 svg 原语', () => {
+  const system = buildComposerMessages('x')[0].content
+  assert.match(system, /^- svg \{/m)
+  assert.match(system, /顶层 title 会渲染成画布最上方的大标题/)
 })

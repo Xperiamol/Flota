@@ -2,6 +2,7 @@ import { parseStructuredOutput } from './structuredOutput'
 import { createSvgAsset } from './svgAsset'
 import { measureTextBlock, wrapTextToWidth, randomSeed, makeRect, makeText, makeArrow } from './shared'
 import { routeConnector, placeEdgeLabel } from './composer'
+import { isAiCanvasSvgAllowed } from './canvasSvgPolicy'
 
 const NUMERIC = new Set(['x', 'y', 'width', 'height', 'fontSize', 'opacity', 'strokeWidth', 'angle'])
 const COLORS = new Set(['strokeColor', 'backgroundColor'])
@@ -11,7 +12,7 @@ const validColor = value => typeof value === 'string' && /^(#[0-9a-f]{3}|#[0-9a-
 const FIELDS = new Set([...NUMERIC, ...COLORS, 'text', 'type'])
 
 // Patch existing identities; never turn a small edit into whole-scene regeneration.
-export const applyScenePatch = (elements, patch, selectedIds = []) => {
+export const applyScenePatch = (elements, patch, selectedIds = [], { allowSvg = true } = {}) => {
   if (!Array.isArray(patch?.updates) || !Array.isArray(patch?.remove)) throw new Error('修改必须包含 updates 和 remove 数组')
   if (patch.add != null && !Array.isArray(patch.add) || patch.reroute != null && !Array.isArray(patch.reroute)) throw new Error('add 和 reroute 必须为数组')
   const byId = new Map(elements.map(element => [element.id, element]))
@@ -44,6 +45,7 @@ export const applyScenePatch = (elements, patch, selectedIds = []) => {
       if (key === 'type') next.roundness = null
     }
     if (update.svgSource != null) {
+      if (!allowSvg) throw new Error('设置中已关闭 AI 绘制 SVG，不能修改 SVG 源码')
       if (!old.customData?.svgSource || typeof update.svgSource !== 'string') throw new Error('只能对已有 SVG 元素修改源码')
       const asset = createSvgAsset(update.svgSource, { source: 'ai-edit' })
       next.fileId = asset.elements[0].fileId
@@ -167,13 +169,14 @@ export const applyScenePatch = (elements, patch, selectedIds = []) => {
 }
 
 export const editScene = async ({ elements, prompt, appState = {}, task }) => {
+  const allowSvg = await isAiCanvasSvgAllowed()
   const selected = new Set(elements.filter(element => appState.selectedElementIds?.[element.id]).map(element => element.id))
   // Excalidraw selects a container, but its bound label is part of the same editing target.
   for (const element of elements) if (selected.has(element.containerId)) selected.add(element.id)
   const selectedIds = [...selected]
   const scene = elements.filter(element => !selected.size || selected.has(element.id) || selected.has(element.startBinding?.elementId) || selected.has(element.endBinding?.elementId)).map(({ id, type, x, y, width, height, text, fontSize, strokeColor, backgroundColor, containerId, startBinding, endBinding, points, customData }) => ({
     id, type, x, y, width, height, text, fontSize, strokeColor, backgroundColor, containerId, startBinding, endBinding, points,
-    svgSource: customData?.svgSource,
+    ...(allowSvg ? { svgSource: customData?.svgSource } : { isSvg: Boolean(customData?.svgSource) || undefined }),
   }))
   const context = JSON.stringify({ selectedIds, elements: scene })
   if (context.length > 160000) throw new Error('画布内容过大，请将需要修改的区域拆到单独画布后重试')
@@ -181,7 +184,7 @@ export const editScene = async ({ elements, prompt, appState = {}, task }) => {
     { role: 'system', content: `你是画布局部编辑器。只修改用户明确要求的对象，保留其余内容、布局和元素 id。selectedIds 非空时只能修改选中的元素。
 返回严格 JSON：{"updates":[{"id":"已有id","changes":{"text":"新文字"},"svgSource":"可选的完整SVG源码"}],"remove":[],"add":[],"reroute":[]}。
 changes 仅支持 x,y,width,height,fontSize(12–160),opacity(0–100),angle,strokeWidth(0–12),strokeColor,backgroundColor,text,type（rectangle/diamond/ellipse 之间转换）。颜色为十六进制。不要返回未改变的字段。
-SVG 必须根据已有完整源码修改，保持原构图；禁止脚本、外链、foreignObject、style 标签。不要对 SVG 使用 text 字段。
+${allowSvg ? 'SVG 必须根据已有完整源码修改，保持原构图；禁止脚本、外链、foreignObject、style 标签。不要对 SVG 使用 text 字段。' : '用户已在设置中关闭 AI 绘制 SVG：不要返回 svgSource，isSvg 的元素只能移动、缩放或删除，不能改画面内容；需要改 SVG 画面时返回 {"error":"AI 绘制 SVG 已在设置中关闭"}。'}
 只在明确要求删除时使用 remove。不要用删除/重建代替局部修改。add 可新增节点 {id,type,x,y,width,height,label?,fontSize?}、文字 {id,type:"text",x,y,width,height,text} 或箭头 {id,type:"arrow",from:节点id,to:节点id}。reroute 为需要重新避障走线的绑定箭头 id 数组。已有元素保持 id；不直接修改连线尺寸或绑定。文本要适合原容器，无法实现时返回 {"error":"具体原因"}。` },
     { role: 'user', content: `需求：${prompt}\n当前场景：${context}` },
   ]
@@ -194,7 +197,7 @@ SVG 必须根据已有完整源码修改，保持原构图；禁止脚本、外�
     try {
       const patch = parseStructuredOutput(content)
       if (patch.error) throw new Error(patch.error)
-      return applyScenePatch(elements, patch, selectedIds)
+      return applyScenePatch(elements, patch, selectedIds, { allowSvg })
     } catch (error) {
       lastError = error
       messages.push({ role: 'assistant', content }, { role: 'user', content: `修改未应用：${error.message}。请修正，仍只输出 JSON。` })

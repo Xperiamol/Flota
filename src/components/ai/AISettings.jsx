@@ -46,6 +46,7 @@ const AISettings = ({ showSnackbar }) => {
     visionEnabled: false,
     autoTitleEnabled: false,
     autoTagsEnabled: false,
+    canvasSvgEnabled: true,
     webSearchEnabled: false,
     webSearchProvider: 'feedcoop',
     webSearchApiKey: '',
@@ -436,6 +437,24 @@ const AISettings = ({ showSnackbar }) => {
           </Box>
           </Box>
         </Box>
+
+      <Box sx={settingsSectionSx}>
+        <Typography variant="h6" sx={sectionTitleSx}>画布</Typography>
+
+        <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2, ...disabledSx })}>
+          <ListItemText
+            primary="允许 AI 绘制 SVG"
+            secondary="开启时 AI 可以在画布里画插画、海报等矢量图；关闭后只用可编辑的图形和文字，也不会改动已有 SVG 的画面"
+            slotProps={{ primary: { sx: { fontWeight: 650 } } }}
+          />
+          <Switch
+            checked={config.canvasSvgEnabled !== false}
+            onChange={(e) => handleConfigChange('canvasSvgEnabled', e.target.checked)}
+            color="primary"
+            disabled={!config.enabled}
+          />
+        </Box>
+      </Box>
 
       <Box sx={settingsSectionSx}>
         <Typography variant="h6" sx={sectionTitleSx}>自动整理</Typography>

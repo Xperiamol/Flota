@@ -259,7 +259,8 @@ export const makeText = ({ x, y, text, fontSize = 16, color, align = 'center', v
   }
 }
 
-export const makeRect = ({ x, y, width, height, bg, stroke, strokeWidth = 1, rounded = true, dashed = false }) => ({
+// radius：圆角像素（Excalidraw 自适应圆角，短边很小时按 25% 收小）；不传沿用 Excalidraw 默认 32
+export const makeRect = ({ x, y, width, height, bg, stroke, strokeWidth = 1, rounded = true, dashed = false, radius }) => ({
   ...makeBase('rectangle'),
   x,
   y,
@@ -270,7 +271,7 @@ export const makeRect = ({ x, y, width, height, bg, stroke, strokeWidth = 1, rou
   strokeWidth,
   strokeStyle: dashed ? 'dashed' : 'solid',
   roughness: 0,
-  roundness: rounded ? { type: 3 } : null,
+  roundness: !rounded || radius === 0 ? null : (Number.isFinite(radius) ? { type: 3, value: radius } : { type: 3 }),
 })
 
 export const makeEllipse = ({ x, y, width, height, bg, stroke, strokeWidth = 1 }) => ({

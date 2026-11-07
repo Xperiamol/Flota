@@ -88,6 +88,8 @@ export const placeNode = (node, x, y, w, out) => {
   node._y = y
   // 指定了宽度的容器按自身量好的宽度落位，不被父容器的 stretch 拉宽，否则背景框与内容宽度不一致。
   if (explicitWidth(node) != null) w = node._w
+  // 装饰图形保持自身尺寸：圆不能被拉成扁椭圆，写了 w 的矩形不被拉满整行
+  if (node.type === 'ellipse' || (node.type === 'rect' && Number.isFinite(node.props?.w))) w = node._w
   node._wp = w ?? node._w
   const def = getDef(node.type)
   const startIdx = out.length
@@ -103,8 +105,29 @@ export const placeNode = (node, x, y, w, out) => {
 
 const childList = (node) => Array.isArray(node.children) ? node.children.filter(Boolean) : []
 
+// 圆角：节点可用 props.radius 覆盖（0 为直角），否则用各原语的默认值；外层容器大、内层元素小，嵌套时视觉协调
+const radiusOf = (p, fallback) => { const r = Number(p?.radius); return p?.radius != null && Number.isFinite(r) && r >= 0 ? Math.min(r, 64) : fallback }
+
 // 容器被父级压得很窄时收小内边距，保证内容区至少 40px，避免内边距吃掉全部宽度、得出负尺寸而整张画布失败。
 const fitPadding = (pad, maxW) => (maxW != null ? Math.min(pad, Math.max(0, Math.floor((maxW - 40) / 2))) : pad)
+
+// 纵向容器没有宽度上限时，子节点先按自然宽度量；容器宽度定下来后，会被拉伸的子节点要按最终宽度重量，
+// 否则背景框被拉宽而文字仍按窄宽度换行（右侧大片空白）。返回重量后的子节点总高度。
+const remeasureStretched = (kids, contentW, gap) => {
+  let totalH = 0
+  kids.forEach((c, i) => {
+    if (explicitWidth(c) == null && c._w < contentW - 0.5) measureNode(c, contentW)
+    totalH += c._h
+    if (i < kids.length - 1) totalH += gap
+  })
+  return totalH
+}
+
+// 横排/网格 align:"stretch"：同一行里带底框的子节点拉到行高，卡片等高
+const HEIGHT_STRETCH_TYPES = new Set(['card', 'stat', 'group', 'stack.v', 'callout', 'quote', 'list', 'rect', 'image', 'table'])
+const stretchHeight = (c, h) => { if (HEIGHT_STRETCH_TYPES.has(c.type) && c._h < h) c._h = h }
+
+const DECOR_TYPES = new Set(['rect', 'ellipse', 'divider', 'line'])
 
 // Reject malformed plans before measurement; silent fallback used to hide missing content.
 export const validateComposerTree = (root, connectors = []) => {
@@ -120,11 +143,15 @@ export const validateComposerTree = (root, connectors = []) => {
     }
     for (const key of ['x', 'y', 'w', 'h', 'size', 'gap', 'padding', 'cols', 'fontSize', 'titleSize', 'bodySize', 'nodeMaxW', 'nodeGap', 'layerGap']) {
       if (p[key] == null) continue
-      if (!Number.isFinite(p[key]) || p[key] < 0 || p[key] > 10000) throw new Error(`${node.type}.${key} 必须是合理的非负数值`)
-      if (['w', 'h', 'size'].includes(key) && p[key] < 16) throw new Error(`${key} 不能小于 16`)
+      if ((key === 'x' || key === 'y') && Number.isFinite(p[key]) && p[key] < 0) throw new Error(`${node.type}.${key} 不能为负：原生图元无法裁切，超出 canvas 的部分会露在画框外；装饰图形请整体放在 canvas 范围内（可缩小或移到边缘内侧）`)
+      if (!Number.isFinite(p[key]) || p[key] < 0 || p[key] > 10000) throw new Error(`${node.type}.${key} 必须是 0–10000 的数值`)
+      // 装饰图形（细线、色带、小圆点）可以很小；其余节点太小会放不下文字
+      const minSize = DECOR_TYPES.has(node.type) ? 1 : 16
+      if (['w', 'h', 'size'].includes(key) && p[key] < minSize) throw new Error(`${node.type}.${key} 不能小于 ${minSize}`)
       if (['fontSize', 'titleSize', 'bodySize'].includes(key) && (p[key] < 12 || p[key] > 120)) throw new Error('字号必须在 12–120 之间')
       if (key === 'cols' && (!Number.isInteger(p.cols) || p.cols < 1 || p.cols > 12)) throw new Error('网格列数必须为 1–12')
     }
+    if (node.type === 'icon' && /^[a-z][a-z_-]{2,}$/i.test(String(p.symbol || ''))) throw new Error(`icon.symbol 要写 emoji 或单个符号（如 🚲 ★ ✓），不是名称：${p.symbol}`)
     if (node.children != null && !Array.isArray(node.children)) throw new Error('children 必须为数组')
     if (p.edges != null && !Array.isArray(p.edges)) throw new Error('edges 必须为数组')
     edges.push(...(p.edges || []))
@@ -160,7 +187,7 @@ register('canvas', {
   },
   place(node, x, y, w, out) {
     const p = node.props || {}
-    if (p.bg) out.push(makeRect({ x, y, width: w, height: node._h, bg: p.bg, stroke: 'transparent', strokeWidth: 0 }))
+    if (p.bg) out.push(makeRect({ x, y, width: w, height: node._h, bg: p.bg, stroke: 'transparent', strokeWidth: 0, radius: radiusOf(node.props, 24) }))
     for (const child of childList(node)) placeNode(child, x + (child.props?.x ?? 0), y + (child.props?.y ?? 0), child._w, out)
   },
 })
@@ -211,6 +238,7 @@ register('rect', {
       strokeWidth: p.strokeWidth || 1.4,
       rounded: p.rounded !== false,
       dashed: !!p.dashed,
+      radius: radiusOf(node.props, 12),
     }))
   },
 })
@@ -307,6 +335,7 @@ register('card', {
       stroke: p.stroke || DIAGRAM_THEME.border,
       strokeWidth: 1,
       rounded: true,
+      radius: radiusOf(node.props, 14),
     }))
     const pad = node._pad
     let cy = y + pad
@@ -338,6 +367,7 @@ register('stack.v', {
       if (i < kids.length - 1) totalH += gap
     })
     const contentW = innerMaxW != null ? innerMaxW : maxChildW
+    if (innerMaxW == null && (p.align || 'stretch') === 'stretch') totalH = remeasureStretched(kids, contentW, gap)
     node._pad = pad; node._gap = gap; node._contentW = contentW
     return { w: contentW + pad * 2, h: totalH + pad * 2 }
   },
@@ -353,6 +383,7 @@ register('stack.v', {
         stroke: p.stroke || 'transparent',
         strokeWidth: p.stroke ? 1.4 : 0,
         rounded: p.rounded !== false,
+        radius: radiusOf(node.props, 16),
       }))
     }
     let cy = y + pad
@@ -418,8 +449,9 @@ register('stack.h', {
     if (justify === 'center') cx += extra / 2
     else if (justify === 'end') cx += extra
     else if (justify === 'between' && kids.length > 1) gap += extra / (kids.length - 1)
+    if (valign === 'stretch') kids.forEach((c) => stretchHeight(c, node._rowH))
     for (const c of kids) {
-      const cy = valign === 'start' ? y + pad
+      const cy = valign === 'start' || valign === 'stretch' ? y + pad
         : valign === 'end' ? y + pad + node._rowH - c._h
           : y + pad + (node._rowH - c._h) / 2
       placeNode(c, cx, cy, c._w, out)
@@ -476,6 +508,7 @@ register('grid', {
       const cx = x + pad + col * (colW + gap)
       let cy = y + pad
       for (let rr = 0; rr < r; rr++) cy += rowH[rr] + gap
+      if (node.props?.align === 'stretch') stretchHeight(c, rowH[r])
       placeNode(c, cx, cy, colW, out)
     })
   },
@@ -509,11 +542,13 @@ register('screen', {
     out.push(makeRect({
       x, y, width: w, height: node._h,
       bg: DIAGRAM_THEME.surface, stroke: DIAGRAM_THEME.border, strokeWidth: 1, rounded: true,
+      radius: radiusOf(node.props, 20),
     }))
     // 标题栏
     out.push(makeRect({
       x, y, width: w, height: node._titleH,
       bg: accent.bg, stroke: accent.stroke, strokeWidth: 0, rounded: true,
+      radius: radiusOf(node.props, 20),
     }))
     const title = String(p.title || '')
     const tm = measureTextBlock(title, 14)
@@ -536,7 +571,7 @@ register('nav.top', {
   },
   place(node, x, y, w, out) {
     const p = node.props || {}
-    out.push(makeRect({ x, y, width: w, height: node._h, bg: '#f2f2f3', stroke: '#d1d1d5', strokeWidth: 1, rounded: true }))
+    out.push(makeRect({ x, y, width: w, height: node._h, bg: '#f2f2f3', stroke: '#d1d1d5', strokeWidth: 1, rounded: true, radius: radiusOf(node.props, 12) }))
     const cy = y + (node._h - 16) / 2
     if (p.back) {
       out.push(makeText({ x: x + 12, y: cy, text: '←', fontSize: 16, color: DIAGRAM_THEME.text, align: 'left', metrics: measureTextBlock('←', 16) }))
@@ -563,7 +598,7 @@ register('nav.bottom', {
   place(node, x, y, w, out) {
     const p = node.props || {}
     const tabs = Array.isArray(p.tabs) ? p.tabs : []
-    out.push(makeRect({ x, y, width: w, height: node._h, bg: '#fafafa', stroke: '#d1d1d5', strokeWidth: 1, rounded: true }))
+    out.push(makeRect({ x, y, width: w, height: node._h, bg: '#fafafa', stroke: '#d1d1d5', strokeWidth: 1, rounded: true, radius: radiusOf(node.props, 12) }))
     if (!tabs.length) return
     const cellW = w / tabs.length
     const active = p.active != null ? p.active : 0
@@ -592,7 +627,7 @@ register('input', {
       out.push(makeText({ x, y: cy, text: p.label, fontSize: 12, color: DIAGRAM_THEME.textSecondary, align: 'left', metrics: lm }))
       cy += node._labelH
     }
-    out.push(makeRect({ x, y: cy, width: w, height: 38, bg: '#ffffff', stroke: '#d1d1d5', strokeWidth: 1.2, rounded: true }))
+    out.push(makeRect({ x, y: cy, width: w, height: 38, bg: '#ffffff', stroke: '#d1d1d5', strokeWidth: 1.2, rounded: true, radius: radiusOf(node.props, 10) }))
     const ph = String(p.value || p.placeholder || '')
     if (ph) {
       const pm = measureTextBlock(ph, 13)
@@ -625,6 +660,7 @@ register('button', {
         x, y, width: w, height: node._h,
         bg: btnBg,
         stroke: c.stroke, strokeWidth: 1.2, rounded: true,
+        radius: radiusOf(node.props, 10),
       }))
     }
     const color = isText ? DIAGRAM_THEME.semantics.primary.stroke : (variant === 'primary' ? '#ffffff' : c.stroke)
@@ -666,14 +702,14 @@ register('list', {
     return { w, h: Math.max(LIST_MIN_ROW_H, total) }
   },
   place(node, x, y, w, out) {
-    out.push(makeRect({ x, y, width: w, height: node._h, bg: '#ffffff', stroke: '#e6e6e8', strokeWidth: 1.2, rounded: true }))
+    out.push(makeRect({ x, y, width: w, height: node._h, bg: '#ffffff', stroke: '#e6e6e8', strokeWidth: 1.2, rounded: true, radius: radiusOf(node.props, 12) }))
     let ry = y
     node._rows.forEach((row, i) => {
       if (i > 0) out.push(makeLine({ x: x + 8, y: ry, points: [[0, 0], [w - 16, 0]], stroke: '#eef2f7', strokeWidth: 1 }))
       const { obj, hasCheck, leadX, trailing, trailM, titleWrap, subWrap, titleM, subM, h } = row
       if (hasCheck) {
         const checked = obj.checkbox === true || obj.done === true
-        out.push(makeRect({ x: x + 12, y: ry + (h - 16) / 2, width: 16, height: 16, bg: checked ? DIAGRAM_THEME.semantics.success.bg : '#ffffff', stroke: checked ? DIAGRAM_THEME.semantics.success.stroke : '#9d9da5', strokeWidth: 1.2, rounded: true }))
+        out.push(makeRect({ x: x + 12, y: ry + (h - 16) / 2, width: 16, height: 16, bg: checked ? DIAGRAM_THEME.semantics.success.bg : '#ffffff', stroke: checked ? DIAGRAM_THEME.semantics.success.stroke : '#9d9da5', strokeWidth: 1.2, rounded: true, radius: 4 }))
       }
       const tx = x + leadX
       const contentH = titleM.height + (subWrap ? subM.height : 0)
@@ -714,10 +750,10 @@ register('table', {
     return { w: target, h: node._tableRows.reduce((sum, row) => sum + row.height, 0) }
   },
   place(node, x, y, w, out) {
-    out.push(makeRect({ x, y, width: w, height: node._h, bg: DIAGRAM_THEME.surface, stroke: DIAGRAM_THEME.border, strokeWidth: 1, rounded: true }))
+    out.push(makeRect({ x, y, width: w, height: node._h, bg: DIAGRAM_THEME.surface, stroke: DIAGRAM_THEME.border, strokeWidth: 1, rounded: true, radius: radiusOf(node.props, 12) }))
     let ry = y
     for (const row of node._tableRows) {
-      if (row.header) out.push(makeRect({ x, y: ry, width: w, height: row.height, bg: DIAGRAM_THEME.semantics.neutral.bg, stroke: 'transparent', strokeWidth: 0, rounded: true }))
+      if (row.header) out.push(makeRect({ x, y: ry, width: w, height: row.height, bg: DIAGRAM_THEME.semantics.neutral.bg, stroke: 'transparent', strokeWidth: 0, rounded: true, radius: radiusOf(node.props, 12) }))
       else if (ry > y) out.push(makeLine({ x: x + 12, y: ry, points: [[0, 0], [w - 24, 0]], stroke: DIAGRAM_THEME.border, strokeWidth: 1 }))
       let cx = x
       row.cells.forEach((cell, i) => {
@@ -740,7 +776,7 @@ register('image', {
     return { w, h: p.h || Math.round(w * ratio) }
   },
   place(node, x, y, w, out) {
-    out.push(makeRect({ x, y, width: w, height: node._h, bg: '#f2f2f3', stroke: '#d1d1d5', strokeWidth: 1.2, rounded: true }))
+    out.push(makeRect({ x, y, width: w, height: node._h, bg: '#f2f2f3', stroke: '#d1d1d5', strokeWidth: 1.2, rounded: true, radius: radiusOf(node.props, 12) }))
     out.push(makeLine({ x, y, points: [[0, 0], [w, node._h]], stroke: '#d1d1d5', strokeWidth: 1 }))
     out.push(makeLine({ x, y, points: [[w, 0], [0, node._h]], stroke: '#d1d1d5', strokeWidth: 1 }))
     const label = String((node.props || {}).label || '图片')
@@ -815,7 +851,7 @@ register('badge', {
   },
   place(node, x, y, w, out) {
     const c = toColor((node.props || {}).tone) || DIAGRAM_THEME.semantics.neutral
-    out.push(makeRect({ x, y, width: w, height: node._h, bg: c.bg, stroke: c.stroke, strokeWidth: 1, rounded: true }))
+    out.push(makeRect({ x, y, width: w, height: node._h, bg: c.bg, stroke: c.stroke, strokeWidth: 1, rounded: true, radius: radiusOf(node.props, 6) }))
     out.push(makeText({ x: x + (w - node._m.width) / 2, y: y + (node._h - node._m.height) / 2, text: node._txt, fontSize: 13, color: c.stroke, align: 'center', metrics: node._m, bg: c.bg }))
   },
 })
@@ -849,7 +885,7 @@ register('callout', {
   },
   place(node, x, y, w, out) {
     const c = toColor((node.props || {}).tone) || DIAGRAM_THEME.semantics.accent
-    out.push(makeRect({ x, y, width: w, height: node._h, bg: c.bg, stroke: c.stroke, strokeWidth: 1, rounded: true }))
+    out.push(makeRect({ x, y, width: w, height: node._h, bg: c.bg, stroke: c.stroke, strokeWidth: 1, rounded: true, radius: radiusOf(node.props, 12) }))
     out.push(makeText({ x: x + 14, y: y + 8, text: node._wrap, fontSize: 14, color: c.stroke, align: 'left', metrics: node._m, bg: c.bg }))
   },
 })
@@ -871,6 +907,7 @@ register('group', {
       if (i < kids.length - 1) totalH += gap
     })
     const contentW = innerMaxW != null ? innerMaxW : Math.max(maxChildW, Math.min(420, measureTextBlock(p.title || '', 18).width))
+    if (innerMaxW == null) totalH = remeasureStretched(kids, contentW, gap)
     node._title = wrapTextToWidth(p.title || '', contentW, 18)
     const titleH = p.title ? measureTextBlock(node._title, 18).height + 20 : 0
     node._pad = pad; node._gap = gap; node._titleH = titleH; node._contentW = contentW
@@ -887,6 +924,7 @@ register('group', {
       strokeWidth: 1,
       rounded: true,
       dashed: p.dashed === true,
+      radius: radiusOf(node.props, 20),
     }))
     let cy = y + node._pad
     if (p.title) {
@@ -1288,6 +1326,7 @@ const renderConnectors = (root, connectors, out) => {
       out.push(makeRect({
         x: lx, y: ly, width: lw, height: lh,
         bg: DIAGRAM_THEME.labelBg, stroke: 'transparent', strokeWidth: 0, rounded: true,
+        radius: 6,
       }))
       out.push(makeText({
         x: lx + 4, y: ly + 2,

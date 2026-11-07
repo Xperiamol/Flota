@@ -12,6 +12,7 @@ import { computeOffset, DIAGRAM_THEME } from './diagrams/shared'
 import { renderMermaidNative } from './diagrams/mermaidNative'
 import { renderComposer } from './diagrams/composer'
 import { createSvgAsset } from './diagrams/svgAsset'
+import { isAiCanvasSvgAllowed } from './diagrams/canvasSvgPolicy'
 
 // 只有 Mermaid 快路径需要 DSL 元信息；其它类型统一由 Composer 描述。
 
@@ -206,13 +207,11 @@ const classifyCanvasRoute = (diagramIntent) => {
 // 让 LLM 用「原语 + 布局容器」自由组合一棵节点树，由 composer 引擎两遍式布局。
 // LLM 永不算坐标，只描述结构。这是 flowchart/mindmap 之外的默认路径。
 
-const buildComposerMessages = (userRequest) => [
-  {
-    role: 'system',
-    content: `你是 Flota 白板设计器。只返回严格 JSON，不要 Markdown、注释、Mermaid 或解释。
+const COMPOSER_SYSTEM_PROMPT = `你是 Flota 白板设计器。只返回严格 JSON，不要 Markdown、注释、Mermaid 或解释。
 
 格式：
 {"title":"可选","layout":{"type":"stack.v","gap":32},"children":[],"connectors":[{"from":"id","to":"id","label":"可选","dashed":false,"curve":false}]}
+- 顶层 title 会渲染成画布最上方的大标题；children 里已经自己写了标题时不要再填顶层 title，避免重复
 
 容器：
 - stack.v / stack.h / grid：props 可含 gap、padding、align、cols、w、bg；stack.h 还可用 justify(start|center|end|between|stretch)，stretch 让未写 w 的块级子节点等宽填满整行
@@ -224,7 +223,7 @@ const buildComposerMessages = (userRequest) => [
 内容：
 - text {content,level,fontSize?,color?,align?,w?}；card {title,body,tone?,fill?,stroke?,titleColor?,bodyColor?,titleSize?,bodySize?,padding?,w?}；list {items}
 - rect {w,h,fill,stroke,strokeWidth?,rounded?}；ellipse {w,h,fill,stroke} 用作克制的视觉装饰
-- callout {text,tone}；badge {text,tone}；icon {symbol,size}
+- callout {text,tone}；badge {text,tone}；icon {symbol:emoji 或单个符号如 🚲 ★ ✓,size}
 - table {headers,rows}；input {label,placeholder}；button {label,variant}
 - avatar {label,size}；divider；image {label,ratio}
 - stat {value,unit?,label?,delta?,trend?(up|down|flat),tone?,size?,align?,plain?}：关键数字
@@ -233,6 +232,8 @@ const buildComposerMessages = (userRequest) => [
 - timeline {items:[{time,title,body?,tone?}], direction?(v|h)}；steps {items:[字符串或{title,body?}], current?, direction?(h|v), tone?}
 - quote {text,author?,tone?,size?,plain?}
 - svg {prompt,title?,w?,h?}：局部整体矢量插画，生成后不能拆分编辑
+- stack.h / grid 加 align:"stretch" 时同一行带底框的子节点等高（stack.h 默认 center 垂直居中）
+- 带底框的原语（card/group/stat/callout/quote/list/table/rect/badge/button/input/progress 等）都可加 radius（圆角像素，0 为直角）；默认外层大、内层小，统一风格时再改
 
 原则：
 1. 结构、步骤和关系用可编辑原生节点；局部插画、场景图、装饰性视觉可穿插 svg，不必二选一。
@@ -243,8 +244,19 @@ const buildComposerMessages = (userRequest) => [
 6. 原生 fill/stroke/bg/color 使用 #RGB、#RRGGBB、rgb() 或 transparent；不能填 CSS 渐变、变量或颜色对象。渐变使用 svg 原语。
 
 混合示例：
-{"title":"急救处置","layout":{"type":"grid","cols":2,"gap":32},"children":[{"type":"svg","props":{"prompt":"中性医学科教风格的人体急救姿势抽象插画，蓝绿色，无血腥","w":420,"h":360}},{"type":"group","props":{"title":"处置流程","tone":"primary","padding":20,"gap":16},"children":[{"type":"graph","props":{"direction":"TB","edges":[{"from":"a","to":"b"},{"from":"b","to":"c"}]},"children":[{"type":"card","props":{"id":"a","title":"评估环境"}},{"type":"card","props":{"id":"b","title":"呼叫支援","tone":"warning"}},{"type":"card","props":{"id":"c","title":"持续观察","tone":"success"}}]}]}]}`,
-  },
+{"title":"急救处置","layout":{"type":"grid","cols":2,"gap":32},"children":[{"type":"svg","props":{"prompt":"中性医学科教风格的人体急救姿势抽象插画，蓝绿色，无血腥","w":420,"h":360}},{"type":"group","props":{"title":"处置流程","tone":"primary","padding":20,"gap":16},"children":[{"type":"graph","props":{"direction":"TB","edges":[{"from":"a","to":"b"},{"from":"b","to":"c"}]},"children":[{"type":"card","props":{"id":"a","title":"评估环境"}},{"type":"card","props":{"id":"b","title":"呼叫支援","tone":"warning"}},{"type":"card","props":{"id":"c","title":"持续观察","tone":"success"}}]}]}]}`
+
+// 设置里关闭了 AI SVG 时，从说明里去掉 svg 原语及相关规则，并明确告知不可用
+const withoutSvg = (prompt) => prompt
+  .split('\n')
+  .filter(line => !/^- svg \{/.test(line) && !/^4\. SVG 最多/.test(line) && !/^混合示例|^\{"title":"急救处置"/.test(line))
+  .join('\n')
+  .replace('；局部插画、场景图、装饰性视觉可穿插 svg，不必二选一', '')
+  .replace('渐变使用 svg 原语。', '不使用渐变。')
+  .trimEnd() + '\n7. 用户已在设置中关闭 AI 绘制 SVG：不能使用 svg 原语；插画、氛围类需求用原生图元（rect/ellipse/icon/卡片配色）表达。'
+
+export const buildComposerMessages = (userRequest, { allowSvg = true } = {}) => [
+  { role: 'system', content: allowSvg ? COMPOSER_SYSTEM_PROMPT : withoutSvg(COMPOSER_SYSTEM_PROMPT) },
   { role: 'user', content: userRequest },
 ]
 
@@ -256,8 +268,8 @@ const validateComposerCanvasTree = (parsed) => {
   return parsed
 }
 
-const planComposerCanvas = async (userRequest, task) => {
-  const messages = buildComposerMessages(userRequest)
+const planComposerCanvas = async (userRequest, task, opts) => {
+  const messages = buildComposerMessages(userRequest, opts)
   const res = await (task ? task.chat : window.electronAPI.ai.chat)(
     messages,
     { temperature: 0.4, timeoutMs: 600000, bypassTokenLimit: true },
@@ -269,9 +281,9 @@ const planComposerCanvas = async (userRequest, task) => {
   return validateComposerCanvasTree(parsed)
 }
 
-const replanComposerCanvasWithFeedback = async (userRequest, previousTree, generationError, task) => {
+const replanComposerCanvasWithFeedback = async (userRequest, previousTree, generationError, task, opts) => {
   const messages = [
-    ...buildComposerMessages(userRequest),
+    ...buildComposerMessages(userRequest, opts),
     {
       role: 'assistant',
       content: previousTree
@@ -400,11 +412,16 @@ const fallbackSvgNodeToCard = (node) => {
   }
 }
 
-const hydrateComposerSvgNodes = async (tree, userRequest, task) => {
+const hydrateComposerSvgNodes = async (tree, userRequest, task, { allowSvg = true } = {}) => {
   const nodes = collectComposerSvgNodes(tree)
   const warnings = []
   for (let index = 0; index < nodes.length; index += 1) {
     const node = nodes[index]
+    if (!allowSvg) {
+      if (index === 0) warnings.push('设置中已关闭 AI 绘制 SVG，插画位置已替换为文字卡片')
+      fallbackSvgNodeToCard(node)
+      continue
+    }
     if (index >= MAX_COMPOSER_SVGS) {
       warnings.push('局部 SVG 超过 4 个，超出部分已替换为文字卡片')
       fallbackSvgNodeToCard(node)
@@ -500,19 +517,19 @@ const renderComposerTree = (tree, offsets) => {
   throw new Error('composer 渲染结果为空')
 }
 
-const renderComposerWithReflection = async (description, offsets, task) => {
+const renderComposerWithReflection = async (description, offsets, task, opts) => {
   let tree = null
   try {
-    tree = await planComposerCanvas(description, task)
-    const warnings = await hydrateComposerSvgNodes(tree, description, task)
+    tree = await planComposerCanvas(description, task, opts)
+    const warnings = await hydrateComposerSvgNodes(tree, description, task, opts)
     logger.log('[aiExcalidrawGenerator] 命中 composer 路径')
     return { ...renderComposerTree(tree, offsets), warnings }
   } catch (firstError) {
     if (!shouldUseModelReflection(firstError)) throw firstError
     logger.warn('[aiExcalidrawGenerator] composer 首次生成/渲染失败，触发模型反思重写:', firstError.message)
     try {
-      const fixedTree = await replanComposerCanvasWithFeedback(description, tree, firstError, task)
-      const warnings = await hydrateComposerSvgNodes(fixedTree, description, task)
+      const fixedTree = await replanComposerCanvasWithFeedback(description, tree, firstError, task, opts)
+      const warnings = await hydrateComposerSvgNodes(fixedTree, description, task, opts)
       const result = { ...renderComposerTree(fixedTree, offsets), warnings }
       logger.log('[aiExcalidrawGenerator] composer 反思重写后渲染成功')
       return result
@@ -524,7 +541,7 @@ const renderComposerWithReflection = async (description, offsets, task) => {
 
 // ─── 对外主入口 ────────────────────────────────────
 
-async function generateCanvasOnce(description, existingElements = [], task, fixedIntent) {
+async function generateCanvasOnce(description, existingElements = [], task, fixedIntent, opts = {}) {
   const offsets = computeOffset(existingElements)
   logger.log('[aiExcalidrawGenerator] 输入:', description, 'offset:', offsets)
 
@@ -557,7 +574,7 @@ async function generateCanvasOnce(description, existingElements = [], task, fixe
 
   // ── 路由 2（默认）：composer 通用合成引擎（原语 + 布局容器）──
   try {
-    return await renderComposerWithReflection(description, offsets, task)
+    return await renderComposerWithReflection(description, offsets, task, opts)
   } catch (err) {
     logger.warn('[aiExcalidrawGenerator] composer 路径失败:', err.message)
     throw normalizeWhiteboardError(err)
@@ -565,7 +582,11 @@ async function generateCanvasOnce(description, existingElements = [], task, fixe
 }
 
 export async function aiGenerateExcalidrawElements(description, existingElements = [], task) {
-  const intent = classifyDiagramIntent(description)
+  const allowSvg = await isAiCanvasSvgAllowed()
+  let intent = classifyDiagramIntent(description)
+  // 关闭 SVG 时，原本要整张画成 SVG 的请求改用可编辑原生图元
+  if (!allowSvg && intent.blockType === 'svg') intent = { mode: 'composition', blockType: null, reason: '设置中已关闭 AI SVG，改用原生图元' }
+  const opts = { allowSvg }
   const stamp = result => {
     const { route, blockType } = classifyCanvasRoute(intent)
     const [first, ...rest] = result.elements || []
@@ -573,14 +594,14 @@ export async function aiGenerateExcalidrawElements(description, existingElements
     const flotaGeneration = { engine: route === 'flowchart' ? 'mermaid' : route, diagramType: blockType || 'composition' }
     return { ...result, elements: [{ ...first, customData: { ...first.customData, flotaGeneration } }, ...rest] }
   }
-  const result = stamp(await generateCanvasOnce(description, existingElements, task, intent))
+  const result = stamp(await generateCanvasOnce(description, existingElements, task, intent, opts))
   if (!window.electronAPI?.ai?.getConfig) return result
   try {
     const { reviewCanvas } = await import('./diagrams/visualReview')
     const issues = await reviewCanvas(result, description, task)
     if (!issues?.length) return result
     const prior = result.elements?.length === 1 ? result.elements[0]?.customData?.svgSource : null
-    return stamp(await generateCanvasOnce(`${description}\n\n上一稿渲染后的视觉复核要求（保持原需求与事实，仅修正这些问题）：\n${issues.join('\n')}${prior ? `\n上一稿 SVG：\n${prior}` : ''}`, existingElements, task, intent))
+    return stamp(await generateCanvasOnce(`${description}\n\n上一稿渲染后的视觉复核要求（保持原需求与事实，仅修正这些问题）：\n${issues.join('\n')}${prior ? `\n上一稿 SVG：\n${prior}` : ''}`, existingElements, task, intent, opts))
   } catch (error) {
     if (task?.signal.aborted || error?.name === 'AbortError') throw error
     logger.warn('[aiExcalidrawGenerator] 视觉复核未完成:', error.message)

@@ -142,6 +142,7 @@ class AIService extends EventEmitter {
       const webSearchCountSetting = this.settingDAO.get('web_search_count');
       const autoTitleSetting = this.settingDAO.get('ai_auto_title_enabled');
       const autoTagsSetting = this.settingDAO.get('ai_auto_tags_enabled');
+      const canvasSvgSetting = this.settingDAO.get('ai_canvas_svg_enabled');
 
       // 解密失败（钥匙串暂不可用、应用更新后签名变化等）只在本次返回空值，绝不回写清空：
       // 以前这里会把密钥永久删掉，表现为 AI 功能“莫名其妙失效”。用户重新填写即可覆盖。
@@ -169,7 +170,9 @@ class AIService extends EventEmitter {
         webSearchApiUrl: webSearchApiUrlSetting ? webSearchApiUrlSetting.value : '',
         webSearchCount: webSearchCountSetting ? webSearchCountSetting.value : 5,
         autoTitleEnabled: autoTitleSetting ? autoTitleSetting.value : false,
-        autoTagsEnabled: autoTagsSetting ? autoTagsSetting.value : false
+        autoTagsEnabled: autoTagsSetting ? autoTagsSetting.value : false,
+        // 默认开启：没设置过或值异常都视为允许
+        canvasSvgEnabled: canvasSvgSetting ? canvasSvgSetting.value !== false && canvasSvgSetting.value !== 'false' : true
       };
 
       return {
@@ -227,6 +230,9 @@ class AIService extends EventEmitter {
       }
       if (config.autoTitleEnabled !== undefined) {
         this.settingDAO.set('ai_auto_title_enabled', isEnabledSetting(config.autoTitleEnabled), 'boolean', '切换笔记时自动 AI 生成空标题');
+      }
+      if (config.canvasSvgEnabled !== undefined) {
+        this.settingDAO.set('ai_canvas_svg_enabled', isEnabledSetting(config.canvasSvgEnabled), 'boolean', '是否允许 AI 在画布中绘制 SVG');
       }
       if (config.autoTagsEnabled !== undefined) {
         this.settingDAO.set('ai_auto_tags_enabled', isEnabledSetting(config.autoTagsEnabled), 'boolean', '切换笔记时自动 AI 推荐标签');

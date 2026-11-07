@@ -36,6 +36,10 @@ const block = (str, size, maxW) => {
   return { wrapped, m: measureTextBlock(wrapped, size) }
 }
 
+
+// 圆角：节点可用 props.radius 覆盖（0 为直角），否则用各原语的默认值；外层容器大、内层元素小，嵌套时视觉协调
+const radiusOf = (p, fallback) => { const r = Number(p?.radius); return p?.radius != null && Number.isFinite(r) && r >= 0 ? Math.min(r, 64) : fallback }
+
 export const registerDataPrimitives = (register) => {
   // ─── stat：关键数字 ───────────────────────────────
   // props: value, unit?, label?, delta?, trend?('up'|'down'|'flat'), tone?, size?, align?('left'|'center'), plain?, fill?, stroke?, w?
@@ -62,7 +66,7 @@ export const registerDataPrimitives = (register) => {
       const { size, pad, valueM, unitSize, unitM, label, delta } = node._s
       const c = toColor(p.tone)
       const bg = p.plain ? null : (p.fill || (c ? c.bg : '#ffffff'))
-      if (!p.plain) out.push(makeRect({ x, y, width: w, height: node._h, bg, stroke: p.stroke || DIAGRAM_THEME.border, strokeWidth: 1, rounded: true }))
+      if (!p.plain) out.push(makeRect({ x, y, width: w, height: node._h, bg, stroke: p.stroke || DIAGRAM_THEME.border, strokeWidth: 1, rounded: true, radius: radiusOf(node.props, 14) }))
       const center = p.align === 'center'
       const total = valueM.width + (p.unit ? unitM.width + 4 : 0)
       let cx = center ? x + (w - total) / 2 : x + pad
@@ -79,7 +83,7 @@ export const registerDataPrimitives = (register) => {
         cy += 8
         const dc = p.trend === 'down' ? DIAGRAM_THEME.semantics.danger : p.trend === 'flat' ? DIAGRAM_THEME.semantics.neutral : DIAGRAM_THEME.semantics.success
         const bx = center ? x + (w - delta.m.width - 12) / 2 : x + pad
-        out.push(makeRect({ x: bx, y: cy - 3, width: delta.m.width + 12, height: delta.m.height + 6, bg: dc.bg, stroke: 'transparent', strokeWidth: 0, rounded: true }))
+        out.push(makeRect({ x: bx, y: cy - 3, width: delta.m.width + 12, height: delta.m.height + 6, bg: dc.bg, stroke: 'transparent', strokeWidth: 0, rounded: true, radius: 6 }))
         out.push(makeText({ x: bx + 6, y: cy, text: delta.wrapped, fontSize: 12, color: dc.stroke, align: 'left', metrics: delta.m, bg: dc.bg }))
       }
     },
@@ -111,8 +115,8 @@ export const registerDataPrimitives = (register) => {
       if (label) out.push(makeText({ x, y, text: label.wrapped, fontSize: 13, color: DIAGRAM_THEME.text, align: 'left', metrics: label.m }))
       if (showValue) out.push(makeText({ x: x + w - valueM.width, y, text: valueText, fontSize: 13, color: DIAGRAM_THEME.textSecondary, align: 'right', metrics: valueM }))
       const by = y + headH + (headH ? 8 : 0)
-      out.push(makeRect({ x, y: by, width: w, height: barH, bg: p.track || '#eef2f7', stroke: 'transparent', strokeWidth: 0, rounded: true }))
-      if (ratio > 0) out.push(makeRect({ x, y: by, width: Math.max(barH, w * ratio), height: barH, bg: p.color || c.stroke, stroke: 'transparent', strokeWidth: 0, rounded: true }))
+      out.push(makeRect({ x, y: by, width: w, height: barH, bg: p.track || '#eef2f7', stroke: 'transparent', strokeWidth: 0, rounded: true, radius: radiusOf(node.props, 6) }))
+      if (ratio > 0) out.push(makeRect({ x, y: by, width: Math.max(barH, w * ratio), height: barH, bg: p.color || c.stroke, stroke: 'transparent', strokeWidth: 0, rounded: true, radius: radiusOf(node.props, 6) }))
     },
   })
 
@@ -207,7 +211,7 @@ export const registerDataPrimitives = (register) => {
         let ly = cy + Math.max(0, (d - c.rows.reduce((s, row) => s + row.m.height + 8, -8)) / 2)
         c.rows.forEach((row, i) => {
           const lx = x + d + 28
-          out.push(makeRect({ x: lx, y: ly + row.m.height / 2 - 5, width: 10, height: 10, bg: colorOf(0, i), stroke: 'transparent', strokeWidth: 0, rounded: true }))
+          out.push(makeRect({ x: lx, y: ly + row.m.height / 2 - 5, width: 10, height: 10, bg: colorOf(0, i), stroke: 'transparent', strokeWidth: 0, rounded: true, radius: 3 }))
           out.push(makeText({ x: lx + 18, y: ly, text: row.wrapped, fontSize: 13, color: DIAGRAM_THEME.text, align: 'left', metrics: row.m }))
           ly += row.m.height + 8
         })
@@ -218,7 +222,7 @@ export const registerDataPrimitives = (register) => {
         let lx = x
         c.series.forEach((s, si) => {
           const m = measureTextBlock(s.name, 12)
-          out.push(makeRect({ x: lx, y: cy + 3, width: 10, height: 10, bg: colorOf(si), stroke: 'transparent', strokeWidth: 0, rounded: true }))
+          out.push(makeRect({ x: lx, y: cy + 3, width: 10, height: 10, bg: colorOf(si), stroke: 'transparent', strokeWidth: 0, rounded: true, radius: 3 }))
           out.push(makeText({ x: lx + 16, y: cy, text: s.name, fontSize: 12, color: DIAGRAM_THEME.textSecondary, align: 'left', metrics: m }))
           lx += 16 + m.width + 18
         })
@@ -361,8 +365,8 @@ export const registerDataPrimitives = (register) => {
       const { size, pad, body, author } = node._q
       const c = toColor(p.tone) || DIAGRAM_THEME.semantics.primary
       const bg = p.plain ? null : (p.fill || c.bg)
-      if (!p.plain) out.push(makeRect({ x, y, width: w, height: node._h, bg, stroke: 'transparent', strokeWidth: 0, rounded: true }))
-      out.push(makeRect({ x: x + pad, y: y + pad, width: 4, height: node._h - pad * 2, bg: c.stroke, stroke: 'transparent', strokeWidth: 0, rounded: true }))
+      if (!p.plain) out.push(makeRect({ x, y, width: w, height: node._h, bg, stroke: 'transparent', strokeWidth: 0, rounded: true, radius: radiusOf(node.props, 12) }))
+      out.push(makeRect({ x: x + pad, y: y + pad, width: 4, height: node._h - pad * 2, bg: c.stroke, stroke: 'transparent', strokeWidth: 0, rounded: true, radius: 2 }))
       out.push(makeText({ x: x + pad + 22, y: y + pad, text: body.wrapped, fontSize: size, color: DIAGRAM_THEME.text, align: 'left', metrics: body.m, bg }))
       if (author) out.push(makeText({ x: x + pad + 22, y: y + pad + body.m.height + 10, text: author.wrapped, fontSize: 13, color: DIAGRAM_THEME.textSecondary, align: 'left', metrics: author.m, bg }))
     },

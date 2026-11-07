@@ -225,3 +225,59 @@ test('fuzz: 300 random canvases mixing old and new primitives never crash or pro
     assert.ok(Number.isFinite(result.width) && Number.isFinite(result.height))
   }
 })
+
+test('corner radius: nested defaults go from large to small, props.radius overrides, 0 means square', () => {
+  const tree = { type: 'group', props: { title: '面板' }, children: [{ type: 'card', props: { title: '卡片' } }, { type: 'badge', props: { text: '标签' } }, { type: 'card', props: { title: '直角', radius: 0 } }, { type: 'card', props: { title: '大圆角', radius: 30 } }] }
+  const rects = renderComposer(tree).elements.filter(e => e.type === 'rectangle')
+  const values = rects.map(r => r.roundness?.value ?? (r.roundness ? 'default' : 0))
+  assert.deepEqual(values, [20, 14, 6, 0, 30])
+  const capped = renderComposer({ type: 'card', props: { title: 'x', radius: 999 } }).elements.find(e => e.type === 'rectangle')
+  assert.equal(capped.roundness.value, 64)
+})
+
+test('stretched children in an unconstrained stack re-wrap to the final width (no half-width text in a full-width box)', () => {
+  const tree = { type: 'stack.v', props: { gap: 16 }, children: [
+    { type: 'steps', props: { items: ['报到', '领设备', '熟悉代码', '结对', '第一个需求'], current: 2 } },
+    { type: 'callout', props: { text: '当前进度：第 3 步「熟悉代码仓库」——重点是把本地环境跑通，遇到权限或依赖问题直接找技术负责人。' } },
+    { type: 'list', props: { items: ['拆分工作时段：每 90 分钟设置一次 5 分钟休整，减少无效加班，把深度工作完成率从 65% 提到 80% 以上'] } },
+  ] }
+  const { elements } = renderComposer(tree)
+  const rects = elements.filter(e => e.type === 'rectangle')
+  for (const label of ['当前进度', '拆分工作时段']) {
+    const t = elements.find(e => e.type === 'text' && e.text.replace(/\n/g, '').startsWith(label))
+    const box = rects.filter(r => r.x <= t.x && r.x + r.width >= t.x + t.width && r.y <= t.y && r.y + r.height >= t.y + t.height).sort((a, b) => a.width * a.height - b.width * b.height)[0]
+    assert.ok(t.width > box.width * 0.75, `${label}: text ${Math.round(t.width)} in box ${Math.round(box.width)}`)
+  }
+})
+
+test('stack.h / grid align:"stretch" makes boxed siblings in a row the same height; default keeps natural heights', () => {
+  const kids = () => [{ type: 'stat', props: { value: '6', unit: '本', label: '读完', delta: '+2' } }, { type: 'stat', props: { value: '28', unit: '天' } }, { type: 'card', props: { title: '笔记' } }]
+  const heights = (tree) => renderComposer(tree).elements.filter(e => e.type === 'rectangle' && e.width > 60).map(e => Math.round(e.height))
+  const natural = heights({ type: 'stack.h', props: { gap: 12 }, children: kids() })
+  assert.ok(new Set(natural).size > 1)
+  for (const tree of [{ type: 'stack.h', props: { gap: 12, align: 'stretch' }, children: kids() }, { type: 'grid', props: { cols: 3, gap: 12, align: 'stretch', w: 720 }, children: kids() }]) {
+    const hs = heights(tree)
+    assert.equal(new Set(hs).size, 1, `${tree.type}: ${hs}`)
+  }
+})
+
+test('decor shapes: thin stripes/dots allowed, circles and sized rects are not stretched, negative coords explain why', () => {
+  const { elements } = renderComposer({ type: 'stack.v', props: { w: 600 }, children: [
+    { type: 'rect', props: { w: 80, h: 3, fill: '#1B7FE3' } },
+    { type: 'ellipse', props: { size: 8, fill: '#f59e0b' } },
+    { type: 'rect', props: { h: 2, fill: '#ddd' } },
+  ] })
+  const [stripe, dot, rule] = elements
+  assert.equal(Math.round(stripe.width), 80)
+  assert.equal(Math.round(stripe.height), 3)
+  assert.equal(Math.round(dot.width), 8)
+  assert.equal(Math.round(rule.width), 600)
+  assert.throws(() => renderComposer({ type: 'card', props: { title: 'x', w: 8 } }), /不能小于 16/)
+  assert.throws(() => renderComposer({ type: 'canvas', props: { w: 400, h: 300 }, children: [{ type: 'ellipse', props: { x: -20, y: 0, size: 60 } }] }), /不能为负.*无法裁切/)
+})
+
+test('icon symbol must be an emoji or symbol, not an English name', () => {
+  assert.throws(() => renderComposer({ type: 'icon', props: { symbol: 'bike' } }), /emoji/)
+  assert.doesNotThrow(() => renderComposer({ type: 'icon', props: { symbol: '🚲' } }))
+  assert.doesNotThrow(() => renderComposer({ type: 'icon', props: { symbol: 'A' } }))
+})
