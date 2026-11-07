@@ -1,5 +1,6 @@
-// Layout regressions for the composer canvas engine (container widths, row fill,
-// connector style, CJK line breaking, graph fitting). Run: node --test scripts/tests/composer-layout.test.mjs
+// Layout primitives of the composer canvas engine: explicit container widths, opt-in row
+// stretch, connector corner style, CJK line breaking. The model decides layout; these only
+// check that each primitive does what it says. Run: node --test scripts/tests/composer-layout.test.mjs
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
@@ -24,8 +25,8 @@ test('explicit-width group is not stretched by a parent stack', () => {
   assert.equal(Math.round(rects(elements)[0].width), 300)
 })
 
-test('a row of cards fills the available width with equal columns', () => {
-  const { elements } = renderComposer({ type: 'stack.v', props: { w: 900 }, children: [{ type: 'stack.h', props: { gap: 20 }, children: [
+test('justify:stretch makes a row of cards fill the width with equal columns', () => {
+  const { elements } = renderComposer({ type: 'stack.v', props: { w: 900 }, children: [{ type: 'stack.h', props: { gap: 20, justify: 'stretch' }, children: [
     { type: 'card', props: { title: '坚果云', body: '国内速度快' } }, { type: 'card', props: { title: '自建 WebDAV' } }, { type: 'card', props: { title: '只用本地' } }] }] })
   const cards = rects(elements)
   assert.equal(cards.length, 3)
@@ -33,16 +34,22 @@ test('a row of cards fills the available width with equal columns', () => {
   assert.ok(Math.abs(widest(elements) - 900) < 2, `row should fill 900, got ${widest(elements)}`)
 })
 
-test('row fill leaves inline elements and explicit widths alone; justify keeps intrinsic widths', () => {
-  const { elements } = renderComposer({ type: 'stack.v', props: { w: 900 }, children: [{ type: 'stack.h', props: { justify: 'center' }, children: [{ type: 'card', props: { title: 'a' } }, { type: 'card', props: { title: 'b' } }] }] })
-  assert.ok(widest(elements) < 900, 'justify:center must not stretch children')
+test('without justify:stretch a row keeps the widths the model chose', () => {
+  for (const justify of [undefined, 'start', 'center', 'between']) {
+    const { elements } = renderComposer({ type: 'stack.v', props: { w: 900 }, children: [{ type: 'stack.h', props: { justify }, children: [{ type: 'card', props: { title: 'a' } }, { type: 'card', props: { title: 'b', w: 200 } }] }] })
+    const cards = rects(elements)
+    assert.ok(cards.every(c => c.width <= 260), `justify:${justify} must not stretch children`)
+  }
 })
 
-test('multi-segment connectors are sharp polylines, not smoothed curves', () => {
-  const { elements } = renderComposer({ type: 'graph', props: { direction: 'TB', edges: [{ from: 'a', to: 'b' }, { from: 'a', to: 'c' }, { from: 'b', to: 'd' }, { from: 'c', to: 'd' }] }, children: ['a', 'b', 'c', 'd'].map(id => ({ type: 'card', props: { id, title: id } })) })
-  const arrows = elements.filter(e => e.type === 'arrow')
-  assert.ok(arrows.length >= 4)
-  for (const a of arrows) if (a.points.length > 2) assert.equal(a.roundness, null)
+test('connectors are right-angle polylines unless the model asks for curve:true', () => {
+  const tree = curve => ({ type: 'graph', props: { direction: 'TB', edges: [{ from: 'a', to: 'b', curve }, { from: 'a', to: 'c', curve }, { from: 'b', to: 'd', curve }, { from: 'c', to: 'd', curve }] }, children: ['a', 'b', 'c', 'd'].map(id => ({ type: 'card', props: { id, title: id } })) })
+  const sharp = renderComposer(tree(undefined)).elements.filter(e => e.type === 'arrow')
+  assert.ok(sharp.length >= 4 && sharp.every(a => a.roundness === null))
+  const curved = renderComposer(tree(true)).elements.filter(e => e.type === 'arrow')
+  assert.ok(curved.every(a => a.roundness?.type === 2))
+  const top = renderComposer({ children: [{ type: 'card', props: { id: 'x', title: 'x' } }, { type: 'card', props: { id: 'y', title: 'y' } }], connectors: [{ from: 'x', to: 'y', curve: true }] }).elements.filter(e => e.type === 'arrow')
+  assert.equal(top[0].roundness?.type, 2)
 })
 
 test('Chinese wrapping never starts a line with closing punctuation', () => {
@@ -51,10 +58,4 @@ test('Chinese wrapping never starts a line with closing punctuation', () => {
     for (const line of lines.slice(1)) assert.ok(!/^[，。、；：！？）】》」』]/.test(line), `line starts with punctuation at width ${width}: ${line}`)
     for (const line of lines.slice(0, -1)) assert.ok(!/[（【《「『]$/.test(line), `line ends with an opening bracket at width ${width}: ${line}`)
   }
-})
-
-test('an LR graph shrinks its nodes to fit the parent width', () => {
-  const { elements } = renderComposer({ type: 'stack.v', props: { w: 840 }, children: [{ type: 'graph', props: { direction: 'LR', edges: [{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }, { from: 'c', to: 'd' }] },
-    children: ['a', 'b', 'c', 'd'].map(id => ({ type: 'card', props: { id, title: '周六上午 ' + id, body: '西湖环湖骑行 北山街 → 苏堤' } })) }] })
-  assert.ok(widest(elements) <= 842, `graph should fit 840, got ${widest(elements)}`)
 })

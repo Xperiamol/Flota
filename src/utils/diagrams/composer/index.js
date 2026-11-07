@@ -382,9 +382,8 @@ register('stack.h', {
       kids.forEach((c) => measureNode(c, share))
       intrinsic = kids.reduce((s, c) => s + c._w, 0) + Math.max(0, kids.length - 1) * gap
     }
-    // 有可用宽度且默认对齐时，让卡片/分组等块级子节点平分剩余空间，避免一行内容挤在左边、右侧大片空白。
-    const justify = p.justify || 'start'
-    if (maxW != null && justify === 'start' && kids.length) {
+    // justify:'stretch' —— 由模型选择：块级子节点平分整行剩余宽度（没写 w 的才参与）。
+    if (p.justify === 'stretch' && maxW != null && kids.length) {
       const flex = kids.filter((c) => ROW_FLEX_TYPES.has(c.type) && !Number.isFinite(c.props?.w))
       const fixedW = kids.filter((c) => !flex.includes(c)).reduce((s, c) => s + c._w, 0)
       const available = maxW - pad * 2 - Math.max(0, kids.length - 1) * gap - fixedW
@@ -922,13 +921,7 @@ register('graph', {
       kids.forEach((c, i) => { c._gid = lnodes[i].id })
       return layoutGraph(lnodes, edges, opts)
     }
-    // 关系图超出父容器宽度时逐步收窄节点（文字会换行），而不是让整行撑出画布、和下方内容宽度不一致。
-    let nodeMax = p.nodeMaxW || 200
-    let laid = layout(nodeMax)
-    for (let i = 0; i < 4 && maxW != null && laid.width > maxW + 1 && nodeMax > 120; i++) {
-      nodeMax = Math.max(120, Math.floor(nodeMax * (maxW / laid.width)) - 4)
-      laid = layout(nodeMax)
-    }
+    const laid = layout(p.nodeMaxW || 200)
     node._graph = laid
     return { w: Math.max(laid.width, maxW || 0), h: laid.height }
   },
@@ -947,7 +940,7 @@ register('graph', {
       const conns = p.edges.map((e, i) => {
         const r = routes[i]
         return {
-          from: String(e.from), to: String(e.to), label: e.label, dashed: e.dashed, tone: e.tone,
+          from: String(e.from), to: String(e.to), label: e.label, dashed: e.dashed, tone: e.tone, curve: e.curve,
           _route: Array.isArray(r) && r.length >= 2 ? r.map((pt) => ({ x: x + pt.x, y: y + pt.y })) : null,
         }
       })
@@ -1253,7 +1246,7 @@ const renderConnectors = (root, connectors, out) => {
       stroke: tone?.stroke || DIAGRAM_THEME.line,
       strokeWidth: 1.6,
       dashed: !!conn.dashed,
-      rounded: false,
+      rounded: conn.curve === true,
     })
     // 绑定箭头与两端图形：移动节点时连线跟随，避免"线与块脱节"
     if (fromBox.el?.id) {

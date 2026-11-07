@@ -353,8 +353,8 @@ export const makeArrow = ({
     endBinding,
     startArrowhead: null,
     endArrowhead: endArrow,
-    // 多段正交折线若保留曲线圆角，Excalidraw 会把拐点平滑成波浪线；折线一律用直角，单段直线保留默认。
-    roundness: rounded && safePoints.length <= 2 ? { type: 2 } : null,
+    // rounded=false 时用直角折线；rounded=true 由调用方（模型的 curve 选项）显式要求曲线。
+    roundness: rounded ? { type: 2 } : null,
   }
 }
 
