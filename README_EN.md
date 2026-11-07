@@ -49,6 +49,14 @@ Try requests such as:
 
 The screenshot shows custom prompt shortcuts and an unsent draft; no external AI service was called. AI features require your own endpoint and key. Capabilities and response quality depend on the model you choose.
 
+### Your own dashboard, built with AI
+
+Describe what you need and ask AI to build an interactive widget that saves its data. Make a reading tracker, project dashboard, or daily review panel around your habits. Add it to your home page, embed it in a note, or open it in a separate small window.
+
+> “Build me a reading panel with book titles, progress, and one takeaway. On the home page, show how many days I read this week and add a one-click check-in button.”
+
+Try it, then keep talking to AI to refine its layout, colors, and behavior. Create multiple instances of the same widget with separate data for different projects, so your workspace can grow with you.
+
 ## From a note to the next step
 
 - **Connect notes and todos**: Turn a checklist item into a todo, with completion and title changes synced both ways. Embed individual todos or dynamic lists in notes.
