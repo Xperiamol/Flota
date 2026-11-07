@@ -2,117 +2,179 @@
 
 [中文](./README.md) · [English](./README_EN.md)
 
-<img src="./logo.png" width="88" alt="Flota" />
+<br />
+
+<img src="./logo.png" width="92" alt="Flota" />
 
 # Flota
 
-**越用越懂你的个人 Agent。**
+**越用越懂你的本地优先个人工作空间**
 
-把笔记、待办、画布和 AI 放在一起。记下想法，也让它逐渐记住你的偏好与习惯，陪你把事情往前推进。
+把笔记、待办、白板画布和个人 Agent 放在同一个桌面里。<br />
+记下零散的想法，让它逐渐记住你的习惯与上下文，陪你把事情一步步推进下去。
 
-[下载桌面版](https://github.com/Xperiamol/Flota/releases) · [快速开始](#快速开始) · [更新日志](./CHANGELOG.md) · [隐私政策](./PRIVACY.md)
+<p>
+  <a href="https://github.com/Xperiamol/Flota/releases"><img src="https://img.shields.io/github/v/release/Xperiamol/Flota?style=flat-square&label=Release&color=1976D2" alt="GitHub Release" /></a>
+  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-2E3440?style=flat-square" alt="Windows | macOS | Linux" />
+  <img src="https://img.shields.io/badge/Data-Local--First%20SQLite-0F766E?style=flat-square" alt="Local-First SQLite" />
+  <a href="./LICENSE"><img src="https://img.shields.io/github/license/Xperiamol/Flota?style=flat-square&color=555555" alt="License" /></a>
+</p>
 
-![Windows / macOS / Linux](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-1976D2?style=flat-square)
-[![GitHub Release](https://img.shields.io/github/v/release/Xperiamol/Flota?style=flat-square)](https://github.com/Xperiamol/Flota/releases)
+<p>
+  <a href="https://github.com/Xperiamol/Flota/releases"><strong>下载桌面版</strong></a>
+  ·
+  <a href="#快速开始">快速开始</a>
+  ·
+  <a href="./CHANGELOG.md">更新日志</a>
+  ·
+  <a href="./PRIVACY.md">隐私说明</a>
+  ·
+  <a href="./docs/history/README.md">怀旧版档案</a>
+</p>
 
 </div>
 
+<br />
+
 ![Flota 首页：快速记录、今日待办与笔记卡片](./docs/images/home-light-zh.png)
 
-## 记得你，也能帮你做事
+## 为什么是 Flota？
 
-不用每次都从自我介绍开始。告诉 Flota 你习惯怎样写作、希望怎样得到回答、长期在做什么；在后续对话中，AI 可以参考这些记忆，给出更贴近你的建议。
+很多时候，记录和行动是割裂的：想法记在笔记里，任务列在待办软件里，每次打开 AI 又得把背景重新交代一遍。
 
-### 越用越懂你，来自可管理的长期记忆
+Flota 把这几件事自然地连在了一起：
 
-- **记住有用的习惯**：开启自动记忆后，从对话中筛选值得长期保留的偏好、身份和习惯；也可以直接说「记住这件事」。
-- **需要时再想起来**：结合当前问题和相关记忆，减少反复交代背景。偏好变了，也可以让它更正。
-- **记忆由你掌握**：在设置中查看、搜索、编辑或删除记忆；可以关闭自动记忆，也可以在对话里撤销一次记忆更新。
+- **记得你是谁**：不用每次从自我介绍开始。你的写作偏好、常用格式、长期在做的项目，都可以沉淀为可管理的长期记忆。
+- **读得懂你的资料**：AI 不只是聊天窗口，它可以检索你的笔记、读取全文、提炼待办、修改画布，所有改动先经过你确认。
+- **写下就是下一步**：笔记里的勾选项一键变成待办，状态和标题双向同步；双链、标签和知识图谱帮你把零散记录串成网络。
+- **长成你顺手的样子**：少一个趁手的小工具？直接跟 AI 说句话，生成一个能交互、能存数据的组件，摆在首页或嵌入笔记里用。
+
+---
+
+## 核心体验
+
+### 1. 记得你，而且记忆归你管
+
+大多数 AI 对话关掉窗口就忘了你是谁。在 Flota 里，你可以告诉它你习惯怎样写字、喜欢先看结论还是细节、最近在忙什么。
+
+- **自然沉淀，按需召回**：开启自动记忆后，Flota 会从日常对话里挑出值得保留的偏好和背景；你也可以随时说一句「记住这件事」。下次聊到相关话题，它会自动带上这些上下文。
+- **透明、可改、可撤回**：所有记忆都保存在本机。你可以在设置里随时搜索、编辑、删除任何一条记忆，或者在对话下方一键撤销刚写入的记忆。
 
 ![Flota 长期记忆：偏好、知识与可管理的记忆列表](./docs/images/memory-personal-zh.png)
 
-截图中的记忆是手动加入的演示数据。记忆保存在本机；AI 提取和使用记忆时，相关内容会发送给你配置的 AI 服务。
+### 2. 围绕你的笔记和画布干活
 
-### 从问答到行动，围绕你的资料工作
+不用再把笔记复制粘贴到网页版 AI 里来回折腾。Flota 的 Agent 直接围绕你的本地资料工作，涉及新建或修改时，默认先弹出一张**确认卡**，由你拍板后再执行。
 
-让它找出相关笔记、读完全文，再整理成计划；从笔记中提取待办，修改已有画布，或生成一个可以放在首页使用的组件。写入操作默认先给出确认卡，供你审核后执行。
+你可以直接这样吩咐它：
 
-你可以这样开始：
-
-> 「记住：我喜欢先给结论，再列三条重点。」
+> 「记住：我喜欢先看结论，再列三条以内的行动项。」
 >
-> 「找出本周与发布有关的笔记，整理成待办，先让我确认。」
+> 「找一下这周和发版有关的笔记，通读一遍，把还没做的事情整理成待办让我确认。」
 >
-> 「把这份计划画成流程图，保留已有内容，只补上缺少的步骤。」
+> 「把这篇方案画成流程图，保留画布里已有的节点，只补上缺少的步骤。」
 
 ![Flota 个人 Agent：自定义快捷方式与待发送的工作请求](./docs/images/ai-agent-zh.png)
 
-上图展示自定义的 Prompt 快捷方式和待发送草稿，未调用外部 AI。AI 功能需要自行配置服务地址与密钥；能力和回答质量取决于所选模型。
+### 3. 缺什么面板，让 AI 现场给你做一个
 
-### 想要自己的面板？让 AI 帮你做
+每个人的工作流都不一样。与其在无数模板里找将就，不如把需求说出来，让 AI 帮你写一个能交互、能存数据的小组件（Widget）：
 
-把需求说出来，让 AI 帮你生成可交互、能保存数据的组件。阅读打卡、项目进度、每日复盘，都可以按自己的习惯定制；生成后可以放到首页、嵌入笔记，或打开成独立小窗。
+> 「帮我做一个阅读打卡面板：能记书名、进度和一句感想，首页卡片显示这周读了几天，再加个一键打卡按钮。」
 
-> 「帮我做一个阅读面板：记录书名、阅读进度和一句收获，首页显示本周读了几天，再加一个一键打卡按钮。」
+生成后可以先挑喜欢的设计风格，接着在对话里继续微调配色和逻辑。做好的组件可以摆在首页、嵌进笔记，或者拎出来当独立桌面小窗；同一个组件还能开多份实例，分别跟踪不同项目。
 
-先用起来，再继续对话调整布局、配色和功能。同一个组件可以创建多份，分别保存不同项目的数据，让 Flota 逐渐长成适合你的工作空间。
+---
 
-## 从记录到下一步
+## 日常记录与整理
 
-- **笔记与待办连在一起**：在笔记里写任务，一键加入待办，勾选和改名两边同步；也可以嵌入单条待办或动态清单。
-- **用你习惯的方式表达**：所见即所得与 Markdown 源码编辑、双链、标签、公式、代码块，以及基于 Excalidraw 的画布。
-- **看见内容之间的联系**：知识图谱连接双链、插入的笔记链接和相同标签；时间轴与日历帮助回看记录。
-- **首页按自己需要摆放**：快速记录、今日待办、最近笔记、专注与热力图等卡片，也支持添加组件。
-- **数据由你掌握**：本机保存笔记与附件；按需启用 WebDAV 同步、多网盘备份、历史版本，以及 CalDAV / Google Calendar 日历同步。
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <h4>📝 顺手的编辑与白板</h4>
+      <ul>
+        <li><strong>所见即所得 + Markdown</strong>：支持实时渲染与源码模式自由切换。</li>
+        <li><strong>丰富块与内联语法</strong>：支持双链 <code>[[笔记]]</code>、标签、数学公式、代码块、高亮提示块（Callout）。</li>
+        <li><strong>Excalidraw 白板</strong>：手绘草图、流程图与笔记无缝结合，AI 也能在保留原有结构的前提下局部修改画布。</li>
+      </ul>
+    </td>
+    <td width="50%" valign="top">
+      <h4>✅ 笔记与待办双向联动</h4>
+      <ul>
+        <li><strong>一行任务就是一条待办</strong>：笔记里的勾选项一键「加入待办」，两边勾选、改名实时同步；删掉笔记里的那行只解除关联，不丢待办。</li>
+        <li><strong>笔记内嵌清单</strong>：在笔记里直接嵌入单条待办，或按标签、当前笔记动态展示待办列表。</li>
+        <li><strong>四象限与日历视图</strong>：按重要紧急程度排布优先级，支持重复任务与到期提醒。</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h4>🕸️ 知识图谱与时间轴</h4>
+      <ul>
+        <li><strong>看得见的联系</strong>：双链、内嵌笔记 / 画布链接、共同标签会自动织成图谱；支持聚焦当前笔记的局部网络。</li>
+        <li><strong>时间轴回溯</strong>：按天回顾零散闪念，支持原地编辑、合并当天记录、一键转为待办。</li>
+        <li><strong>可定制首页</strong>：自由摆放快速输入、今日待办、最近笔记、专注计时、热力图和自定义组件。</li>
+      </ul>
+    </td>
+    <td width="50%" valign="top">
+      <h4>🧰 剪藏、语音与扩展</h4>
+      <ul>
+        <li><strong>浏览器剪藏</strong>：通过 Chrome / Edge 扩展一键保存网页正文、选中内容或书签（<a href="./extensions/chrome-clipper/README.md">安装说明</a>）。</li>
+        <li><strong>语音转文字</strong>：支持下载 Whisper 模型在本机离线识别，也支持接入火山引擎云端识别。</li>
+        <li><strong>多格式导入导出</strong>：支持导入 Markdown、Word / WPS / Excel / PPT、PDF、EPUB、Obsidian 库等，支持本地快照与历史版本恢复。</li>
+        <li><strong>插件与 MCP</strong>：支持沙箱插件扩展；开启 MCP 后，外部 AI 客户端也能安全读写你的笔记和待办。</li>
+      </ul>
+    </td>
+  </tr>
+</table>
 
-## 界面预览
-
-以下截图来自 4.5.4 版本的代码，使用独立演示数据。
-
-### 笔记：写下内容，也写下要做的事
+### 笔记：写下想法，顺手变成要做的事
 
 ![Flota 笔记编辑器、任务列表和双链](./docs/images/notes-light-zh.png)
 
-### 待办：按轻重缓急安排下一步
+### 待办：四象限分清轻重缓急
 
 ![Flota 深色主题的四象限待办](./docs/images/todos-dark-zh.png)
 
+---
+
+## 数据与隐私：本地优先，去留随你
+
+- **无账号，零打扰**：Flota 没有账号系统，不埋点、不统计、无广告、不上传崩溃日志。
+- **数据落在本地**：所有笔记、待办、画布、记忆和附件都存放在你电脑本地的 SQLite 数据库与数据目录里，断网也能完整使用基础记录功能。
+- **同步与 AI 由你接管**：
+  - **AI 与语音**：只有当你填入自己的服务地址与密钥（如 OpenAI 兼容接口、DeepSeek、通义千问等）并主动使用时，相关上下文才会直接发往你选定的服务商。
+  - **多端同步与备份**：支持坚果云或自建 **WebDAV** 同步、多网盘完整备份，以及 **CalDAV / Google Calendar** 日历双向同步。
+
+详细的联网行为说明请查看 [隐私政策](./PRIVACY.md)。
+
+---
+
 ## 快速开始
 
-### 下载安装
+### 1. 下载安装
 
-前往 [GitHub Releases](https://github.com/Xperiamol/Flota/releases)，选择与你的系统和处理器匹配的安装包：
+前往 [GitHub Releases](https://github.com/Xperiamol/Flota/releases) 下载对应系统的安装包：
 
-| 平台 | 安装方式 |
+| 平台 | 安装说明 |
 | --- | --- |
-| Windows 10 及以上 | 下载 Windows 安装程序 |
-| macOS | 下载对应 Apple Silicon（arm64）或 Intel（x64）的 DMG，拖入「应用程序」 |
-| Linux x64 | 下载 AppImage，授予可执行权限后运行；需要系统具备 AppImage 运行环境 |
+| **Windows** (10 及以上) | 下载 `.exe` 安装程序运行即可；也可在 Microsoft Store 搜索 **Flota Notes** 安装（由商店自动更新） |
+| **macOS** (Apple Silicon / Intel) | 下载对应 `arm64` 或 `x64` 的 `.dmg`，将 Flota 拖入「应用程序」 |
+| **Linux** (x64) | 下载 `.AppImage`，赋予可执行权限（`chmod +x`）后直接运行 |
 
-Microsoft Store 渠道的应用名称为 **Flota Notes**，该版本由商店负责更新。不同渠道的安装包以实际发布内容为准。Android 版独立发布，本页介绍桌面版。
+> 注：Android 版本独立发布，本仓库与文档主要面向桌面版。
 
-### 第一次使用
+### 2. 上手三步
 
-1. 按 `Ctrl/Cmd + N` 新建笔记；`Ctrl/Cmd + Shift + N` 打开快速输入。
-2. 按 `Ctrl/Cmd + T` 新建待办，或把笔记中的任务「加入待办」。
-3. 在设置中按需配置 AI、同步和语音识别；基础记录不需要账号或密钥。
-4. 在首页添加需要的卡片。快捷键可以在设置中调整。
+1. **随手记**：按 `Ctrl/Cmd + N` 新建笔记，或用全局快捷键 `Ctrl/Cmd + Shift + N` 呼出快速输入小窗。
+2. **列计划**：按 `Ctrl/Cmd + T` 新建待办，或者在笔记的任务行右侧点击「加入待办」。
+3. **配服务（可选）**：纯净记录无需任何配置；需要 AI、WebDAV 同步或语音识别时，再到「设置」中填入自己的接口即可。
 
-### 还能做什么
+---
 
-- **网页剪藏**：通过 Chrome / Edge 扩展保存网页全文、选中内容或书签。[安装与配对](./extensions/chrome-clipper/README.md)
-- **语音转文字**：支持本机 Whisper 离线识别，以及自行配置凭据的火山引擎云端识别。离线模型需要先下载。
-- **导入与导出**：导入 Markdown、Office 文档、PDF、EPUB 等内容；支持导出与本地备份。
-- **历史版本**：在设置中启用后保留笔记快照，按需查看或恢复。
-- **插件与 MCP**：通过插件扩展工作流；开启 MCP 后，连接的 AI 客户端可以读取和修改笔记、待办。
+## 开发与参与
 
-## 数据与隐私
-
-Flota 没有账号系统，不含统计、埋点、广告或崩溃上报。笔记、待办和附件保存在你的电脑上。
-
-AI、云端识别、同步等功能会将相关数据发送到你配置的服务；离线识别在模型下载完成后在本机处理音频。联网功能和第三方服务的具体说明见 [隐私政策](./PRIVACY.md)。
-
-## 开发与贡献
+想在本地跑起源码，只需四行命令（`electron-dev` 会自动准备 SQLite 并同时启动 Vite 与 Electron）：
 
 ```bash
 git clone https://github.com/Xperiamol/Flota.git
@@ -121,15 +183,20 @@ npm install
 npm run electron-dev
 ```
 
-`electron-dev` 会同时启动 Vite 和 Electron，无需另开一个 `npm run dev`。
+- 🛠️ **[开发与构建指南](./docs/DEVELOPMENT.md)**：环境要求、测试脚本、目录结构与数据库维护说明
+- 🔌 **[插件开发文档](./plugins/docs/README.md)** · **[示例插件](./plugins/examples/)**：在安全 Worker 沙箱中扩展命令与界面
+- 📦 **[发布流程](./docs/RELEASE_FLOW.md)** · **[更新日志](./CHANGELOG.md)** · **[MIT 许可证](./LICENSE)**
+- 💬 **[提交 Issue 或建议](https://github.com/Xperiamol/Flota/issues)**：反馈 Bug 时请附上系统版本、应用版本号和复现步骤
 
-- [开发与构建指南](./docs/DEVELOPMENT.md)：技术栈、项目结构、测试和数据库维护。
-- [插件开发文档](./plugins/docs/README.md) · [示例插件](./plugins/examples/)
-- [发布流程](./docs/RELEASE_FLOW.md) · [许可证](./LICENSE)
-- [反馈问题或建议](https://github.com/Xperiamol/Flota/issues)：请附复现步骤、应用版本和操作系统。
+---
 
-## 从 FlashNote 到 Flota
+## 🕰️ 彩蛋：从 FlashNote 到 Flota
 
-旧名字、旧头像和当年的界面也值得留着。我们把它们放进了 [怀旧档案](./docs/history/README.md)，可以查看旧截图和当年的 README 原文。
+老朋友可能还记得，Flota 最早叫 **FlashNote**——那时候它顶着另一个头像，刚从 1.x 重写成 2.0，刚加上 Excalidraw 画布和本地插件系统。
 
-这里持续介绍当前版本；历史页面作为档案保留，不再同步更新。
+如果你怀念当年的样子，或者想看看它是怎么一路长成今天这样的，欢迎去翻翻我们的 **[怀旧版 README 与老界面档案](./docs/history/README.md)**。
+
+<div align="center">
+  <br />
+  <p>如果 Flota 让你的记录和推进事情变得更顺手，欢迎点亮一颗 ⭐️ Star 支持我们！</p>
+</div>
