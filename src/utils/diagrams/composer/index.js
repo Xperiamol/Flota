@@ -31,6 +31,7 @@ import {
 } from '../shared'
 import logger from '../../logger'
 import { layoutGraph } from './graphLayout'
+import { registerDataPrimitives } from './dataPrimitives'
 
 // ─── 基础常量 ──────────────────────────────────────
 
@@ -101,6 +102,9 @@ export const placeNode = (node, x, y, w, out) => {
 }
 
 const childList = (node) => Array.isArray(node.children) ? node.children.filter(Boolean) : []
+
+// 容器被父级压得很窄时收小内边距，保证内容区至少 40px，避免内边距吃掉全部宽度、得出负尺寸而整张画布失败。
+const fitPadding = (pad, maxW) => (maxW != null ? Math.min(pad, Math.max(0, Math.floor((maxW - 40) / 2))) : pad)
 
 // Reject malformed plans before measurement; silent fallback used to hide missing content.
 export const validateComposerTree = (root, connectors = []) => {
@@ -321,7 +325,7 @@ register('card', {
 register('stack.v', {
   measure(node, maxW) {
     const p = node.props || {}
-    const pad = p.padding ?? 0
+    const pad = fitPadding(p.padding ?? 0, maxW)
     const gap = p.gap ?? GAP
     const innerMaxW = maxW != null ? maxW - pad * 2 : null
     const kids = childList(node)
@@ -371,7 +375,7 @@ const ROW_FLEX_TYPES = new Set(['card', 'group', 'stack.v', 'list', 'table', 'ca
 register('stack.h', {
   measure(node, maxW) {
     const p = node.props || {}
-    const pad = p.padding ?? 0
+    const pad = fitPadding(p.padding ?? 0, maxW)
     const gap = p.gap ?? GAP
     const kids = childList(node)
     kids.forEach((c) => measureNode(c, null))
@@ -433,7 +437,7 @@ register('grid', {
   measure(node, maxW) {
     const p = node.props || {}
     const cols = Math.max(1, p.cols || 2)
-    const pad = p.padding ?? 0
+    const pad = fitPadding(p.padding ?? 0, maxW)
     const gap = p.gap ?? GAP
     const kids = childList(node)
     // 第一遍：确定列宽。
@@ -855,7 +859,7 @@ register('callout', {
 register('group', {
   measure(node, maxW) {
     const p = node.props || {}
-    const pad = p.padding ?? 24
+    const pad = fitPadding(p.padding ?? 24, maxW)
     const gap = p.gap ?? GAP
     const innerMaxW = maxW != null ? maxW - pad * 2 : null
     const kids = childList(node)
@@ -948,6 +952,10 @@ register('graph', {
     }
   },
 })
+
+// ─── 数据与叙事原语（stat / progress / chart / timeline / quote / steps）──
+
+registerDataPrimitives(register)
 
 // ─── 兜底原语 ──────────────────────────────────────
 

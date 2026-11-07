@@ -227,6 +227,11 @@ const buildComposerMessages = (userRequest) => [
 - callout {text,tone}；badge {text,tone}；icon {symbol,size}
 - table {headers,rows}；input {label,placeholder}；button {label,variant}
 - avatar {label,size}；divider；image {label,ratio}
+- stat {value,unit?,label?,delta?,trend?(up|down|flat),tone?,size?,align?,plain?}：关键数字
+- progress {value,max?,label?,tone?,showValue?,valueText?,barH?}：进度条
+- chart {kind:bar|line|donut, data:[{label,value,tone?}] 或 labels+series:[{name,values,tone?}], title?, unit?, showValues?, max?, h?, smooth?, centerText?}：原生图元绘制的图表；单组数据默认同色，逐项 tone 可强调某一项
+- timeline {items:[{time,title,body?,tone?}], direction?(v|h)}；steps {items:[字符串或{title,body?}], current?, direction?(h|v), tone?}
+- quote {text,author?,tone?,size?,plain?}
 - svg {prompt,title?,w?,h?}：局部整体矢量插画，生成后不能拆分编辑
 
 原则：

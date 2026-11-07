@@ -22,7 +22,7 @@
     "sqlite:node": "node scripts/manage-sqlite.js node",
     "test": "node scripts/tests/run-unit-tests.cjs",
     "test:ai-actions": "node --test scripts/tests/pending-actions.test.mjs",
-    "test:whiteboard": "node --test scripts/tests/whiteboard-ai.test.mjs scripts/tests/whiteboard-generator.test.mjs scripts/tests/generation-task.test.mjs scripts/tests/composer-layout.test.mjs",
+    "test:whiteboard": "node --test scripts/tests/whiteboard-ai.test.mjs scripts/tests/whiteboard-generator.test.mjs scripts/tests/generation-task.test.mjs scripts/tests/composer-layout.test.mjs scripts/tests/composer-primitives.test.mjs",
     "test:widgets": "node --test scripts/tests/widget-runtime.test.mjs",
     "test:notes": "node --test scripts/tests/note-reuse.test.mjs",
     "test:editor": "node scripts/tests/editor-regression.cjs",
