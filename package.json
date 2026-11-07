@@ -51,7 +51,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@anthropic-ai/sdk": "file:stubs/pi-ai-unused/anthropic-ai_sdk",
+    "@anthropic-ai/sdk": "0.129.0",
     "@aws-sdk/client-bedrock-runtime": "file:stubs/pi-ai-unused/aws-sdk_client-bedrock-runtime",
     "@earendil-works/pi-agent-core": "1.5.0",
     "@earendil-works/pi-ai": "1.5.0",

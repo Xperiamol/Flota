@@ -16,7 +16,8 @@ import {
   Slider,
   CircularProgress,
   Link,
-  ListItemText
+  ListItemText,
+  FormHelperText,
 } from '@mui/material';
 import {
   Check as CheckIcon,
@@ -38,6 +39,8 @@ const AISettings = ({ showSnackbar }) => {
     apiUrl: '',
     model: 'gpt-3.5-turbo',
     temperature: 0.7,
+    temperatureEnabled: false,
+    apiFormat: 'openai',
     limitMaxTokens: false,
     maxTokens: 2000,
     visionEnabled: false,
@@ -218,7 +221,8 @@ const AISettings = ({ showSnackbar }) => {
     const links = {
       openai: 'https://platform.openai.com/api-keys',
       deepseek: 'https://platform.deepseek.com/api_keys',
-      qwen: 'https://dashscope.console.aliyun.com/apiKey'
+      qwen: 'https://dashscope.console.aliyun.com/apiKey',
+      anthropic: 'https://console.anthropic.com/settings/keys'
     };
     return links[providerId] || null;
   };
@@ -291,6 +295,18 @@ const AISettings = ({ showSnackbar }) => {
             )}
           />
         </Box>
+        {config.provider === 'custom' && (
+          <Box sx={settingsFieldGroupSx}>
+            <FormControl fullWidth size="small">
+              <InputLabel>接口格式</InputLabel>
+              <Select value={config.apiFormat === 'anthropic' ? 'anthropic' : 'openai'} label="接口格式" onChange={(e) => handleConfigChange('apiFormat', e.target.value)}>
+                <MenuItem value="openai">OpenAI 格式（/chat/completions）</MenuItem>
+                <MenuItem value="anthropic">Anthropic 格式（/v1/messages）</MenuItem>
+              </Select>
+              <FormHelperText>服务商同时支持两种时，用 Claude 选 Anthropic 格式，工具调用更稳定</FormHelperText>
+            </FormControl>
+          </Box>
+        )}
         {config.provider === 'custom' && (
           <Box sx={settingsFieldGroupSx}>
             <TextField
@@ -487,7 +503,19 @@ const AISettings = ({ showSnackbar }) => {
             </Box>
           </AccordionSummary>
           <AccordionDetails sx={{ pt: 0 }}>
-            <Box sx={settingsFieldGroupSx}>
+            <Box sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2, mb: 2 })}>
+              <ListItemText
+                primary="自定义温度"
+                secondary="默认关闭，由模型使用自己的默认值。部分模型只接受默认温度，开启后可能报错。"
+                slotProps={{ primary: { sx: { fontWeight: 650 } } }}
+              />
+              <Switch
+                checked={isEnabledSetting(config.temperatureEnabled)}
+                onChange={(e) => handleConfigChange('temperatureEnabled', e.target.checked)}
+                color="primary"
+              />
+            </Box>
+            <Box sx={{ ...settingsFieldGroupSx, opacity: isEnabledSetting(config.temperatureEnabled) ? 1 : 0.45 }}>
               <Typography variant="body2" color="text.secondary" gutterBottom>
                 {t('ai.temperature')}: {typeof config.temperature === 'number' && !isNaN(config.temperature) ? config.temperature : 0.7}
               </Typography>
@@ -499,6 +527,7 @@ const AISettings = ({ showSnackbar }) => {
                 step={0.1}
                 marks={[{ value: 0, label: '0' }, { value: 1, label: '1' }, { value: 2, label: '2' }]}
                 valueLabelDisplay="auto"
+                disabled={!isEnabledSetting(config.temperatureEnabled)}
               />
               <Typography variant="caption" color="text.secondary">{t('ai.temperatureDesc')}</Typography>
             </Box>

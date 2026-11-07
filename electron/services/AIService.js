@@ -130,6 +130,8 @@ class AIService extends EventEmitter {
       const apiUrlSetting = this.settingDAO.get('ai_api_url');
       const modelSetting = this.settingDAO.get('ai_model');
       const temperatureSetting = this.settingDAO.get('ai_temperature');
+      const temperatureEnabledSetting = this.settingDAO.get('ai_temperature_enabled');
+      const apiFormatSetting = this.settingDAO.get('ai_api_format');
       const limitMaxTokensSetting = this.settingDAO.get('ai_limit_max_tokens');
       const maxTokensSetting = this.settingDAO.get('ai_max_tokens');
       const visionEnabledSetting = this.settingDAO.get('ai_vision_enabled');
@@ -156,6 +158,8 @@ class AIService extends EventEmitter {
         apiUrl: apiUrlSetting ? apiUrlSetting.value : '',
         model: modelSetting ? modelSetting.value : 'gpt-3.5-turbo',
         temperature: temperatureSetting ? temperatureSetting.value : 0.7,
+        temperatureEnabled: temperatureEnabledSetting ? temperatureEnabledSetting.value === true : false,
+        apiFormat: apiFormatSetting?.value === 'anthropic' ? 'anthropic' : 'openai',
         limitMaxTokens: limitMaxTokensSetting ? limitMaxTokensSetting.value : false,
         maxTokens: maxTokensSetting ? maxTokensSetting.value : 2000,
         visionEnabled: visionEnabledSetting ? visionEnabledSetting.value : false,
@@ -197,6 +201,8 @@ class AIService extends EventEmitter {
       if (apiUrl !== undefined) this.settingDAO.set('ai_api_url', apiUrl || '', 'string', '自定义API地址');
       if (model !== undefined) this.settingDAO.set('ai_model', model, 'string', 'AI模型');
       if (temperature !== undefined) this.settingDAO.set('ai_temperature', temperature, 'number', '温度参数');
+      if (config.temperatureEnabled !== undefined) this.settingDAO.set('ai_temperature_enabled', isEnabledSetting(config.temperatureEnabled), 'boolean', '是否发送自定义温度');
+      if (config.apiFormat !== undefined) this.settingDAO.set('ai_api_format', config.apiFormat === 'anthropic' ? 'anthropic' : 'openai', 'string', '自定义接口格式');
       if (limitMaxTokens !== undefined) this.settingDAO.set('ai_limit_max_tokens', isEnabledSetting(limitMaxTokens), 'boolean', '是否限制最大输出token数');
       if (maxTokens !== undefined) this.settingDAO.set('ai_max_tokens', maxTokens, 'number', '最大token数');
       if (config.visionEnabled !== undefined) {
@@ -295,9 +301,17 @@ class AIService extends EventEmitter {
           requiresApiUrl: false
         },
         {
+          id: 'anthropic',
+          name: 'Anthropic',
+          description: 'Claude 系列模型',
+          models: ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-haiku-4-5'],
+          requiresApiKey: true,
+          requiresApiUrl: false
+        },
+        {
           id: 'custom',
           name: '自定义',
-          description: '兼容OpenAI API格式的自定义服务',
+          description: '兼容 OpenAI 或 Anthropic 接口格式的服务（中转站、本地模型等）',
           models: [],
           requiresApiKey: true,
           requiresApiUrl: true

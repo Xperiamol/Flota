@@ -1,5 +1,5 @@
 /**
- * 发起一次模型流式请求：pi-ai 的 OpenAI Chat Completions 实现 + 空闲超时。
+ * 发起一次模型流式请求：按模型的接口格式选 pi-ai 的 OpenAI Chat Completions 或 Anthropic Messages 实现 + 空闲超时。
  *
  * openai SDK 的 timeout 只管到服务器开始响应为止，正文流到一半卡住会一直等下去。
  * 这里按「多久没有收到任何数据」判定超时：每收到一个事件重新计时，长回答只要还在输出就不会被误判。
@@ -18,7 +18,8 @@ const timeoutMessage = (ms) => `AI 请求超时（${Math.round(ms / 1000)} 秒�
  * @returns {Promise<AssistantMessageEventStream>}
  */
 const openStream = async (model, context, options = {}) => {
-  const { streamOpenAI, createAssistantMessageEventStream } = await loadPi();
+  const { streamOpenAI, streamAnthropic, createAssistantMessageEventStream } = await loadPi();
+  const streamFn = model.api === 'anthropic-messages' ? streamAnthropic : streamOpenAI;
   const idleMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : DEFAULT_IDLE_TIMEOUT_MS;
   const controller = new AbortController();
   const userSignal = options.signal;
@@ -33,7 +34,7 @@ const openStream = async (model, context, options = {}) => {
   else userSignal?.addEventListener('abort', onUserAbort, { once: true });
   arm();
 
-  const inner = streamOpenAI(model, context, { ...options, signal: controller.signal, timeoutMs: idleMs });
+  const inner = streamFn(model, context, { ...options, signal: controller.signal, timeoutMs: idleMs });
   const out = createAssistantMessageEventStream();
   (async () => {
     try {
