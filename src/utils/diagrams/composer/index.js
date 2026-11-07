@@ -65,9 +65,15 @@ const finiteSize = (v) => {
   return v
 }
 
+// 这些容器会把 props.w 当作自己的目标宽度（提示词里允许模型给容器写 w，过去只有卡片生效）。
+const WIDTH_CONTAINERS = new Set(['group', 'stack.v', 'stack.h', 'grid'])
+const explicitWidth = (node) => (WIDTH_CONTAINERS.has(node?.type) && Number.isFinite(node?.props?.w) ? node.props.w : null)
+
 export const measureNode = (node, maxW = null) => {
   if (!node || typeof node !== 'object') return { w: 0, h: 0 }
   const def = getDef(node.type)
+  const ew = explicitWidth(node)
+  if (ew != null) maxW = maxW != null ? Math.min(maxW, ew) : ew
   const m = def.measure(node, maxW)
   node._w = finiteSize(m.w)
   node._h = finiteSize(m.h)
@@ -79,6 +85,8 @@ export const placeNode = (node, x, y, w, out) => {
   // 记录最终落位，供跨容器 connector 寻址
   node._x = x
   node._y = y
+  // 指定了宽度的容器按自身量好的宽度落位，不被父容器的 stretch 拉宽，否则背景框与内容宽度不一致。
+  if (explicitWidth(node) != null) w = node._w
   node._wp = w ?? node._w
   const def = getDef(node.type)
   const startIdx = out.length
@@ -357,6 +365,9 @@ register('stack.v', {
 
 // ─── 布局容器：stack.h ─────────────────────────────
 
+// 行内可以伸展填满剩余宽度的块级节点（徽标、按钮、图标等行内元素保持自身宽度）
+const ROW_FLEX_TYPES = new Set(['card', 'group', 'stack.v', 'list', 'table', 'callout', 'grid'])
+
 register('stack.h', {
   measure(node, maxW) {
     const p = node.props || {}
@@ -370,6 +381,22 @@ register('stack.h', {
       const share = Math.max(40, Math.floor((maxW - pad * 2 - (kids.length - 1) * gap) / kids.length))
       kids.forEach((c) => measureNode(c, share))
       intrinsic = kids.reduce((s, c) => s + c._w, 0) + Math.max(0, kids.length - 1) * gap
+    }
+    // 有可用宽度且默认对齐时，让卡片/分组等块级子节点平分剩余空间，避免一行内容挤在左边、右侧大片空白。
+    const justify = p.justify || 'start'
+    if (maxW != null && justify === 'start' && kids.length) {
+      const flex = kids.filter((c) => ROW_FLEX_TYPES.has(c.type) && !Number.isFinite(c.props?.w))
+      const fixedW = kids.filter((c) => !flex.includes(c)).reduce((s, c) => s + c._w, 0)
+      const available = maxW - pad * 2 - Math.max(0, kids.length - 1) * gap - fixedW
+      const flexW = flex.reduce((s, c) => s + c._w, 0)
+      if (flex.length && available > flexW + 1) {
+        const even = available / flex.length
+        const equal = flex.every((c) => c._w <= even)
+        const targets = flex.map((c) => Math.floor(equal ? even : c._w + (available - flexW) * (c._w / flexW)))
+        targets[targets.length - 1] += Math.floor(available) - targets.reduce((s, v) => s + v, 0) // 取整余数给最后一个，整行恰好填满
+        flex.forEach((c, i) => measureNode(c, targets[i]))
+        intrinsic = kids.reduce((s, c) => s + c._w, 0) + Math.max(0, kids.length - 1) * gap
+      }
     }
     const maxH = kids.reduce((m, c) => Math.max(m, c._h), 0)
     node._pad = pad; node._gap = gap; node._rowH = maxH
@@ -883,15 +910,25 @@ register('graph', {
   measure(node, maxW) {
     const p = node.props || {}
     const kids = childList(node)
-    kids.forEach((c) => measureNode(c, p.nodeMaxW || 200))
-    const lnodes = kids.map((c, i) => ({ id: c.props?.id != null ? String(c.props.id) : `__g${i}`, w: c._w, h: c._h }))
-    kids.forEach((c, i) => { c._gid = lnodes[i].id })
     const edges = (Array.isArray(p.edges) ? p.edges : []).map((e) => ({ from: String(e.from), to: String(e.to) }))
-    const laid = layoutGraph(lnodes, edges, {
+    const opts = {
       direction: p.direction === 'LR' ? 'LR' : 'TB',
       layerGap: p.layerGap ?? 72,
       nodeGap: p.nodeGap ?? 40,
-    })
+    }
+    const layout = (nodeMax) => {
+      kids.forEach((c) => measureNode(c, nodeMax))
+      const lnodes = kids.map((c, i) => ({ id: c.props?.id != null ? String(c.props.id) : `__g${i}`, w: c._w, h: c._h }))
+      kids.forEach((c, i) => { c._gid = lnodes[i].id })
+      return layoutGraph(lnodes, edges, opts)
+    }
+    // 关系图超出父容器宽度时逐步收窄节点（文字会换行），而不是让整行撑出画布、和下方内容宽度不一致。
+    let nodeMax = p.nodeMaxW || 200
+    let laid = layout(nodeMax)
+    for (let i = 0; i < 4 && maxW != null && laid.width > maxW + 1 && nodeMax > 120; i++) {
+      nodeMax = Math.max(120, Math.floor(nodeMax * (maxW / laid.width)) - 4)
+      laid = layout(nodeMax)
+    }
     node._graph = laid
     return { w: Math.max(laid.width, maxW || 0), h: laid.height }
   },
@@ -1216,6 +1253,7 @@ const renderConnectors = (root, connectors, out) => {
       stroke: tone?.stroke || DIAGRAM_THEME.line,
       strokeWidth: 1.6,
       dashed: !!conn.dashed,
+      rounded: false,
     })
     // 绑定箭头与两端图形：移动节点时连线跟随，避免"线与块脱节"
     if (fromBox.el?.id) {

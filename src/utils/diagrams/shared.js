@@ -76,6 +76,10 @@ export const measureTextWidth = (text, fontSize = 16) => {
 
 // 按实际像素宽度换行，同时保留用户/模型给出的显式换行。英文优先在空格处断行，
 // 中日韩文字可逐字断行，避免“整段含一个中文字符就把所有英文当全角字”的过度换行。
+// 行首禁则（不能出现在行首的标点）与行尾禁则（不能留在行尾的开括号/引号）
+const NO_LINE_START = new Set([...'，。、；：！？）】》」』”’…—,.;:!?)]}%'])
+const NO_LINE_END = new Set([...'（【《「『“‘([{'])
+
 export const wrapTextToWidth = (text, maxWidth, fontSize = 16) => {
   const source = String(text ?? '')
   const limit = Number.isFinite(maxWidth) ? Math.max(fontSize * 4, maxWidth) : Infinity
@@ -96,6 +100,14 @@ export const wrapTextToWidth = (text, maxWidth, fontSize = 16) => {
         if (breakAt > 0) {
           output.push(current.slice(0, breakAt).trimEnd())
           current = `${current.slice(breakAt + 1)}${char}`.trimStart()
+        } else if ((NO_LINE_START.has(char) || NO_LINE_END.has([...current].pop())) && [...current].length > 1) {
+          // 中文避头尾：标点不出现在行首、开括号不留在行尾——把上一行最后一个字一起带到下一行。
+          const chars = [...current]
+          // 连续标点（如「）。」）要一起带走，直到上一行末尾是普通字符
+          let carry = 1
+          while (carry < chars.length - 1 && NO_LINE_START.has(chars[chars.length - carry])) carry++
+          output.push(chars.slice(0, -carry).join(''))
+          current = chars.slice(-carry).join('') + char
         } else {
           output.push(current)
           current = char.trimStart()
@@ -317,6 +329,7 @@ export const makeArrow = ({
   endArrow = 'arrow',
   startBinding = null,
   endBinding = null,
+  rounded = true,
 }) => {
   // 最后一道护栏：任何 NaN/Infinity 坐标都会让 Excalidraw 生成 `<path d="MNaN…">` 直接崩溃。
   // 这里把所有点钳成有限数，保证渲染层永不收到非法坐标。
@@ -340,6 +353,8 @@ export const makeArrow = ({
     endBinding,
     startArrowhead: null,
     endArrowhead: endArrow,
+    // 多段正交折线若保留曲线圆角，Excalidraw 会把拐点平滑成波浪线；折线一律用直角，单段直线保留默认。
+    roundness: rounded && safePoints.length <= 2 ? { type: 2 } : null,
   }
 }
 
