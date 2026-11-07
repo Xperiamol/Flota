@@ -206,8 +206,14 @@ export const registerDataPrimitives = (register) => {
           a0 += sweep
         })
         const centerTxt = p.centerText != null ? String(p.centerText) : `${fmt(total)}${p.unit || ''}`
-        const cm = measureTextBlock(centerTxt, Math.round(d * 0.14))
-        out.push(makeText({ x: ox - cm.width / 2, y: oy - cm.height / 2, text: centerTxt, fontSize: Math.round(d * 0.14), color: DIAGRAM_THEME.text, align: 'center', metrics: cm }))
+        // 中心文字缩到内圈里：可用宽度取内圆直径的 80%，字号最小 12
+        const hole = (r - ring) * 2 * 0.8
+        let cfs = Math.round(d * 0.14)
+        let cm = measureTextBlock(centerTxt, cfs)
+        while (cm.width > hole && cfs > 12) { cfs -= 1; cm = measureTextBlock(centerTxt, cfs) }
+        let centerWrapped = centerTxt
+        if (cm.width > hole) { centerWrapped = wrapTextToWidth(centerTxt, hole, cfs); cm = measureTextBlock(centerWrapped, cfs) }
+        out.push(makeText({ x: ox - cm.width / 2, y: oy - cm.height / 2, text: centerWrapped, fontSize: cfs, color: DIAGRAM_THEME.text, align: 'center', metrics: cm }))
         let ly = cy + Math.max(0, (d - c.rows.reduce((s, row) => s + row.m.height + 8, -8)) / 2)
         c.rows.forEach((row, i) => {
           const lx = x + d + 28

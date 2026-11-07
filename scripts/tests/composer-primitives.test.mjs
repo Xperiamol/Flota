@@ -281,3 +281,15 @@ test('icon symbol must be an emoji or symbol, not an English name', () => {
   assert.doesNotThrow(() => renderComposer({ type: 'icon', props: { symbol: '🚲' } }))
   assert.doesNotThrow(() => renderComposer({ type: 'icon', props: { symbol: 'A' } }))
 })
+
+test('donut center text shrinks to fit inside the hole', () => {
+  for (const w of [300, 600]) {
+    const { elements } = renderComposer({ type: 'chart', props: { kind: 'donut', w, centerText: '本月来源分布', data: [{ label: '小红书', value: 45 }, { label: '搜索', value: 25 }, { label: '其他', value: 30 }] } })
+    const sectors = elements.filter(e => e.type === 'line')
+    const xs = sectors.flatMap(e => e.points.map(([px]) => e.x + px))
+    const d = Math.max(...xs) - Math.min(...xs)
+    const t = elements.find(e => e.type === 'text' && e.text.replace(/\n/g, '') === '本月来源分布')
+    const ring = Math.max(14, d * 0.18)
+    assert.ok(t.width <= (d - ring * 2) * 0.82, `w=${w}: text ${Math.round(t.width)} vs hole ${Math.round(d - ring * 2)}`)
+  }
+})
