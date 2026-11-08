@@ -267,6 +267,7 @@ class AIChatService {
       const result = await this._executeTool(action.name, finalArgs, {
         requireConfirmation: false,
         onChunk: typeof runtime.onChunk === 'function' ? runtime.onChunk : null,
+        abortSignal: runtime.abortSignal,
       });
       const parsed = safeJsonParse(result);
       const success = !(parsed?.error || parsed?.success === false);

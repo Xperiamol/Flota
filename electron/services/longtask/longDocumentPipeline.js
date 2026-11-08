@@ -95,69 +95,77 @@ class LongDocumentPipeline {
     let rollingSummary = '';
     let totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
 
-    for (let i = 0; i < sections.length; i += 1) {
-      checkAbort();
-      const sec = sections[i];
-      onProgress({
-        phase: 'writing',
-        message: `正在撰写第 ${i + 1}/${sections.length} 章：${sec.title}`,
-        sectionIndex: i,
-        sectionTitle: sec.title,
-        totalSections: sections.length
-      });
-
-      let result;
-      try {
-        result = await this._writeSection({
-          plan,
-          section: sec,
-          sectionIndex: i,
-          totalSections: sections.length,
-          rollingSummary,
-          topic,
-          extraContext
-        }, {
-          abortSignal,
-          onToken: (delta) => onToken(delta, { phase: 'writing', sectionIndex: i, sectionTitle: sec.title }),
-          onProgress: (words, targetWords) => onProgress({
-            phase: 'section_progress',
-            sectionIndex: i,
-            sectionTitle: sec.title,
-            totalSections: sections.length,
-            words,
-            targetWords
-          })
-        });
-      } catch (e) {
-        if (e && e.aborted) throw e;
-        // 单章失败降级为保底内容，不影响整体（对齐 AIDA 的 _build_fallback_section_markdown）
-        result = { content: this._fallbackSection(sec), usage: null };
+    try {
+      for (let i = 0; i < sections.length; i += 1) {
+        checkAbort();
+        const sec = sections[i];
         onProgress({
-          phase: 'section_failed',
-          message: `第 ${i + 1} 章生成失败，已降级为保底内容`,
+          phase: 'writing',
+          message: `正在撰写第 ${i + 1}/${sections.length} 章：${sec.title}`,
           sectionIndex: i,
           sectionTitle: sec.title,
           totalSections: sections.length
         });
+
+        let result;
+        try {
+          result = await this._writeSection({
+            plan,
+            section: sec,
+            sectionIndex: i,
+            totalSections: sections.length,
+            rollingSummary,
+            topic,
+            extraContext
+          }, {
+            abortSignal,
+            onToken: (delta) => onToken(delta, { phase: 'writing', sectionIndex: i, sectionTitle: sec.title }),
+            onProgress: (words, targetWords) => onProgress({
+              phase: 'section_progress',
+              sectionIndex: i,
+              sectionTitle: sec.title,
+              totalSections: sections.length,
+              words,
+              targetWords
+            })
+          });
+        } catch (e) {
+          if (e && e.aborted) throw e;
+          // 单章失败降级为保底内容，不影响整体（对齐 AIDA 的 _build_fallback_section_markdown）
+          result = { content: this._fallbackSection(sec), usage: null };
+          onProgress({
+            phase: 'section_failed',
+            message: `第 ${i + 1} 章生成失败，已降级为保底内容`,
+            sectionIndex: i,
+            sectionTitle: sec.title,
+            totalSections: sections.length
+          });
+        }
+
+        written.push({ title: sec.title, content: result.content });
+        if (result.usage) this._accUsage(totalUsage, result.usage);
+
+        onProgress({
+          phase: 'section_done',
+          message: `第 ${i + 1} 章完成`,
+          sectionIndex: i,
+          sectionTitle: sec.title,
+          totalSections: sections.length
+        });
+
+        // 更新滚动摘要（除最后一章外）
+        if (i < sections.length - 1) {
+          checkAbort();
+          const summary = await this._summarize(written, { abortSignal });
+          if (summary) rollingSummary = summary;
+        }
       }
-
-      written.push({ title: sec.title, content: result.content });
-      if (result.usage) this._accUsage(totalUsage, result.usage);
-
-      onProgress({
-        phase: 'section_done',
-        message: `第 ${i + 1} 章完成`,
-        sectionIndex: i,
-        sectionTitle: sec.title,
-        totalSections: sections.length
-      });
-
-      // 更新滚动摘要（除最后一章外）
-      if (i < sections.length - 1) {
-        checkAbort();
-        const summary = await this._summarize(written, { abortSignal });
-        if (summary) rollingSummary = summary;
+    } catch (e) {
+      // 用户中途停止：已写完的章节随错误带出，由调用方保存成「未完成」的稿子，不白写
+      if (e && e.aborted && written.length) {
+        e.partial = { title: plan.title, sections: written, totalSections: sections.length, markdown: this._merge(plan, written) };
       }
+      throw e;
     }
 
     // ---- 3) 归并成稿 ----

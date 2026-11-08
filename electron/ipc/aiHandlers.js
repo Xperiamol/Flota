@@ -11,6 +11,7 @@ const { getInstance: getLogger } = require('../services/LoggerService');
 const registerAIHandlers = (services) => {
   const logger = getLogger();
   const activeGenerations = new Map();
+  const runningActions = new Map(); // 正在执行的确认卡：sender:actionId → AbortController
   registerIpcHandlers([
     { channel: 'ai:get-config', handler: createTryCatchHandler(services, 'aiService', 'getConfig', '获取AI配置失败') },
     { channel: 'ai:save-config', handler: createTryCatchHandler(services, 'aiService', 'saveConfig', '保存AI配置失败') },
@@ -60,7 +61,16 @@ const registerAIHandlers = (services) => {
             if (!chunk || typeof chunk.type !== 'string' || !chunk.type.startsWith('step_')) return;
             if (!sender.isDestroyed()) sender.send('ai:action-progress', { actionId, chunk });
           };
-          const result = await services.aiChatService.executePendingAction(actionId, overrides, fallback, { onChunk });
+          // 卡片上的「停止」通过 ai:cancel-pending-action 中止；同一张卡同时只会执行一次
+          const key = `${sender.id}:${actionId}`;
+          const controller = new AbortController();
+          runningActions.set(key, controller);
+          let result;
+          try {
+            result = await services.aiChatService.executePendingAction(actionId, overrides, fallback, { onChunk, abortSignal: controller.signal });
+          } finally {
+            if (runningActions.get(key) === controller) runningActions.delete(key);
+          }
           logger.info('AIChatService', 'execute-pending-action', {
             actionId,
             name: result?.action?.name,
@@ -75,6 +85,11 @@ const registerAIHandlers = (services) => {
         }
       }
     },
+    { channel: 'ai:cancel-pending-action', handler: async (event, actionId) => {
+      const controller = runningActions.get(`${event.sender.id}:${actionId}`);
+      controller?.abort();
+      return { success: Boolean(controller) };
+    } },
     {
       channel: 'ai:consume-pending-action',
       handler: async (_event, actionId, fallback) => {

@@ -134,6 +134,17 @@ const write_long_document = async (args, runtime, services) => {
     });
   } catch (error) {
     if (error && error.aborted) {
+      const partial = error.partial;
+      if (partial) {
+        try {
+          const title = `${partial.title}（未完成 ${partial.sections.length}/${partial.totalSections} 章）`;
+          const note = noteDAO.create({ title, content: partial.markdown, tags: '', category: '' });
+          emitStep({ type: 'step_end', stepId: ROOT, status: 'failed', title: `已停止，已写完的 ${partial.sections.length} 章已保存` });
+          return JSON.stringify({ cancelled: true, error: `长文档生成已停止，已写完的 ${partial.sections.length} 章已保存为笔记「${note.title}」`, note_id: note.id });
+        } catch (e) {
+          logger.error('AIChatService', 'write_long_document save partial failed', e);
+        }
+      }
       emitStep({ type: 'step_end', stepId: ROOT, status: 'failed', title: '已取消生成' });
       return JSON.stringify({ cancelled: true, error: '长文档生成已取消' });
     }

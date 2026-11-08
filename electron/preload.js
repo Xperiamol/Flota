@@ -388,6 +388,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getProviders: inv('ai:get-providers'),
     chat: inv('ai:chat'),
     cancelChat: inv('ai:cancel-chat'),
+    cancelPendingAction: inv('ai:cancel-pending-action'),
     autoAnnotate: inv('ai:auto-annotate'),
     executePendingAction: inv('ai:execute-pending-action'),
     consumePendingAction: inv('ai:consume-pending-action'),

@@ -7,7 +7,8 @@ export const getGenerationTaskPhase = id => tasks.get(id)?.phase || null
 export const cancelGenerationTask = id => tasks.get(id)?.cancel() || false
 const abortError = () => Object.assign(new Error('已停止生成'), { name: 'AbortError' })
 
-export const createGenerationTask = id => {
+// onCancel：任务在主进程执行（长文写作等）时，用它通知主进程中止
+export const createGenerationTask = (id, { onCancel } = {}) => {
   if (tasks.has(id)) throw new Error('该任务正在执行')
   const controller = new AbortController()
   let requestId = null
@@ -21,6 +22,7 @@ export const createGenerationTask = id => {
       task.phase = 'cancelling'
       controller.abort()
       if (requestId) Promise.resolve(window.electronAPI?.ai?.cancelChat?.(requestId)).catch(() => {})
+      if (onCancel) Promise.resolve().then(onCancel).catch(() => {})
       emit()
       return true
     },

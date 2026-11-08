@@ -203,6 +203,12 @@ const useOpenResult = (action) => {
   return null
 }
 
+// 停止后仍保存了部分结果（如长文已写完的章节）时可以直接打开
+const OpenPartialResult = ({ action, compact }) => {
+  const result = useOpenResult(action)
+  return result ? <GhostButton compact={compact} onClick={result.open}>{result.label}</GhostButton> : null
+}
+
 const rowSx = (theme) => ({
   mt: 0.75,
   pl: 1,
@@ -392,6 +398,7 @@ const SimpleActionCard = ({ action, executing, onExecute, onDismiss, onRestore, 
       <CardBody compact={compact}>
         <Summary compact={compact}>{getDetail(action)}</Summary>
         {failed && action.error && <Note color="error.main">{action.error}</Note>}
+        {cancelled && action.error && action.error !== '已停止' && <Note>{action.error}</Note>}
         {!retryable && action.name === 'edit_note' && <NoteEditPreview preview={action.preview} compact={compact} />}
         {!retryable && action.name === 'update_widget' && (
           <Note>会作用于这个组件的所有实例，数据保留，完成后可以撤销。</Note>
@@ -422,6 +429,7 @@ const SimpleActionCard = ({ action, executing, onExecute, onDismiss, onRestore, 
       <CardFooter compact={compact}>
         {!retryable && onDismiss && <GhostButton compact={compact} onClick={() => onDismiss(action)}>忽略</GhostButton>}
         {onRevise && <GhostButton compact={compact} onClick={() => onRevise(action)}>修改</GhostButton>}
+        {cancelled && action.resultNoteId != null && <OpenPartialResult action={action} compact={compact} />}
         <PrimaryButton compact={compact} onClick={() => onExecute?.(action)}>{retryable ? '重试' : '确认'}</PrimaryButton>
       </CardFooter>
     </Box>

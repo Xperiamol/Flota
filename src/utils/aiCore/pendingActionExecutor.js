@@ -179,12 +179,18 @@ export const runPendingAction = async ({ action, overrides = null, deps = {} }) 
         return { success: false, error: `当前笔记有未保存的修改且保存失败，已暂停 AI 修改：${error.message}`, finalAction: action, message: '', reloadNotes: false, reloadTodos: false }
       }
     }
-    if (WHITEBOARD_ACTIONS.has(action.name) || WIDGET_ACTIONS.has(action.name)) task = createGenerationTask(action.actionId)
+    // 每张执行中的卡片都可以停止：画布、组件在渲染层执行，其余（长文写作等）在主进程执行，停止时通知主进程中止
+    const runsInMain = !WHITEBOARD_ACTIONS.has(action.name) && !WIDGET_ACTIONS.has(action.name)
+    task = createGenerationTask(action.actionId, runsInMain ? { onCancel: () => window.electronAPI?.ai?.cancelPendingAction?.(action.actionId) } : {})
     const result = WHITEBOARD_ACTIONS.has(action.name)
       ? await executeWhiteboardAction(action, overrides, deps, task)
       : WIDGET_ACTIONS.has(action.name)
         ? await executeWidgetAction(action, task, overrides)
         : await window.electronAPI?.ai?.executePendingAction?.(action.actionId, overrides, buildFallback(action))
+    if (runsInMain && task.signal.aborted) {
+      // 主进程已中止；长文写作停止时会把已写完的章节保存下来，结果里带着说明
+      return { success: false, cancelled: true, message: result?.error || '已停止', error: result?.error || '已停止', finalAction: action, resultNoteId: result?.result?.note_id ?? null, reloadNotes: Boolean(result?.result?.note_id), reloadTodos: false }
+    }
     if (result?.success && action.name === 'update_settings') {
       await applyAISettings(result.result.settingsChanges)
       result.message = result.result.message
