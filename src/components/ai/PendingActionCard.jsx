@@ -48,6 +48,7 @@ export const ACTION_LABELS = {
   add_memory: '记住',
   update_memory: '更新记忆',
   write_long_document: '写长文档',
+  save_document: '保存长文',
   create_widget: '生成组件',
   update_widget: '修改组件',
   create_widget_instance: '新建组件实例',
@@ -66,6 +67,7 @@ const ACTION_ICONS = {
   add_memory: MemoryIcon,
   update_memory: MemoryIcon,
   write_long_document: DocIcon,
+  save_document: DocIcon,
   create_widget: WidgetIcon,
   update_widget: WidgetIcon,
   create_widget_instance: WidgetIcon,
@@ -402,6 +404,14 @@ const SimpleActionCard = ({ action, executing, onExecute, onDismiss, onRestore, 
         {!retryable && action.name === 'edit_note' && <NoteEditPreview preview={action.preview} compact={compact} />}
         {!retryable && action.name === 'update_widget' && (
           <Note>会作用于这个组件的所有实例，数据保留，完成后可以撤销。</Note>
+        )}
+        {!retryable && action.name === 'save_document' && Array.isArray(action.args?.headings) && action.args.headings.length > 0 && (
+          <Box component="ul" sx={{ m: 0, mt: 0.4, pl: 2.25, color: 'text.secondary' }}>
+            {action.args.headings.slice(0, 8).map((heading, index) => (
+              <Typography component="li" key={`${heading}-${index}`} sx={{ fontSize: 12, lineHeight: 1.6 }}>{heading.replace(/^#+\s*/, '')}</Typography>
+            ))}
+            {action.args.headings.length > 8 && <Typography component="li" sx={{ fontSize: 12, lineHeight: 1.6, listStyle: 'none' }}>…</Typography>}
+          </Box>
         )}
         {!retryable && action.name === 'create_widget' && (
           <Note>{action.args?.code ? '已在沙箱里预跑通过，确认后固定到侧边栏。' : '生成后会先预览检查，有问题自动修复，完成后固定到侧边栏。'}</Note>

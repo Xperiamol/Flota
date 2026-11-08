@@ -120,6 +120,7 @@ class PendingActionStore {
     switch (name) {
       case 'update_settings': return require('./tools/handlers/settings').summarizeChanges(args.changes);
       case 'create_note': return `创建笔记「${args.title || '未命名'}」`;
+      case 'save_document': return `保存长文《${args.title || '未命名'}》${args.chars ? `，约 ${args.chars} 字` : ''}`;
       case 'edit_note': {
         const title = args.title ? `，标题改为「${args.title}」` : '';
         if (preview?.mode === 'partial') return `修改笔记 #${args.id} 中的 ${preview.total} 处内容${title}`;

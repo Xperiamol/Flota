@@ -10,7 +10,7 @@ const notes = require('./handlers/notes');
 const todos = require('./handlers/todos');
 const memories = require('./handlers/memories');
 const webSearch = require('./handlers/webSearch');
-const longDocument = require('./handlers/longDocument');
+const documents = require('./handlers/documents');
 const settings = require('./handlers/settings');
 const widgets = require('./handlers/widgets');
 const canvas = require('./handlers/canvas');
@@ -20,7 +20,7 @@ const HANDLERS = Object.freeze({
   ...todos,
   ...memories,
   ...webSearch,
-  ...longDocument,
+  ...documents,
   ...widgets,
   ...canvas,
   ...settings

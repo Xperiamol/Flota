@@ -16,12 +16,11 @@ const { referencesFromMessages } = require('../aiReferences');
  */
 
 const { getInstance: getLogger } = require('../LoggerService');
-const LongDocumentPipeline = require('../longtask/longDocumentPipeline');
 
 const { WRITE_TOOL_NAMES, MAX_CONTEXT_TOKENS } = require('./constants');
 
 // 会改动笔记内容 / 标题 / 标签的工具（白板由渲染层执行器自行保存并刷新）
-const NOTE_WRITE_TOOLS = new Set(['create_note', 'edit_note', 'edit_notes', 'write_long_document']);
+const NOTE_WRITE_TOOLS = new Set(['create_note', 'edit_note', 'edit_notes', 'save_document']);
 const { isEnabledSetting, safeJsonParse } = require('./utils');
 const { dispatchTool } = require('./tools/dispatcher');
 const { getSystemPrompt, buildContextSection } = require('./systemPrompt');
@@ -58,7 +57,7 @@ class AIChatService {
     this._canvasChecker = null; // 由 main.js 注入：在渲染进程里用真实排版引擎试渲染画布
     this._widgetChecker = null; // 由 main.js 注入：在渲染进程的沙箱里按各尺寸预跑组件草稿
     this._pendingActions = new PendingActionStore({ mem0Service });
-    this._longDocPipeline = null;
+    this._documentDrafts = new Map(); // write_document 正在写的长文：doc_id → { title, parts, updatedAt }
     this._memoryExtractor = new MemoryExtractor({
       mem0Service,
       generate: (messages, opts) => this._generatePlainText(messages, opts),
@@ -89,15 +88,41 @@ class AIChatService {
     this._widgetService = widgetService;
   }
 
-  /** 懒加载长文档生成管线（复用 _streamRequest 路径作为生成引擎，避免分歧） */
-  _getLongDocPipeline() {
-    if (!this._longDocPipeline) {
-      const client = {
-        generate: (messages, opts = {}) => this._generatePlainText(messages, opts)
-      };
-      this._longDocPipeline = new LongDocumentPipeline(client);
+  /**
+   * write_document：模型分段写长文，每次追加一部分；写完（finished）时生成「保存为笔记」的确认卡。
+   * 草稿只在内存里，6 小时没有续写就丢弃。
+   */
+  async _writeDocument(args, context, { requireConfirmation = true } = {}) {
+    const DRAFT_TTL_MS = 6 * 60 * 60 * 1000;
+    const now = Date.now();
+    for (const [id, draft] of this._documentDrafts) if (now - draft.updatedAt > DRAFT_TTL_MS) this._documentDrafts.delete(id);
+    const content = String(args.content ?? '').trim();
+    if (!content) return { success: false, error: 'content 不能为空' };
+    let docId = args.doc_id ? String(args.doc_id) : '';
+    let draft = docId ? this._documentDrafts.get(docId) : null;
+    if (docId && !draft) return { success: false, error: `找不到文档 ${docId}（可能已保存或超过 6 小时未续写）；请不带 doc_id 重新开始` };
+    if (!draft) {
+      const title = String(args.title || '').trim();
+      if (!title) return { success: false, error: '开新文档时需要 title' };
+      docId = `doc_${now.toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+      draft = { title, parts: [], updatedAt: now };
+      this._documentDrafts.set(docId, draft);
     }
-    return this._longDocPipeline;
+    draft.parts.push(content);
+    draft.updatedAt = now;
+    const markdown = draft.parts.join('\n\n');
+    const headings = (markdown.match(/^#{1,3} .+$/gm) || []).slice(-30);
+    const chars = markdown.replace(/\s/g, '').length;
+    if (!args.finished) {
+      return { success: true, doc_id: docId, parts: draft.parts.length, chars, headings, note: '已追加。继续调用 write_document（带上 doc_id）写下一部分；最后一部分设 finished: true。' };
+    }
+    this._documentDrafts.delete(docId);
+    if (!requireConfirmation) {
+      const saved = safeJsonParse(await this._executeTool('save_document', { title: draft.title, content: markdown }, { requireConfirmation: false }));
+      return { ...saved, doc_id: docId, chars };
+    }
+    const { confirmationHint, ...card } = await this._pendingActions.create('save_document', { title: draft.title, content: markdown, chars, headings }, context);
+    return { ...card, doc_id: docId, chars, note: '长文已写完并生成「保存为笔记」的确认卡。用一两句话说明写了什么，不要在回复里重复正文。' };
   }
 
   /** 纯文本流式生成（无工具调用） */
@@ -143,7 +168,6 @@ class AIChatService {
       todoDAO: this.todoDAO,
       mem0Service: this.mem0Service,
       webSearchService: this.webSearchService,
-      longDocPipeline: this._getLongDocPipeline(),
       logger: this.logger,
       getCurrentNote,
       appSettings: contextPackage?.appSettings || {},
@@ -160,6 +184,10 @@ class AIChatService {
         error: `工具 ${name} 在本次请求中不可用，请不要再次调用它，直接基于已有文本信息回答。`,
         disabled: true
       });
+    }
+    if (name === 'write_document') {
+      const { referenceImages, ...targetContext } = options.actionContext || {};
+      return JSON.stringify(await this._writeDocument(args, options.actionContext ? targetContext : null, { requireConfirmation: options.requireConfirmation !== false }));
     }
     if (options.requireConfirmation !== false && WRITE_TOOL_NAMES.has(name)) {
       if (name === 'update_settings') {

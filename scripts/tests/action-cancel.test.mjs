@@ -4,38 +4,6 @@ import { createRequire } from 'node:module'
 import Module from 'node:module'
 
 const require = createRequire(import.meta.url)
-const LongDocumentPipeline = require('../../electron/services/longtask/longDocumentPipeline.js')
-
-// 假模型：规划 3 章，每章直接返回正文；第 1 章写完后用户点停止
-const fakeLLM = (controller) => ({
-  calls: 0,
-  async generate(messages, { abortSignal } = {}) {
-    const text = JSON.stringify(messages)
-    if (/大纲|sections/.test(text) && this.calls === 0) {
-      this.calls++
-      return { content: JSON.stringify({ title: '测试长文', sections: [{ title: '一' }, { title: '二' }, { title: '三' }] }) }
-    }
-    this.calls++
-    if (abortSignal?.aborted) throw Object.assign(new Error('aborted'), { aborted: true })
-    return { content: '## 章节\n正文内容。' }
-  },
-})
-
-test('long document stopped midway carries the finished chapters out on the error', async () => {
-  const controller = new AbortController()
-  const pipeline = new LongDocumentPipeline(fakeLLM(controller))
-  let sectionsDone = 0
-  const err = await pipeline.run({ topic: '测试' }, {
-    abortSignal: controller.signal,
-    onProgress: (e) => { if (e.phase === 'section_done') { sectionsDone++; if (sectionsDone === 1) controller.abort() } },
-  }).then(() => null, (e) => e)
-  assert.ok(err?.aborted, 'should abort')
-  assert.ok(err.partial, 'partial result attached')
-  assert.equal(err.partial.sections.length, 1)
-  assert.equal(err.partial.totalSections, 3)
-  assert.match(err.partial.markdown, /^# 测试长文/)
-})
-
 test('ai:cancel-pending-action aborts the running confirmation card for the same window only', async () => {
   const handlers = new Map()
   const origLoad = Module._load

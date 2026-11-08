@@ -494,17 +494,17 @@ const TOOLS = [
   {
     type: 'function',
     function: {
-      name: 'write_long_document',
-      description: '生成超长篇、多章节的文档时使用，例如写一部几万字的小说、长篇研究报告、完整方案、系统技术文档、长篇教程等。该工具会自动规划大纲、把任务拆分为多个章节子任务并逐章撰写，最后归并成完整成稿，过程会流式展示。当用户的写作需求明显超出一次性回复能力（通常 >2000 字或需要多个章节）时调用；普通的短回答、单段落内容不要调用。',
+      name: 'write_document',
+      description: '分段写一篇长文（报告、方案、教程、小说、PRD 等），由你直接写正文，每次调用追加一部分。第一次调用给 title 和开头部分，返回 doc_id；之后带上 doc_id 继续追加；写完最后一部分时设 finished: true，会生成「保存为笔记」的确认卡。每部分建议一到两个章节、几千字以内，不必一次写完。',
       parameters: {
         type: 'object',
         properties: {
-          topic: { type: 'string', description: '完整的写作需求/主题描述，尽量包含用户提到的所有要求（风格、背景设定、受众、结构偏好等）。' },
-          doc_type: { type: 'string', description: '文档类型提示，如 小说/研究报告/方案/技术文档/教程 等（可选）。' },
-          target_words: { type: 'number', description: '期望的总字数（可选）。' },
-          extra_context: { type: 'string', description: '额外的参考资料、约束或已有素材（可选）。' }
+          doc_id: { type: 'string', description: '续写时传第一次调用返回的 doc_id；开新文档时不传' },
+          title: { type: 'string', description: '文档标题（开新文档时必填）' },
+          content: { type: 'string', description: '这一部分的 Markdown 正文，接在已写内容之后' },
+          finished: { type: 'boolean', description: '这是最后一部分时设为 true' }
         },
-        required: ['topic']
+        required: ['content']
       }
     }
   },

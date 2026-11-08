@@ -7,7 +7,7 @@ const SKILLS = {
   planning: { title: '待办与规划', description: '查询日程、拆解目标、创建待办；从笔记提取行动项并嵌入实时清单', tools: ['search_todos', 'get_today_todos', 'create_todo', 'create_todos'] },
   canvas: { title: '画布', description: '直接写出画布内容：数据看板、流程图、思维导图、时间线、海报等；读取和局部修改已有画布', tools: ['read_whiteboard', 'create_whiteboard', 'update_whiteboard'] },
   widgets: { title: '组件', description: '直接编写交互小应用（追踪器、仪表盘、工具、小游戏等）、修改组件、创建实例与录入数据', tools: ['list_widgets', 'get_widget', 'create_widget', 'update_widget', 'create_widget_instance', 'add_widget_records'] },
-  writing: { title: '长文写作', description: '多章节小说、报告、方案、教程，分段写作并保存', tools: ['write_long_document'] },
+  writing: { title: '长文写作', description: '多章节报告、方案、教程、小说等长文，分段直接写正文并保存为笔记', tools: ['write_document'] },
   memory: { title: '长期记忆', description: '检索用户偏好和背景，按明确要求记住或更正信息', tools: ['search_memory', 'add_memory', 'update_memory', 'list_memories'] },
   settings: { title: '应用设置', description: '查看和调整主题、排版、显示偏好、历史快照等设置', tools: ['get_settings', 'update_settings'] },
   web: { title: '联网检索', description: '查找实时信息与来源', tools: ['web_search'] },

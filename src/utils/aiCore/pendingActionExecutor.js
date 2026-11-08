@@ -25,10 +25,10 @@ const WHITEBOARD_ACTIONS = new Set(['create_whiteboard', 'update_whiteboard'])
 // 组件生成 / 修改：在渲染层执行（生成 → 沙箱预跑 → 自动修复 → 保存），进度显示在确认卡片里
 const WIDGET_ACTIONS = new Set(['create_widget', 'update_widget'])
 // 白板执行器已在保存后刷新笔记。
-const NOTE_REFRESH_ACTIONS = new Set(['create_note', 'edit_note', 'edit_notes'])
+const NOTE_REFRESH_ACTIONS = new Set(['create_note', 'edit_note', 'edit_notes', 'save_document'])
 const TODO_REFRESH_ACTIONS = new Set(['create_todo', 'create_todos'])
 // 单篇笔记类动作：完成后卡片可以直接“查看”结果
-const SINGLE_NOTE_ACTIONS = new Set(['create_note', 'edit_note', 'create_whiteboard', 'update_whiteboard'])
+const SINGLE_NOTE_ACTIONS = new Set(['create_note', 'edit_note', 'create_whiteboard', 'update_whiteboard', 'save_document'])
 const NOTE_CONTENT_ACTIONS = new Set(['edit_note', 'edit_notes'])
 
 const pickResultNoteId = (name, result) => {
@@ -232,7 +232,7 @@ export const runPendingAction = async ({ action, overrides = null, deps = {} }) 
     const finalAction = result?.action || action
     const success = Boolean(result?.success)
     const message = success
-      ? (result?.message || '操作已完成')
+      ? (result?.message || result?.result?.message || '操作已完成')
       : `操作失败：${result?.error || '未知错误'}`
 
     return {
