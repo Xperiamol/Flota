@@ -226,3 +226,26 @@ test('图片理解开着但模型不收图片：去掉图片重发同一请求�
     assert.ok(retried.includes('图片未发送：当前模型不支持图片输入'), 'model is told the image was dropped')
   })
 })
+
+test('AI 转画布：只开放 submit_canvas，渲染没通过就把错误还给模型，修好后返回被采用的内容', async () => {
+  const chat = service()
+  const checks = []
+  chat._canvasChecker = async ({ args }) => { checks.push(args); return checks.length === 1 ? { ok: false, error: '不支持的画布节点：sparkline' } : { ok: true, summary: { elements: 9 } } }
+  const bad = { children: [{ type: 'sparkline' }] }, good = { children: [{ type: 'card', props: { title: '读书' } }] }
+  await mocked([tool('submit_canvas', { title: '笔记画布', canvas: bad }), tool('submit_canvas', { title: '笔记画布', canvas: good }), '完成'], async requests => {
+    const spec = await chat.composeCanvas({ request: '把这篇笔记整理成画布：读书计划' })
+    assert.deepEqual(spec.canvas, good)
+    assert.equal(spec.title, '笔记画布')
+    assert.deepEqual(requests[0].body.tools.map(t => t.function.name), ['submit_canvas'])
+    assert.match(requests[0].body.messages[0].content, /画布原语手册/)
+    assert.match(JSON.stringify(requests[1].body.messages.at(-1)), /不支持的画布节点：sparkline/)
+  })
+})
+
+test('AI 转画布：模型始终没有提交时给出明确错误', async () => {
+  const chat = service()
+  chat._canvasChecker = async () => ({ ok: true })
+  await mocked(['我不确定怎么画。'], async () => {
+    await assert.rejects(chat.composeCanvas({ request: 'x' }), /没有提交画布内容/)
+  })
+})

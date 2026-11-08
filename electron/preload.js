@@ -390,6 +390,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     chat: inv('ai:chat'),
     cancelChat: inv('ai:cancel-chat'),
     cancelPendingAction: inv('ai:cancel-pending-action'),
+    composeCanvas: inv('ai:compose-canvas'),
     listAutomations: inv('ai:automations-list'),
     removeAutomation: inv('ai:automations-remove'),
     onOpenConversation: listen('ai:open-conversation'),

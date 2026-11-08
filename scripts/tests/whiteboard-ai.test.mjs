@@ -41,10 +41,10 @@ test('图片部分落盘失败必须报错，不能返回残缺索引冒充成�
 
 // 只替换外部生成/IPC 依赖，执行生产代码中的动作解析、结果校验及保存事务。
 let source = await readFile(new URL('../../src/utils/whiteboardAI.js', import.meta.url), 'utf8')
-source = source.replace("import { stripMarkdownToPreviewText } from './markdownTextUtils'", 'const stripMarkdownToPreviewText = value => value')
-  .replace("import logger from './logger'", 'const logger = { warn() {} }')
-  .replace("import('./aiExcalidrawGenerator').then(m => m.aiGenerateExcalidrawElements)", 'Promise.resolve(globalThis.__whiteboardGenerate)')
-  .replaceAll("await import('./diagrams/agentCanvas')", "({ readCanvasSpec: () => null })")
+// 渲染模块换成桩：__whiteboardGenerate 决定「渲染结果」，其余保存、合并、回滚逻辑都是生产代码
+source = source.replace("import logger from './logger'", 'const logger = { warn() {} }')
+  .replaceAll("await import('./diagrams/agentCanvas')", "({ readCanvasSpec: (args) => (args.canvas ? { canvas: args.canvas } : null), renderCanvasSpec: (...a) => globalThis.__whiteboardGenerate(...a) })")
+  .replaceAll("await import('./diagrams/canvasSvgPolicy')", "({ isAiCanvasSvgAllowed: async () => true })")
 const board = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
 const note = { id: 1, title: 'NTU', note_type: 'whiteboard', content: board.buildWhiteboardContent({ elements: [{ id: 'old', type: 'text', text: '2026-10-23' }], fileMap: { old: { fileName: 'old.svg' } } }) }
 const setup = () => {
@@ -56,27 +56,27 @@ test('空生成不覆盖原画布、不写数据库', async () => {
   setup()
   globalThis.__whiteboardGenerate = async () => ({ elements: [] })
   let writes = 0
-  await assert.rejects(board.applyWhiteboardGenerationToNote({ note, prompt: '重画', action: 'replace', updateNote: async () => { writes++ } }), /结果为空/)
+  await assert.rejects(board.applyWhiteboardGenerationToNote({ note, spec: { canvas: {} }, action: 'replace', updateNote: async () => { writes++ } }), /结果为空/)
   assert.equal(writes, 0)
 })
 test('追加合并旧图片索引；重画只保存新索引；图片保存失败不写笔记', async () => {
   setup()
   let saved
   const updateNote = async (id, changes) => { saved = JSON.parse(changes.content); return { success: true } }
-  await board.applyWhiteboardGenerationToNote({ note, prompt: '补充', updateNote })
+  await board.applyWhiteboardGenerationToNote({ note, spec: { canvas: {} }, updateNote })
   assert.equal(saved.elements.length, 2)
   assert.deepEqual(Object.keys(saved.fileMap), ['old', 'fresh'])
-  await board.applyWhiteboardGenerationToNote({ note, prompt: '重画', action: 'replace', updateNote })
+  await board.applyWhiteboardGenerationToNote({ note, spec: { canvas: {} }, action: 'replace', updateNote })
   assert.deepEqual(Object.keys(saved.fileMap), ['fresh'])
   window.electronAPI.whiteboard.saveImages = async () => ({ success: false, error: 'disk full' })
   saved = null
-  await assert.rejects(board.applyWhiteboardGenerationToNote({ note, prompt: '重画', updateNote }), /disk full/)
+  await assert.rejects(board.applyWhiteboardGenerationToNote({ note, spec: { canvas: {} }, updateNote }), /disk full/)
   assert.equal(saved, null)
 })
 test('创建结果保留局部失败警告；刷新失败仍是已保存成功', async () => {
   setup()
   const result = await board.executeCreateWhiteboardToolAction({
-    args: { prompt: 'NTU 海报' }, createNote: async () => ({ success: true, data: note }),
+    args: { title: 'NTU 海报', canvas: {} }, createNote: async () => ({ success: true, data: note }),
     updateNote: async () => ({ success: true }), loadNotes: async () => { throw new Error('refresh failed') },
   })
   assert.equal(result.success, true)
@@ -89,7 +89,7 @@ test('创建生成失败会清理空白笔记', async () => {
   globalThis.__whiteboardGenerate = async () => { throw new Error('模型返回空正文') }
   let deleted
   await assert.rejects(board.executeCreateWhiteboardToolAction({
-    args: { prompt: '海报' }, createNote: async () => ({ success: true, data: note }),
+    args: { title: '海报', canvas: {} }, createNote: async () => ({ success: true, data: note }),
     updateNote: async () => {}, deleteNote: async id => { deleted = id },
   }), /空正文/)
   assert.equal(deleted, 1)
@@ -97,7 +97,7 @@ test('创建生成失败会清理空白笔记', async () => {
 test('快照画布删除后不能回退修改另一张当前画布', async () => {
   setup()
   await assert.rejects(board.executeUpdateWhiteboardToolAction({
-    args: { prompt: '重画' }, currentNote: note, notes: [note], actionContext: { selectedNoteId: 999 }, updateNote: async () => {},
+    args: { canvas: {}, mode: 'replace' }, currentNote: note, notes: [note], actionContext: { selectedNoteId: 999 }, updateNote: async () => {},
   }), /未找到/)
 })
 test('保存及读取保留网格和视口，不保存临时编辑状态', () => {
@@ -124,12 +124,11 @@ const makeEditor = () => {
     isApplyingRemoteDataRef: { current: false }, cancelSave() {}, saveNow: async () => {}, notes: [note],
     haveElementsChanged: (a, b) => JSON.stringify(a) !== JSON.stringify(b), haveFilesChanged: () => false,
     hasCanvasSettingsChanged: () => false, parseWhiteboardContent: board.parseWhiteboardContent,
-    summarizeWhiteboardElementsForAI: board.summarizeWhiteboardElementsForAI,
     generateWhiteboardElementsByAction: () => generating.promise, getPersistedAppState: x => x,
     commitWhiteboardScene: async ({ validate }) => { validate(); state.writes++ }, setTimeout: callback => callback(),
   }
   const handler = Function(...Object.keys(dependencies), `${handlerSource}; return handleExternalGenerate`)(...Object.values(dependencies))
-  const event = () => ({ detail: { noteId: 1, action: 'replace', prompt: '海报', resolve: value => { state.result = value }, reject: error => { state.error = error } } })
+  const event = () => ({ detail: { noteId: 1, action: 'replace', spec: { canvas: {} }, resolve: value => { state.result = value }, reject: error => { state.error = error } } })
   return { dependencies, handler, event, state, generating, edit: () => { elements = [{ id: 'old', version: 2 }] } }
 }
 for (const scenario of ['编辑', '切换', '关闭']) {
@@ -177,7 +176,7 @@ test('图片落盘期间停止生成，最终提交前仍检查取消，不写�
     throwIfCancelled() { if (cancelled) throw Object.assign(new Error('已停止生成'), { name: 'AbortError' }) },
     beginCommit() { this.throwIfCancelled() },
   }
-  const pending = board.applyWhiteboardGenerationToNote({ note, prompt: '重画', action: 'replace', task, updateNote: async () => { writes++ } })
+  const pending = board.applyWhiteboardGenerationToNote({ note, spec: { canvas: {} }, action: 'replace', task, updateNote: async () => { writes++ } })
   await saveStarted.promise
   cancelled = true
   saving.resolve({ success: true, data: { fresh: { fileName: 'fresh.svg' } } })
@@ -188,7 +187,7 @@ test('后台修改完成不强制改变当前选中笔记', async () => {
   setup()
   let selected = 99
   const result = await board.executeUpdateWhiteboardToolAction({
-    args: { target_note_id: 1, prompt: '补充日期' }, notes: [note],
+    args: { target_note_id: 1, canvas: {} }, notes: [note],
     updateNote: async () => ({ success: true }), setSelectedNoteId: id => { selected = id },
   })
   assert.equal(result.success, true)
@@ -205,8 +204,8 @@ test('所有画布保存入口拒绝成功标记下的残缺图片索引', async
 })
 
 
-test('外观投诉和美化默认局部编辑，只有明确重画才替换整张图', () => {
-  for (const prompt of ['画的太丑了', '美化一下', '节点不对齐', '改成蓝色']) assert.equal(board.inferWhiteboardActionFromPrompt(prompt), 'edit')
-  for (const prompt of ['清空后重画', '重新生成流程图']) assert.equal(board.inferWhiteboardActionFromPrompt(prompt), 'replace')
-  assert.equal(board.inferWhiteboardActionFromPrompt('补充一个独立说明区'), 'append')
+test('旧版只有描述（prompt）的确认卡给出明确说明，不再调用已移除的生成器', async () => {
+  setup()
+  await assert.rejects(board.executeCreateWhiteboardToolAction({ args: { prompt: '画个图' }, createNote: async () => ({ success: true, data: note }), updateNote: async () => ({}) }), /旧版画布生成，已不再支持/)
+  await assert.rejects(board.applyWhiteboardGenerationToNote({ note, action: 'replace', updateNote: async () => ({}) }), /旧版画布生成，已不再支持/)
 })

@@ -1310,9 +1310,9 @@ const NoteEditor = ({ onCollapseSidebar }) => {
 
       logger.log('AI MD转画布: 内容长度:', markdownContent.length)
 
-      // 调用 AI 生成画布数据（动态导入以避免首屏加载 Excalidraw 依赖）
-      const { aiConvertMarkdownToWhiteboard } = await import('../../utils/aiExcalidrawGenerator')
-      const generated = JSON.parse(await aiConvertMarkdownToWhiteboard(markdownContent))
+      // AI 直接写画布内容并经渲染检查（动态导入以避免首屏加载 Excalidraw 依赖）
+      const { composeCanvas, noteToCanvasRequest } = await import('../../utils/diagrams/composeCanvas')
+      const generated = JSON.parse((await composeCanvas(noteToCanvasRequest({ title: guard.snapshot.title, content: markdownContent }))).content)
       const fileMap = await saveWhiteboardFiles(generated.fileMap || {})
       const whiteboardContentStr = JSON.stringify({ ...generated, fileMap })
       assertConversionStillCurrent(guard)

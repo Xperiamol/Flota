@@ -166,7 +166,7 @@ const runChat = async ({
       run.seenResults.set(key, raw);
       if (parsed?.requiresConfirmation) run.pendingConfirmation = true;
       // 画布确认卡附带了渲染图：模型看过之后可能要交修正版，下一轮保留工具
-      if (parsed?.requiresConfirmation && parsed?.rendered) run.inspectsResult = true;
+      if ((parsed?.requiresConfirmation || parsed?.delivered === true) && parsed?.rendered) run.inspectsResult = true;
       if (parsed?.delivered === true) run.delivered = true;
       if (name === 'web_search') run.searches += 1;
       return { content, details: { publicResult }, isError: failed };

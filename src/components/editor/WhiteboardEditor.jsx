@@ -27,8 +27,6 @@ import {
   buildWhiteboardContent,
   saveWhiteboardFiles,
   generateWhiteboardElementsByAction,
-  parseWhiteboardContent,
-  summarizeWhiteboardElementsForAI,
 } from '../../utils/whiteboardAI'
 import { canvasToPngBlob } from '../common/ImagePreviewModal'
 import '@excalidraw/excalidraw/index.css'
@@ -1349,16 +1347,12 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
             throw new Error('生成期间画布已有新修改，为保留你的修改，本次结果未写入，请重试')
           }
         }
-        const note = notes.find(item => String(item.id) === String(noteId))
-        const persistedData = parseWhiteboardContent(note?.content)
         const result = await generateWhiteboardElementsByAction({
           action: detail.action,
-          prompt: detail.prompt,
           spec: detail.spec,
           task: detail.task,
           elements: existingElements,
           appState,
-          currentWhiteboardSummary: summarizeWhiteboardElementsForAI(existingElements, persistedData.fileMap || {}),
         })
 
         const nextFiles = result.action !== 'replace'

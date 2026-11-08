@@ -31,6 +31,20 @@ const registerAIHandlers = (services) => {
         if (key) activeGenerations.delete(key);
       }
     } },
+    // 不经过对话的一次性画布设计（AI 转画布）；用 ai:cancel-chat 带同一个 requestId 停止
+    { channel: 'ai:compose-canvas', handler: async (event, requestId, request) => {
+      if (!services.aiChatService) return { success: false, error: 'AI助手服务尚未初始化，请稍后重试' };
+      const key = `${event.sender.id}:${requestId}`;
+      const controller = new AbortController();
+      activeGenerations.set(key, controller);
+      try {
+        return { success: true, data: await services.aiChatService.composeCanvas({ request, abortSignal: controller.signal }) };
+      } catch (error) {
+        return { success: false, error: controller.signal.aborted ? '已停止生成' : error.message };
+      } finally {
+        activeGenerations.delete(key);
+      }
+    } },
     { channel: 'ai:cancel-chat', handler: async (event, requestId) => {
       activeGenerations.get(`${event.sender.id}:${requestId}`)?.abort();
       return { success: true };

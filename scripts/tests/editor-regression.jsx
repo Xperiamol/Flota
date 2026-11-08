@@ -426,14 +426,6 @@ window.runEditorTests = async () => {
     root.render(wrap(<div id="generation-gallery" style={{ margin: '24px auto', maxWidth: 1180, border: '1px solid #e2e8f0', borderRadius: 20, overflow: 'hidden' }} />))
     await waitFor(() => document.querySelector('#generation-gallery'), 'gallery')
     document.querySelector('#generation-gallery').appendChild(svg)
-    const previousAPI = window.electronAPI
-    let reviewed
-    window.electronAPI = { ai: { getConfig: async () => ({ success: true, data: { visionEnabled: true } }), chat: async messages => { reviewed = messages; return { success: true, data: { content: '{"issues":[]}' } } } } }
-    try {
-      const { reviewCanvas } = await import('../../src/utils/diagrams/visualReview')
-      equal(await reviewCanvas(result, '验收原语样张'), [])
-      assert(reviewed[1].content[1].image_url.url.startsWith('data:image/png;base64,'), 'visual review did not receive actual rendered PNG')
-    } finally { window.electronAPI = previousAPI }
     window.generationGallerySvg = svg.outerHTML
     window.showGenerationGallery = async () => {
       root.render(wrap(<div id="final-gallery" style={{ padding: 24, maxWidth: 1200, margin: '0 auto' }} dangerouslySetInnerHTML={{ __html: window.generationGallerySvg }} />))

@@ -381,6 +381,73 @@ class AIChatService {
     };
   }
 
+  /**
+   * 不经过对话的一次性画布设计（如「AI 转画布」把一篇笔记整理成画布）：同样的对话引擎和原语手册，
+   * 只开放一个 submit_canvas 工具。提交先在渲染进程试渲染，错误原样交还模型修；开启图片理解时模型能看到效果图再决定改不改。
+   * @returns {{ title?, canvas?, mermaid? }} 模型最后一次被采用的画布内容
+   */
+  async composeCanvas({ request, abortSignal } = {}) {
+    const configResult = await this.aiService.getConfig();
+    const config = configResult?.data || {};
+    if (!config.enabled) throw new Error('AI功能未启用，请在设置中开启');
+    if (!config.apiKey) throw new Error('请先在设置中配置API密钥');
+    this.aiService._checkRateLimit();
+    const vision = isEnabledSetting(config.visionEnabled);
+    const model = buildModel(config, this.aiService, { vision });
+    const primitives = require('fs').readFileSync(require('path').join(__dirname, 'skills', 'canvas', 'PRIMITIVES.md'), 'utf8');
+    const now = new Date();
+    const systemPrompt = [
+      '你是 Flota 的画布设计师。根据用户给的内容，直接写出画布：结构化内容用 canvas（原语树），时序图、类图、状态图、ER 图用 mermaid。写好后调用 submit_canvas 提交。',
+      '提交时会实际渲染一次：报错会原样返回，照着改了重新提交；通过后，如果附了效果图，看过没有问题就直接回复「完成」结束，有问题再提交完整的修正版。不要输出解释。',
+      `当前时间：${now.toLocaleString('zh-CN', { hour12: false })}`,
+      '',
+      primitives,
+    ].join('\n');
+    const submitTool = { type: 'function', function: {
+      name: 'submit_canvas',
+      description: '提交画布内容（canvas 与 mermaid 二选一）。会先实际渲染检查。',
+      parameters: { type: 'object', properties: {
+        title: { type: 'string', description: '画布标题' },
+        canvas: { type: 'object', description: '原语树：{"title"?,"layout"?,"children":[…],"connectors"?}' },
+        mermaid: { type: 'string', description: 'Mermaid 源码' },
+      } },
+    } };
+    let accepted = null;
+    let lastError = null;
+    const [prompt] = toAgentMessages([{ role: 'user', content: String(request || '') }], model);
+    const result = await runChat({
+      model,
+      requestOptions: buildRequestOptions(config, {}),
+      systemPrompt,
+      history: [],
+      prompt,
+      toolSession: { getTools: () => [submitTool], canExecute: (name) => name === 'submit_canvas', read: () => ({ success: false }) },
+      abortSignal,
+      onChunk: () => {},
+      executeTool: async (_name, args) => {
+        let check = null;
+        try {
+          check = this._canvasChecker ? await this._canvasChecker({ name: 'create_whiteboard', args, wantImage: vision }) : null;
+        } catch (error) {
+          this.logger.warn('AI', 'canvas check unavailable', error?.message);
+        }
+        if (check && check.ok === false) {
+          lastError = check.error;
+          return JSON.stringify({ success: false, error: `画布没有通过渲染检查：${check.error}。请修正后重新提交。` });
+        }
+        accepted = { title: args.title, canvas: args.canvas, mermaid: args.mermaid };
+        return JSON.stringify({
+          success: true,
+          delivered: true,
+          rendered: check?.summary || null,
+          ...(check?.image ? { preview_image: check.image, preview_note: '附图是实际渲染效果。没有问题就回复「完成」；有问题再提交完整的修正版。' } : {}),
+        });
+      },
+    });
+    if (!accepted) throw new Error(result?.error || (lastError ? `画布没有通过渲染检查：${lastError}` : 'AI 没有提交画布内容'));
+    return accepted;
+  }
+
   async executePendingAction(actionId, overrides = null, fallback = null, runtime = {}) {
     const action = this._takePendingAction(actionId, fallback);
     if (!action) return { success: false, error: '待确认操作不存在或已过期' };

@@ -1,9 +1,7 @@
-// 动态导入 aiExcalidrawGenerator 以避免首屏加载 Excalidraw 依赖（~1.3MB）
-import { stripMarkdownToPreviewText } from './markdownTextUtils'
+// 画布的渲染、保存与对话卡片执行。画布内容由对话智能体直接给出（见 diagrams/agentCanvas），这里按需加载排版引擎
 import logger from './logger'
 
-const loadAIGenerator = () =>
-  import('./aiExcalidrawGenerator').then(m => m.aiGenerateExcalidrawElements)
+const LEGACY_CARD_ERROR = '这张卡片来自旧版画布生成，已不再支持，请在对话里让 AI 重新画一次'
 
 export const WHITEBOARD_AI_GENERATE_EVENT = 'flota:whiteboard-ai-generate'
 export const WHITEBOARD_AI_ACTIONS = {
@@ -13,47 +11,6 @@ export const WHITEBOARD_AI_ACTIONS = {
 }
 
 export const isWhiteboardNote = (note) => (note?.note_type || 'markdown') === 'whiteboard'
-
-const WHITEBOARD_DIAGRAM_TYPE_LABELS = {
-  auto: '',
-  mindmap: '思维导图',
-  flowchart: '流程图',
-  architecture: '架构图',
-  sequence: '时序图',
-  hierarchy: '层级结构图',
-  fishbone: '鱼骨图',
-  timeline: '时间轴',
-  gantt: '甘特图',
-  quadrant: '四象限图',
-  pie: '饼图',
-  svg: 'SVG 矢量图',
-}
-
-const buildCurrentNoteContext = (note = null) => {
-  if (!note || isWhiteboardNote(note)) return null
-  const raw = typeof note.content === 'string' ? note.content : ''
-  const preview = stripMarkdownToPreviewText(raw).slice(0, 1800).trim()
-  return {
-    id: note.id,
-    title: String(note.title || '').trim(),
-    noteType: note.note_type || 'markdown',
-    contentPreview: preview,
-  }
-}
-
-const buildWhiteboardGenerationPrompt = ({ prompt, diagramType = 'auto', sourceNote = null }) => {
-  const text = String(prompt || '').trim()
-  const typeKey = String(diagramType || 'auto').trim().toLowerCase()
-  const typeLabel = WHITEBOARD_DIAGRAM_TYPE_LABELS[typeKey] || ''
-  const currentNoteContext = buildCurrentNoteContext(sourceNote)
-
-  return [
-    typeLabel ? `以${typeLabel}呈现：${text}` : text,
-    currentNoteContext
-      ? `参考当前笔记内容生成，不要替换成其他故事或通用示例。\n当前笔记标题：${currentNoteContext.title || '未命名'}\n当前笔记内容摘要：${currentNoteContext.contentPreview || '（空）'}`
-      : ''
-  ].filter(Boolean).join('\n\n')
-}
 
 export const resolveNoteById = (notes = [], id) => {
   if (id == null || id === '') return null
@@ -74,35 +31,6 @@ export const normalizeWhiteboardAction = (action, fallback = WHITEBOARD_AI_ACTIO
     return value
   }
   return fallback
-}
-
-export const inferWhiteboardActionFromPrompt = (prompt = '') => {
-  const text = String(prompt || '').trim().toLowerCase()
-  if (!text) return WHITEBOARD_AI_ACTIONS.APPEND
-
-  if (/(清空|重画|重做|重新生成|整张重来|全部重来|整体重构|覆盖当前|替换当前|推翻重画)/.test(text)) {
-    return WHITEBOARD_AI_ACTIONS.REPLACE
-  }
-
-  if (/(修改|调整|优化|美化|太丑|不好看|不整齐|不对齐|改成|改为|删掉|删除|去掉|替换掉|重排|合并|拆分|补齐|修正|更新一下|把.+改)/.test(text)) {
-    return WHITEBOARD_AI_ACTIONS.EDIT
-  }
-
-  return WHITEBOARD_AI_ACTIONS.APPEND
-}
-
-const deriveFallbackWhiteboardTitle = (prompt = '', note = null) => {
-  const text = String(prompt || '').trim()
-  const baseTitle = String(note?.title || '').trim()
-
-  if (/思维导图|脑图/i.test(text)) return baseTitle ? `${baseTitle}·思维导图` : '思维导图'
-  if (/流程图/i.test(text)) return baseTitle ? `${baseTitle}·流程图` : '流程图'
-  if (/架构图/i.test(text)) return baseTitle ? `${baseTitle}·架构图` : '架构图'
-  if (/时序图/i.test(text)) return baseTitle ? `${baseTitle}·时序图` : '时序图'
-  if (/甘特图/i.test(text)) return baseTitle ? `${baseTitle}·甘特图` : '甘特图'
-  if (/鱼骨图/i.test(text)) return baseTitle ? `${baseTitle}·鱼骨图` : '鱼骨图'
-  if (/(?:SVG|矢量)/i.test(text)) return baseTitle ? `${baseTitle}·矢量图` : 'SVG 矢量图'
-  return baseTitle ? `${baseTitle}·画布` : '未命名画布'
 }
 
 const trimInline = (text = '', max = 32) => {
@@ -217,11 +145,9 @@ export const buildWhiteboardContent = ({ elements = [], appState = {}, fileMap =
 
 export const generateWhiteboardElementsByAction = async ({
   action = WHITEBOARD_AI_ACTIONS.APPEND,
-  prompt,
   spec = null,
   elements = [],
   appState = {},
-  currentWhiteboardSummary = '',
   task,
 }) => {
   const activeElements = elements.filter(element => element && !element.isDeleted)
@@ -234,6 +160,9 @@ export const generateWhiteboardElementsByAction = async ({
     const isAppend = normalizedAction === WHITEBOARD_AI_ACTIONS.APPEND
     const r = await renderCanvasSpec(spec, { existingElements: activeElements, append: isAppend, allowSvg: await isAiCanvasSvgAllowed() })
     task?.throwIfCancelled()
+    if (!Array.isArray(r.elements) || !r.elements.some(element => element && !element.isDeleted)) {
+      throw new Error('画布生成结果为空，原画布未修改')
+    }
     return {
       action: spec.patch ? WHITEBOARD_AI_ACTIONS.EDIT : normalizedAction,
       elements: r.replacesAll ? r.elements : (isAppend ? [...activeElements, ...r.elements] : r.elements),
@@ -244,28 +173,8 @@ export const generateWhiteboardElementsByAction = async ({
     }
   }
 
-  const unwrap = (res) => {
-    if (Array.isArray(res)) return { elements: res, files: {}, warnings: [] }
-    return { elements: res?.elements || [], files: res?.files || {}, warnings: res?.warnings || [] }
-  }
-  const aiGenerateExcalidrawElements = await loadAIGenerator()
-  const isAppend = normalizedAction === WHITEBOARD_AI_ACTIONS.APPEND
-  const r = normalizedAction === WHITEBOARD_AI_ACTIONS.EDIT
-    ? await import('./diagrams/editScene').then(({ editScene }) => editScene({ elements: activeElements, prompt, appState, task }))
-    : unwrap(await aiGenerateExcalidrawElements(String(prompt || '').trim(), isAppend ? activeElements : [], task))
-  if (!Array.isArray(r.elements) || !r.elements.some(element => element && !element.isDeleted)) {
-    throw new Error('画布生成结果为空，原画布未修改')
-  }
-
-  return {
-    action: normalizedAction,
-    elements: isAppend ? [...activeElements, ...r.elements] : r.elements,
-    appState: normalizeAppState(appState),
-    // fileMap 始终只承载本次生成的 BinaryFileData；磁盘索引由保存层合并。
-    fileMap: r.files,
-    addedCount: r.elements.length,
-    warnings: r.warnings,
-  }
+  // 旧版只有一句描述（prompt）的确认卡由已移除的生成器处理，现在给出明确说明
+  throw new Error(LEGACY_CARD_ERROR)
 }
 
 const normalizeWhiteboardGenerationError = (error) => {
@@ -277,13 +186,12 @@ const normalizeWhiteboardGenerationError = (error) => {
   return error instanceof Error ? error : new Error(message || '画布生成失败')
 }
 
-export const requestActiveWhiteboardGeneration = ({ noteId, prompt, spec = null, action = WHITEBOARD_AI_ACTIONS.APPEND, task }) => {
+export const requestActiveWhiteboardGeneration = ({ noteId, spec = null, action = WHITEBOARD_AI_ACTIONS.APPEND, task }) => {
   if (typeof window === 'undefined') return Promise.resolve(null)
 
   return new Promise((resolve, reject) => {
     const detail = {
       noteId: String(noteId),
-      prompt,
       spec,
       action: normalizeWhiteboardAction(action),
       task,
@@ -299,7 +207,7 @@ export const requestActiveWhiteboardGeneration = ({ noteId, prompt, spec = null,
   })
 }
 
-export const applyWhiteboardGenerationToNote = async ({ note, prompt, spec = null, action = WHITEBOARD_AI_ACTIONS.APPEND, updateNote, task }) => {
+export const applyWhiteboardGenerationToNote = async ({ note, spec = null, action = WHITEBOARD_AI_ACTIONS.APPEND, updateNote, task }) => {
   if (!isWhiteboardNote(note)) {
     throw new Error('当前笔记不是画布')
   }
@@ -310,12 +218,10 @@ export const applyWhiteboardGenerationToNote = async ({ note, prompt, spec = nul
   const currentData = parseWhiteboardContent(note.content)
   const nextData = await generateWhiteboardElementsByAction({
     action,
-    prompt,
     spec,
     task,
     elements: currentData.elements,
     appState: currentData.appState,
-    currentWhiteboardSummary: summarizeWhiteboardElementsForAI(currentData.elements, currentData.fileMap),
   })
 
   // 未在编辑器中打开的画布会走这里。生成器返回的是 Excalidraw BinaryFileData，
@@ -386,20 +292,8 @@ export const executeCreateWhiteboardToolAction = async ({
 
   const { readCanvasSpec } = await import('./diagrams/agentCanvas')
   const spec = readCanvasSpec(args)
-  const rawPrompt = String(args.prompt || '').trim()
-  // 旧版确认卡只有 prompt，仍交给生成器；新版由对话智能体直接给出画布内容
-  if (!spec && !rawPrompt) throw new Error('缺少画布内容')
-
-  const useCurrentNoteContext = args.use_current_note_context === true
-  const snapshotNote = resolveNoteById(notes, resolveContextNoteId(actionContext))
-  const explicitSourceNote = resolveNoteById(notes, args.source_note_id)
-  const sourceNote = explicitSourceNote || (useCurrentNoteContext ? (snapshotNote || currentNote) : null)
-  const title = String(args.title || '').trim() || String(spec?.canvas?.title || '').trim() || deriveFallbackWhiteboardTitle(rawPrompt, sourceNote)
-  const generationPrompt = spec ? '' : buildWhiteboardGenerationPrompt({
-    prompt: rawPrompt,
-    diagramType: args.diagram_type || 'auto',
-    sourceNote,
-  })
+  if (!spec) throw new Error(LEGACY_CARD_ERROR)
+  const title = String(args.title || '').trim() || String(spec.canvas?.title || '').trim() || '未命名画布'
 
   const created = await createNote({
     note_type: 'whiteboard',
@@ -416,7 +310,6 @@ export const executeCreateWhiteboardToolAction = async ({
   try {
     result = await applyWhiteboardGenerationToNote({
       note: newNote,
-      prompt: generationPrompt,
       spec,
       action: WHITEBOARD_AI_ACTIONS.REPLACE,
       updateNote,
@@ -461,8 +354,7 @@ export const executeUpdateWhiteboardToolAction = async ({
 
   const { readCanvasSpec } = await import('./diagrams/agentCanvas')
   const spec = readCanvasSpec(args)
-  const rawPrompt = String(args.prompt || '').trim()
-  if (!spec && !rawPrompt) throw new Error('缺少画布修改内容')
+  if (!spec) throw new Error(LEGACY_CARD_ERROR)
 
   // 目标画布解析（问题5）：
   // - 显式传了 target_note_id：必须命中且是画布，否则直接失败，绝不静默回退到当前画布；
@@ -481,27 +373,20 @@ export const executeUpdateWhiteboardToolAction = async ({
     throw new Error('未找到可修改的目标画布')
   }
 
-  const action = spec?.patch
+  const action = spec.patch
     ? WHITEBOARD_AI_ACTIONS.EDIT
-    : normalizeWhiteboardAction(args.mode || args.action, spec ? WHITEBOARD_AI_ACTIONS.APPEND : inferWhiteboardActionFromPrompt(rawPrompt))
-  const generationPrompt = spec ? '' : buildWhiteboardGenerationPrompt({
-    prompt: rawPrompt,
-    diagramType: args.diagram_type || 'auto',
-    sourceNote: null,
-  })
+    : normalizeWhiteboardAction(args.mode || args.action, WHITEBOARD_AI_ACTIONS.APPEND)
 
   // 若目标画布正在编辑器中打开，优先走实时 scene（问题8），避免用持久化的旧 content
   // 覆盖用户未保存的改动；编辑器未接管时（detail.handled 仍为 false）才回退读持久化内容。
   const activeResult = await requestActiveWhiteboardGeneration({
     noteId: targetNote.id,
-    prompt: generationPrompt,
     spec,
     action,
     task,
   })
   const result = activeResult || await applyWhiteboardGenerationToNote({
     note: targetNote,
-    prompt: generationPrompt,
     spec,
     action,
     updateNote,
