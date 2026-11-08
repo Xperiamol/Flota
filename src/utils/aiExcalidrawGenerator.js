@@ -70,16 +70,15 @@ const repairComposerJSON = async (userRequest, brokenOutput, task) => {
   return res.data.content
 }
 
+// 解析失败先让模型只修语法（保留内容）；仍不合法才交给反思重写，原始输出挂在错误上供反思参考
 const parseComposerCanvasResponse = async (userRequest, rawContent, task) => {
   const parsed = safeJsonExtract(rawContent)
   if (parsed) return parsed
   logger.warn('[composer] 首次 JSON 解析失败，尝试二次 AI 修复')
   const repairedContent = await repairComposerJSON(userRequest, rawContent, task)
   const repaired = safeJsonExtract(repairedContent)
-  if (!repaired) {
-    throw new Error('Composer JSON 二次修复后仍不合法')
-  }
-  return repaired
+  if (repaired) return repaired
+  throw Object.assign(new Error('画布描述不是合法 JSON（语法修复后仍不合法）'), { rawOutput: String(rawContent || '') })
 }
 
 const isContentBlockedError = (error) => /blocked|content.*blocked|machine outputted|安全|拦截|审核|风控/i.test(String(error?.message || error || ''))
@@ -111,7 +110,7 @@ const compactFeedbackPayload = (value, maxLen = 12000) => {
   return s.length > maxLen ? `${s.slice(0, maxLen)}\n...（内容过长已截断）` : s
 }
 
-const inferDiagramIntentHeuristically = (text) => {
+const classifyDiagramIntent = (text) => {
   const s = String(text || '')
   if (!s.trim()) return { mode: 'composition', blockType: null, reason: '空请求默认交给组合规划' }
   // 工具传入的明确图型优先于正文和视觉反馈中的关键词。
@@ -158,33 +157,10 @@ const inferDiagramIntentHeuristically = (text) => {
   if (/流程图|流程|步骤|审批|决策树|流转|SOP/.test(s)) {
     return { mode: 'single', blockType: 'flowchart', reason: '流程关键词' }
   }
-  if (/思维导图|脑图|发散|主题归纳|知识图谱|知识树/.test(s)) {
-    return { mode: 'composition', blockType: null, reason: '思维导图/发散类交给 composer' }
-  }
-  if (/鱼骨图|根因|原因分析|因果分析/.test(s)) {
-    return { mode: 'single', blockType: 'fishbone', reason: '鱼骨图关键词' }
-  }
-  if (/时间轴|里程碑|发展历程|演进/.test(s)) {
-    return { mode: 'single', blockType: 'timeline', reason: '时间轴关键词' }
-  }
-  if (/甘特|排期|项目计划|项目进度/.test(s)) {
-    return { mode: 'single', blockType: 'gantt', reason: '甘特图关键词' }
-  }
-  if (/四象限|优先级矩阵|重要紧急|象限图/.test(s)) {
-    return { mode: 'single', blockType: 'quadrant', reason: '四象限关键词' }
-  }
-  if (/饼图|占比|份额|比例构成/.test(s)) {
-    return { mode: 'single', blockType: 'pie', reason: '饼图关键词' }
-  }
-  if (/架构图|技术架构|系统架构|分层架构|能力地图/.test(s)) {
-    return { mode: 'single', blockType: 'architecture', reason: '架构关键词' }
-  }
+  // 其余（思维导图、时间轴、甘特、四象限、饼图、架构等）都交给 composer 用原语组合
   return { mode: 'composition', blockType: null, reason: '默认交给组合规划' }
 }
 
-// 明确类型由本地规则路由，模糊和复合需求直接交给 Composer。
-// 这里不再额外调用一次 AI 做分类，减少延迟、成本和决策漂移。
-const classifyDiagramIntent = (userRequest) => inferDiagramIntentHeuristically(userRequest)
 
 // ─── 路由收敛 ──────────────────────────────────────
 //
@@ -226,11 +202,11 @@ const COMPOSER_SYSTEM_PROMPT = `你是 Flota 白板设计器。只返回严格 J
 - callout {text,tone}；badge {text,tone}；icon {symbol:emoji 或单个符号如 🚲 ★ ✓,size}
 - table {headers,rows}；input {label,placeholder}；button {label,variant}
 - avatar {label,size}；divider；image {label,ratio}
-- stat {value,unit?,label?,delta?,trend?(up|down|flat),tone?,size?,align?,plain?}：关键数字
+- stat {value,unit?,label?,delta?,trend?(up|down|flat),tone?,size?(数值字号，默认 36),align?,plain?}：关键数字
 - progress {value,max?,label?,tone?,showValue?,valueText?,barH?}：进度条
 - chart {kind:bar|line|donut, data:[{label,value,tone?}] 或 labels+series:[{name,values,tone?}], title?, unit?, showValues?, max?, h?, smooth?, centerText?}：原生图元绘制的图表；单组数据默认同色，逐项 tone 可强调某一项
 - timeline {items:[{time,title,body?,tone?}], direction?(v|h)}；steps {items:[字符串或{title,body?}], current?, direction?(h|v), tone?}
-- quote {text,author?,tone?,size?,plain?}
+- quote {text,author?,tone?,size?(数字字号),plain?}
 - svg {prompt,title?,w?,h?}：局部整体矢量插画，生成后不能拆分编辑
 - stack.h / grid 加 align:"stretch" 时同一行带底框的子节点等高（stack.h 默认 center 垂直居中）
 - 带底框的原语（card/group/stat/callout/quote/list/table/rect/badge/button/input/progress 等）都可加 radius（圆角像素，0 为直角）；默认外层大、内层小，统一风格时再改
@@ -277,8 +253,7 @@ const planComposerCanvas = async (userRequest, task, opts) => {
   if (!res?.success || !res.data?.content) {
     throw new Error(res?.error || 'Composer 画布规划失败')
   }
-  const parsed = await parseComposerCanvasResponse(userRequest, res.data.content, task)
-  return validateComposerCanvasTree(parsed)
+  return validateComposerCanvasTree(await parseComposerCanvasResponse(userRequest, res.data.content, task))
 }
 
 const replanComposerCanvasWithFeedback = async (userRequest, previousTree, generationError, task, opts) => {
@@ -288,7 +263,9 @@ const replanComposerCanvasWithFeedback = async (userRequest, previousTree, gener
       role: 'assistant',
       content: previousTree
         ? compactFeedbackPayload(previousTree)
-        : '上一版没有产出可用的合法 JSON，或在渲染前就失败。',
+        : generationError?.rawOutput
+          ? compactFeedbackPayload(generationError.rawOutput)
+          : '上一版没有产出可用的合法 JSON，或在渲染前就失败。',
     },
     {
       role: 'user',
@@ -302,8 +279,7 @@ const replanComposerCanvasWithFeedback = async (userRequest, previousTree, gener
   if (!res?.success || !res.data?.content) {
     throw new Error(res?.error || 'Composer 画布反思重写失败')
   }
-  const parsed = await parseComposerCanvasResponse(userRequest, res.data.content, task)
-  return validateComposerCanvasTree(parsed)
+  return validateComposerCanvasTree(await parseComposerCanvasResponse(userRequest, res.data.content, task))
 }
 
 // ─── Stage B：为每个 block 生成具体 DSL ─────────────
@@ -541,11 +517,10 @@ const renderComposerWithReflection = async (description, offsets, task, opts) =>
 
 // ─── 对外主入口 ────────────────────────────────────
 
-async function generateCanvasOnce(description, existingElements = [], task, fixedIntent, opts = {}) {
+async function generateCanvasOnce(description, existingElements = [], task, diagramIntent, opts = {}) {
   const offsets = computeOffset(existingElements)
   logger.log('[aiExcalidrawGenerator] 输入:', description, 'offset:', offsets)
 
-  const diagramIntent = fixedIntent || await classifyDiagramIntent(description)
   logger.log('[aiExcalidrawGenerator] 图型意图:', diagramIntent)
 
   const { route, blockType } = classifyCanvasRoute(diagramIntent)

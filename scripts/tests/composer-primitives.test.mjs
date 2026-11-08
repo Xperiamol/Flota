@@ -293,3 +293,10 @@ test('donut center text shrinks to fit inside the hole', () => {
     assert.ok(t.width <= (d - ring * 2) * 0.82, `w=${w}: text ${Math.round(t.width)} vs hole ${Math.round(d - ring * 2)}`)
   }
 })
+
+test('canvas overflow errors say the real width, which child, and that the parent narrowed it', () => {
+  const tree = { type: 'stack.v', props: { w: 800 }, children: [{ type: 'canvas', props: { w: 1200, h: 300 }, children: [{ type: 'card', props: { x: 900, y: 0, title: '竞品' } }] }] }
+  assert.throws(() => renderComposer(tree), /canvas 实际宽 800（写的 w=1200，但外层只给了 800），第 1 个子节点 card 的 x=900/)
+  // 子节点会收窄到剩余宽度，所以 x 在画布内时不会右侧溢出
+  assert.doesNotThrow(() => renderComposer({ type: 'canvas', props: { w: 400 }, children: [{ type: 'card', props: { x: 300, title: 'x', w: 200 } }] }))
+})

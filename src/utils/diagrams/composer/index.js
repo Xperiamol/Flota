@@ -144,7 +144,7 @@ export const validateComposerTree = (root, connectors = []) => {
     for (const key of ['x', 'y', 'w', 'h', 'size', 'gap', 'padding', 'cols', 'fontSize', 'titleSize', 'bodySize', 'nodeMaxW', 'nodeGap', 'layerGap']) {
       if (p[key] == null) continue
       if ((key === 'x' || key === 'y') && Number.isFinite(p[key]) && p[key] < 0) throw new Error(`${node.type}.${key} 不能为负：原生图元无法裁切，超出 canvas 的部分会露在画框外；装饰图形请整体放在 canvas 范围内（可缩小或移到边缘内侧）`)
-      if (!Number.isFinite(p[key]) || p[key] < 0 || p[key] > 10000) throw new Error(`${node.type}.${key} 必须是 0–10000 的数值`)
+      if (!Number.isFinite(p[key]) || p[key] < 0 || p[key] > 10000) throw new Error(`${node.type}.${key} 必须是 0–10000 的数字，收到 ${JSON.stringify(p[key])}`)
       // 装饰图形（细线、色带、小圆点）可以很小；其余节点太小会放不下文字
       const minSize = DECOR_TYPES.has(node.type) ? 1 : 16
       if (['w', 'h', 'size'].includes(key) && p[key] < minSize) throw new Error(`${node.type}.${key} 不能小于 ${minSize}`)
@@ -169,13 +169,15 @@ register('canvas', {
     const p = node.props || {}
     const width = maxW ?? p.w ?? 1000
     let height = p.h ?? 0
-    for (const child of childList(node)) {
+    // 报错带上具体数字：canvas 宽度会被外层容器收窄（maxW 优先于 props.w），模型要知道实际按多宽排
+    const limited = maxW != null && p.w != null && maxW < p.w ? `（写的 w=${p.w}，但外层只给了 ${Math.round(maxW)}）` : ''
+    childList(node).forEach((child, i) => {
       const { x = 0, y = 0, w } = child.props || {}
-      if (x >= width) throw new Error('自由布局节点超出画布右边界')
+      if (x >= width) throw new Error(`canvas 实际宽 ${Math.round(width)}${limited}，第 ${i + 1} 个子节点 ${child.type} 的 x=${x} 已在画布外；请按这个宽度重排坐标`)
       const measured = measureNode(child, Math.min(w ?? width - x, width - x))
-      if (x + measured.w > width + 2) throw new Error('自由布局内容超出画布宽度')
+      if (x + measured.w > width + 2) throw new Error(`canvas 实际宽 ${Math.round(width)}${limited}，第 ${i + 1} 个子节点 ${child.type} 从 x=${x} 起宽 ${Math.round(measured.w)}，右边超出；请减小 x 或 w`)
       height = Math.max(height, y + measured.h)
-    }
+    })
     const kids = childList(node)
     if (!p.allowOverlap) for (let i = 0; i < kids.length; i++) for (let j = i + 1; j < kids.length; j++) {
       const a = kids[i], b = kids[j]

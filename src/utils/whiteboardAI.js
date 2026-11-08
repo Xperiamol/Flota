@@ -11,10 +11,6 @@ export const WHITEBOARD_AI_ACTIONS = {
   REPLACE: 'replace',
   EDIT: 'edit',
 }
-export const WHITEBOARD_AI_INTENTS = {
-  CHAT: 'chat',
-  WHITEBOARD: 'whiteboard',
-}
 
 export const isWhiteboardNote = (note) => (note?.note_type || 'markdown') === 'whiteboard'
 
@@ -31,23 +27,6 @@ const WHITEBOARD_DIAGRAM_TYPE_LABELS = {
   quadrant: '四象限图',
   pie: '饼图',
   svg: 'SVG 矢量图',
-}
-
-const truncateText = (text = '', max = 1200) => {
-  const value = String(text || '').trim()
-  return value.length > max ? `${value.slice(0, max)}...` : value
-}
-
-const getRecentConversationContext = (messages = [], prompt = '') => {
-  const normalizedPrompt = String(prompt || '').trim()
-  return messages
-    .filter(message => message?.content)
-    .filter((message, index, arr) => !(index === arr.length - 1 && String(message.content).trim() === normalizedPrompt))
-    .slice(-6)
-    .map((message) => ({
-      role: message.role,
-      content: truncateText(message.content, 1000),
-    }))
 }
 
 const buildCurrentNoteContext = (note = null) => {
@@ -181,152 +160,6 @@ export const summarizeWhiteboardElementsForAI = (elements = [], fileMap = {}) =>
 export const summarizeWhiteboardContentForAI = (content = '') => {
   const parsed = parseWhiteboardContent(content)
   return summarizeWhiteboardElementsForAI(parsed.elements, parsed.fileMap)
-}
-
-const buildIntentClassificationMessages = ({ prompt, note, messages = [], currentWhiteboardSummary = '' }) => {
-  const recentMessages = getRecentConversationContext(messages, prompt)
-
-  return [
-    {
-      role: 'system',
-      content: `你是 Flota 的画布请求路由器。你的任务是先判断：用户最新一句话，到底应该走“普通文字问答(chat)”还是“画布生成/修改(whiteboard)”。
-
-只输出一个 JSON 对象，禁止解释、Markdown、代码块。
-
-输出格式：
-{
-  "intent": "chat | whiteboard",
-  "reason": "一句简短原因"
-}
-
-判定原则：
-1. chat：总结、解释、提炼要点、问答、翻译、润色、分析风险、列待办、理解当前画布内容、基于画布做文字回复。
-2. whiteboard：明确要求生成/插入/补充/重画/替换/修改图形或画布内容。
-3. 只因为当前笔记是画布，并不代表必须走 whiteboard。
-4. 用户如果说“总结当前笔记/当前画布”“解释这个流程”“提炼结论”，即使上下文是画布，也应判为 chat。
-5. 只有当用户明确想让画布发生变化，或者最近对话强烈表明“上一轮就在让你继续画图/改图”时，才判为 whiteboard。
-6. 有歧义时优先判为 chat，避免误改画布。`
-    },
-    {
-      role: 'user',
-      content: JSON.stringify({
-        prompt,
-        currentNote: {
-          id: note?.id ?? null,
-          title: note?.title || '',
-          tags: note?.tags || [],
-          noteType: note?.note_type || 'markdown',
-        },
-        currentWhiteboardSummary,
-        recentConversation: recentMessages,
-      })
-    }
-  ]
-}
-
-const buildGroundingMessages = ({ prompt, note, messages = [], currentWhiteboardSummary = '', actionHint }) => {
-  const recentMessages = getRecentConversationContext(messages, prompt)
-
-  return [
-    {
-      role: 'system',
-      content: `你是 Flota 的画布素材整理器。上游已经确认：这次请求应该进入画布生成/修改流程。
-你的任务是从用户最新一句话、最近对话以及当前画布摘要里，判断动作并提炼“真正要绘制成图的内容”。
-图表类型由下游生成器自动选择，你不需要决定。
-
-只输出一个 JSON 对象，禁止解释、Markdown、代码块。
-
-输出格式：
-{
-  "action": "append | replace | edit",
-  "groundedRequest": "可直接交给图表生成器使用的完整说明，包含真实主题、节点、关系或步骤",
-  "reason": "一句简短原因"
-}
-
-规则：
-1. 永远不要把画布原始 JSON 当成素材；如果提供了 currentWhiteboardSummary，只能使用这个语义摘要。
-2. append = 在现有画布基础上继续补充；replace = 清空后重新生成整张画布；edit = 对已有元素做局部修改，groundedRequest 保留用户具体修改要求，不要求重新生成整图。
-3. 如果用户说“这段内容/上面/刚才/整理一下”，优先用最近对话里 assistant 或 user 的真实文本。
-4. 如果只有命令句、找不到具体素材，groundedRequest 设为空字符串，由前端用原 prompt 兜底。
-5. 不要画“Mermaid 规范 / 图表规范 / 画布功能说明”这类元信息。
-6. groundedRequest 必须是描述要画什么的中文说明，不要直接输出 Mermaid 或其他 DSL。
-7. 如果用户明确指定图表类型（如“画甘特图/鱼骨图/思维导图”），把这个偏好写在 groundedRequest 开头，例如“以鱼骨图呈现：……”。
-8. 如果 actionHint 很明确，应尽量与 actionHint 保持一致；只有用户表达明显相反时才改动。`
-    },
-    {
-      role: 'user',
-      content: JSON.stringify({
-        prompt,
-        actionHint,
-        currentNote: {
-          id: note?.id ?? null,
-          title: note?.title || '',
-          tags: note?.tags || [],
-        },
-        currentWhiteboardSummary,
-        recentConversation: recentMessages,
-      })
-    }
-  ]
-}
-
-const parseModelJsonObject = (content = '', errorMessage = '模型结果格式错误') => {
-  const text = String(content || '').trim()
-  const start = text.indexOf('{')
-  const end = text.lastIndexOf('}')
-  if (start === -1 || end === -1 || end <= start) {
-    throw new Error(errorMessage)
-  }
-  return JSON.parse(text.slice(start, end + 1))
-}
-
-const normalizeWhiteboardIntent = (intent) => {
-  const value = String(intent || '').trim().toLowerCase()
-  return value === WHITEBOARD_AI_INTENTS.WHITEBOARD
-    ? WHITEBOARD_AI_INTENTS.WHITEBOARD
-    : WHITEBOARD_AI_INTENTS.CHAT
-}
-
-export const classifyWhiteboardIntent = async ({ note, prompt, messages = [] }) => {
-  const currentWhiteboardSummary = isWhiteboardNote(note)
-    ? summarizeWhiteboardContentForAI(note?.content)
-    : ''
-  const res = await window.electronAPI.ai.chat(
-    buildIntentClassificationMessages({ prompt, note, messages, currentWhiteboardSummary }),
-    { temperature: 0, bypassTokenLimit: true }
-  )
-
-  if (!res?.success || !res.data?.content) {
-    throw new Error(res?.error || '画布意图分类失败')
-  }
-
-  const parsed = parseModelJsonObject(res.data.content, '画布意图分类结果格式错误')
-  return {
-    intent: normalizeWhiteboardIntent(parsed?.intent),
-    reason: String(parsed?.reason || '').trim(),
-  }
-}
-
-export const groundWhiteboardRequest = async ({ note, prompt, messages = [] }) => {
-  const actionHint = inferWhiteboardActionFromPrompt(prompt)
-  const currentWhiteboardSummary = isWhiteboardNote(note)
-    ? summarizeWhiteboardContentForAI(note?.content)
-    : ''
-  const res = await window.electronAPI.ai.chat(
-    buildGroundingMessages({ prompt, note, messages, currentWhiteboardSummary, actionHint }),
-    { temperature: 0, bypassTokenLimit: true }
-  )
-
-  if (!res?.success || !res.data?.content) {
-    throw new Error(res?.error || '画布素材整理失败')
-  }
-
-  const parsed = parseModelJsonObject(res.data.content, '画布素材整理结果格式错误')
-  return {
-    action: normalizeWhiteboardAction(parsed?.action, actionHint),
-    groundedRequest: String(parsed?.groundedRequest || '').trim(),
-    reason: parsed?.reason || '',
-  }
 }
 
 const normalizeAppState = (appState = {}) => ({

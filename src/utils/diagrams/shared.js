@@ -31,19 +31,9 @@ export const DIAGRAM_THEME = {
   ],
 }
 
-export const BEAUTIFY_GRID = 8
-export const WRAP_CHUNK_CHINESE = 7
-export const WRAP_CHUNK_LATIN = 14
-
 export const generateId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
 
 export const randomSeed = () => Math.floor(Math.random() * 2000000000)
-
-export const snapToGrid = (value, size = BEAUTIFY_GRID) => Math.round(value / size) * size
-
-export const containsCJK = (text = '') => /[\u4e00-\u9fa5]/.test(text)
-
-export const normalizeWhitespace = (text = '') => String(text).replace(/\s+/g, ' ').trim()
 
 let textMeasureContext = null
 
@@ -174,28 +164,6 @@ export const ensureReadableTextColor = (color, bg = DIAGRAM_THEME.canvas) => {
   return _contrast([0, 0, 0], back) > _contrast([255, 255, 255], back) ? '#000000' : '#ffffff'
 }
 
-export const wrapLabel = (text, maxChars = null) => {
-  const normalized = normalizeWhitespace(text)
-  if (!normalized) return ''
-  const chunk = maxChars || (containsCJK(normalized) ? WRAP_CHUNK_CHINESE : WRAP_CHUNK_LATIN)
-  if (normalized.length <= chunk) return normalized
-  const useChars = containsCJK(normalized)
-  const tokens = useChars ? [...normalized] : normalized.split(' ')
-  const lines = []
-  let current = ''
-  for (const word of tokens) {
-    const next = useChars ? `${current}${word}` : (current ? `${current} ${word}` : word)
-    if (next.length > chunk && current) {
-      lines.push(current)
-      current = word
-    } else {
-      current = next
-    }
-  }
-  if (current) lines.push(current)
-  return lines.join('\n')
-}
-
 export const measureTextBlock = (text, fontSize = 16) => {
   const measured = String(text ?? '').split('\n')
   const lineHeight = 1.25
@@ -276,18 +244,6 @@ export const makeRect = ({ x, y, width, height, bg, stroke, strokeWidth = 1, rou
 
 export const makeEllipse = ({ x, y, width, height, bg, stroke, strokeWidth = 1 }) => ({
   ...makeBase('ellipse'),
-  x,
-  y,
-  width,
-  height,
-  backgroundColor: bg || 'transparent',
-  strokeColor: stroke || DIAGRAM_THEME.line,
-  strokeWidth,
-  roughness: 0,
-})
-
-export const makeDiamond = ({ x, y, width, height, bg, stroke, strokeWidth = 1 }) => ({
-  ...makeBase('diamond'),
   x,
   y,
   width,

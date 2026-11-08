@@ -189,3 +189,16 @@ test('默认开启：说明里保留 svg 原语', () => {
   assert.match(system, /^- svg \{/m)
   assert.match(system, /顶层 title 会渲染成画布最上方的大标题/)
 })
+test('composer 输出不是合法 JSON：先只修语法；修复也失败才反思重写，反思时带上原始输出', async () => {
+  const broken = '{"children":[{"type":"card","props":{"title":"半截'
+  let calls = setup([ok(broken), ok(JSON.stringify({ children: [{ type: 'card', props: { title: '修好' } }] }))])
+  await generate('做一张学习计划')
+  assert.equal(calls.length, 2)
+  assert.match(calls[1][0].content, /JSON 修复器/)
+  calls = setup([ok(broken), ok('还是坏的'), ok(JSON.stringify({ children: [{ type: 'card', props: { title: '完整' } }] }))])
+  const result = await generate('做一张学习计划')
+  assert.equal(result.elements[0].id, 'composer')
+  assert.equal(calls.length, 3)
+  assert.match(calls[2].at(-2).content, /"title":"半截/)
+  assert.match(calls[2].at(-1).content, /不是合法 JSON/)
+})
