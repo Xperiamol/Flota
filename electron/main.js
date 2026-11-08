@@ -887,6 +887,44 @@ async function initializeServices() {
           for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send(channel, payload)
         },
       })
+      // AI 定时任务：到点在任务自己的对话里跑一轮，跑完发通知，点击打开这条对话
+      const AutomationScheduler = require('./services/aichat/AutomationScheduler')
+      services.automationScheduler = new AutomationScheduler({
+        settingDAO: services.aiService.settingDAO,
+        logger,
+        runTask: async (task) => {
+          const config = (await services.aiService.getConfig())?.data || {}
+          if (!config.enabled) return { success: false, error: 'AI 功能未开启' }
+          const now = new Date().toLocaleString('zh-CN', { hour12: false })
+          const text = `【定时任务「${task.title}」自动执行，现在是 ${now}】\n${task.prompt}\n\n（用户此刻不在对话里：直接把事情做完并给出结果，不要反问；需要写入的操作会生成确认卡，等用户回来确认。）`
+          return services.conversationSessions.send({
+            conversationId: task.id,
+            meta: { title: `⏰ ${task.title}`, source: 'automation' },
+            content: text,
+            text,
+            // 自动任务的对话标题固定为任务名，不用第一条消息
+            options: { scene: 'automation', requestPrefix: 'auto', fixedTitle: `⏰ ${task.title}` },
+          })
+        },
+        notify: (task, outcome) => {
+          if (!Notification.isSupported()) return
+          const firstLine = String(outcome.content || '').replace(/[#*>`_-]+/g, ' ').split('\n').map((line) => line.trim()).find(Boolean) || ''
+          const body = outcome.success
+            ? `${outcome.pendingCards ? `有 ${outcome.pendingCards} 项等你确认 · ` : ''}${firstLine.slice(0, 80) || '已完成'}`
+            : `没有完成：${String(outcome.error || '未知原因').slice(0, 80)}`
+          const notification = new Notification({ title: `⏰ ${task.title}`, body, silent: false })
+          notification.on('click', () => {
+            if (!mainWindow || mainWindow.isDestroyed()) return
+            if (mainWindow.isMinimized()) mainWindow.restore()
+            if (!mainWindow.isVisible()) mainWindow.show()
+            mainWindow.focus()
+            mainWindow.webContents.send('ai:open-conversation', { conversationId: task.id })
+          })
+          notification.show()
+        },
+      })
+      services.aiChatService.setAutomationScheduler(services.automationScheduler)
+      services.automationScheduler.start()
       services.aiChatService.setTodosChangedListener(() => {
         for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send('todo:changed')
       })

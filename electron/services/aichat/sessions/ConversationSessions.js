@@ -126,7 +126,7 @@ class ConversationSessions {
 
       const userMessage = createUserMessage({ content, metadata: buildMessageMetadata({ conversationId, ...scope }) });
       const messagesWithUser = [...conversation.messages, userMessage];
-      this._save(conversationId, { messages: messagesWithUser, title: titleFromMessages(messagesWithUser, defaultTitle) });
+      this._save(conversationId, { messages: messagesWithUser, title: options.fixedTitle || titleFromMessages(messagesWithUser, defaultTitle) });
       this._publishDraft(conversationId, run, { force: true });
 
       const result = await this.aiChatService.runTurn({
@@ -183,7 +183,7 @@ class ConversationSessions {
     const messages = supersedeStalePendingActions([...latest.messages, assistant]);
     // 只有成功的一轮才追加进完整记录；失败 / 停止的这一轮下次不作为上下文
     const nextTranscript = result?.success ? [...transcript, ...toPersisted(result.newMessages)] : undefined;
-    this._save(conversationId, { messages, transcript: nextTranscript, title: titleFromMessages(messages, defaultTitle) });
+    this._save(conversationId, { messages, transcript: nextTranscript, title: options.fixedTitle || titleFromMessages(messages, defaultTitle) });
 
     if (result?.success && !result.memoryToolUsed && AUTO_MEMORY_SCENES.has(options.scene)) {
       this._autoMemory(conversationId, run.requestId, text, result.fullContent);
@@ -193,6 +193,8 @@ class ConversationSessions {
       cancelled: stoppedByUser || undefined,
       error: result?.success ? undefined : result?.error,
       requestId: run.requestId,
+      content: result?.success ? String(result.fullContent || '') : undefined,
+      pendingCards: (assistant.actions || []).length,
     };
   }
 

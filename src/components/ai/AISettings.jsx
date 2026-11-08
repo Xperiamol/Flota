@@ -29,6 +29,42 @@ import { useHomeStore } from '../../store/useHomeStore';
 
 const isEnabledSetting = (value) => value === true || value === 'true' || value === 1 || value === '1';
 
+const REPEAT_LABELS = { once: '一次', daily: '每天', weekdays: '每个工作日', weekly: '每周', monthly: '每月' };
+const formatRunTime = (ms) => new Date(ms).toLocaleString('zh-CN', { hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+// AI 给自己安排的定时任务（对话里让 AI 安排，这里查看和取消）
+const AutomationList = ({ disabledSx }) => {
+  const [tasks, setTasks] = useState(null);
+  const load = async () => {
+    const res = await window.electronAPI?.ai?.listAutomations?.();
+    setTasks(res?.success ? res.data.filter((task) => !task.finished) : []);
+  };
+  useEffect(() => { load(); }, []);
+  const remove = async (id) => {
+    await window.electronAPI?.ai?.removeAutomation?.(id);
+    load();
+  };
+  return (
+    <Box sx={settingsSectionSx}>
+      <Typography variant="h6" sx={sectionTitleSx}>定时任务</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+        在对话里让 AI 安排，比如「每天早上 8 点把今天的待办和日程整理成简报」。到点后 AI 会自己完成并发通知，需要写入的内容仍要你确认。
+      </Typography>
+      {tasks && tasks.length === 0 && <Typography variant="body2" color="text.secondary" sx={disabledSx}>还没有定时任务</Typography>}
+      {(tasks || []).map((task) => (
+        <Box key={task.id} sx={(theme) => ({ ...settingsRowSx(theme), display: 'flex', alignItems: 'center', gap: 2, ...disabledSx })}>
+          <ListItemText
+            primary={task.title}
+            secondary={`${REPEAT_LABELS[task.repeat] || task.repeat} · 下次 ${formatRunTime(task.nextRunAt)}${task.lastStatus === 'failed' ? ' · 上次没有完成' : ''}`}
+            slotProps={{ primary: { sx: { fontWeight: 650 } }, secondary: { title: task.prompt } }}
+          />
+          <Button size="small" color="inherit" onClick={() => remove(task.id)}>取消</Button>
+        </Box>
+      ))}
+    </Box>
+  );
+};
+
 const AISettings = ({ showSnackbar }) => {
   const { t } = useTranslation();
   const aiBarHidden = useHomeStore((state) => state.aiBarHidden);
@@ -455,6 +491,8 @@ const AISettings = ({ showSnackbar }) => {
           />
         </Box>
       </Box>
+
+      <AutomationList disabledSx={disabledSx} />
 
       <Box sx={settingsSectionSx}>
         <Typography variant="h6" sx={sectionTitleSx}>自动整理</Typography>

@@ -511,6 +511,39 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'schedule_task',
+      description: '给自己安排一个定时任务：到点后 Flota 自动发起一轮对话，由你按 prompt 去做（如每天早上整理今日待办和日程成简报），完成后通知用户。会生成确认卡。',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: '简短的任务名，如「早间简报」' },
+          prompt: { type: 'string', description: '到点后要做的事，写成你能独立执行的完整说明' },
+          at: { type: 'string', description: '第一次执行的本地时间，如 2026-11-09T08:00' },
+          repeat: { type: 'string', enum: ['once', 'daily', 'weekdays', 'weekly', 'monthly'], description: '重复方式，默认 once' }
+        },
+        required: ['title', 'prompt', 'at']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_scheduled_tasks',
+      description: '列出已安排的定时任务（id、内容、重复方式、下次执行时间、上次结果）。',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'cancel_scheduled_task',
+      description: '取消一个定时任务。会生成确认卡。',
+      parameters: { type: 'object', properties: { id: { type: 'string', description: '任务 id（先用 list_scheduled_tasks 查）' } }, required: ['id'] }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'web_search',
       description: '联网搜索实时信息。当用户的问题涉及最新动态、时效性数据、你不确定或知识可能过期的事实时调用，返回若干网页结果（标题、链接、摘要）。请根据结果作答并在合适处标注来源。注意：query 应是精炼的搜索关键词（一般不超过 20 字），不要把用户的整段需求原样塞进来；复杂需求请拆成多个关键词分别检索，但同一主题最多检索 2-3 次即可，不要反复搜索。',
       parameters: {

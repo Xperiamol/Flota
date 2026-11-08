@@ -85,6 +85,15 @@ const registerAIHandlers = (services) => {
         }
       }
     },
+    { channel: 'ai:automations-list', handler: async () => {
+      const scheduler = services.automationScheduler;
+      return scheduler ? { success: true, data: scheduler.list() } : { success: false, error: '定时任务服务尚未就绪' };
+    } },
+    { channel: 'ai:automations-remove', handler: async (_event, id) => {
+      const scheduler = services.automationScheduler;
+      if (!scheduler) return { success: false, error: '定时任务服务尚未就绪' };
+      return scheduler.remove(String(id || '')) ? { success: true } : { success: false, error: '没有找到这个定时任务' };
+    } },
     { channel: 'ai:cancel-pending-action', handler: async (event, actionId) => {
       const controller = runningActions.get(`${event.sender.id}:${actionId}`);
       controller?.abort();

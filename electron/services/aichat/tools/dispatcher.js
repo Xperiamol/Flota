@@ -14,6 +14,7 @@ const documents = require('./handlers/documents');
 const settings = require('./handlers/settings');
 const widgets = require('./handlers/widgets');
 const canvas = require('./handlers/canvas');
+const automation = require('./handlers/automation');
 
 const HANDLERS = Object.freeze({
   ...notes,
@@ -23,6 +24,7 @@ const HANDLERS = Object.freeze({
   ...documents,
   ...widgets,
   ...canvas,
+  ...automation,
   ...settings
 });
 

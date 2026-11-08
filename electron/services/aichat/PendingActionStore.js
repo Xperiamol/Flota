@@ -120,6 +120,13 @@ class PendingActionStore {
     switch (name) {
       case 'update_settings': return require('./tools/handlers/settings').summarizeChanges(args.changes);
       case 'create_note': return `创建笔记「${args.title || '未命名'}」`;
+      case 'schedule_task': {
+        const { REPEAT_LABELS } = require('./tools/handlers/automation');
+        const time = Date.parse(String(args.at || ''));
+        const when = Number.isFinite(time) ? new Date(time).toLocaleString('zh-CN', { hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : String(args.at || '');
+        return `定时任务「${args.title || '未命名'}」：${args.repeat && args.repeat !== 'once' ? `${REPEAT_LABELS[args.repeat] || args.repeat}，从 ${when} 开始` : when}`;
+      }
+      case 'cancel_scheduled_task': return `取消定时任务 ${args.id || ''}`;
       case 'save_document': return `保存长文《${args.title || '未命名'}》${args.chars ? `，约 ${args.chars} 字` : ''}`;
       case 'edit_note': {
         const title = args.title ? `，标题改为「${args.title}」` : '';

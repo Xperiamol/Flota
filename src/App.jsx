@@ -184,6 +184,15 @@ function App() {
   // 暴露正在显示的笔记给主进程（AI 工具兜底用）；不在笔记页时为 null
   const visibleNoteId = useStore(getVisibleNoteId)
   useEffect(() => { window.__flotaVisibleNoteId = visibleNoteId }, [visibleNoteId])
+  // 定时任务的通知被点击：打开这条任务的对话
+  useEffect(() => window.electronAPI?.ai?.onOpenConversation?.(async ({ conversationId } = {}) => {
+    if (!conversationId) return
+    const store = useStore.getState()
+    await store.loadAiConversations?.()
+    useStore.setState({ aiActiveConvId: conversationId })
+    store.setCurrentView?.('ai')
+  }), [])
+
   // 对话智能体提交画布时，主进程调用它用真实排版引擎试渲染（按需加载，不影响首屏）
   useEffect(() => {
     window.__flotaCanvasCheck = (payload) => import('./utils/diagrams/canvasCheck').then(m => m.checkCanvasProposal(payload))

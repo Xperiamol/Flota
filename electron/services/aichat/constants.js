@@ -2,7 +2,7 @@
  * AI Chat 通用常量。
  */
 
-const WRITE_TOOL_NAMES = new Set(['update_settings', 'create_note', 'edit_note', 'edit_notes', 'create_whiteboard', 'update_whiteboard', 'create_todo', 'create_todos', 'add_memory', 'update_memory', 'save_document', 'create_widget', 'update_widget', 'create_widget_instance', 'add_widget_records']);
+const WRITE_TOOL_NAMES = new Set(['update_settings', 'create_note', 'edit_note', 'edit_notes', 'create_whiteboard', 'update_whiteboard', 'create_todo', 'create_todos', 'add_memory', 'update_memory', 'save_document', 'schedule_task', 'cancel_scheduled_task', 'create_widget', 'update_widget', 'create_widget_instance', 'add_widget_records']);
 
 const ACTION_LABELS = {
   update_settings: '修改应用设置',
@@ -16,6 +16,8 @@ const ACTION_LABELS = {
   add_memory: '保存记忆',
   update_memory: '更新记忆',
   save_document: '保存长文',
+  schedule_task: '安排定时任务',
+  cancel_scheduled_task: '取消定时任务',
   create_widget: '生成组件',
   update_widget: '修改组件',
   create_widget_instance: '新建组件实例',

@@ -10,6 +10,7 @@ const SKILLS = {
   writing: { title: '长文写作', description: '多章节报告、方案、教程、小说等长文，分段直接写正文并保存为笔记', tools: ['write_document'] },
   memory: { title: '长期记忆', description: '检索用户偏好和背景，按明确要求记住或更正信息', tools: ['search_memory', 'add_memory', 'update_memory', 'list_memories'] },
   settings: { title: '应用设置', description: '查看和调整主题、排版、显示偏好、历史快照等设置', tools: ['get_settings', 'update_settings'] },
+  automation: { title: '定时任务', description: '安排未来某个时间由你主动去做的事（每日简报、定期复盘、到期检查），查看和取消', tools: ['schedule_task', 'list_scheduled_tasks', 'cancel_scheduled_task'] },
   web: { title: '联网检索', description: '查找实时信息与来源', tools: ['web_search'] },
 };
 const READ_SKILL = { type: 'function', function: {

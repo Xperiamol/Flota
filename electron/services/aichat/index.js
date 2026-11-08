@@ -76,6 +76,10 @@ class AIChatService {
     this._canvasChecker = fn;
   }
 
+  setAutomationScheduler(scheduler) {
+    this._automationScheduler = scheduler;
+  }
+
   setWidgetChecker(fn) {
     this._widgetChecker = fn;
   }
@@ -172,7 +176,8 @@ class AIChatService {
       getCurrentNote,
       appSettings: contextPackage?.appSettings || {},
       settingDAO: this.aiService?.settingDAO,
-      widgetService: this._widgetService || null
+      widgetService: this._widgetService || null,
+      automationScheduler: this._automationScheduler || null
     };
   }
 
