@@ -56,6 +56,7 @@ class AIChatService {
     this.logger = getLogger();
     this._currentNoteGetter = null; // 由 main.js 注入
     this._canvasChecker = null; // 由 main.js 注入：在渲染进程里用真实排版引擎试渲染画布
+    this._widgetChecker = null; // 由 main.js 注入：在渲染进程的沙箱里按各尺寸预跑组件草稿
     this._pendingActions = new PendingActionStore({ mem0Service });
     this._longDocPipeline = null;
     this._memoryExtractor = new MemoryExtractor({
@@ -74,6 +75,10 @@ class AIChatService {
 
   setCanvasChecker(fn) {
     this._canvasChecker = fn;
+  }
+
+  setWidgetChecker(fn) {
+    this._widgetChecker = fn;
   }
 
   setCurrentNoteGetter(fn) {
@@ -168,6 +173,9 @@ class AIChatService {
       const context = options.actionContext ? (usesReferences ? options.actionContext : targetContext) : null;
       if ((name === 'create_whiteboard' || name === 'update_whiteboard') && this._canvasChecker) {
         return JSON.stringify(await this._proposeCanvas(name, args, context));
+      }
+      if ((name === 'create_widget' || name === 'update_widget') && (args?.code || args?.edits) && this._widgetService) {
+        return JSON.stringify(await this._proposeWidget(name, args, context));
       }
       if (name === 'edit_note') {
         const prepared = this._prepareNoteEdit(args);
@@ -275,14 +283,68 @@ class AIChatService {
     if (check && check.ok === false) {
       return { success: false, error: `画布没有通过渲染检查：${check.error}。请修正后重新调用。` };
     }
-    const card = await this._pendingActions.create(name, args, context);
-    if (!check) return card;
+    const { confirmationHint, ...card } = await this._pendingActions.create(name, args, context);
+    if (!check) return { ...card, confirmationHint };
     return {
       ...card,
       rendered: check.summary,
       resubmit_note: '再次调用本工具提交修正版会替换这张确认卡，不是在它上面叠加：修正版要包含这次的全部内容和修改。',
       ...(check.warnings?.length ? { warnings: check.warnings } : {}),
       ...(check.image ? { preview_image: check.image, preview_note: '附图是这张画布的实际渲染效果。有排版、配色或信息问题时再提交修正版；没有问题就直接收尾。' } : {}),
+    };
+  }
+
+  /**
+   * 组件提案：模型直接写出完整 HTML（新建）或按 SEARCH/REPLACE 片段修改（修改）。
+   * 先建草稿、在沙箱里按声明的每个尺寸预跑；有报错、白屏、溢出就原样还给模型修，通过才出确认卡。
+   */
+  async _proposeWidget(name, args, context) {
+    const service = this._widgetService;
+    const isUpdate = name === 'update_widget';
+    let code = typeof args.code === 'string' ? args.code : '';
+    let previewInstance = null;
+    try {
+      if (isUpdate) {
+        if (!args.id) return { success: false, error: '缺少要修改的组件 id' };
+        const widget = service.getWidget(args.id, { withCode: true });
+        if (!code) {
+          const edits = Array.isArray(args.edits) ? args.edits : [];
+          if (!edits.length) return { success: false, error: '请提供 code（完整 HTML）或 edits（[{search, replace}]）' };
+          const { applyPatches } = require('../widgets/WidgetGenerator');
+          code = applyPatches(widget.code, edits.map((edit) => ({ search: String(edit?.search ?? ''), replace: String(edit?.replace ?? '') })));
+        }
+        const instances = service.dao.listInstances(widget.id);
+        previewInstance = instances.find((item) => item.id === args.instance_id)?.id || instances[0]?.id || null;
+      }
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+    let draftId;
+    try {
+      draftId = service.createDraft(code, { widgetId: isUpdate ? args.id : null, cloneDataFrom: previewInstance || undefined });
+    } catch (error) {
+      return { success: false, error: `组件代码没有通过检查：${error.message}` };
+    }
+    const { manifest } = require('../widgets/manifest').parseManifest(code);
+    let problems = null;
+    if (this._widgetChecker) {
+      try {
+        problems = await this._widgetChecker({ draftId, sizes: manifest?.sizes || null });
+      } catch (error) {
+        this.logger.warn('AI', 'widget check unavailable', error?.message);
+      }
+    }
+    if (Array.isArray(problems) && problems.length) {
+      service.discardDraft(draftId);
+      return { success: false, error: `组件预跑没有通过，请修复后重新调用：\n${problems.slice(0, 8).map((problem, index) => `${index + 1}. ${problem.message}${problem.stack ? `\n${String(problem.stack).split('\n').slice(0, 3).join('\n')}` : ''}`).join('\n')}` };
+    }
+    // 卡片里保留完整代码：草稿过期或应用重启后，确认时用它重建草稿
+    const { edits, ...rest } = args;
+    const { confirmationHint, ...card } = await this._pendingActions.create(name, { ...rest, code, draft_id: draftId, widget_name: manifest?.name || '' }, context);
+    return {
+      ...card,
+      checked: problems ? `已在沙箱里按 ${(manifest?.sizes || ['full']).join(' / ')} 尺寸预跑，没有发现问题` : '预跑检查暂不可用，确认时会再检查一次',
+      resubmit_note: '再次调用本工具提交修正版会替换这张确认卡。',
     };
   }
 

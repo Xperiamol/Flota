@@ -81,6 +81,16 @@ const registerWidgetHandlers = (getWidgetService, getWidgetGenerator, getPluginM
   handle('widget:generate-cancel', (service, requestId) => getWidgetGenerator?.()?.cancel(requestId) || false);
   handle('widget:save-draft', (service, draftId, options) => service.saveDraft(draftId, options || {}));
   handle('widget:draft-discard', (service, id) => service.discardDraft(id));
+  // 对话智能体写好的组件代码：确认时草稿还在就直接用，过期（超过 6 小时或应用重启）就用卡片里的代码重建
+  handle('widget:draft-ensure', (service, payload = {}) => {
+    const draft = payload.draftId ? service.getDraft(payload.draftId) : null;
+    const sizes = require('../services/widgets/manifest').parseManifest(payload.code).manifest?.sizes || null;
+    if (draft && draft.code === payload.code) return { draftId: payload.draftId, reused: true, sizes };
+    const widgetId = payload.widgetId || null;
+    const instances = widgetId ? service.dao.listInstances(widgetId) : [];
+    const preview = instances.find((item) => item.id === payload.instanceId)?.id || instances[0]?.id;
+    return { draftId: service.createDraft(payload.code, { widgetId, cloneDataFrom: preview }), reused: false, sizes };
+  });
 
   // ---- 导入导出 ----
   handle('widget:import-file', async (service, event) => {

@@ -243,28 +243,14 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'create_widget',
-      description: '为用户生成一个新组件：运行在 Flota 里的可交互小应用。它可以记录和整理数据，联网获取信息（天气、汇率、RSS、公开 API），定时发系统提醒，导入导出文件，汇总笔记、待办和其他组件的数据，也可以调用 AI。当用户想要一个工具、面板、追踪器、仪表盘或小游戏，而不是一篇笔记时使用。确认后由专门的生成流程编写代码、在沙箱中预跑并自动修复，完成后固定到侧边栏并创建第一个实例。你只需要把需求写清楚，不要自己写代码。组件有三种显示位置：首页卡片 / 主页面板（compact，紧凑，可放一两个一键操作）、笔记里和桌面小窗（medium）、组件主页（full，完整功能）。',
+      description: '新建一个组件（运行在 Flota 里的可交互小应用），完整的单文件 HTML 由你直接写出，写法见 widgets 技能里的组件开发规范。提交时会在沙箱里按声明的每个尺寸、浅色深色各预跑一次：报错、白屏、横向溢出会原样返回，修好后重新调用；通过后生成确认卡，确认后固定到侧边栏并创建第一个实例。',
       parameters: {
         type: 'object',
         properties: {
-          instruction: { type: 'string', description: '完整、具体的组件需求：要记录或获取哪些数据、如何展示、有哪些操作，需要联网（写明数据来源）、提醒、文件导入导出或引用其他组件数据时说明，以及用户提到的偏好（含风格）。先原样引用用户的原话，再补充你的理解；涉及首页/主页面板、笔记内、组件主页等具体位置时写明对应尺寸（compact / medium / full）。用用户的语言书写。' },
-          instance_name: { type: 'string', description: '第一个实例的名称（可选），如「英语单词」' },
-          design_options: {
-            type: 'array',
-            minItems: 2,
-            maxItems: 3,
-            description: '需求比较开放、可以有明显不同做法时，提供 2-3 个设计方向让用户选（信息结构、核心交互或呈现方式上真正不同，不是配色差异）。需求已经很具体、或用户已说明想要的样子时不要提供。',
-            items: {
-              type: 'object',
-              properties: {
-                title: { type: 'string', description: '方向名称，4-12 个字' },
-                summary: { type: 'string', description: '一两句话说明布局、核心交互和适合的人' }
-              },
-              required: ['title', 'summary']
-            }
-          }
+          code: { type: 'string', description: '完整的组件 HTML（含组件清单）' },
+          instance_name: { type: 'string', description: '第一个实例的名称（可选），如「英语单词」' }
         },
-        required: ['instruction']
+        required: ['code']
       }
     }
   },
@@ -272,15 +258,21 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'update_widget',
-      description: '修改已有组件的功能或外观，包括只改某个显示位置（如“在主页面板加一键打卡按钮”）。修改会作用于该组件的所有实例，实例数据会保留。确认后同样经过预跑与自动修复。组件有三种显示位置：首页卡片 / 主页面板（compact，紧凑，可放一两个一键操作）、笔记里和桌面小窗（medium）、组件主页（full，完整功能）。',
+      description: '修改已有组件（作用于它的所有实例，数据保留，所以数据结构要兼容）。先用 get_widget 看当前代码；小改用 edits 按片段替换，大改直接给完整 code。同样会先在沙箱预跑，通过才出确认卡。',
       parameters: {
         type: 'object',
         properties: {
           id: { type: 'string', description: '要修改的组件 id' },
-          instruction: { type: 'string', description: '具体的修改要求：先原样引用用户的原话，再补充你的理解；只改某个位置时写明对应尺寸（首页卡片/主页面板 = compact，笔记/小窗 = medium，组件主页 = full），并说明其他位置保持不变。' },
-          instance_id: { type: 'string', description: '用于预览的实例 id（可选，默认第一个实例）' }
+          summary: { type: 'string', description: '一句话说明改了什么（显示在确认卡和版本记录里）' },
+          edits: {
+            type: 'array',
+            description: '片段修改，按顺序应用：search 必须与当前代码逐字一致且唯一',
+            items: { type: 'object', properties: { search: { type: 'string' }, replace: { type: 'string' } }, required: ['search', 'replace'] }
+          },
+          code: { type: 'string', description: '修改后的完整 HTML（与 edits 二选一）' },
+          instance_id: { type: 'string', description: '预跑时使用哪个实例的数据副本（可选，默认第一个实例）' }
         },
-        required: ['id', 'instruction']
+        required: ['id', 'summary']
       }
     }
   },

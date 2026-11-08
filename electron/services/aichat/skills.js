@@ -6,7 +6,7 @@ const SKILLS = {
   notes: { title: '笔记', description: '搜索、按段阅读、创建、局部修改和批量整理笔记', tools: ['search_notes', 'read_note', 'get_current_note', 'read_current_note', 'read_note_image', 'search_in_current_note', 'summarize_current_note_section', 'create_note', 'edit_note', 'edit_notes'] },
   planning: { title: '待办与规划', description: '查询日程、拆解目标、创建待办；从笔记提取行动项并嵌入实时清单', tools: ['search_todos', 'get_today_todos', 'create_todo', 'create_todos'] },
   canvas: { title: '画布', description: '直接写出画布内容：数据看板、流程图、思维导图、时间线、海报等；读取和局部修改已有画布', tools: ['read_whiteboard', 'create_whiteboard', 'update_whiteboard'] },
-  widgets: { title: '组件', description: '生成交互工具、修改组件、创建实例与录入数据', tools: ['list_widgets', 'get_widget', 'create_widget', 'update_widget', 'create_widget_instance', 'add_widget_records'] },
+  widgets: { title: '组件', description: '直接编写交互小应用（追踪器、仪表盘、工具、小游戏等）、修改组件、创建实例与录入数据', tools: ['list_widgets', 'get_widget', 'create_widget', 'update_widget', 'create_widget_instance', 'add_widget_records'] },
   writing: { title: '长文写作', description: '多章节小说、报告、方案、教程，分段写作并保存', tools: ['write_long_document'] },
   memory: { title: '长期记忆', description: '检索用户偏好和背景，按明确要求记住或更正信息', tools: ['search_memory', 'add_memory', 'update_memory', 'list_memories'] },
   settings: { title: '应用设置', description: '查看和调整主题、排版、显示偏好、历史快照等设置', tools: ['get_settings', 'update_settings'] },
@@ -17,10 +17,18 @@ const READ_SKILL = { type: 'function', function: {
   parameters: { type: 'object', properties: { skill: { type: 'string', enum: Object.keys(SKILLS) } }, required: ['skill'], additionalProperties: false },
 } };
 // 技能目录里 SKILL.md 之外的 .md 是随技能附带的参考文档（如画布原语手册），一起交给模型
+// 由代码维护的参考文档（与生成器共用一份，避免两处不一致）
+const CODE_DOCS = {
+  widgets: () => require('../widgets/sdkDoc').SDK_DOC,
+};
 const readSkillDocs = (id) => {
   const dir = path.join(__dirname, 'skills', id);
   const extra = fs.readdirSync(dir).filter((file) => file.endsWith('.md') && file !== 'SKILL.md').sort();
-  return [fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf8'), ...extra.map((file) => fs.readFileSync(path.join(dir, file), 'utf8'))].join('\n\n');
+  return [
+    fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf8'),
+    ...extra.map((file) => fs.readFileSync(path.join(dir, file), 'utf8')),
+    ...(CODE_DOCS[id] ? [CODE_DOCS[id]()] : []),
+  ].join('\n\n');
 };
 const getSkillDirectory = () => Object.entries(SKILLS).map(([id, skill]) => `- ${id}（${skill.title}）：${skill.description}`).join('\n');
 

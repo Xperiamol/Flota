@@ -404,7 +404,7 @@ const SimpleActionCard = ({ action, executing, onExecute, onDismiss, onRestore, 
           <Note>会作用于这个组件的所有实例，数据保留，完成后可以撤销。</Note>
         )}
         {!retryable && action.name === 'create_widget' && (
-          <Note>生成后会先预览检查，有问题自动修复，完成后固定到侧边栏。</Note>
+          <Note>{action.args?.code ? '已在沙箱里预跑通过，确认后固定到侧边栏。' : '生成后会先预览检查，有问题自动修复，完成后固定到侧边栏。'}</Note>
         )}
         {!retryable && action.name === 'create_todo' && Array.isArray(action.args?.subtasks) && action.args.subtasks.length > 0 && (
           <Box component="ul" sx={{ m: 0, mt: 0.4, pl: 2.25, color: 'text.secondary' }}>

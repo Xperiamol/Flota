@@ -187,7 +187,8 @@ function App() {
   // 对话智能体提交画布时，主进程调用它用真实排版引擎试渲染（按需加载，不影响首屏）
   useEffect(() => {
     window.__flotaCanvasCheck = (payload) => import('./utils/diagrams/canvasCheck').then(m => m.checkCanvasProposal(payload))
-    return () => { delete window.__flotaCanvasCheck }
+    window.__flotaWidgetCheck = (payload) => import('./utils/widgets/widgetCheck').then(m => m.checkWidgetDraft(payload))
+    return () => { delete window.__flotaCanvasCheck; delete window.__flotaWidgetCheck }
   }, [])
   const [selectedDate, setSelectedDate] = useState(null)
   const [calendarShowCompleted, setCalendarShowCompleted] = useState(false)

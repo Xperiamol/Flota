@@ -118,3 +118,14 @@ test('the canvas skill hands the model the primitive manual and the read/create/
   assert.match(res.instructions, /svg \{source/)
   assert.deepEqual(res.tools.sort(), ['create_whiteboard', 'read_whiteboard', 'update_whiteboard'])
 })
+
+test('card results shown to the model omit large submitted content; the frontend result keeps it', () => {
+  const { toToolOutput } = require('../../electron/services/aichat/agent/runChat.js')
+  const big = { children: Array.from({ length: 80 }, (_, i) => ({ type: 'card', props: { title: `节点 ${i}` } })) }
+  const raw = JSON.stringify({ requiresConfirmation: true, actionId: 'a', name: 'create_whiteboard', args: { title: '图', canvas: big } })
+  const out = toToolOutput(raw)
+  assert.equal(JSON.parse(out.publicResult).args.canvas.children.length, 80)
+  const seen = JSON.parse(out.content[0].text)
+  assert.equal(seen.args.title, '图')
+  assert.match(seen.args.canvas, /已提交，\d+ 字符，此处省略/)
+})

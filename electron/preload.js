@@ -353,6 +353,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cancelGenerate: inv('widget:generate-cancel'),
     saveDraft: inv('widget:save-draft'),
     discardDraft: inv('widget:draft-discard'),
+    ensureDraft: inv('widget:draft-ensure'),
     importFile: inv('widget:import-file'),
     exportFile: inv('widget:export-file'),
     storeList: inv('widget:store-list'),

@@ -79,6 +79,17 @@ const fitContext = (messages) => (estimateMessages(messages) > MAX_CONTEXT_TOKEN
   ? compactOldToolResults(messages)
   : messages);
 
+// 确认卡结果里原样带着参数（前端要用它显示卡片）；给模型看时把大块参数（画布、组件代码）换成长度说明，不再整段回显
+const LARGE_ARG_CHARS = 1500;
+const forModel = (parsed) => {
+  if (!parsed?.requiresConfirmation || !parsed.args || typeof parsed.args !== 'object') return parsed;
+  const args = Object.fromEntries(Object.entries(parsed.args).map(([key, value]) => {
+    const size = typeof value === 'string' ? value.length : JSON.stringify(value ?? null).length;
+    return [key, size > LARGE_ARG_CHARS ? `（已提交，${size} 字符，此处省略）` : value];
+  }));
+  return { ...parsed, args };
+};
+
 /** Flota 工具（返回 JSON 字符串）的结果 → 给模型看的内容 + 给前端看的结果 */
 const toToolOutput = (raw) => {
   const parsed = safeJsonParse(raw);
@@ -96,10 +107,12 @@ const toToolOutput = (raw) => {
   if (parsed?.preview_image) {
     const { preview_image: dataUrl, ...rest } = parsed;
     const image = toImageContent(dataUrl);
-    const text = JSON.stringify(rest?.context?.referenceImages ? withoutReferencePayload(rest) : rest);
+    const shown = forModel(rest);
+    const text = JSON.stringify(shown?.context?.referenceImages ? withoutReferencePayload(shown) : shown);
     return { parsed: rest, publicResult: JSON.stringify(rest), content: [{ type: 'text', text }, ...(image ? [image] : [])] };
   }
-  const modelText = parsed?.context?.referenceImages ? JSON.stringify(withoutReferencePayload(parsed)) : raw;
+  const shown = forModel(parsed);
+  const modelText = shown?.context?.referenceImages ? JSON.stringify(withoutReferencePayload(shown)) : (shown === parsed ? raw : JSON.stringify(shown));
   return { parsed, publicResult: raw, content: [{ type: 'text', text: modelText }] };
 };
 

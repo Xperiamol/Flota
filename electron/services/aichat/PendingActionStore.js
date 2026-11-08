@@ -146,8 +146,8 @@ class PendingActionStore {
         const subtaskCount = list.reduce((count, todo) => count + (Array.isArray(todo?.subtasks) ? todo.subtasks.length : 0), 0);
         return `批量创建 ${list.length} 条待办${subtaskCount ? `，含 ${subtaskCount} 个子任务` : ''}${first ? `：${first}…` : ''}${args.source_note_id ? `；关联笔记 #${args.source_note_id}${args.embed_in_note ? '并插入待办清单' : ''}` : ''}`;
       }
-      case 'create_widget': return `生成组件：${String(args.instruction || '').slice(0, 60)}`;
-      case 'update_widget': return `修改组件：${String(args.instruction || '').slice(0, 60)}`;
+      case 'create_widget': return `生成组件：${String(args.widget_name || args.instruction || '').slice(0, 60)}`;
+      case 'update_widget': return `修改组件：${String(args.summary || args.instruction || args.widget_name || '').slice(0, 60)}`;
       case 'create_widget_instance': return `新建实例「${args.name || '未命名'}」`;
       case 'add_widget_records': return `向实例写入 ${Array.isArray(args.records) ? args.records.length : 0} 条数据`;
       case 'add_memory': return `保存记忆「${String(args.content || '').slice(0, 40)}」`;

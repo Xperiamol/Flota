@@ -27,7 +27,7 @@ const ANTHROPIC_RELAY_COMPAT = {
 };
 
 // Anthropic 协议必须带 max_tokens；调用方没给时用这个值，被截断由各处的自动续写接上
-const ANTHROPIC_DEFAULT_MAX_TOKENS = 16384;
+const ANTHROPIC_DEFAULT_MAX_TOKENS = 32000;
 
 const DEFAULT_TIMEOUT_MS = 120000; // 空闲超时：这么久没有收到任何数据才算超时（见 llm/stream.js）
 const MAX_TIMEOUT_MS = 15 * 60 * 1000;

@@ -906,6 +906,16 @@ async function initializeServices() {
         const timeout = new Promise((resolve) => setTimeout(() => resolve(null), 60000))
         return Promise.race([run, timeout])
       })
+      // 组件提案的预跑：在主窗口渲染进程的沙箱里按各尺寸运行草稿（见 src/utils/widgets/widgetCheck.js）
+      services.aiChatService.setWidgetChecker(async (payload) => {
+        const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+        if (!win) return null
+        const run = win.webContents.executeJavaScript(
+          `window.__flotaWidgetCheck ? window.__flotaWidgetCheck(${JSON.stringify(payload)}) : null`
+        )
+        const timeout = new Promise((resolve) => setTimeout(() => resolve(null), 90000))
+        return Promise.race([run, timeout])
+      })
       services.aiChatService.setCurrentNoteGetter(async () => {
         // 通过 IPC 向渲染进程请求当前笔记ID，再从DAO获取
         try {

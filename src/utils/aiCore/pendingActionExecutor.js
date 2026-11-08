@@ -17,7 +17,7 @@ import {
   executeUpdateWhiteboardToolAction,
 } from '../whiteboardAI'
 
-import { runWidgetGeneration } from '../widgets/widgetGeneration'
+import { runWidgetGeneration, probeAllSizes } from '../widgets/widgetGeneration'
 import { useWidgetActionProgress } from '../widgets/widgetActionProgress'
 import { ensureActionProgressSubscription, useActionSteps } from './actionProgress'
 
@@ -106,6 +106,37 @@ const executeWidgetAction = async (action, task, overrides) => {
     if (!list?.success) throw new Error(list?.error || '组件不存在')
     instanceCount = list.data.length
     if (!previewInstanceId || !list.data.some((item) => item.id === previewInstanceId)) previewInstanceId = list.data[0]?.id || null
+  }
+
+  // 对话智能体自己写好的代码：提交时已预跑通过，这里确保草稿还在（过期就重建并重新预跑）再保存
+  if (typeof args.code === 'string' && args.code) {
+    report({ stage: 'saving', round: 0 })
+    const ensured = await window.electronAPI.widgets.ensureDraft({ draftId: args.draft_id, code: args.code, widgetId: isUpdate ? args.id : null, instanceId: previewInstanceId })
+    if (!ensured?.success) throw new Error(ensured?.error || '组件草稿无法创建')
+    const draftId = ensured.data.draftId
+    if (!ensured.data.reused) {
+      report({ stage: 'testing', round: 0 })
+      const problems = await probeAllSizes(draftId, ensured.data.sizes, task?.signal)
+      task?.throwIfCancelled()
+      if (problems.length) {
+        await window.electronAPI.widgets.discardDraft(draftId).catch(() => {})
+        throw new Error(`预览检查未通过，原组件未修改：${problems.map((item) => item.message).slice(0, 3).join('；')}`)
+      }
+    }
+    task?.beginCommit()
+    const saved = await window.electronAPI.widgets.saveDraft(draftId, {
+      instanceName: args.instance_name,
+      versionNote: isUpdate ? `AI 修改：${String(args.summary || '').slice(0, 40)}` : 'AI 生成',
+    })
+    if (!saved?.success) throw new Error(saved?.error || '保存失败')
+    useWidgetActionProgress.getState().clear(action.actionId)
+    const widgetName = saved.data.widget?.name || args.widget_name || '组件'
+    return {
+      success: true,
+      message: isUpdate ? `已修改组件「${widgetName}」${instanceCount > 1 ? `，${instanceCount} 个实例都已生效` : ''}` : `已生成组件「${widgetName}」，已固定到侧边栏`,
+      action: claim.action || action,
+      resultData: { mode: isUpdate ? 'update' : 'create', widgetId: saved.data.widget?.id, widgetName, instanceId: isUpdate ? previewInstanceId : saved.data.instance?.id, instanceCount, version: saved.data.version, previousVersion: saved.data.previousVersion, fixedRounds: 0, remainingProblems: [] },
+    }
   }
 
   const design = pickDesignOption(args, action, overrides)
