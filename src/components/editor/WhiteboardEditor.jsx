@@ -1354,6 +1354,7 @@ const WhiteboardEditor = ({ noteId, isStandaloneMode = false, onGetContent, onEx
         const result = await generateWhiteboardElementsByAction({
           action: detail.action,
           prompt: detail.prompt,
+          spec: detail.spec,
           task: detail.task,
           elements: existingElements,
           appState,

@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
+const primitivesDoc = await readFile(new URL('../../electron/services/aichat/skills/canvas/PRIMITIVES.md', import.meta.url), 'utf8')
 let source = await readFile(new URL('../../src/utils/aiExcalidrawGenerator.js', import.meta.url), 'utf8')
 source = source.replace(/^import .*$/gm, '').replace("await import('./diagrams/visualReview')", "{ reviewCanvas: (...args) => globalThis.__reviewCanvas(...args) }")
 const parserSource = await readFile(new URL('../../src/utils/diagrams/structuredOutput.js', import.meta.url), 'utf8')
@@ -13,6 +14,7 @@ const renderMermaidNative = async code => globalThis.__renderMermaid(code)
 const renderComposer = tree => globalThis.__renderComposer(tree)
 const createSvgAsset = text => globalThis.__createSvgAsset(text)
 const isAiCanvasSvgAllowed = async () => globalThis.__svgAllowed !== false
+const COMPOSER_PRIMITIVES = ${JSON.stringify(primitivesDoc)}
 ` + source
 const { aiGenerateExcalidrawElements: generate, buildComposerMessages } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
 const setup = replies => {

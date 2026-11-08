@@ -174,6 +174,8 @@ register('canvas', {
     childList(node).forEach((child, i) => {
       const { x = 0, y = 0, w } = child.props || {}
       if (x >= width) throw new Error(`canvas 实际宽 ${Math.round(width)}${limited}，第 ${i + 1} 个子节点 ${child.type} 的 x=${x} 已在画布外；请按这个宽度重排坐标`)
+      // 写了宽度却放不下时报错，不偷偷把它压窄（否则卡片会被挤成一条竖线）
+      if (Number.isFinite(w) && x + w > width + 2) throw new Error(`canvas 实际宽 ${Math.round(width)}${limited}，第 ${i + 1} 个子节点 ${child.type} 写了 w=${w}，但从 x=${x} 起只剩 ${Math.round(width - x)}；请减小 x 或 w，或加大 canvas 的 w`)
       const measured = measureNode(child, Math.min(w ?? width - x, width - x))
       if (x + measured.w > width + 2) throw new Error(`canvas 实际宽 ${Math.round(width)}${limited}，第 ${i + 1} 个子节点 ${child.type} 从 x=${x} 起宽 ${Math.round(measured.w)}，右边超出；请减小 x 或 w`)
       height = Math.max(height, y + measured.h)
@@ -1349,9 +1351,11 @@ const normalizeRoot = (tree) => {
   //   1) { title?, layout?, children: [...] }  → 顶层用 layout 指定的容器包住 children
   //   2) 直接一个节点 { type, props, children }
   if (tree && Array.isArray(tree.children) && !tree.type) {
-    const layout = tree.layout || {}
+    // layout 两种写法都接受：扁平的 {type, gap, w…}，或和节点一样的 {type, props:{…}}
+    const { props: nested, type, ...flat } = tree.layout || {}
+    const layout = { ...flat, ...(nested && typeof nested === 'object' ? nested : {}) }
     return {
-      type: layout.type || 'stack.v',
+      type: type || 'stack.v',
       props: { ...layout, gap: layout.gap ?? 32, padding: layout.padding ?? 0 },
       children: tree.children,
     }

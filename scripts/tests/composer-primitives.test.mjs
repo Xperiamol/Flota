@@ -297,6 +297,21 @@ test('donut center text shrinks to fit inside the hole', () => {
 test('canvas overflow errors say the real width, which child, and that the parent narrowed it', () => {
   const tree = { type: 'stack.v', props: { w: 800 }, children: [{ type: 'canvas', props: { w: 1200, h: 300 }, children: [{ type: 'card', props: { x: 900, y: 0, title: '竞品' } }] }] }
   assert.throws(() => renderComposer(tree), /canvas 实际宽 800（写的 w=1200，但外层只给了 800），第 1 个子节点 card 的 x=900/)
-  // 子节点会收窄到剩余宽度，所以 x 在画布内时不会右侧溢出
-  assert.doesNotThrow(() => renderComposer({ type: 'canvas', props: { w: 400 }, children: [{ type: 'card', props: { x: 300, title: 'x', w: 200 } }] }))
+  // 没写宽度的子节点收窄到剩余宽度；写了宽度却放不下的报错
+  assert.doesNotThrow(() => renderComposer({ type: 'canvas', props: { w: 400 }, children: [{ type: 'card', props: { x: 300, title: 'x' } }] }))
+  assert.throws(() => renderComposer({ type: 'canvas', props: { w: 400 }, children: [{ type: 'card', props: { x: 300, title: 'x', w: 200 } }] }), /写了 w=200，但从 x=300 起只剩 100/)
+})
+
+test('root layout written like a node ({type, props}) keeps its width and background', () => {
+  const flat = renderComposer({ layout: { type: 'canvas', w: 1240, bg: '#fcfcfa' }, children: [{ type: 'card', props: { x: 940, y: 0, w: 250, title: 'A' } }] })
+  const nested = renderComposer({ layout: { type: 'canvas', props: { w: 1240, bg: '#fcfcfa' } }, children: [{ type: 'card', props: { x: 940, y: 0, w: 250, title: 'A' } }] })
+  for (const r of [flat, nested]) {
+    assert.equal(Math.round(r.elements[0].width), 1240)
+    assert.equal(r.elements[0].backgroundColor, '#fcfcfa')
+    assert.equal(Math.round(r.elements.find(e => e.type === 'rectangle' && e.width < 400).width), 250)
+  }
+})
+
+test('free-layout child with a declared width that does not fit is an error, not silently squeezed', () => {
+  assert.throws(() => renderComposer({ type: 'canvas', props: { w: 1000 }, children: [{ type: 'card', props: { x: 940, y: 0, w: 250, title: 'A' } }] }), /写了 w=250，但从 x=940 起只剩 60/)
 })

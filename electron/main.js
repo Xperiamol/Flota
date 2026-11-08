@@ -896,6 +896,16 @@ async function initializeServices() {
           if (win && !win.isDestroyed()) win.webContents.send('ai:notes-changed', notes)
         })
       })
+      // 画布提案的试渲染：在主窗口的渲染进程里用真实排版引擎渲染一次（见 src/utils/diagrams/canvasCheck.js）
+      services.aiChatService.setCanvasChecker(async (payload) => {
+        const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+        if (!win) return null
+        const run = win.webContents.executeJavaScript(
+          `window.__flotaCanvasCheck ? window.__flotaCanvasCheck(${JSON.stringify(payload)}) : null`
+        )
+        const timeout = new Promise((resolve) => setTimeout(() => resolve(null), 60000))
+        return Promise.race([run, timeout])
+      })
       services.aiChatService.setCurrentNoteGetter(async () => {
         // 通过 IPC 向渲染进程请求当前笔记ID，再从DAO获取
         try {

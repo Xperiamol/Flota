@@ -13,7 +13,9 @@ const FIELDS = new Set([...NUMERIC, ...COLORS, 'text', 'type'])
 
 // Patch existing identities; never turn a small edit into whole-scene regeneration.
 export const applyScenePatch = (elements, patch, selectedIds = [], { allowSvg = true } = {}) => {
-  if (!Array.isArray(patch?.updates) || !Array.isArray(patch?.remove)) throw new Error('修改必须包含 updates 和 remove 数组')
+  // updates / remove / add / reroute 都可省略，但至少要有一项修改
+  patch = { ...patch, updates: patch?.updates ?? [], remove: patch?.remove ?? [] }
+  if (!Array.isArray(patch.updates) || !Array.isArray(patch.remove)) throw new Error('updates 和 remove 必须为数组')
   if (patch.add != null && !Array.isArray(patch.add) || patch.reroute != null && !Array.isArray(patch.reroute)) throw new Error('add 和 reroute 必须为数组')
   const byId = new Map(elements.map(element => [element.id, element]))
   const allowed = new Set(selectedIds.length ? selectedIds : byId.keys())

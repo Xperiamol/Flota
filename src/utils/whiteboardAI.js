@@ -55,14 +55,14 @@ const buildWhiteboardGenerationPrompt = ({ prompt, diagramType = 'auto', sourceN
   ].filter(Boolean).join('\n\n')
 }
 
-const resolveNoteById = (notes = [], id) => {
+export const resolveNoteById = (notes = [], id) => {
   if (id == null || id === '') return null
   return (Array.isArray(notes) ? notes : []).find((note) => String(note?.id) === String(id)) || null
 }
 
 // 从待确认动作的上下文快照里取出"动作被提出时所在的笔记 id"。
 // 用户确认前可能已经切走，快照比实时 currentNote 更能代表用户当时的真实意图。
-const resolveContextNoteId = (actionContext) => {
+export const resolveContextNoteId = (actionContext) => {
   if (!actionContext || typeof actionContext !== 'object') return null
   const id = actionContext.selectedNoteId ?? actionContext.currentNoteId
   return id == null || id === '' ? null : id
@@ -218,6 +218,7 @@ export const buildWhiteboardContent = ({ elements = [], appState = {}, fileMap =
 export const generateWhiteboardElementsByAction = async ({
   action = WHITEBOARD_AI_ACTIONS.APPEND,
   prompt,
+  spec = null,
   elements = [],
   appState = {},
   currentWhiteboardSummary = '',
@@ -225,6 +226,23 @@ export const generateWhiteboardElementsByAction = async ({
 }) => {
   const activeElements = elements.filter(element => element && !element.isDeleted)
   const normalizedAction = normalizeWhiteboardAction(action)
+
+  // 对话智能体自己写好的画布内容：直接渲染，不再调用第二个模型
+  if (spec) {
+    const { renderCanvasSpec } = await import('./diagrams/agentCanvas')
+    const { isAiCanvasSvgAllowed } = await import('./diagrams/canvasSvgPolicy')
+    const isAppend = normalizedAction === WHITEBOARD_AI_ACTIONS.APPEND
+    const r = await renderCanvasSpec(spec, { existingElements: activeElements, append: isAppend, allowSvg: await isAiCanvasSvgAllowed() })
+    task?.throwIfCancelled()
+    return {
+      action: spec.patch ? WHITEBOARD_AI_ACTIONS.EDIT : normalizedAction,
+      elements: r.replacesAll ? r.elements : (isAppend ? [...activeElements, ...r.elements] : r.elements),
+      appState: normalizeAppState(appState),
+      fileMap: r.files,
+      addedCount: r.elements.length,
+      warnings: r.warnings,
+    }
+  }
 
   const unwrap = (res) => {
     if (Array.isArray(res)) return { elements: res, files: {}, warnings: [] }
@@ -259,13 +277,14 @@ const normalizeWhiteboardGenerationError = (error) => {
   return error instanceof Error ? error : new Error(message || '画布生成失败')
 }
 
-export const requestActiveWhiteboardGeneration = ({ noteId, prompt, action = WHITEBOARD_AI_ACTIONS.APPEND, task }) => {
+export const requestActiveWhiteboardGeneration = ({ noteId, prompt, spec = null, action = WHITEBOARD_AI_ACTIONS.APPEND, task }) => {
   if (typeof window === 'undefined') return Promise.resolve(null)
 
   return new Promise((resolve, reject) => {
     const detail = {
       noteId: String(noteId),
       prompt,
+      spec,
       action: normalizeWhiteboardAction(action),
       task,
       handled: false,
@@ -280,7 +299,7 @@ export const requestActiveWhiteboardGeneration = ({ noteId, prompt, action = WHI
   })
 }
 
-export const applyWhiteboardGenerationToNote = async ({ note, prompt, action = WHITEBOARD_AI_ACTIONS.APPEND, updateNote, task }) => {
+export const applyWhiteboardGenerationToNote = async ({ note, prompt, spec = null, action = WHITEBOARD_AI_ACTIONS.APPEND, updateNote, task }) => {
   if (!isWhiteboardNote(note)) {
     throw new Error('当前笔记不是画布')
   }
@@ -292,6 +311,7 @@ export const applyWhiteboardGenerationToNote = async ({ note, prompt, action = W
   const nextData = await generateWhiteboardElementsByAction({
     action,
     prompt,
+    spec,
     task,
     elements: currentData.elements,
     appState: currentData.appState,
@@ -364,15 +384,18 @@ export const executeCreateWhiteboardToolAction = async ({
     throw new Error('缺少画布创建能力')
   }
 
+  const { readCanvasSpec } = await import('./diagrams/agentCanvas')
+  const spec = readCanvasSpec(args)
   const rawPrompt = String(args.prompt || '').trim()
-  if (!rawPrompt) throw new Error('缺少画布生成描述')
+  // 旧版确认卡只有 prompt，仍交给生成器；新版由对话智能体直接给出画布内容
+  if (!spec && !rawPrompt) throw new Error('缺少画布内容')
 
   const useCurrentNoteContext = args.use_current_note_context === true
   const snapshotNote = resolveNoteById(notes, resolveContextNoteId(actionContext))
   const explicitSourceNote = resolveNoteById(notes, args.source_note_id)
   const sourceNote = explicitSourceNote || (useCurrentNoteContext ? (snapshotNote || currentNote) : null)
-  const title = String(args.title || '').trim() || deriveFallbackWhiteboardTitle(rawPrompt, sourceNote)
-  const generationPrompt = buildWhiteboardGenerationPrompt({
+  const title = String(args.title || '').trim() || String(spec?.canvas?.title || '').trim() || deriveFallbackWhiteboardTitle(rawPrompt, sourceNote)
+  const generationPrompt = spec ? '' : buildWhiteboardGenerationPrompt({
     prompt: rawPrompt,
     diagramType: args.diagram_type || 'auto',
     sourceNote,
@@ -394,6 +417,7 @@ export const executeCreateWhiteboardToolAction = async ({
     result = await applyWhiteboardGenerationToNote({
       note: newNote,
       prompt: generationPrompt,
+      spec,
       action: WHITEBOARD_AI_ACTIONS.REPLACE,
       updateNote,
       task,
@@ -435,8 +459,10 @@ export const executeUpdateWhiteboardToolAction = async ({
     throw new Error('缺少画布更新能力')
   }
 
+  const { readCanvasSpec } = await import('./diagrams/agentCanvas')
+  const spec = readCanvasSpec(args)
   const rawPrompt = String(args.prompt || '').trim()
-  if (!rawPrompt) throw new Error('缺少画布修改描述')
+  if (!spec && !rawPrompt) throw new Error('缺少画布修改内容')
 
   // 目标画布解析（问题5）：
   // - 显式传了 target_note_id：必须命中且是画布，否则直接失败，绝不静默回退到当前画布；
@@ -455,11 +481,10 @@ export const executeUpdateWhiteboardToolAction = async ({
     throw new Error('未找到可修改的目标画布')
   }
 
-  const action = normalizeWhiteboardAction(
-    args.action,
-    inferWhiteboardActionFromPrompt(rawPrompt)
-  )
-  const generationPrompt = buildWhiteboardGenerationPrompt({
+  const action = spec?.patch
+    ? WHITEBOARD_AI_ACTIONS.EDIT
+    : normalizeWhiteboardAction(args.mode || args.action, spec ? WHITEBOARD_AI_ACTIONS.APPEND : inferWhiteboardActionFromPrompt(rawPrompt))
+  const generationPrompt = spec ? '' : buildWhiteboardGenerationPrompt({
     prompt: rawPrompt,
     diagramType: args.diagram_type || 'auto',
     sourceNote: null,
@@ -470,12 +495,14 @@ export const executeUpdateWhiteboardToolAction = async ({
   const activeResult = await requestActiveWhiteboardGeneration({
     noteId: targetNote.id,
     prompt: generationPrompt,
+    spec,
     action,
     task,
   })
   const result = activeResult || await applyWhiteboardGenerationToNote({
     note: targetNote,
     prompt: generationPrompt,
+    spec,
     action,
     updateNote,
     task,

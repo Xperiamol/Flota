@@ -44,6 +44,7 @@ let source = await readFile(new URL('../../src/utils/whiteboardAI.js', import.me
 source = source.replace("import { stripMarkdownToPreviewText } from './markdownTextUtils'", 'const stripMarkdownToPreviewText = value => value')
   .replace("import logger from './logger'", 'const logger = { warn() {} }')
   .replace("import('./aiExcalidrawGenerator').then(m => m.aiGenerateExcalidrawElements)", 'Promise.resolve(globalThis.__whiteboardGenerate)')
+  .replaceAll("await import('./diagrams/agentCanvas')", "({ readCanvasSpec: () => null })")
 const board = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
 const note = { id: 1, title: 'NTU', note_type: 'whiteboard', content: board.buildWhiteboardContent({ elements: [{ id: 'old', type: 'text', text: '2026-10-23' }], fileMap: { old: { fileName: 'old.svg' } } }) }
 const setup = () => {

@@ -131,7 +131,10 @@ class PendingActionStore {
         return `批量编辑 ${list.length} 条笔记`;
       }
       case 'create_whiteboard': return `创建画布「${args.title || '未命名画布'}」`;
-      case 'update_whiteboard': return `修改画布 #${args.target_note_id || '当前'}${args.action ? `（${args.action}）` : ''}`;
+      case 'update_whiteboard': {
+        const how = args.patch ? '局部修改' : (args.mode || args.action) === 'replace' ? '整张重画' : (args.canvas || args.mermaid) ? '追加内容' : (args.action || '');
+        return `修改画布 #${args.target_note_id || '当前'}${how ? `（${how}）` : ''}`;
+      }
       case 'create_todo': {
         const subtaskCount = Array.isArray(args.subtasks) ? args.subtasks.length : 0;
         const parentLabel = args.parent_id != null ? `，作为待办 #${args.parent_id} 的子任务` : '';

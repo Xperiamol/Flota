@@ -13,6 +13,7 @@ const webSearch = require('./handlers/webSearch');
 const longDocument = require('./handlers/longDocument');
 const settings = require('./handlers/settings');
 const widgets = require('./handlers/widgets');
+const canvas = require('./handlers/canvas');
 
 const HANDLERS = Object.freeze({
   ...notes,
@@ -21,6 +22,7 @@ const HANDLERS = Object.freeze({
   ...webSearch,
   ...longDocument,
   ...widgets,
+  ...canvas,
   ...settings
 });
 

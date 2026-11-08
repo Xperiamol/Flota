@@ -24,8 +24,21 @@ const { MAX_CONTEXT_TOKENS } = require('../constants');
 const MAX_WEB_SEARCH = 3;
 const MAX_TOTAL_ROUNDS = 24;
 const MAX_STALLED_ROUNDS = 3;
+// 出了确认卡之后还允许几轮工具调用：用来修正同轮失败的调用，或看过渲染图后交修正版
+const MAX_ROUNDS_AFTER_CARD = 2;
 const COMPACT_ABOVE = 0.55; // 超过上下文预算的这个比例时，压缩旧轮次的工具输出
 const STOP_ABOVE = 0.85; // 压缩后仍超过这个比例就停止继续调用工具
+
+// 模型不接受图片时各家的报错（中转站的中文提示、OpenAI / DeepSeek / 通义的英文提示）
+const IMAGE_REJECTED = /不支持图片|不支持视觉|image_url|does not support (?:image|vision)|image input|unknown variant `image/i;
+const IMAGE_DROPPED_NOTE = '[图片未发送：当前模型不支持图片输入]';
+const hasImages = (context) => context.messages.some((message) => Array.isArray(message.content) && message.content.some((block) => block.type === 'image'));
+const withoutImages = (context) => ({
+  ...context,
+  messages: context.messages.map((message) => (Array.isArray(message.content) && message.content.some((block) => block.type === 'image')
+    ? { ...message, content: [...message.content.filter((block) => block.type !== 'image'), { type: 'text', text: IMAGE_DROPPED_NOTE }] }
+    : message)),
+});
 
 const BUDGET_STOP_PROMPT = '本轮因重复调用没有取得新结果或达到上下文/执行预算而停止。请明确说明已完成与仍缺少的部分；不要编造数据或宣称整项任务完成。';
 
@@ -79,6 +92,13 @@ const toToolOutput = (raw) => {
       content: [{ type: 'text', text: JSON.stringify(note) }, ...(image ? [image] : [])],
     };
   }
+  // 画布提案附带的渲染图：给模型看，不存进会话记录
+  if (parsed?.preview_image) {
+    const { preview_image: dataUrl, ...rest } = parsed;
+    const image = toImageContent(dataUrl);
+    const text = JSON.stringify(rest?.context?.referenceImages ? withoutReferencePayload(rest) : rest);
+    return { parsed: rest, publicResult: JSON.stringify(rest), content: [{ type: 'text', text }, ...(image ? [image] : [])] };
+  }
   const modelText = parsed?.context?.referenceImages ? JSON.stringify(withoutReferencePayload(parsed)) : raw;
   return { parsed, publicResult: raw, content: [{ type: 'text', text: modelText }] };
 };
@@ -100,7 +120,7 @@ const runChat = async ({
   model, requestOptions, systemPrompt, history, prompt, toolSession, executeTool, onChunk,
   abortSignal, disableTools = false, phantomNudge = null,
 }) => {
-  const { Agent } = await loadPi();
+  const { Agent, createAssistantMessageEventStream } = await loadPi();
   const run = {
     rounds: 0,
     stalled: 0,
@@ -129,8 +149,11 @@ const runChat = async ({
       // 无进展判断：同一个调用（工具 + 参数）返回了和上次一样的结果，不算进展
       const key = JSON.stringify([name, args]);
       if (!failed && run.seenResults.get(key) !== raw) run.progressThisTurn = true;
+      if (failed) run.failedThisTurn = true;
       run.seenResults.set(key, raw);
       if (parsed?.requiresConfirmation) run.pendingConfirmation = true;
+      // 画布确认卡附带了渲染图：模型看过之后可能要交修正版，下一轮保留工具
+      if (parsed?.requiresConfirmation && parsed?.rendered) run.inspectsResult = true;
       if (parsed?.delivered === true) run.delivered = true;
       if (name === 'web_search') run.searches += 1;
       return { content, details: { publicResult }, isError: failed };
@@ -148,11 +171,21 @@ const runChat = async ({
   const prepareNextTurn = ({ context }) => {
     run.rounds += 1;
     if (run.wrapUp) return undefined;
+    // 有了确认卡 / 已交付结果：通常只写收尾。本轮有调用失败（让模型修正），或画布卡附了渲染图（模型可能交修正版）时，
+    // 再给有限几轮工具调用
     if (run.delivered || run.pendingConfirmation) {
-      run.wrapUp = true;
-      run.taskStatus = run.pendingConfirmation ? 'awaiting_confirmation' : 'delivered';
-      return undefined;
+      run.roundsAfterCard = (run.roundsAfterCard || 0) + 1;
+      const keepGoing = (run.failedThisTurn || run.inspectsResult) && run.roundsAfterCard <= MAX_ROUNDS_AFTER_CARD;
+      run.failedThisTurn = false;
+      run.inspectsResult = false;
+      if (!keepGoing) {
+        run.wrapUp = true;
+        run.taskStatus = run.pendingConfirmation ? 'awaiting_confirmation' : 'delivered';
+        return undefined;
+      }
+      return { context: { ...context, tools: currentTools() } };
     }
+    run.failedThisTurn = false;
     run.stalled = run.progressThisTurn ? 0 : run.stalled + 1;
     run.progressThisTurn = false;
     const contextFull = estimateMessages(fitContext(context.messages)) > MAX_CONTEXT_TOKENS * STOP_ABOVE;
@@ -169,12 +202,34 @@ const runChat = async ({
 
   const agent = new Agent({
     initialState: { systemPrompt, model, tools: currentTools(), messages: history },
-    streamFn: (streamModel, context, options) => openStream(streamModel, context, {
-      ...options,
-      ...requestOptions,
-      signal: options?.signal,
-      ...(run.wrapUp ? { toolChoice: 'none' } : {}),
-    }),
+    // 「图片理解」开着但模型其实不收图片时：第一次被拒就去掉图片重发，本轮之后也不再带图，不让整轮失败
+    streamFn: async (streamModel, context, options) => {
+      const send = (ctx) => openStream(streamModel, ctx, {
+        ...options,
+        ...requestOptions,
+        signal: options?.signal,
+        ...(run.wrapUp ? { toolChoice: 'none' } : {}),
+      });
+      if (!hasImages(context)) return send(context);
+      if (run.imagesRejected) return send(withoutImages(context));
+      const first = await send(context);
+      const out = createAssistantMessageEventStream();
+      (async () => {
+        let started = false;
+        for await (const event of first) {
+          if (!started && event.type === 'error' && IMAGE_REJECTED.test(String(event.error?.errorMessage || ''))) {
+            run.imagesRejected = true;
+            for await (const retried of await send(withoutImages(context))) out.push(retried);
+            out.end();
+            return;
+          }
+          if (event.type !== 'start') started = true;
+          out.push(event);
+        }
+        out.end();
+      })().catch(() => out.end());
+      return out;
+    },
     identity: requestOptions.identity,
     transformContext: async (messages) => fitContext(messages),
     prepareNextTurnWithContext: prepareNextTurn,

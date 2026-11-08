@@ -3,7 +3,12 @@ import assert from 'node:assert/strict'
 import vm from 'node:vm'
 import { build } from 'esbuild'
 
-const bundled = await build({ entryPoints: ['src/utils/aiCore/contextBuilder.js'], bundle: true, write: false, format: 'cjs', platform: 'node', logLevel: 'silent' })
+// 与 Vite 一致：`?raw` 导入得到文件文本
+const rawPlugin = { name: 'raw', setup(b) {
+  b.onResolve({ filter: /\?raw$/ }, (args) => ({ path: new URL(args.path.replace(/\?raw$/, ''), `file://${args.resolveDir}/`).pathname, namespace: 'raw' }))
+  b.onLoad({ filter: /.*/, namespace: 'raw' }, async (args) => ({ contents: (await import('node:fs')).readFileSync(args.path, 'utf8'), loader: 'text' }))
+} }
+const bundled = await build({ entryPoints: ['src/utils/aiCore/contextBuilder.js'], bundle: true, write: false, format: 'cjs', platform: 'node', logLevel: 'silent', plugins: [rawPlugin] })
 const calls = []
 const sandbox = { module: { exports: {} }, window: { electronAPI: { todos: { getAll: async () => { calls.push('todos'); return [] } } } } }
 vm.runInNewContext(bundled.outputFiles[0].text, sandbox)

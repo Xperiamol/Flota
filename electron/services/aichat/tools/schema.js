@@ -3,8 +3,6 @@
  * 改 schema 时务必同步更新 ./handlers.js 里同名 handler。
  */
 
-const WHITEBOARD_DIAGRAM_TYPES = ['auto', 'mindmap', 'flowchart', 'architecture', 'sequence', 'hierarchy', 'fishbone', 'timeline', 'gantt', 'quadrant', 'pie', 'svg'];
-const WHITEBOARD_DIAGRAM_TYPE_DESCRIPTION = '图表类型偏好，默认 auto；auto 可混合可编辑图元与局部 SVG，svg 表示整张整体矢量视觉';
 
 const TOOLS = [
   { type: 'function', function: { name: 'get_settings', description: '查看可修改的应用设置、当前值、key 和合法取值。改设置前先调用；只提供外观、编辑器、待办、历史版本等本机偏好，不提供密钥或连接配置。', parameters: { type: 'object', properties: {} } } },
@@ -179,22 +177,24 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'read_whiteboard',
+      description: '读取画布已有的元素（id、类型、位置、尺寸、文字、颜色）和整体范围。局部修改画布前先读，按 id 写 patch。',
+      parameters: { type: 'object', properties: { note_id: { type: 'number', description: '画布笔记 ID；不传时读取当前打开的画布' } } }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'create_whiteboard',
-      description: '创建一张新的画布（whiteboard）并根据用户描述生成图形内容。适用于“在新画板/白板里画一个思维导图、流程图、架构图、时序图、SVG 矢量视觉”等请求。',
+      description: '新建一张画布，内容由你直接写出：canvas（原语树，写法见 canvas 技能说明）或 mermaid（时序图、类图、状态图、ER 图等）。提交时会先实际渲染一次：有错误会原样返回，修正后重新调用；通过后生成确认卡。',
       parameters: {
         type: 'object',
         properties: {
-          title: { type: 'string', description: '画布标题（可选）' },
-          prompt: { type: 'string', description: '要在画布中生成的内容描述，使用自然语言详细说明' },
-          diagram_type: {
-            type: 'string',
-            enum: WHITEBOARD_DIAGRAM_TYPES,
-            description: WHITEBOARD_DIAGRAM_TYPE_DESCRIPTION
-          },
-          source_note_id: { type: 'number', description: '作为内容来源的笔记 ID（可选）' },
-          use_current_note_context: { type: 'boolean', description: '是否参考当前笔记内容，默认 false；仅当用户明确要求基于当前笔记生成时设为 true' }
+          title: { type: 'string', description: '画布标题' },
+          canvas: { type: 'object', description: '原语树：{"title"?,"layout"?,"children":[…],"connectors"?}' },
+          mermaid: { type: 'string', description: 'Mermaid 源码（与 canvas 二选一）' }
         },
-        required: ['prompt']
+        required: ['title']
       }
     }
   },
@@ -202,24 +202,16 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'update_whiteboard',
-      description: '修改现有画布内容。适用于“在当前画布补充内容”“重画当前图”“修改已有白板”等请求。',
+      description: '修改已有画布：给 canvas 或 mermaid 时按 mode 追加到右侧（append）或整张替换（replace）；给 patch 时按元素 id 局部修改（先用 read_whiteboard 查 id）。同样会先实际渲染检查。',
       parameters: {
         type: 'object',
         properties: {
-          prompt: { type: 'string', description: '如何修改画布的自然语言描述' },
-          target_note_id: { type: 'number', description: '目标画布笔记 ID；不传时默认当前画布' },
-          action: {
-            type: 'string',
-            enum: ['append', 'replace', 'edit'],
-            description: '修改方式：append 追加，replace 重画，edit 基于现有内容修改'
-          },
-          diagram_type: {
-            type: 'string',
-            enum: WHITEBOARD_DIAGRAM_TYPES,
-            description: WHITEBOARD_DIAGRAM_TYPE_DESCRIPTION
-          }
-        },
-        required: ['prompt']
+          target_note_id: { type: 'number', description: '目标画布笔记 ID；不传时为当前画布' },
+          mode: { type: 'string', enum: ['append', 'replace'], description: '给 canvas / mermaid 时的写入方式，默认 append' },
+          canvas: { type: 'object', description: '原语树' },
+          mermaid: { type: 'string', description: 'Mermaid 源码' },
+          patch: { type: 'object', description: '局部修改：{"updates":[{"id","changes":{…},"svgSource"?}],"remove":[id],"add"?:[…],"reroute"?:[id]}' }
+        }
       }
     }
   },

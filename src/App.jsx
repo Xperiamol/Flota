@@ -184,6 +184,11 @@ function App() {
   // 暴露正在显示的笔记给主进程（AI 工具兜底用）；不在笔记页时为 null
   const visibleNoteId = useStore(getVisibleNoteId)
   useEffect(() => { window.__flotaVisibleNoteId = visibleNoteId }, [visibleNoteId])
+  // 对话智能体提交画布时，主进程调用它用真实排版引擎试渲染（按需加载，不影响首屏）
+  useEffect(() => {
+    window.__flotaCanvasCheck = (payload) => import('./utils/diagrams/canvasCheck').then(m => m.checkCanvasProposal(payload))
+    return () => { delete window.__flotaCanvasCheck }
+  }, [])
   const [selectedDate, setSelectedDate] = useState(null)
   const [calendarShowCompleted, setCalendarShowCompleted] = useState(false)
   const [calendarViewMode, setCalendarViewMode] = useState('todos') // 'todos', 'notes', 'focus'

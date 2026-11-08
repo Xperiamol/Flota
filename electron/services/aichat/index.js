@@ -55,6 +55,7 @@ class AIChatService {
     this.webSearchService = webSearchService;
     this.logger = getLogger();
     this._currentNoteGetter = null; // 由 main.js 注入
+    this._canvasChecker = null; // 由 main.js 注入：在渲染进程里用真实排版引擎试渲染画布
     this._pendingActions = new PendingActionStore({ mem0Service });
     this._longDocPipeline = null;
     this._memoryExtractor = new MemoryExtractor({
@@ -69,6 +70,10 @@ class AIChatService {
    */
   processTurnMemories({ conversationId, messages, assistantText }) {
     return this._memoryExtractor.processTurn({ conversationId, messages, assistantText });
+  }
+
+  setCanvasChecker(fn) {
+    this._canvasChecker = fn;
   }
 
   setCurrentNoteGetter(fn) {
@@ -161,6 +166,9 @@ class AIChatService {
       const { referenceImages, ...targetContext } = options.actionContext || {};
       const usesReferences = ['create_whiteboard', 'update_whiteboard', 'create_widget', 'update_widget'].includes(name);
       const context = options.actionContext ? (usesReferences ? options.actionContext : targetContext) : null;
+      if ((name === 'create_whiteboard' || name === 'update_whiteboard') && this._canvasChecker) {
+        return JSON.stringify(await this._proposeCanvas(name, args, context));
+      }
       if (name === 'edit_note') {
         const prepared = this._prepareNoteEdit(args);
         if (prepared.error) return JSON.stringify({ success: false, error: prepared.error });
@@ -252,6 +260,32 @@ class AIChatService {
   /**
    * @param {object} [runtime] { onChunk }：长文档等耗时动作的步骤进度（规划 / 第 N 章 / 归并）
    */
+  /**
+   * 画布提案：先在渲染进程试渲染一次。没通过就把错误原样还给模型，让它改了再交；
+   * 通过才生成确认卡，并附上尺寸摘要（开启图片理解时附上渲染图，模型可以自己看效果再决定要不要改）。
+   */
+  async _proposeCanvas(name, args, context) {
+    let check = null;
+    try {
+      const config = (await this.aiService.getConfig())?.data || {};
+      check = await this._canvasChecker({ name, args, actionContext: context, wantImage: config.visionEnabled === true || config.visionEnabled === 'true' });
+    } catch (error) {
+      this.logger.warn('AI', 'canvas check unavailable', error?.message);
+    }
+    if (check && check.ok === false) {
+      return { success: false, error: `画布没有通过渲染检查：${check.error}。请修正后重新调用。` };
+    }
+    const card = await this._pendingActions.create(name, args, context);
+    if (!check) return card;
+    return {
+      ...card,
+      rendered: check.summary,
+      resubmit_note: '再次调用本工具提交修正版会替换这张确认卡，不是在它上面叠加：修正版要包含这次的全部内容和修改。',
+      ...(check.warnings?.length ? { warnings: check.warnings } : {}),
+      ...(check.image ? { preview_image: check.image, preview_note: '附图是这张画布的实际渲染效果。有排版、配色或信息问题时再提交修正版；没有问题就直接收尾。' } : {}),
+    };
+  }
+
   async executePendingAction(actionId, overrides = null, fallback = null, runtime = {}) {
     const action = this._takePendingAction(actionId, fallback);
     if (!action) return { success: false, error: '待确认操作不存在或已过期' };
@@ -367,6 +401,13 @@ class AIChatService {
         webSearchEnabled: isEnabledSetting(config.webSearchEnabled) && Boolean(config.webSearchApiKey),
         memoryEnabled: Boolean(this.mem0Service?.isAvailable?.()),
       });
+      // 本对话前几轮已读过的技能保持开放：模型上下文里已有它的说明，追问时可以直接用对应工具
+      for (const message of transcript) {
+        if (message?.role !== 'assistant' || !Array.isArray(message.content)) continue;
+        for (const block of message.content) {
+          if (block?.type === 'toolCall' && block.name === 'read_skill' && block.arguments?.skill) toolSession.preload(block.arguments.skill);
+        }
+      }
 
       const model = buildModel(config, this.aiService, { vision: imageReadingEnabled });
       const [prompt] = toAgentMessages([{ role: 'user', content: userContent }], model);

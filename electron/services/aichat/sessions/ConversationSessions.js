@@ -17,6 +17,7 @@ const {
   getContextSources,
   formatAssistantCompletion,
   findAction,
+  latestCardsOnly,
   patchAction,
   canExecute,
   supersedeStalePendingActions,
@@ -173,7 +174,7 @@ class ConversationSessions {
     const assistant = createAssistantMessage({
       content: formatAssistantCompletion(base, result),
       toolCalls: draft.toolCalls,
-      actions: draft.toolCalls.map((call) => call.action).filter(Boolean),
+      actions: latestCardsOnly(draft.toolCalls.map((call) => call.action).filter(Boolean)),
       steps: draft.steps.length ? slimStepsForPersist(draft.steps) : undefined,
       contextSources: result?.contextPackage ? getContextSources(result.contextPackage) : undefined,
       stopped: stoppedByUser,

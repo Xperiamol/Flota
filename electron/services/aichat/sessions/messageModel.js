@@ -112,6 +112,10 @@ const patchMessagePendingAction = (message, actionId, patch) => {
 const patchAction = (messages, actionId, patch) => messages.map((message) => patchMessagePendingAction(message, actionId, patch));
 
 // 可以开始执行的状态：待确认、失败后重试、停止后重试
+// 同一轮里对同一目标再次提交（如看过渲染图后交了修正版画布），只保留最后一张卡，免得同屏出现两个「确认」
+const cardTarget = (action) => `${action.name}:${action.args?.target_note_id ?? action.args?.id ?? ''}`;
+const latestCardsOnly = (actions) => actions.filter((action, index) => !actions.slice(index + 1).some((later) => cardTarget(later) === cardTarget(action)));
+
 const EXECUTABLE_STATUSES = new Set(['pending', 'failed', 'cancelled']);
 const canExecute = (action) => Boolean(action) && (!action.status || EXECUTABLE_STATUSES.has(action.status));
 
@@ -208,6 +212,7 @@ const applyChunk = (draft, chunk) => {
 };
 
 module.exports = {
+  latestCardsOnly,
   buildMessageMetadata,
   createUserMessage,
   createAssistantMessage,
