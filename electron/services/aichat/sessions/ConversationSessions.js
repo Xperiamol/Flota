@@ -278,7 +278,7 @@ class ConversationSessions {
       const model = buildModel(config, this.aiService);
       transcript = [...base, {
         role: 'assistant',
-        content: [{ type: 'text', text: `（用户已确认，操作已执行）${message}${resultNoteId != null ? `，结果笔记 ID：${resultNoteId}` : ''}` }],
+        content: [{ type: 'text', text: `（用户已确认，操作已执行）${message}${resultNoteId != null ? `，结果笔记 ID：${resultNoteId}` : ''}${resultData?.widgetId ? `，组件 ID：${resultData.widgetId}` : ''}${resultData?.instanceId ? `，实例 ID：${resultData.instanceId}` : ''}` }],
         api: model.api, provider: model.provider, model: model.id,
         usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
         stopReason: 'stop',
