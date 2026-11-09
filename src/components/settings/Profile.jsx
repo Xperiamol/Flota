@@ -32,6 +32,7 @@ import HomeWidgetCard from '../widgets/HomeWidgetCard';
 import PanelIconButton from '../common/PanelIconButton';
 import HomeAddPanel from './HomeAddPanel';
 import { useHomeCardData, homeCardTarget, renderBuiltinHomeCard } from './homeCardData';
+import { HomeCardMenuContext } from './homeCards';
 import { useHomeStore, parseWidgetCardId } from '../../store/useHomeStore';
 import { askAI, openAI } from '../../utils/widgets/askAI';
 import { pinToDesktop, pinHomeCardToDesktop } from '../../utils/widgets/widgetActions';
@@ -195,7 +196,19 @@ const Profile = () => {
   // 没设名字时只问候，不显示「用户」这样的占位词
   const displayName = userName?.trim() || '';
 
-  const renderBuiltinCard = (cardId) => renderBuiltinHomeCard(cardId, homeData, () => openCardTarget(cardId));
+  // 内置卡片右上角的「…」：固定到桌面、从首页移除（组件卡片有自己的菜单）；编辑首页时不显示
+  const builtinCardMenu = (cardId) => (editing ? null : {
+    items: [
+      { label: '固定到桌面', icon: <DesktopPinIcon fontSize="small" />, onClick: () => pinHomeCardToDesktop(cardId) },
+      { divider: true },
+      { label: '从首页移除', icon: <CloseIcon fontSize="small" />, danger: true, onClick: () => removeCard(cardId) },
+    ],
+  });
+  const renderBuiltinCard = (cardId) => (
+    <HomeCardMenuContext.Provider value={builtinCardMenu(cardId)}>
+      {renderBuiltinHomeCard(cardId, homeData, () => openCardTarget(cardId))}
+    </HomeCardMenuContext.Provider>
+  );
 
   const renderCard = (cardId) => {
     const instanceId = parseWidgetCardId(cardId);

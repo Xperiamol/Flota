@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Box, ButtonBase, Checkbox, InputBase, Popover, Tooltip, Typography, alpha } from '@mui/material'
 import {
   AutoStoriesRounded, BookmarkBorder, CalendarMonth, CheckCircle, EditNote, EventRounded, Extension, Notes, PlayArrowRounded,
-  PushPinRounded, RefreshRounded, SellRounded, Tag, Today, TrendingUp, Warning
+  MoreHorizRounded, PushPinRounded, RefreshRounded, SellRounded, Tag, Today, TrendingUp, Warning
 } from '../common/AppIcons'
 import { createTodo, fetchOverdueTodos, fetchTodosByDueDate, fetchTodosDueToday, toggleTodoComplete } from '../../api/todoAPI'
 import { stripMarkdownToPreviewText } from '../../utils/markdownTextUtils'
 import PanelIconButton from '../common/PanelIconButton'
+import AppContextMenu from '../common/AppContextMenu'
 import WaveOrb from '../common/WaveOrb'
 import { useStore } from '../../store/useStore'
 import { notifyError } from '../../utils/notify'
@@ -30,7 +31,27 @@ export const homeCardSx = (clickable) => (theme) => ({
   } : {}),
 })
 
+/**
+ * 首页卡片右上角「…」菜单的内容（如「固定到桌面」「从首页移除」）。由首页为每张内置卡片提供；
+ * 没有提供时（桌面窗口里的卡片、组件卡片自带菜单）不显示「…」。
+ */
+export const HomeCardMenuContext = createContext(null)
+
+function HomeCardMoreButton({ items }) {
+  const [anchor, setAnchor] = useState(null)
+  return (
+    // 菜单渲染在 Portal 里，但 React 事件仍会冒泡到卡片：在这里拦住，点菜单项不会触发卡片本身的跳转
+    <Box component="span" sx={{ display: 'inline-flex' }} onClick={(event) => event.stopPropagation()}>
+      <PanelIconButton title="更多" size="sm" onClick={(event) => setAnchor({ el: event.currentTarget })}>
+        <MoreHorizRounded />
+      </PanelIconButton>
+      <AppContextMenu anchor={anchor} onClose={() => setAnchor(null)} items={items} />
+    </Box>
+  )
+}
+
 export function HomeCardHeader({ icon: Icon, title, meta, action }) {
+  const menu = useContext(HomeCardMenuContext)
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.875, minHeight: 24, mb: 1.5 }}>
       {Icon && <Icon sx={{ fontSize: 15, color: 'text.secondary' }} />}
@@ -39,6 +60,7 @@ export function HomeCardHeader({ icon: Icon, title, meta, action }) {
       </Typography>
       {meta != null && <Typography sx={{ fontSize: 12, color: 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>{meta}</Typography>}
       {action}
+      {menu?.items?.length > 0 && <HomeCardMoreButton items={menu.items} />}
     </Box>
   )
 }
