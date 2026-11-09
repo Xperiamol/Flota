@@ -284,8 +284,8 @@ window.runEditorTests = async () => {
     const show = value => root.render(wrap(<div id="action-acceptance"><PendingActionCard action={value} onExecute={() => {}} /></div>))
     try {
       show(action)
-      await waitFor(() => [...document.querySelectorAll('#action-acceptance button')].some(b => b.textContent === '停止生成'), 'stop button')
-      const stop = [...document.querySelectorAll('#action-acceptance button')].find(b => b.textContent === '停止生成')
+      await waitFor(() => [...document.querySelectorAll('#action-acceptance button')].some(b => b.textContent === '停止'), 'stop button')
+      const stop = [...document.querySelectorAll('#action-acceptance button')].find(b => b.textContent === '停止')
       stop.click()
       await waitFor(() => stop.disabled && stop.textContent === '正在停止', 'cancellation state')
       equal(getGenerationTaskPhase(action.actionId), 'cancelling')
@@ -396,9 +396,10 @@ window.runEditorTests = async () => {
     let saved
     const { applyWhiteboardGenerationToNote, buildWhiteboardContent } = await import('../../src/utils/whiteboardAI')
     const elements = [{ id: 'title', type: 'text', text: '旧标题', originalText: '旧标题', x: 10, y: 10, width: 200, height: 20, fontSize: 16 }, { id: 'photo', type: 'image', fileId: 'photo-file', x: 400, y: 10, width: 200, height: 200 }]
-    window.electronAPI = { ai: { chat: async () => ({ success: true, data: { content: JSON.stringify({ updates: [{ id: 'title', changes: { text: '新标题' } }], remove: [] }) } }) } }
+    // AI 直接给出按 id 的局部修改（patch），不再经过第二个模型
+    window.electronAPI = { ai: { getConfig: async () => ({ success: true, data: { canvasSvgEnabled: true } }) } }
     try {
-      await applyWhiteboardGenerationToNote({ note: { id: 7, note_type: 'whiteboard', content: buildWhiteboardContent({ elements, fileMap: { 'photo-file': { fileName: 'photo.png' } } }) }, action: 'edit', prompt: '修改标题', updateNote: async (id, data) => { saved = JSON.parse(data.content); return { success: true } } })
+      await applyWhiteboardGenerationToNote({ note: { id: 7, note_type: 'whiteboard', content: buildWhiteboardContent({ elements, fileMap: { 'photo-file': { fileName: 'photo.png' } } }) }, action: 'edit', spec: { patch: { updates: [{ id: 'title', changes: { text: '新标题' } }] } }, updateNote: async (id, data) => { saved = JSON.parse(data.content); return { success: true } } })
       equal(saved.fileMap['photo-file'].fileName, 'photo.png')
       equal(saved.elements.find(element => element.id === 'photo').fileId, 'photo-file')
       equal(saved.elements.find(element => element.id === 'title').text, '新标题')
@@ -478,8 +479,12 @@ window.runEditorTests = async () => {
     let sent
     window.electronAPI = { ...oldAPI, ai: {
       getConfig: async () => ({ success: true, data: { visionEnabled: true } }),
-      onChatChunk: () => () => {},
-      chatStream: async messages => { sent = messages; return { success: true, fullContent: '收到附件' } },
+      // 发送走主进程会话（session.send），附件以多模态 content 发出
+      session: {
+        send: async payload => { sent = payload; return { success: true } },
+        onConversation: () => () => {}, onStream: () => () => {},
+        activeStreams: async () => ({ success: true, data: [] }),
+      },
     } }
     useStore.setState({ notes: [], selectedNoteId: null, aiActiveConvId: 'attachments-test', aiConversations: [{ id: 'attachments-test', messages: [], title: '附件测试' }] })
     try {
@@ -498,7 +503,7 @@ window.runEditorTests = async () => {
       await waitFor(() => panel.textContent.includes('dates.txt') && panel.textContent.includes('sample.png'), 'attachment previews')
       panel.querySelector('[aria-label="发送"]').click()
       await waitFor(() => sent, 'multimodal send')
-      const content = sent.at(-1).content
+      const content = sent.content
       assert(Array.isArray(content), '图片没有以多模态消息发送')
       assert(content.some(part => part.type === 'text' && part.text.includes('23 Oct 2026')), '文本文件内容丢失')
       assert(content.some(part => part.type === 'image_url' && part.image_url.url.startsWith('data:image/png;base64,')), '图片内容丢失')
@@ -807,7 +812,7 @@ $$
       }
     })
     const convert = async () => {
-      document.querySelector('button[aria-label="Markdown"]').click()
+      ;[...document.querySelectorAll('[aria-label="笔记类型"] button')].find(b => (b.getAttribute('aria-label') || b.textContent).includes('Markdown')).click()
       await waitFor(() => [...document.querySelectorAll('button')].some(b => b.textContent === '确认转换'), 'conversion dialog')
       ;[...document.querySelectorAll('button')].find(b => b.textContent === '确认转换').click()
     }
