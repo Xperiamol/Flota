@@ -553,9 +553,9 @@ function DesktopWidgetsRestoreRow() {
     }
     return (
         <SettingRow
-            primary="启动时恢复桌面组件"
-            secondary={count ? `桌面上固定了 ${count} 个组件，打开 Flota 时放回原来的位置` : '在首页卡片或组件菜单里选「固定到桌面」，打开 Flota 时自动放回原来的位置'}
-            action={<Switch checked={enabled} onChange={(e) => change(e.target.checked)} inputProps={{ 'aria-label': '启动时恢复桌面组件' }} />}
+            primary="启动时恢复桌面卡片"
+            secondary={count ? `桌面上固定了 ${count} 张卡片，打开 Flota 时放回原来的位置` : '在首页卡片上右键、或组件菜单里选「固定到桌面」；打开 Flota 时自动放回原来的位置'}
+            action={<Switch checked={enabled} onChange={(e) => change(e.target.checked)} inputProps={{ 'aria-label': '启动时恢复桌面卡片' }} />}
         />
     )
 }

@@ -146,7 +146,7 @@ const dueLabel = (todo, overdue) => {
 const MAX_TODOS = 6
 
 /** 今日待办：逾期 + 今天到期，可直接勾选完成、开始专注、添加今天的待办 */
-export function TodayTodosCard({ onOpen, onChanged }) {
+export function TodayTodosCard({ onOpen, onChanged, refreshKey = 0 }) {
   const [items, setItems] = useState(null)
   const [done, setDone] = useState([])
   const [draft, setDraft] = useState('')
@@ -165,7 +165,8 @@ export function TodayTodosCard({ onOpen, onChanged }) {
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  // refreshKey：桌面卡片在别处改了待办时递增，原地重新拉取（不重建组件，不丢输入框里的内容）
+  useEffect(() => { load() }, [load, refreshKey])
 
   const complete = async (todo) => {
     setDone((list) => [...list, todo.id])
@@ -502,7 +503,7 @@ export function QuickNoteCard() {
 const WEEKDAY_SHORT = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
 /** 未来 7 天：按天列出即将到期的待办，提前看到这周要做什么 */
-export function UpcomingCard({ onOpen }) {
+export function UpcomingCard({ onOpen, refreshKey = 0 }) {
   const [groups, setGroups] = useState(null)
   useEffect(() => {
     let alive = true
@@ -522,7 +523,7 @@ export function UpcomingCard({ onOpen }) {
       setGroups([...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)))
     }).catch(() => alive && setGroups([]))
     return () => { alive = false }
-  }, [])
+  },[refreshKey])
   const total = (groups || []).reduce((sum, [, list]) => sum + list.length, 0)
   const tomorrow = localDateKey(new Date(Date.now() + 86400000))
   return (

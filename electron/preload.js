@@ -134,6 +134,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 待办事项相关API
   todos: {
+    // 待办在任何地方变化（本窗口、其他窗口、AI、组件）后的广播；返回取消订阅函数
+    onChanged: listen('todo:changed'),
     create: inv('todo:create'),
     getAll: inv('todo:getAll'),
     getByQuadrant: inv('todo:getByQuadrant'),
@@ -355,6 +357,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     pinToDesktop: inv('widget:desktop-pin'),
     unpinFromDesktop: inv('widget:desktop-unpin'),
     setDesktopSize: inv('widget:desktop-set-size'),
+    setDesktopLayer: inv('widget:desktop-set-layer'),
+    // 桌面卡片点击后让主窗口打开对应页面
+    openInMain: inv('app:open-view'),
+    onOpenView: listen('app:open-view'),
     listDesktop: inv('widget:desktop-list'),
     getDesktopRestore: inv('widget:desktop-restore-get'),
     setDesktopRestore: inv('widget:desktop-restore-set'),

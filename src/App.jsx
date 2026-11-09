@@ -184,6 +184,14 @@ function App() {
   // 暴露正在显示的笔记给主进程（AI 工具兜底用）；不在笔记页时为 null
   const visibleNoteId = useStore(getVisibleNoteId)
   useEffect(() => { window.__flotaVisibleNoteId = visibleNoteId }, [visibleNoteId])
+  // 桌面卡片被点击：打开对应页面（与首页卡片点击去往的地方一致）
+  useEffect(() => window.electronAPI?.widgets?.onOpenView?.((target = {}) => {
+    const store = useStore.getState()
+    if (target.pluginStore) return store.openPluginStore?.({ type: 'plugin', tab: 'installed' })
+    if (target.filterBy) store.setTodoNavigationRequest?.({ filterBy: target.filterBy, viewMode: 'focus', showCompleted: false })
+    if (target.view) store.setCurrentView?.(target.view)
+  }), [])
+
   // 定时任务的通知被点击：打开这条任务的对话
   useEffect(() => window.electronAPI?.ai?.onOpenConversation?.(async ({ conversationId } = {}) => {
     if (!conversationId) return

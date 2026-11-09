@@ -11,6 +11,7 @@ import { useAISessionSync } from './hooks/useAISessionSync'
 import { createAppTheme } from './styles/theme'
 import './styles/index.css'
 import TitleBar from './components/layout/TitleBar'
+import HomeCardWindow from './components/settings/HomeCardWindow'
 import NoteEditor from './components/editor/NoteEditor'
 import WidgetWindow from './components/widgets/WidgetWindow'
 import TodoReferenceDialogs from './components/todos/TodoReferenceDialogs'
@@ -50,7 +51,11 @@ function StandaloneContent({ windowType, windowData }) {
   return (
     <>
       {windowType === 'widget' && windowData?.instanceId && (
-        <WidgetWindow instanceId={windowData.instanceId} size={windowData.size} desktop={windowData.desktop} />
+        <WidgetWindow instanceId={windowData.instanceId} size={windowData.size} desktop={windowData.desktop} desktopKey={windowData.key || windowData.instanceId} layer={windowData.layer} />
+      )}
+
+      {windowType === 'home-card' && windowData?.cardId && (
+        <HomeCardWindow cardId={windowData.cardId} desktopKey={windowData.key || `home:${windowData.cardId}`} layer={windowData.layer} />
       )}
 
       {windowType === 'note' && (
@@ -247,7 +252,11 @@ function StandaloneWindow() {
 
         } else if (type === 'widget' && urlParams.get('instanceId')) {
           setWindowType('widget')
-          setWindowData({ instanceId: urlParams.get('instanceId'), size: urlParams.get('size') === 'compact' ? 'compact' : 'medium', desktop: urlParams.get('desktop') === '1' })
+          setWindowData({ instanceId: urlParams.get('instanceId'), size: urlParams.get('size') === 'compact' ? 'compact' : 'medium', desktop: urlParams.get('desktop') === '1', key: urlParams.get('key'), layer: urlParams.get('layer') })
+
+        } else if (type === 'home-card' && urlParams.get('cardId')) {
+          setWindowType('home-card')
+          setWindowData({ cardId: urlParams.get('cardId'), key: urlParams.get('key'), layer: urlParams.get('layer') })
 
         } else if (type === 'external-file' && urlParams.get('path')) {
           setWindowType('external-file')
@@ -374,7 +383,7 @@ function StandaloneWindow() {
         <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
           {/* 使用主应用的TitleBar组件 */}
           {/* 组件小窗有自己的标题栏（拖动、置顶、移除），不再叠一层通用标题栏 */}
-          {windowType && !['focus', 'reminder', 'external-file', 'widget'].includes(windowType) && (
+          {windowType && !['focus', 'reminder', 'external-file', 'widget', 'home-card'].includes(windowType) && (
             <TitleBar
               isStandalone={true}
               windowType={windowType}

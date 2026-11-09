@@ -64,9 +64,11 @@ const registerWidgetHandlers = (getWidgetService, getPluginManager, getDesktopWi
       return fail(error);
     }
   });
-  desktop('widget:desktop-pin', (manager, instanceId, options) => manager.pin(instanceId, options || {}));
-  desktop('widget:desktop-unpin', (manager, instanceId) => manager.unpin(instanceId));
-  desktop('widget:desktop-set-size', (manager, instanceId, size) => manager.setSize(instanceId, size));
+  // target：组件实例 id，或 { cardId } 表示首页内置卡片；其余接口用桌面卡片的 key（实例 id 或 home:卡片 id）
+  desktop('widget:desktop-pin', (manager, target, options) => manager.pin(target, options || {}));
+  desktop('widget:desktop-unpin', (manager, key) => manager.unpin(key));
+  desktop('widget:desktop-set-size', (manager, key, size) => manager.setSize(key, size));
+  desktop('widget:desktop-set-layer', (manager, key, layer) => manager.setLayer(key, layer));
   desktop('widget:desktop-list', (manager) => manager.list());
   desktop('widget:desktop-restore-get', (manager) => manager.getRestoreOnLaunch());
   desktop('widget:desktop-restore-set', (manager, enabled) => manager.setRestoreOnLaunch(enabled));

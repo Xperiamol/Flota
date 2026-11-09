@@ -1,5 +1,5 @@
 const { saveAllWindows } = require('./utils/saveWindows')
-const { app, BrowserWindow, Notification, shell, Tray, Menu, nativeImage, protocol, nativeTheme, net, session } = require('electron')
+const { app, BrowserWindow, Notification, shell, Tray, Menu, nativeImage, protocol, nativeTheme, net, session, ipcMain } = require('electron')
 const path = require('path')
 
 // 加载环境变量
@@ -1387,6 +1387,15 @@ if (!gotTheLock) {
 
     createWindow()
     createTray()
+    // 桌面卡片点击：把主窗口拿到前面并打开对应页面（{ view, filterBy?, pluginStore? }）
+    ipcMain.handle('app:open-view', (_event, target) => {
+      if (!mainWindow || mainWindow.isDestroyed()) return { success: false, error: '主窗口不可用' }
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      if (!mainWindow.isVisible()) mainWindow.show()
+      mainWindow.focus()
+      if (target && typeof target === 'object') mainWindow.webContents.send('app:open-view', target)
+      return { success: true }
+    })
     // 恢复固定在桌面的组件（不阻塞启动）
     services.desktopWidgets?.restoreAll().catch((error) => console.warn('[DesktopWidgets] 恢复失败', error?.message))
     installAppMenu({ getMainWindow: () => mainWindow, isDev })

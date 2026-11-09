@@ -79,6 +79,13 @@ export const pinToDesktop = async (instanceId, { size = 'medium' } = {}) => {
   if (result.data?.pinned) notifySuccess('已固定到桌面')
 }
 
+/** 把首页内置卡片（今日待办、快速记录……）固定到桌面 */
+export const pinHomeCardToDesktop = async (cardId) => {
+  const result = await window.electronAPI.widgets.pinToDesktop({ cardId })
+  if (!result?.success) return notifyError(result?.error || '固定到桌面失败')
+  if (result.data?.pinned) notifySuccess('已固定到桌面')
+}
+
 // 旧名字保留给其他入口：现在等同于固定到桌面
 export const openMiniWindow = (instanceId) => pinToDesktop(instanceId, { size: 'medium' })
 

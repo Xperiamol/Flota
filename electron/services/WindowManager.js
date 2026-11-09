@@ -1115,7 +1115,7 @@ class WindowManager extends EventEmitter {
    * 创建组件小窗：无边框小窗口，运行组件的一个实例。
    * 固定在桌面的组件（options.desktop）由 DesktopWidgets 管理：记住位置、尺寸、置顶，启动时恢复。
    * @param {string} instanceId 实例 id
-   * @param {object} [options] size（compact / medium）、bounds、alwaysOnTop、desktop
+   * @param {object} [options] size（compact / medium）、bounds、alwaysOnTop、desktop、layer、inactive、cardId（首页内置卡片）
    */
   async createWidgetWindow(instanceId, options = {}) {
     if (!instanceId || typeof instanceId !== 'string') throw new Error('缺少实例 id');
@@ -1143,8 +1143,9 @@ class WindowManager extends EventEmitter {
       show: false,
       frame: false,
       alwaysOnTop: options.alwaysOnTop !== false,
-      // 桌面组件不占任务栏
+      // 桌面卡片不占任务栏；Windows 上「贴在桌面」用工具窗口，也不出现在 Alt+Tab 里
       skipTaskbar: options.desktop === true,
+      ...(options.desktop && options.layer !== 'top' && process.platform === 'win32' ? { type: 'toolbar' } : {}),
       resizable: true,
       maximizable: false,
       icon: this.getAppIcon(),
@@ -1163,16 +1164,21 @@ class WindowManager extends EventEmitter {
     const windowId = `widget-${instanceId}-${Date.now()}`;
     this.windows.set(windowId, widgetWindow);
     this.widgetWindows.set(instanceId, widgetWindow);
-    widgetWindow.once('ready-to-show', () => widgetWindow.show());
+    // 启动时恢复的桌面卡片不抢焦点
+    widgetWindow.once('ready-to-show', () => (options.inactive ? widgetWindow.showInactive() : widgetWindow.show()));
     widgetWindow.on('closed', () => {
       this.windows.delete(windowId);
       if (this.widgetWindows.get(instanceId) === widgetWindow) this.widgetWindows.delete(instanceId);
     });
+    const query = options.cardId
+      ? { type: 'home-card', cardId: String(options.cardId) }
+      : { type: 'widget', instanceId, size };
+    if (options.desktop) Object.assign(query, { desktop: '1', key: instanceId, layer: options.layer === 'top' ? 'top' : 'desktop' });
 
     if (isDev) {
-      await widgetWindow.loadURL(`http://localhost:5174/standalone.html?type=widget&instanceId=${encodeURIComponent(instanceId)}&size=${size}${options.desktop ? '&desktop=1' : ''}`);
+      await widgetWindow.loadURL(`http://localhost:5174/standalone.html?${new URLSearchParams(query).toString()}`);
     } else {
-      await widgetWindow.loadFile(path.join(__dirname, '../../dist/standalone.html'), { query: { type: 'widget', instanceId, size, ...(options.desktop ? { desktop: '1' } : {}) } });
+      await widgetWindow.loadFile(path.join(__dirname, '../../dist/standalone.html'), { query });
     }
     return { windowId };
   }

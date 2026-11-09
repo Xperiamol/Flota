@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -20,66 +20,32 @@ import {
   DashboardCustomizeRounded as CustomizeIcon,
   AddRounded as AddCardIcon,
   VisibilityOffRounded as VisibilityOffIcon,
+  OpenInNewRounded as DesktopPinIcon,
 } from '../common/AppIcons';
 import AppContextMenu from '../common/AppContextMenu';
 import { notifyInfo } from '../../utils/notify';
 import { useStore } from '../../store/useStore';
-import { fetchTodoStats } from '../../api/todoAPI';
-import { fetchActivityHeatmap } from '../../api/noteAPI';
-import { fetchInstalledPlugins } from '../../api/pluginAPI';
 import { useTranslation } from '../../utils/i18n';
 import { useError } from '../common/ErrorProvider';
 import FlotaAIIcon from '../common/FlotaAIIcon';
 import HomeWidgetCard from '../widgets/HomeWidgetCard';
 import PanelIconButton from '../common/PanelIconButton';
 import HomeAddPanel from './HomeAddPanel';
-import {
-  FocusCard, HeatmapCard, NotesOverviewCard, OverdueCard, PinnedNotesCard, PluginsCard, QuickNoteCard, RecentClipsCard, RecentNotesCard,
-  ReviewCard, TagsCard, TodayTodosCard, TodoRateCard, TopWordsCard, UpcomingCard
-} from './homeCards';
+import { useHomeCardData, homeCardTarget, renderBuiltinHomeCard } from './homeCardData';
 import { useHomeStore, parseWidgetCardId } from '../../store/useHomeStore';
 import { askAI, openAI } from '../../utils/widgets/askAI';
-
-const DEFAULT_TODO_STATS = {
-  total: 0,
-  completed: 0,
-  pending: 0,
-  overdue: 0,
-  dueToday: 0,
-  completedOnTime: 0,
-  completedWithDueDate: 0,
-  onTimeRate: 0,
-  todayCompleted: 0,
-  todayWorkload: 0,
-  todayCompletionRate: null,
-  totalFocusTime: 0,
-  todayFocusTime: 0,
-  weekFocusTime: 0,
-  monthFocusTime: 0,
-};
-const STOP_WORDS = new Set([
-  '的', '了', '是', '在', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很',
-  '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '这', '这个', '那个',
-  '可以', '因为', '所以', '如果', '然后', '已经', '已有', '复制', '链接', '广告', '联系',
-  // 网页剪藏在每篇笔记开头写的来源行
-  '来源', '剪藏', '剪藏于', '原文'
-]);
+import { pinToDesktop, pinHomeCardToDesktop } from '../../utils/widgets/widgetActions';
 
 // 网格：列宽自适应，卡片按内容高度占行（瀑布流），宽卡片占两列
 const GRID_ROW = 4;
 const GRID_GAP = 16;
-// 热力图最多显示半年，实际显示多少周由卡片宽度决定
-const HEATMAP_DAYS = 182;
-
-const formatLocalDateKey = (date) => (
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-);
 
 /**
  * 首页网格里的一格：量出内容高度换算成占用的行数；编辑时可拖动、改宽度、移除。
  * 编辑时用一层遮罩盖住卡片内容，避免误触跳转或操作组件。
  */
-const HomeGridItem = ({ wide, fullWidth, editing, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, onToggleWide, children }) => {
+const HomeGridItem = ({ wide, fullWidth, editing, dragOver, onDragStart, onDragOver, onDrop, onDragEnd, onRemove, onToggleWide, onPinToDesktop, children }) => {
+  const [menu, setMenu] = useState(null);
   const contentRef = useRef(null);
   const [rows, setRows] = useState(20);
   useLayoutEffect(() => {
@@ -101,6 +67,12 @@ const HomeGridItem = ({ wide, fullWidth, editing, dragOver, onDragStart, onDragO
         onDragOver={(event) => { if (!editing) return; event.preventDefault(); onDragOver(); }}
         onDrop={(event) => { event.preventDefault(); onDrop(); }}
         onDragEnd={onDragEnd}
+        // 右键卡片：固定到桌面
+        onContextMenu={(event) => {
+          if (editing || !onPinToDesktop) return;
+          event.preventDefault();
+          setMenu({ x: event.clientX, y: event.clientY });
+        }}
         sx={(theme) => ({
           position: 'relative',
           borderRadius: 1.5,
@@ -125,12 +97,22 @@ const HomeGridItem = ({ wide, fullWidth, editing, dragOver, onDragStart, onDragO
                 {wide ? <NarrowIcon /> : <WideIcon />}
               </PanelIconButton>
             </Box>
+            {onPinToDesktop && (
+              <PanelIconButton title="固定到桌面" size="sm" onClick={onPinToDesktop}>
+                <DesktopPinIcon />
+              </PanelIconButton>
+            )}
             <PanelIconButton title="移除卡片" size="sm" tone="danger" onClick={onRemove}>
               <CloseIcon />
             </PanelIconButton>
           </Box>
         )}
       </Box>
+      {onPinToDesktop && (
+        <AppContextMenu anchor={menu} onClose={() => setMenu(null)} items={[
+          { label: '固定到桌面', icon: <DesktopPinIcon fontSize="small" />, onClick: onPinToDesktop },
+        ]} />
+      )}
     </Box>
   );
 };
@@ -138,8 +120,7 @@ const HomeGridItem = ({ wide, fullWidth, editing, dragOver, onDragStart, onDragO
 const Profile = () => {
   const { t } = useTranslation();
   const { showError } = useError();
-  const { notes, userAvatar, primaryColor, setCurrentView, setSettingsTabValue, setTodoNavigationRequest, userName, christmasMode } = useStore(useShallow((state) => ({
-    notes: state.notes,
+  const { userAvatar, primaryColor, setCurrentView, setSettingsTabValue, setTodoNavigationRequest, userName, christmasMode } = useStore(useShallow((state) => ({
     userAvatar: state.userAvatar,
     primaryColor: state.primaryColor,
     setCurrentView: state.setCurrentView,
@@ -148,11 +129,15 @@ const Profile = () => {
     userName: state.userName,
     christmasMode: state.christmasMode,
   })));
-  const [todoStats, setTodoStats] = useState(null);
-  const [activityCounts, setActivityCounts] = useState(null);
-  const [installedPlugins, setInstalledPlugins] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  // 待办在别处改了（桌面卡片、待办页、AI）时刷新首页卡片
+  const [cardRefreshKey, setCardRefreshKey] = useState(0);
+  useEffect(() => {
+    return window.electronAPI?.todos?.onChanged?.(() => setCardRefreshKey((value) => value + 1));
+  }, []);
+  const homeData = useHomeCardData({ refreshKey: cardRefreshKey });
+  const { loading, todoStatsDisplay } = homeData;
+  const error = homeData.error ? '加载统计数据失败: ' + homeData.error.message : null;
+  useEffect(() => { if (homeData.error) showError(homeData.error, '加载统计数据失败'); }, [homeData.error]);
   const cards = useHomeStore((state) => state.cards);
   const wide = useHomeStore((state) => state.wide);
   const editing = useHomeStore((state) => state.editing);
@@ -177,88 +162,6 @@ const Profile = () => {
     }
   }, []);
 
-  const refreshTodoStats = async () => {
-    try {
-      const result = await fetchTodoStats();
-      if (result && typeof result === 'object') setTodoStats(result);
-    } catch (err) {
-      console.error('[首页] 刷新待办统计失败:', err);
-    }
-  };
-
-  useEffect(() => {
-    const loadStats = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const todoStatsResult = await fetchTodoStats();
-        setTodoStats(todoStatsResult && typeof todoStatsResult === 'object' ? todoStatsResult : DEFAULT_TODO_STATS);
-        const pluginsResult = await fetchInstalledPlugins();
-        if (Array.isArray(pluginsResult)) setInstalledPlugins(pluginsResult);
-        // 基于变更日志的真实活动数据（精确到每天的编辑次数）
-        const heatmapResult = await fetchActivityHeatmap(HEATMAP_DAYS);
-        if (heatmapResult?.success && heatmapResult.data) setActivityCounts(heatmapResult.data);
-      } catch (err) {
-        console.error('[首页] 加载统计数据失败:', err);
-        showError(err, '加载统计数据失败');
-        setError('加载统计数据失败: ' + err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadStats();
-  }, []);
-
-  const trashCount = useStore((state) => state.trashNotes.length);
-  useEffect(() => { useStore.getState().loadTrash(); }, []);
-  const noteStats = useMemo(() => ({
-    total: notes.length,
-    deleted: trashCount,
-    pinned: notes.filter((note) => note.is_pinned && !note.is_deleted).length,
-    active: notes.filter((note) => !note.is_deleted).length,
-  }), [notes, trashCount]);
-
-  const todoStatsDisplay = useMemo(() => ({ ...DEFAULT_TODO_STATS, ...(todoStats || {}) }), [todoStats]);
-
-  // 过去半年每天的活动次数：优先用变更日志，没有时按笔记时间戳估算
-  const heatmapDays = useMemo(() => {
-    const counts = {};
-    if (activityCounts) {
-      Object.assign(counts, activityCounts);
-    } else {
-      notes.forEach((note) => {
-        if (note.is_deleted) return;
-        if (note.created_at) {
-          const key = formatLocalDateKey(new Date(note.created_at));
-          counts[key] = (counts[key] || 0) + 1;
-        }
-        if (note.updated_at && note.updated_at !== note.created_at) {
-          const key = formatLocalDateKey(new Date(note.updated_at));
-          counts[key] = (counts[key] || 0) + 1;
-        }
-      });
-    }
-    const today = new Date();
-    return Array.from({ length: HEATMAP_DAYS }, (_, index) => {
-      const date = new Date(today);
-      date.setDate(date.getDate() - (HEATMAP_DAYS - 1 - index));
-      const key = formatLocalDateKey(date);
-      return { date: key, count: counts[key] || 0 };
-    });
-  }, [notes, activityCounts]);
-
-  const topWords = useMemo(() => {
-    const wordMap = {};
-    notes.forEach((note) => {
-      if (note.is_deleted || !note.content) return;
-      // 简单的中文分词（匹配 2-4 个连续的中文字符）
-      (note.content.match(/[一-龥]{2,4}/g) || []).forEach((word) => {
-        if (!STOP_WORDS.has(word)) wordMap[word] = (wordMap[word] || 0) + 1;
-      });
-    });
-    return Object.entries(wordMap).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([word, count]) => ({ word, count }));
-  }, [notes]);
-
   const handleEditProfile = () => {
     setSettingsTabValue(1);
     setCurrentView('settings');
@@ -269,32 +172,13 @@ const Profile = () => {
     setCurrentView('todo');
   };
 
-  // 内置卡片点击后去往的页面
+  // 内置卡片点击后去往的页面（与桌面卡片共用 homeCardTarget）
   const openCardTarget = (cardId) => {
-    switch (cardId) {
-      case 'todo-rate':
-      case 'todo-today':
-        return handleTodoFilterNavigation('today');
-      case 'upcoming':
-        return handleTodoFilterNavigation('all');
-      case 'recent-clips':
-      case 'pinned-notes':
-      case 'tags':
-      case 'todo-overdue':
-        return handleTodoFilterNavigation('overdue');
-      case 'focus':
-        return handleTodoFilterNavigation('all');
-      case 'notes-overview':
-      case 'recent-notes':
-      case 'top-words':
-        return setCurrentView('notes');
-      case 'heatmap':
-        return setCurrentView('timeline');
-      case 'plugins':
-        return useStore.getState().openPluginStore({ type: 'plugin', tab: 'installed' });
-      default:
-        return undefined;
-    }
+    const target = homeCardTarget(cardId);
+    if (!target) return undefined;
+    if (target.pluginStore) return useStore.getState().openPluginStore({ type: 'plugin', tab: 'installed' });
+    if (target.filterBy) return handleTodoFilterNavigation(target.filterBy);
+    return setCurrentView(target.view);
   };
 
   const getGreeting = () => {
@@ -311,27 +195,7 @@ const Profile = () => {
   // 没设名字时只问候，不显示「用户」这样的占位词
   const displayName = userName?.trim() || '';
 
-  const renderBuiltinCard = (cardId) => {
-    const open = () => openCardTarget(cardId);
-    switch (cardId) {
-      case 'todo-rate': return <TodoRateCard stats={todoStatsDisplay} onOpen={open} />;
-      case 'todo-today': return <TodayTodosCard onOpen={open} onChanged={refreshTodoStats} />;
-      case 'todo-overdue': return <OverdueCard stats={todoStatsDisplay} onOpen={open} />;
-      case 'recent-notes': return <RecentNotesCard onOpen={open} />;
-      case 'notes-overview': return <NotesOverviewCard noteStats={noteStats} onOpen={open} />;
-      case 'focus': return <FocusCard stats={todoStatsDisplay} onOpen={open} />;
-      case 'heatmap': return <HeatmapCard days={heatmapDays} notes={notes} onOpen={open} />;
-      case 'top-words': return <TopWordsCard words={topWords} onOpen={open} />;
-      case 'plugins': return <PluginsCard plugins={installedPlugins} onOpen={open} />;
-      case 'quick-note': return <QuickNoteCard />;
-      case 'upcoming': return <UpcomingCard onOpen={open} />;
-      case 'recent-clips': return <RecentClipsCard onOpen={open} />;
-      case 'pinned-notes': return <PinnedNotesCard onOpen={open} />;
-      case 'review': return <ReviewCard />;
-      case 'tags': return <TagsCard onOpen={open} />;
-      default: return null;
-    }
-  };
+  const renderBuiltinCard = (cardId) => renderBuiltinHomeCard(cardId, homeData, () => openCardTarget(cardId));
 
   const renderCard = (cardId) => {
     const instanceId = parseWidgetCardId(cardId);
@@ -480,6 +344,10 @@ const Profile = () => {
                 onDragEnd={() => { setDragId(null); setDragOverId(null); }}
                 onRemove={() => removeCard(cardId)}
                 onToggleWide={() => toggleWide(cardId)}
+                onPinToDesktop={() => {
+                  const instanceId = parseWidgetCardId(cardId);
+                  return instanceId ? pinToDesktop(instanceId, { size: 'compact' }) : pinHomeCardToDesktop(cardId);
+                }}
               >
                 {renderCard(cardId)}
               </HomeGridItem>
