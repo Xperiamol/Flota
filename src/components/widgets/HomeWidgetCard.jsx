@@ -5,7 +5,7 @@ import { DeleteOutline, MoreHoriz, OpenInNew } from '../common/AppIcons'
 import AppContextMenu from '../common/AppContextMenu'
 import { openWidgetInstance } from '../../store/useWidgetStore'
 import { useHomeStore, widgetCardId } from '../../store/useHomeStore'
-import { instanceLabel, openMiniWindow } from '../../utils/widgets/widgetActions'
+import { instanceLabel, pinToDesktop } from '../../utils/widgets/widgetActions'
 import WidgetHost from './WidgetHost'
 import { WidgetGlyph } from './widgetIcons'
 import { HomeCardHeader, homeCardSx } from '../settings/homeCards'
@@ -44,7 +44,7 @@ export default function HomeWidgetCard({ instanceId, editing }) {
         <WidgetHost instanceId={instanceId} size="compact" surface="dashboard" minHeight={48} maxHeight={320} />
       </Box>
       <AppContextMenu anchor={menu} onClose={() => setMenu(null)} items={[
-        { label: '在桌面小窗打开', icon: <OpenInNew fontSize="small" />, onClick: () => openMiniWindow(instanceId) },
+        { label: '固定到桌面', icon: <OpenInNew fontSize="small" />, onClick: () => pinToDesktop(instanceId, { size: 'compact' }) },
         { divider: true },
         { label: '从首页移除', icon: <DeleteOutline fontSize="small" />, danger: true, onClick: () => useHomeStore.getState().removeCard(widgetCardId(instanceId)) },
       ]} />

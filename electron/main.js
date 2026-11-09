@@ -1025,6 +1025,16 @@ async function initializeServices() {
     services.notificationService.setWindowManager(windowManager)
     externalFileService.setReady()
 
+    // 固定在桌面的组件：记住位置、尺寸、置顶，启动时按设置恢复（见 createWindow 之后的 restoreAll）
+    const DesktopWidgets = require('./services/widgets/DesktopWidgets')
+    services.desktopWidgets = new DesktopWidgets({
+      settingDAO: services.aiService.settingDAO,
+      windowManager,
+      widgetService: services.widgetService,
+      screen: require('electron').screen,
+      logger: console,
+    })
+
     // windowManager 就绪后再注册依赖它的 IPC 处理器，避免闭包捕获 undefined
     const { registerWindowHandlers } = require('./ipc/windowHandlers')
     registerWindowHandlers(windowManager)
@@ -1377,6 +1387,8 @@ if (!gotTheLock) {
 
     createWindow()
     createTray()
+    // 恢复固定在桌面的组件（不阻塞启动）
+    services.desktopWidgets?.restoreAll().catch((error) => console.warn('[DesktopWidgets] 恢复失败', error?.message))
     installAppMenu({ getMainWindow: () => mainWindow, isDev })
 
     // Windows / Linux 冷启动时双击文件，路径在 argv 里
@@ -1559,7 +1571,7 @@ registerAIHandlers(services)
 
 // STT 相关 IPC
 registerSttHandlers(services)
-registerWidgetHandlers(() => services.widgetService, () => pluginManager)
+registerWidgetHandlers(() => services.widgetService, () => pluginManager, () => services.desktopWidgets)
 registerClipperHandlers({
   getIngress: () => services.ingressService,
   getClipService: () => services.clipService,
@@ -1591,6 +1603,8 @@ let isQuittingApp = false;
 let quitReady = false;
 app.on('before-quit', async (event) => {
   app.isQuiting = true;
+  // 退出时关闭的桌面组件下次还要恢复，不能当作用户移除
+  services.desktopWidgets?.markQuitting();
   if (!quitReady) event.preventDefault();
   if (isQuittingApp) return;
 

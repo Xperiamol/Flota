@@ -50,7 +50,7 @@ function StandaloneContent({ windowType, windowData }) {
   return (
     <>
       {windowType === 'widget' && windowData?.instanceId && (
-        <WidgetWindow instanceId={windowData.instanceId} />
+        <WidgetWindow instanceId={windowData.instanceId} size={windowData.size} desktop={windowData.desktop} />
       )}
 
       {windowType === 'note' && (
@@ -247,7 +247,7 @@ function StandaloneWindow() {
 
         } else if (type === 'widget' && urlParams.get('instanceId')) {
           setWindowType('widget')
-          setWindowData({ instanceId: urlParams.get('instanceId') })
+          setWindowData({ instanceId: urlParams.get('instanceId'), size: urlParams.get('size') === 'compact' ? 'compact' : 'medium', desktop: urlParams.get('desktop') === '1' })
 
         } else if (type === 'external-file' && urlParams.get('path')) {
           setWindowType('external-file')
@@ -373,7 +373,8 @@ function StandaloneWindow() {
         <CssBaseline />
         <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
           {/* 使用主应用的TitleBar组件 */}
-          {windowType && !['focus', 'reminder', 'external-file'].includes(windowType) && (
+          {/* 组件小窗有自己的标题栏（拖动、置顶、移除），不再叠一层通用标题栏 */}
+          {windowType && !['focus', 'reminder', 'external-file', 'widget'].includes(windowType) && (
             <TitleBar
               isStandalone={true}
               windowType={windowType}

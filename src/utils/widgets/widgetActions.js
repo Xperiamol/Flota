@@ -69,10 +69,18 @@ export const exportWidget = async (widget) => {
   if (result.data) notifySuccess('组件已导出')
 }
 
-export const openMiniWindow = async (instanceId) => {
-  const result = await window.electronAPI.createWidgetWindow(instanceId)
-  if (result && result.success === false) notifyError(result.error || '打开小窗失败')
+/**
+ * 固定到桌面：首页卡片默认以卡片（compact）尺寸放到桌面，其他入口以展开（medium）尺寸；
+ * 会记住位置、大小和置顶，下次启动按设置自动恢复。已经在桌面上就把它找出来。
+ */
+export const pinToDesktop = async (instanceId, { size = 'medium' } = {}) => {
+  const result = await window.electronAPI.widgets.pinToDesktop(instanceId, { size })
+  if (!result?.success) return notifyError(result?.error || '固定到桌面失败')
+  if (result.data?.pinned) notifySuccess('已固定到桌面')
 }
+
+// 旧名字保留给其他入口：现在等同于固定到桌面
+export const openMiniWindow = (instanceId) => pinToDesktop(instanceId, { size: 'medium' })
 
 export const toggleHomeInstance = async (instanceId) => {
   const { toggleInstanceOnHome } = await import('../../store/useHomeStore')

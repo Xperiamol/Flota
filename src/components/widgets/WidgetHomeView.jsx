@@ -143,7 +143,7 @@ export default function WidgetHomeView({ widgetId }) {
           icon: <Dashboard fontSize="small" />,
           onClick: () => toggleHomeInstance(menuInstance.id),
         },
-        { label: '在桌面小窗打开', icon: <OpenInNew fontSize="small" />, onClick: () => openMiniWindow(menuInstance.id) },
+        { label: '固定到桌面', icon: <OpenInNew fontSize="small" />, onClick: () => openMiniWindow(menuInstance.id) },
         { label: '重命名', icon: <Edit fontSize="small" />, onClick: () => renameInstance(menuInstance) },
         { divider: true },
         { label: '删除实例', icon: <DeleteOutline fontSize="small" />, danger: true, onClick: () => deleteInstance(menuInstance) },

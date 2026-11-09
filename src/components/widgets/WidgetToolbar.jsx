@@ -96,7 +96,7 @@ export function WidgetToolbarRight({ widgetId }) {
   const instanceItems = instance ? [
     { label: '插入到笔记…', icon: <NoteAdd fontSize="small" />, onClick: () => setNotePickerOpen(true) },
     { label: homeCards.includes(widgetCardId(instance.id)) ? '从首页移除' : '放到首页', icon: <Dashboard fontSize="small" />, onClick: () => toggleHomeInstance(instance.id) },
-    { label: '在桌面小窗打开', icon: <OpenInNew fontSize="small" />, onClick: () => openMiniWindow(instance.id) },
+    { label: '固定到桌面', icon: <OpenInNew fontSize="small" />, onClick: () => openMiniWindow(instance.id) },
     { label: '查看数据', icon: <Storage fontSize="small" />, onClick: () => setDataOpen(true) },
     { label: '重命名', icon: <Edit fontSize="small" />, onClick: () => renameInstance(instance) },
     { divider: true },

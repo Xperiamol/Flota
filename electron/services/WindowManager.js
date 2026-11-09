@@ -1112,8 +1112,10 @@ class WindowManager extends EventEmitter {
   }
 
   /**
-   * 创建组件小窗：置顶的无边框小窗口，以 medium 尺寸运行组件的一个实例（桌面小组件）
+   * 创建组件小窗：无边框小窗口，运行组件的一个实例。
+   * 固定在桌面的组件（options.desktop）由 DesktopWidgets 管理：记住位置、尺寸、置顶，启动时恢复。
    * @param {string} instanceId 实例 id
+   * @param {object} [options] size（compact / medium）、bounds、alwaysOnTop、desktop
    */
   async createWidgetWindow(instanceId, options = {}) {
     if (!instanceId || typeof instanceId !== 'string') throw new Error('缺少实例 id');
@@ -1128,21 +1130,25 @@ class WindowManager extends EventEmitter {
       throw new Error('Vite开发服务器不可用，请确保npm run dev正在运行');
     }
 
-    const width = Number(options.width) || 380;
-    const height = Number(options.height) || 520;
+    const size = options.size === 'compact' ? 'compact' : 'medium';
+    const bounds = options.bounds || {};
+    const width = Number(bounds.width) || Number(options.width) || (size === 'compact' ? 340 : 380);
+    const height = Number(bounds.height) || Number(options.height) || (size === 'compact' ? 300 : 520);
     const widgetWindow = new BrowserWindow({
       width,
       height,
-      minWidth: 240,
-      minHeight: 160,
+      ...(Number.isFinite(bounds.x) && Number.isFinite(bounds.y) ? { x: Math.round(bounds.x), y: Math.round(bounds.y) } : {}),
+      minWidth: 220,
+      minHeight: 120,
       show: false,
       frame: false,
       alwaysOnTop: options.alwaysOnTop !== false,
-      skipTaskbar: false,
+      // 桌面组件不占任务栏
+      skipTaskbar: options.desktop === true,
       resizable: true,
       maximizable: false,
       icon: this.getAppIcon(),
-      titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+      // 不要系统的红绿灯按钮：组件小窗有自己的置顶和关闭按钮，红绿灯会压在标题上
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -1164,9 +1170,9 @@ class WindowManager extends EventEmitter {
     });
 
     if (isDev) {
-      await widgetWindow.loadURL(`http://localhost:5174/standalone.html?type=widget&instanceId=${encodeURIComponent(instanceId)}`);
+      await widgetWindow.loadURL(`http://localhost:5174/standalone.html?type=widget&instanceId=${encodeURIComponent(instanceId)}&size=${size}${options.desktop ? '&desktop=1' : ''}`);
     } else {
-      await widgetWindow.loadFile(path.join(__dirname, '../../dist/standalone.html'), { query: { type: 'widget', instanceId } });
+      await widgetWindow.loadFile(path.join(__dirname, '../../dist/standalone.html'), { query: { type: 'widget', instanceId, size, ...(options.desktop ? { desktop: '1' } : {}) } });
     }
     return { windowId };
   }

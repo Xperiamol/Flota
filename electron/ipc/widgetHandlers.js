@@ -8,7 +8,7 @@ const fail = (error) => ({ success: false, error: error?.message || String(error
 /**
  * 组件相关 IPC。组件（小应用）以 widgetId 定位；运行、数据、放置一律以实例 id（或草稿 id）定位。
  */
-const registerWidgetHandlers = (getWidgetService, getPluginManager) => {
+const registerWidgetHandlers = (getWidgetService, getPluginManager, getDesktopWidgets = () => null) => {
   const handle = (channel, fn, { withEvent = false } = {}) => {
     ipcMain.handle(channel, async (event, ...args) => {
       const service = getWidgetService();
@@ -53,6 +53,23 @@ const registerWidgetHandlers = (getWidgetService, getPluginManager) => {
   // ---- AI 编写的组件：对话智能体提交代码时建草稿并预跑（见 AIChatService._proposeWidget），确认后保存 ----
   handle('widget:save-draft', (service, draftId, options) => service.saveDraft(draftId, options || {}));
   handle('widget:draft-discard', (service, id) => service.discardDraft(id));
+
+  // ---- 固定在桌面的组件 ----
+  const desktop = (channel, fn) => ipcMain.handle(channel, async (_event, ...args) => {
+    const manager = getDesktopWidgets();
+    if (!manager) return { success: false, error: '桌面组件尚未就绪', code: 'NOT_READY' };
+    try {
+      return ok(await fn(manager, ...args));
+    } catch (error) {
+      return fail(error);
+    }
+  });
+  desktop('widget:desktop-pin', (manager, instanceId, options) => manager.pin(instanceId, options || {}));
+  desktop('widget:desktop-unpin', (manager, instanceId) => manager.unpin(instanceId));
+  desktop('widget:desktop-set-size', (manager, instanceId, size) => manager.setSize(instanceId, size));
+  desktop('widget:desktop-list', (manager) => manager.list());
+  desktop('widget:desktop-restore-get', (manager) => manager.getRestoreOnLaunch());
+  desktop('widget:desktop-restore-set', (manager, enabled) => manager.setRestoreOnLaunch(enabled));
   // 对话智能体写好的组件代码：确认时草稿还在就直接用，过期（超过 6 小时或应用重启）就用卡片里的代码重建
   handle('widget:draft-ensure', (service, payload = {}) => {
     const draft = payload.draftId ? service.getDraft(payload.draftId) : null;

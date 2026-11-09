@@ -538,6 +538,28 @@ function buildTopUsageSegments(categories = [], limit = 4) {
         }));
 }
 
+// 固定在桌面的组件：启动时是否自动恢复（设置只保存在本机）
+function DesktopWidgetsRestoreRow() {
+    const [enabled, setEnabled] = useState(true)
+    const [count, setCount] = useState(0)
+    useEffect(() => {
+        window.electronAPI?.widgets?.getDesktopRestore?.().then((res) => { if (res?.success) setEnabled(Boolean(res.data)) })
+        window.electronAPI?.widgets?.listDesktop?.().then((res) => { if (res?.success) setCount(res.data.length) })
+    }, [])
+    const change = async (value) => {
+        setEnabled(value)
+        const res = await window.electronAPI?.widgets?.setDesktopRestore?.(value)
+        if (res?.success) setEnabled(Boolean(res.data))
+    }
+    return (
+        <SettingRow
+            primary="启动时恢复桌面组件"
+            secondary={count ? `桌面上固定了 ${count} 个组件，打开 Flota 时放回原来的位置` : '在首页卡片或组件菜单里选「固定到桌面」，打开 Flota 时自动放回原来的位置'}
+            action={<Switch checked={enabled} onChange={(e) => change(e.target.checked)} inputProps={{ 'aria-label': '启动时恢复桌面组件' }} />}
+        />
+    )
+}
+
 const Settings = () => {
     const startupView = useHomeStore((state) => state.startupView);
     const { showError } = useError();
@@ -1258,6 +1280,8 @@ const Settings = () => {
                                 </TextField>
                             )}
                         />
+
+                        <DesktopWidgetsRestoreRow />
 
                         {!isStoreBuild && (
                         <SettingRow

@@ -22,6 +22,8 @@ const DEVICE_LOCAL_SETTING_KEYS = new Set([
   'ai_model',
   'ai_temperature_enabled',
   'ai_automations',
+  'desktop_widgets',
+  'desktop_widgets_restore',
   'ai_vision_enabled',
   'web_search_enabled',
   'web_search_provider',
