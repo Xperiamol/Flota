@@ -2,6 +2,14 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [4.6.1] - 2026-11-09
+
+### Changed / 更新内容
+- docs: changelog for 4.6.1
+- feat(clipper): collapsible step-by-step install guide for the browser extension
+- feat(widgets): desktop cards are translucent with optional blur, smaller, adjustable, and stay put on "show desktop"
+
+
 ## [4.6.1] - 2026-11-10
 
 ### Added / 新增
