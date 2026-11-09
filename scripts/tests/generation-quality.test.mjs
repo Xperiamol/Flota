@@ -62,58 +62,6 @@ test('local edits preserve unrelated element identity, file references and sourc
   assert.throws(() => applyScenePatch([target], { updates: [{ id: 'a', changes: { id: 'evil' } }], remove: [] }), /字段/)
 })
 
-let widgetSource = await readFile(new URL('../../src/utils/widgets/widgetGeneration.js', import.meta.url), 'utf8')
-widgetSource = widgetSource.replace(/^import .*$/m, 'const probeWidget = (...args) => globalThis.__probeWidget(...args); const collectProblems = result => result.problems')
-const { runWidgetGeneration } = await import(`data:text/javascript;base64,${Buffer.from(widgetSource).toString('base64')}`)
-const setupWidget = () => {
-  const requests = [], saved = [], discarded = [], cancelled = []
-  globalThis.window = { electronAPI: { widgets: {
-    onGenerateProgress: () => () => {},
-    generate: async (id, payload) => { requests.push(payload); return { success: true, data: { draftId: 'draft', sizes: ['full', 'compact'] } } },
-    saveDraft: async id => { saved.push(id); return { success: true, data: { widget: { id: 'widget' } } } },
-    discardDraft: async id => { discarded.push(id) },
-    cancelGenerate: async id => { cancelled.push(id) },
-  } } }
-  globalThis.__probeWidget = async () => ({ problems: [] })
-  return { requests, saved, discarded, cancelled }
-}
-
-test('widget repair keeps original instruction and never publishes a known-broken draft', async () => {
-  const state = setupWidget()
-  globalThis.__probeWidget = async () => ({ problems: [{ message: '页面溢出' }] })
-  await assert.rejects(runWidgetGeneration({ instruction: '做一个编辑风格看板' }), error => /未通过/.test(error.message) && error.draftId === 'draft')
-  assert.equal(state.requests.length, 4)
-  assert.ok(state.requests.every(request => request.instruction === '做一个编辑风格看板'))
-  assert.equal(state.saved.length, 0)
-  assert.equal(state.discarded.length, 0, 'failed draft is retained for diagnosis')
-})
-
-test('widget repair saves once after every size passes', async () => {
-  const state = setupWidget()
-  let calls = 0
-  globalThis.__probeWidget = async () => ({ problems: ++calls === 1 ? [{ message: 'fix' }] : [] })
-  const result = await runWidgetGeneration({ instruction: '看板' })
-  assert.equal(result.fixedRounds, 1)
-  assert.equal(calls, 8)
-  assert.deepEqual(state.saved, ['draft'])
-})
-
-test('stopping widget generation exits immediately and discards late IPC draft', async () => {
-  const state = setupWidget()
-  let finish
-  window.electronAPI.widgets.generate = () => new Promise(resolve => { finish = resolve })
-  const task = createGenerationTask('widget-stop')
-  const pending = runWidgetGeneration({ instruction: '看板', task })
-  task.cancel()
-  await assert.rejects(pending, { name: 'AbortError' })
-  finish({ success: true, data: { draftId: 'late-draft' } })
-  await new Promise(resolve => setImmediate(resolve))
-  assert.equal(state.cancelled.length, 1)
-  assert.deepEqual(state.discarded, ['late-draft'])
-  assert.equal(state.saved.length, 0)
-  task.dispose()
-})
-
 const serviceSource = await readFile(new URL('../../electron/services/widgets/WidgetService.js', import.meta.url), 'utf8')
 const require = createRequire(new URL('../../electron/services/widgets/WidgetService.js', import.meta.url))
 const context = { module: { exports: {} }, require: name => name.includes('WidgetDAO') ? class {} : require(name) }
@@ -145,31 +93,6 @@ test('moving a bound shape keeps attached text and arrow endpoint connected', ()
   assert.equal(result.elements[2].y, 240)
   assert.deepEqual(result.elements[2].points.at(-1), [100, -100])
   assert.equal(text.y, 120)
-})
-
-const WidgetGenerator = require('./WidgetGenerator')
-test('widget format repair is bounded and preserves the design request', async () => {
-  const generator = new WidgetGenerator({ widgetService: { listWidgets: () => [] } })
-  const calls = []
-  generator.complete = async messages => {
-    calls.push(structuredClone(messages))
-    return calls.length === 1 ? '<html>incomplete' : '<!doctype html><html><head><script type="application/flota-widget">{"name":"阅读计划","sizes":["compact"],"libs":[]}</script></head><body>阅读计划</body></html>'
-  }
-  const result = await generator.generate({ instruction: '做一张编辑排版的阅读计划', referenceImages: ['data:image/png;base64,aGVsbG8='], requestId: 'format' })
-  assert.equal(calls.length, 2)
-  assert.ok(calls[1].some(message => Array.isArray(message.content) && message.content[0].text.includes('编辑排版的阅读计划')))
-  assert.ok(calls.every(messages => messages.some(message => Array.isArray(message.content) && message.content[1]?.image_url?.url === 'data:image/png;base64,aGVsbG8=')))
-  assert.match(result.code, /阅读计划/)
-  assert.equal(generator.running.size, 0)
-})
-
-test('widget fallback provider receives the same cancellation signal', async () => {
-  const controller = new AbortController()
-  const generator = new WidgetGenerator({ aiService: { chat: async (messages, options) => {
-    assert.equal(options.signal, controller.signal)
-    return { success: true, data: { content: 'ok' } }
-  } } })
-  assert.equal(await generator.complete([], { abortSignal: controller.signal }), 'ok')
 })
 
 const { normalizeDiagramColor, ensureReadableTextColor } = await load('src/utils/diagrams/shared.js')

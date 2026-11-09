@@ -9,7 +9,6 @@ const require = createRequire(import.meta.url)
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..')
 const { parseManifest, writeManifest } = require(path.join(root, 'electron/services/widgets/manifest.js'))
 const { buildWidgetDocument, readRuntimeAsset, LIB_FILES } = require(path.join(root, 'electron/services/widgets/runtime.js'))
-const WidgetGenerator = require(path.join(root, 'electron/services/widgets/WidgetGenerator.js'))
 
 const withManifest = (manifest, body = '<div id="app"></div>') =>
   `<!doctype html><html><head><script type="application/flota-widget">${JSON.stringify(manifest)}</script></head><body>${body}</body></html>`
@@ -63,12 +62,6 @@ test('运行时资源：库文件存在，拒绝未知路径', () => {
   assert.ok(readRuntimeAsset('sdk.js').body.length > 0)
   assert.equal(readRuntimeAsset('../main.js'), null)
   assert.equal(readRuntimeAsset('lib/unknown.js'), null)
-})
-
-test('HTML 提取：代码块、裸 HTML、缺失', () => {
-  assert.equal(WidgetGenerator.extractHtml('说明\n```html\n<!doctype html><html><body>a</body></html>\n```'), '<!doctype html><html><body>a</body></html>')
-  assert.equal(WidgetGenerator.extractHtml('<html><body>b</body></html>'), '<html><body>b</body></html>')
-  assert.equal(WidgetGenerator.extractHtml('没有代码'), null)
 })
 
 test('商店组件的清单都合法，且注册表条目都能找到文件', () => {

@@ -8,7 +8,7 @@ const fail = (error) => ({ success: false, error: error?.message || String(error
 /**
  * 组件相关 IPC。组件（小应用）以 widgetId 定位；运行、数据、放置一律以实例 id（或草稿 id）定位。
  */
-const registerWidgetHandlers = (getWidgetService, getWidgetGenerator, getPluginManager) => {
+const registerWidgetHandlers = (getWidgetService, getPluginManager) => {
   const handle = (channel, fn, { withEvent = false } = {}) => {
     ipcMain.handle(channel, async (event, ...args) => {
       const service = getWidgetService();
@@ -50,35 +50,7 @@ const registerWidgetHandlers = (getWidgetService, getWidgetGenerator, getPluginM
   // ---- 组件运行时调用：宿主渲染进程转发，身份由宿主决定 ----
   handle('widget:rpc', (service, ref, method, params, context) => service.handleRpc(ref, method, params || {}, context || {}));
 
-  // ---- AI 生成 / 修改：结果写入草稿，渲染层在沙箱中预跑、自动修复后再保存 ----
-  handle('widget:generate', async (service, event, requestId, payload = {}) => {
-    const generator = getWidgetGenerator?.();
-    if (!generator) throw Object.assign(new Error('AI 服务尚未就绪'), { code: 'NOT_READY' });
-    let draft = payload.draftId ? service.getDraft(payload.draftId) : null;
-    const widgetId = payload.widgetId || draft?.widgetId || null;
-    if (draft?.widgetId && service.dao.latestVersion(draft.widgetId) !== draft.baseVersion) draft = null;
-    // 继续修草稿时以草稿代码为基础；修改已有组件时以组件当前代码为基础
-    const baseCode = draft?.code || (widgetId ? service.getWidget(widgetId, { withCode: true }).code : '');
-    const baseVersion = draft?.baseVersion ?? (widgetId ? service.dao.latestVersion(widgetId) : null);
-    const { code, sizes, explanation } = await generator.generate({
-      instruction: payload.instruction || '',
-      referenceImages: payload.referenceImages,
-      baseCode,
-      widgetId,
-      instanceId: payload.instanceId || null,
-      errors: Array.isArray(payload.errors) ? payload.errors : [],
-      history: Array.isArray(payload.history) ? payload.history : [],
-      requestId,
-      onProgress: (progress) => {
-        if (!event.sender.isDestroyed()) event.sender.send('widget:generate-progress', { requestId, ...progress });
-      },
-    });
-    const draftId = draft
-      ? service.updateDraft(payload.draftId, code)
-      : service.createDraft(code, { widgetId, baseVersion, cloneDataFrom: payload.instanceId || undefined });
-    return { code, draftId, sizes, explanation };
-  }, { withEvent: true });
-  handle('widget:generate-cancel', (service, requestId) => getWidgetGenerator?.()?.cancel(requestId) || false);
+  // ---- AI 编写的组件：对话智能体提交代码时建草稿并预跑（见 AIChatService._proposeWidget），确认后保存 ----
   handle('widget:save-draft', (service, draftId, options) => service.saveDraft(draftId, options || {}));
   handle('widget:draft-discard', (service, id) => service.discardDraft(id));
   // 对话智能体写好的组件代码：确认时草稿还在就直接用，过期（超过 6 小时或应用重启）就用卡片里的代码重建

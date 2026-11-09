@@ -17,7 +17,7 @@ import {
   executeUpdateWhiteboardToolAction,
 } from '../whiteboardAI'
 
-import { runWidgetGeneration, probeAllSizes } from '../widgets/widgetGeneration'
+import { probeAllSizes } from '../widgets/widgetGeneration'
 import { useWidgetActionProgress } from '../widgets/widgetActionProgress'
 import { ensureActionProgressSubscription, useActionSteps } from './actionProgress'
 
@@ -81,16 +81,7 @@ const executeWhiteboardAction = async (action, overrides, deps, task) => {
   })
 }
 
-// 用户在卡片上选的设计方向（AI 给出 design_options 时）；没有选择时用上次的或第一个
-const pickDesignOption = (args, action, overrides) => {
-  const options = Array.isArray(args.design_options) ? args.design_options.filter((option) => option && typeof option.title === 'string').slice(0, 3) : []
-  if (options.length < 2) return { index: null, option: null }
-  const requested = Number.isInteger(overrides?.design_option) ? overrides.design_option : action.resultData?.designOption
-  const index = Math.min(Math.max(Number.isInteger(requested) ? requested : 0, 0), options.length - 1)
-  return { index, option: options[index] }
-}
-
-const executeWidgetAction = async (action, task, overrides) => {
+const executeWidgetAction = async (action, task) => {
   const claim = await window.electronAPI?.ai?.consumePendingAction?.(action.actionId, buildFallback(action))
   if (!claim?.success) {
     throw new Error(claim?.error || '待确认操作不存在或已过期')
@@ -139,48 +130,8 @@ const executeWidgetAction = async (action, task, overrides) => {
     }
   }
 
-  const design = pickDesignOption(args, action, overrides)
-  const instruction = design.option
-    ? `${args.instruction || ''}\n\n用户选定的设计方向：${design.option.title}——${design.option.summary || ''}`
-    : (args.instruction || '')
-  // 换了设计方向就从头生成，不再修补上一个方向留下的草稿
-  const sameDirection = (action.resultData?.designOption ?? null) === design.index
-  let result
-  try {
-    result = await runWidgetGeneration({
-      instruction,
-      referenceImages: (claim.action?.context || action.context)?.referenceImages || [],
-      widgetId: isUpdate ? args.id : undefined,
-      instanceId: previewInstanceId || undefined,
-      instanceName: args.instance_name,
-      onProgress: report,
-      task,
-      initialDraftId: sameDirection ? action.resultData?.draftId || null : null,
-      initialErrors: sameDirection ? action.resultData?.problems || null : null,
-    })
-  } catch (error) {
-    if (design.index !== null) error.designOption = design.index
-    throw error
-  }
-  useWidgetActionProgress.getState().clear(action.actionId)
-
-  const widgetName = result.widget?.name || '组件'
-  const resultData = {
-    mode: isUpdate ? 'update' : 'create',
-    widgetId: result.widget?.id,
-    widgetName,
-    instanceId: isUpdate ? previewInstanceId : result.instance?.id,
-    instanceCount,
-    version: result.version,
-    previousVersion: result.previousVersion,
-    fixedRounds: result.fixedRounds,
-    remainingProblems: (result.remainingProblems || []).map((problem) => problem.message).slice(0, 3),
-    ...(design.index !== null ? { designOption: design.index } : {}),
-  }
-  const message = isUpdate
-    ? `已修改组件「${widgetName}」${instanceCount > 1 ? `，${instanceCount} 个实例都已生效` : ''}`
-    : `已生成组件「${widgetName}」，已固定到侧边栏`
-  return { success: true, message, action: claim.action || action, resultData }
+  // 旧版只有需求描述（instruction）的确认卡由已移除的生成器处理，现在给出明确说明
+  throw new Error('这张卡片来自旧版组件生成，已不再支持，请在对话里让 AI 重新写一次')
 }
 
 /**
@@ -216,7 +167,7 @@ export const runPendingAction = async ({ action, overrides = null, deps = {} }) 
     const result = WHITEBOARD_ACTIONS.has(action.name)
       ? await executeWhiteboardAction(action, overrides, deps, task)
       : WIDGET_ACTIONS.has(action.name)
-        ? await executeWidgetAction(action, task, overrides)
+        ? await executeWidgetAction(action, task)
         : await window.electronAPI?.ai?.executePendingAction?.(action.actionId, overrides, buildFallback(action))
     if (runsInMain && task.signal.aborted) {
       // 主进程已中止；长文写作停止时会把已写完的章节保存下来，结果里带着说明
@@ -252,12 +203,7 @@ export const runPendingAction = async ({ action, overrides = null, deps = {} }) 
       message: task?.signal.aborted ? '已停止生成' : `操作失败：${error?.message || '未知错误'}`,
       error: error?.message || '未知错误',
       finalAction: action,
-      resultData: error?.draftId || Number.isInteger(error?.designOption)
-        ? {
-          ...(error?.draftId ? { draftId: error.draftId, problems: error.problems || [{ message: error.message }] } : {}),
-          ...(Number.isInteger(error?.designOption) ? { designOption: error.designOption } : {}),
-        }
-        : null,
+      resultData: null,
       reloadNotes: false,
       reloadTodos: false,
     }

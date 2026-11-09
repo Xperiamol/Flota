@@ -68,7 +68,7 @@ test('update_widget: edits apply to the current code, preview uses an instance c
   assert.equal(ctx.cards[0].args.edits, undefined, 'card stores the resolved full code, not the edits')
   const bad = await ctx.svc._proposeWidget('update_widget', { id: 'w1', summary: 'x', edits: [{ search: '不存在的代码', replace: 'y' }] }, null)
   assert.equal(bad.success, false)
-  assert.match(bad.error, /SEARCH 在原代码中找不到/)
+  assert.match(bad.error, /search 在原代码中找不到/)
   assert.match((await ctx.svc._proposeWidget('update_widget', { id: 'nope', summary: 'x', code: html('a') }, null)).error, /组件不存在/)
 })
 

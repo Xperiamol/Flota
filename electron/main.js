@@ -126,7 +126,6 @@ const AIService = require('./services/AIService')
 const AIChatService = require('./services/aichat')
 const WebSearchService = require('./services/websearch')
 const WidgetService = require('./services/widgets/WidgetService')
-const WidgetGenerator = require('./services/widgets/WidgetGenerator')
 const ClipService = require('./services/clipper/ClipService')
 const IngressService = require('./services/clipper/IngressService')
 const widgetRuntime = require('./services/widgets/runtime')
@@ -836,11 +835,6 @@ async function initializeServices() {
           tags: db.prepare('SELECT name FROM tags WHERE usage_count > 0 ORDER BY usage_count DESC LIMIT 50').all().map((row) => row.name)
         }
       }
-    })
-    services.widgetGenerator = new WidgetGenerator({
-      getChatService: () => services.aiChatService,
-      aiService: services.aiService,
-      widgetService: services.widgetService
     })
     // AI Chat 助手服务（需在 mem0Service 初始化后设置）
     services.aiChatService = null // 延迟到后面初始化
@@ -1565,7 +1559,7 @@ registerAIHandlers(services)
 
 // STT 相关 IPC
 registerSttHandlers(services)
-registerWidgetHandlers(() => services.widgetService, () => services.widgetGenerator, () => pluginManager)
+registerWidgetHandlers(() => services.widgetService, () => pluginManager)
 registerClipperHandlers({
   getIngress: () => services.ingressService,
   getClipService: () => services.clipService,

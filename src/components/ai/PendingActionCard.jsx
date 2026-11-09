@@ -1,6 +1,6 @@
 import { subscribeGenerationTasks, getGenerationTaskPhase, cancelGenerationTask } from '../../utils/aiCore/generationTask'
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { Box, Button, Checkbox, CircularProgress, Radio, Typography, alpha, useTheme } from '@mui/material'
+import { Box, Button, Checkbox, CircularProgress, Typography, alpha, useTheme } from '@mui/material'
 import {
   AddTask as TodoIcon,
   Checklist as TodosIcon,
@@ -639,73 +639,6 @@ const WidgetProgressSteps = ({ progress }) => {
   )
 }
 
-// AI 给出的设计方向：用户点选一个再生成。只在新建组件、需求开放时出现。
-const designOptionsOf = (action) => (action.name === 'create_widget' && Array.isArray(action.args?.design_options)
-  ? action.args.design_options.filter((option) => option && typeof option.title === 'string').slice(0, 3)
-  : [])
-
-const WidgetDesignCard = ({ action, executing, onExecute, onDismiss, onRevise, compact }) => {
-  const theme = useTheme()
-  const status = getStatus(action, executing)
-  const failed = status === 'failed'
-  const options = designOptionsOf(action)
-  const [chosen, setChosen] = useState(() => (Number.isInteger(action.resultData?.designOption) ? action.resultData.designOption : 0))
-  const primary = theme.palette.primary.main
-  return (
-    <Box sx={surfaceSx(theme, compact, failed ? 'error' : null)}>
-      <CardHeader action={action} compact={compact} label="选一个设计方向" right={failed ? <ErrorBadge>没有成功，可以换个方向</ErrorBadge> : null} />
-      <CardBody compact={compact}>
-        <Summary compact={compact}>{getDetail(action)}</Summary>
-        {failed && action.error && <Note color="error.main">{action.error}</Note>}
-        <Box role="radiogroup" sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mt: 0.75 }}>
-          {options.map((option, index) => {
-            const selected = chosen === index
-            return (
-              <Box
-                key={`${index}-${option.title}`}
-                role="radio"
-                aria-checked={selected}
-                tabIndex={0}
-                onClick={() => setChosen(index)}
-                onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setChosen(index) } }}
-                sx={{
-                  display: 'flex', gap: 0.9, alignItems: 'flex-start',
-                  px: 0.9, py: 0.75, borderRadius: '8px', cursor: 'pointer', userSelect: 'none',
-                  border: '1px solid',
-                  borderColor: selected ? primary : 'divider',
-                  bgcolor: selected ? alpha(primary, theme.palette.mode === 'dark' ? 0.1 : 0.04) : 'transparent',
-                  transition: 'border-color 120ms, background-color 120ms',
-                  '&:hover': selected ? {} : { borderColor: alpha(theme.palette.text.primary, 0.25) },
-                  '&:focus-visible': { outline: `2px solid ${primary}`, outlineOffset: 1 },
-                }}
-              >
-                {/* 与全应用一致的主题单选框；整行可点，单选框只负责显示 */}
-                <Radio
-                  checked={selected}
-                  tabIndex={-1}
-                  inputProps={{ 'aria-hidden': true }}
-                  sx={{ p: 0, mt: '1px', flexShrink: 0, pointerEvents: 'none' }}
-                />
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography sx={{ fontSize: compact ? 12.5 : 13, fontWeight: 600 }}>{option.title}</Typography>
-                  {option.summary && <Note sx={{ mt: 0.15 }}>{option.summary}</Note>}
-                </Box>
-              </Box>
-            )
-          })}
-        </Box>
-      </CardBody>
-      <CardFooter compact={compact}>
-        {!failed && onDismiss && <GhostButton compact={compact} onClick={() => onDismiss(action)}>忽略</GhostButton>}
-        {onRevise && <GhostButton compact={compact} onClick={() => onRevise(action)}>修改</GhostButton>}
-        <PrimaryButton compact={compact} onClick={() => onExecute?.(action, { design_option: chosen })}>
-          {failed ? '按这个方向重试' : '按这个方向生成'}
-        </PrimaryButton>
-      </CardFooter>
-    </Box>
-  )
-}
-
 const WidgetActionCard = (props) => {
   const { action, executing, compact } = props
   const theme = useTheme()
@@ -714,16 +647,8 @@ const WidgetActionCard = (props) => {
   const phase = useSyncExternalStore(subscribeGenerationTasks, () => getGenerationTaskPhase(action.actionId))
   const selectedNote = useStore((state) => state.notes.find((note) => note.id === state.selectedNoteId))
   const [undone, setUndone] = useState(false)
-  const [showDraft, setShowDraft] = useState(false)
   const [busy, setBusy] = useState(false)
-  if ((status === 'pending' || status === 'failed') && designOptionsOf(action).length >= 2) return <WidgetDesignCard {...props} />
-  if (status !== 'running' && status !== 'done') return <>
-    <SimpleActionCard {...props} />
-    {status === 'failed' && action.resultData?.draftId && <Box sx={{ mt: 0.5 }}>
-      <GhostButton compact={compact} onClick={() => setShowDraft(value => !value)}>{showDraft ? '收起未发布的预览' : '看看未发布的预览'}</GhostButton>
-      {showDraft && <WidgetHost instanceId={action.resultData.draftId} size="medium" surface="probe" maxHeight={420} />}
-    </Box>}
-  </>
+  if (status !== 'running' && status !== 'done') return <SimpleActionCard {...props} />
 
   const data = action.resultData || {}
   const isUpdate = action.name === 'update_widget'

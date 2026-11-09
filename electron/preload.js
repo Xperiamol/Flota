@@ -349,8 +349,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     restoreInstance: inv('widget:instance-restore'),
     dataOverview: inv('widget:data-overview'),
     rpc: inv('widget:rpc'),
-    generate: inv('widget:generate'),
-    cancelGenerate: inv('widget:generate-cancel'),
     saveDraft: inv('widget:save-draft'),
     discardDraft: inv('widget:draft-discard'),
     ensureDraft: inv('widget:draft-ensure'),
@@ -365,7 +363,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // 点击组件通知：打开对应实例
     onOpenInstance: listen('widget:open-instance'),
     onListChanged: listen('widget:list-changed'),
-    onGenerateProgress: listen('widget:generate-progress'),
   },
 
   // 网页剪藏

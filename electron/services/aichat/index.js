@@ -343,7 +343,7 @@ class AIChatService {
         if (!code) {
           const edits = Array.isArray(args.edits) ? args.edits : [];
           if (!edits.length) return { success: false, error: '请提供 code（完整 HTML）或 edits（[{search, replace}]）' };
-          const { applyPatches } = require('../widgets/WidgetGenerator');
+          const { applyPatches } = require('../widgets/codeEdits');
           code = applyPatches(widget.code, edits.map((edit) => ({ search: String(edit?.search ?? ''), replace: String(edit?.replace ?? '') })));
         }
         const instances = service.dao.listInstances(widget.id);
