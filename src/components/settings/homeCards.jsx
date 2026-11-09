@@ -25,6 +25,9 @@ export const homeCardSx = (clickable) => (theme) => ({
   // 放在白色主面板里：用略深的分组底色，不加边框
   bgcolor: theme.custom?.surface?.inset,
   transition: 'background-color 150ms ease',
+  // 右上角「…」：平时隐藏，悬停卡片（或菜单打开）时出现；有数字的卡片在悬停时用「…」顶替数字的位置
+  '&:hover .home-card-more, & .home-card-more.is-open': { opacity: 1, pointerEvents: 'auto', width: 28, marginLeft: 0 },
+  '&:hover .home-card-meta.has-more, & .home-card-meta.has-more.is-open': { opacity: 0 },
   ...(clickable ? {
     cursor: 'pointer',
     '&:hover': { bgcolor: theme.custom?.surface?.insetHover },
@@ -37,30 +40,57 @@ export const homeCardSx = (clickable) => (theme) => ({
  */
 export const HomeCardMenuContext = createContext(null)
 
-function HomeCardMoreButton({ items }) {
+function HomeCardMoreButton({ items, overlay, open, onOpenChange }) {
   const [anchor, setAnchor] = useState(null)
+  const setMenu = (value) => { setAnchor(value); onOpenChange?.(Boolean(value)) }
   return (
     // 菜单渲染在 Portal 里，但 React 事件仍会冒泡到卡片：在这里拦住，点菜单项不会触发卡片本身的跳转
-    <Box component="span" sx={{ display: 'inline-flex' }} onClick={(event) => event.stopPropagation()}>
-      <PanelIconButton title="更多" size="sm" onClick={(event) => setAnchor({ el: event.currentTarget })}>
+    <Box
+      component="span"
+      className={`home-card-more${open ? ' is-open' : ''}`}
+      onClick={(event) => event.stopPropagation()}
+      sx={{
+        display: 'inline-flex', justifyContent: 'flex-end', opacity: 0, pointerEvents: 'none',
+        transition: 'opacity 140ms ease, width 140ms ease',
+        // 顶替数字：叠在数字的位置上，靠右对齐；没有数字：在最右侧从 0 宽展开，不占平时的位置
+        ...(overlay
+          ? { position: 'absolute', right: -4, top: '50%', transform: 'translateY(-50%)', width: 28 }
+          : { width: 0, overflow: 'hidden', flexShrink: 0, ml: '-7px', transition: 'opacity 140ms ease, width 140ms ease, margin-left 140ms ease' }),
+      }}
+    >
+      <PanelIconButton title="更多" size="sm" onClick={(event) => setMenu({ el: event.currentTarget })}>
         <MoreHorizRounded />
       </PanelIconButton>
-      <AppContextMenu anchor={anchor} onClose={() => setAnchor(null)} items={items} />
+      <AppContextMenu anchor={anchor} onClose={() => setMenu(null)} items={items} />
     </Box>
   )
 }
 
 export function HomeCardHeader({ icon: Icon, title, meta, action }) {
   const menu = useContext(HomeCardMenuContext)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const hasMenu = menu?.items?.length > 0
+  // 有数字且数字在最右侧时，「…」悬停时顶替数字；否则在最右侧展开
+  const overlay = hasMenu && meta != null && !action
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.875, minHeight: 24, mb: 1.5 }}>
       {Icon && <Icon sx={{ fontSize: 15, color: 'text.secondary' }} />}
       <Typography sx={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: 'text.secondary', letterSpacing: '0.01em' }} noWrap>
         {title}
       </Typography>
-      {meta != null && <Typography sx={{ fontSize: 12, color: 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>{meta}</Typography>}
+      {meta != null && (
+        <Box sx={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+          <Typography
+            className={`home-card-meta${overlay ? ' has-more' : ''}${menuOpen ? ' is-open' : ''}`}
+            sx={{ fontSize: 12, color: 'text.secondary', fontVariantNumeric: 'tabular-nums', transition: 'opacity 140ms ease' }}
+          >
+            {meta}
+          </Typography>
+          {overlay && <HomeCardMoreButton items={menu.items} overlay open={menuOpen} onOpenChange={setMenuOpen} />}
+        </Box>
+      )}
       {action}
-      {menu?.items?.length > 0 && <HomeCardMoreButton items={menu.items} />}
+      {hasMenu && !overlay && <HomeCardMoreButton items={menu.items} open={menuOpen} onOpenChange={setMenuOpen} />}
     </Box>
   )
 }
