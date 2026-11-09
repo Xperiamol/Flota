@@ -11,6 +11,8 @@ const memoryDAO = () => { const store = new Map(); return { get: (k) => (store.h
 class FakeWindow extends EventEmitter {
   constructor(bounds) { super(); this.bounds = { x: 0, y: 0, width: 340, height: 300, ...bounds }; this.destroyed = false; this.focused = 0; this.onTop = false; this.restored = 0; this.inactiveShows = 0 }
   setAlwaysOnTop(value) { this.onTop = value }
+  setBounds(bounds) { this.bounds = { ...this.bounds, ...bounds } }
+  setIgnoreMouseEvents(ignore, options) { this.ignoreMouse = ignore; this.forward = Boolean(options?.forward) }
   restore() { this.restored++ }
   showInactive() { this.inactiveShows++ }
   isDestroyed() { return this.destroyed }
@@ -18,10 +20,14 @@ class FakeWindow extends EventEmitter {
   show() {}
   focus() { this.focused++ }
   // 和真实窗口一样，关闭是异步完成的
-  close() { setImmediate(() => { this.destroyed = true; this.emit('closed') }) }
+  close() { this.emit('close'); setImmediate(() => { this.destroyed = true; this.emit('closed') }) }
+  // 系统销毁（如 Windows 上作为所有者的桌面窗口没了）：不会先收到 close
+  destroy() { this.destroyed = true; this.emit('closed') }
+  get webContents() { return { send: (channel, data) => { (this.sent ||= []).push([channel, data]) } } }
 }
 
-const setup = ({ instances = { i1: ['compact', 'medium', 'full'], i2: ['medium', 'full'] }, deleted = [] } = {}) => {
+const setup = ({ instances = { i1: ['compact', 'medium', 'full'], i2: ['medium', 'full'] }, deleted = [], platform = 'win32' } = {}) => {
+  const native = []
   const opened = []
   const windowManager = {
     widgetWindows: new Map(),
@@ -41,8 +47,8 @@ const setup = ({ instances = { i1: ['compact', 'medium', 'full'], i2: ['medium',
   }
   const screen = { getAllDisplays: () => [{ workArea: { x: 0, y: 0, width: 1440, height: 900 } }], getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1440, height: 900 } }) }
   const settingDAO = memoryDAO()
-  const manager = new DesktopWidgets({ settingDAO, windowManager, widgetService, screen, logger: { warn() {} } })
-  return { manager, windowManager, opened, settingDAO }
+  const manager = new DesktopWidgets({ settingDAO, windowManager, widgetService, screen, logger: { warn() {} }, platform, reopenDelayMs: 10, nativeLayer: (win, on) => { native.push(on); win.onDesktop = on; return true } })
+  return { manager, windowManager, opened, settingDAO, native }
 }
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -141,7 +147,7 @@ test('switching between card and expanded keeps it pinned and reopens at the new
   assert.equal(manager.list().length, 1)
   assert.equal(manager.list()[0].size, 'medium')
   assert.equal(opened.at(-1).size, 'medium')
-  assert.equal(opened.at(-1).bounds.height, 520)
+  assert.equal(opened.at(-1).bounds.height, DesktopWidgets.DEFAULT_BOUNDS.medium.height)
   assert.equal(opened.length, 2, 'a new window really opened instead of reusing the closing one')
   assert.equal(windowManager.widgetWindows.get('i1').destroyed, false)
 })
@@ -193,4 +199,82 @@ test('old records that only stored alwaysOnTop are read as layers', () => {
   const { manager, settingDAO } = setup()
   settingDAO.set('desktop_widgets', JSON.stringify([{ instanceId: 'i1', size: 'compact', alwaysOnTop: true }, { instanceId: 'i2', size: 'medium', alwaysOnTop: false }]))
   assert.deepEqual(manager.list().map((entry) => [entry.key, entry.layer]), [['i1', 'top'], ['i2', 'desktop']])
+})
+
+test('show desktop: the desktop layer is attached to the desktop natively, top layer is detached (Windows)', async () => {
+  const { manager, windowManager } = setup()
+  await manager.pin('i1')
+  const win = windowManager.widgetWindows.get('i1')
+  assert.equal(win.onDesktop, true)
+  manager.setLayer('i1', 'top')
+  assert.equal(win.onDesktop, false)
+  manager.setLayer('i1', 'desktop')
+  assert.equal(win.onDesktop, true)
+})
+
+test('show desktop on macOS: cards stay put in both layers', async () => {
+  const { manager, windowManager } = setup({ platform: 'darwin' })
+  await manager.pin('i1')
+  manager.setLayer('i1', 'top')
+  assert.equal(windowManager.widgetWindows.get('i1').onDesktop, true)
+})
+
+test('a card destroyed by the system (explorer restart) is put back instead of being removed', async () => {
+  const { manager, windowManager, opened } = setup()
+  await manager.pin('i1')
+  windowManager.widgetWindows.get('i1').destroy()
+  await wait(30)
+  assert.equal(manager.list().length, 1)
+  assert.equal(opened.length, 2)
+  assert.equal(opened[1].inactive, true)
+})
+
+test('appearance: defaults, clamping, live push to open cards, and rebuilding windows when blur is toggled', async () => {
+  const { manager, windowManager, opened } = setup({ platform: 'darwin' })
+  assert.deepEqual(manager.getAppearance(), { ...DesktopWidgets.DEFAULT_APPEARANCE, blurSupported: true })
+  assert.equal(DesktopWidgets.DEFAULT_APPEARANCE.clickThrough, false)
+  await manager.pin('i1')
+  assert.equal(opened[0].appearance.opacity, DesktopWidgets.DEFAULT_APPEARANCE.opacity)
+  const win = windowManager.widgetWindows.get('i1')
+  const next = await manager.setAppearance({ opacity: 5, scale: 0.1 })
+  assert.equal(next.opacity, 1)
+  assert.equal(next.scale, 0.7)
+  assert.deepEqual(win.sent.at(-1), [DesktopWidgets.APPEARANCE_EVENT, next])
+  assert.equal(opened.length, 1, 'opacity and scale do not reopen the window')
+  assert.equal(win.bounds.width, Math.round(DesktopWidgets.DEFAULT_BOUNDS.compact.width * 0.7 / DesktopWidgets.DEFAULT_APPEARANCE.scale), 'width follows the scale')
+  await manager.setAppearance({ blur: false })
+  assert.equal(opened.length, 2, 'blur needs a new window')
+  assert.equal(opened[1].appearance.blur, false)
+  assert.equal(manager.list().length, 1, 'reopening keeps the card pinned')
+})
+
+test('blur is only offered where the system supports it', () => {
+  assert.equal(DesktopWidgets.blurSupported('darwin', '24.0.0'), true)
+  assert.equal(DesktopWidgets.blurSupported('win32', '10.0.22631'), true)
+  assert.equal(DesktopWidgets.blurSupported('win32', '10.0.19045'), false)
+  assert.equal(DesktopWidgets.blurSupported('linux', '6.1'), false)
+  const { manager } = setup({ platform: 'linux' })
+  assert.equal(manager.getAppearance().blur, false)
+})
+
+test('click-through only works without blur; the title strip takes the mouse back while hovered', async () => {
+  const { manager, windowManager, opened } = setup({ platform: 'darwin' })
+  await manager.pin('i1')
+  let win = windowManager.widgetWindows.get('i1')
+  assert.equal(win.ignoreMouse, false)
+  await manager.setAppearance({ clickThrough: true })
+  assert.equal(win.ignoreMouse, false, 'blurred cards never pass clicks through')
+  assert.equal(manager.setMouseCapture(win, false), false)
+  await manager.setAppearance({ blur: false })
+  win = windowManager.widgetWindows.get('i1')
+  assert.equal(opened.at(-1).appearance.clickThrough, true)
+  assert.equal(win.ignoreMouse, true)
+  assert.equal(win.forward, true, 'mouse moves are still forwarded so the page can find the title strip')
+  assert.equal(manager.setMouseCapture(win, true), true)
+  assert.equal(win.ignoreMouse, false)
+  manager.setMouseCapture(win, false)
+  assert.equal(win.ignoreMouse, true)
+  await manager.setAppearance({ clickThrough: false })
+  assert.equal(win.ignoreMouse, false)
+  assert.equal(manager.setMouseCapture({ isDestroyed: () => false }, false), false, 'other windows are ignored')
 })

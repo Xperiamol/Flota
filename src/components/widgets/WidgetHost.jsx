@@ -8,11 +8,17 @@ import { confirmAction, notifyError, notifyInfo, notifySuccess, notifyWarning } 
 const SIZES = ['compact', 'medium', 'full']
 const MAX_ERRORS = 20
 
-const buildThemeVars = (theme, primaryColor) => ({
+const buildThemeVars = (theme, primaryColor, translucent) => ({
   '--fl-primary': primaryColor,
   '--fl-text': theme.palette.text.primary,
   '--fl-text-2': theme.palette.text.secondary,
   '--fl-surface': theme.palette.background.paper,
+  // 半透明的桌面卡片：窗口已经画了底色，组件里的卡片不再叠一层实色，只保留很淡的分组底色
+  ...(translucent ? {
+    '--fl-surface': 'transparent',
+    '--fl-surface-2': theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.04)',
+    '--fl-shadow': 'none',
+  } : {}),
 })
 
 const openNoteByRef = (ref) => {
@@ -46,6 +52,7 @@ export default function WidgetHost({
   onEvent,
   onFixRequest,
   showErrors = true,
+  translucent = false,
   sx,
 }) {
   const theme = useTheme()
@@ -79,7 +86,7 @@ export default function WidgetHost({
     locale: navigator.language || 'zh-CN',
     draft: isDraft,
     maxHeight,
-    vars: buildThemeVars(theme, primaryColor),
+    vars: buildThemeVars(theme, primaryColor, translucent),
   }
 
   // 主题变化不重新加载 iframe（通过 env 事件推送），只有代码或尺寸变化才重新加载
@@ -192,7 +199,7 @@ export default function WidgetHost({
   useEffect(() => {
     if (loading) return
     post({ type: 'event', event: 'env', payload: envRef.current })
-  }, [mode, primaryColor, loading, post, info?.instance?.name])
+  }, [mode, primaryColor, loading, post, info?.instance?.name, translucent])
 
   // 主进程事件（定时提醒到点等）只推给这个实例
   useEffect(() => {

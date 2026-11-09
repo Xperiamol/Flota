@@ -364,6 +364,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     listDesktop: inv('widget:desktop-list'),
     getDesktopRestore: inv('widget:desktop-restore-get'),
     setDesktopRestore: inv('widget:desktop-restore-set'),
+    // 桌面卡片外观（不透明度 / 模糊 / 缩放），改动推给每张卡片
+    getDesktopAppearance: inv('widget:desktop-appearance-get'),
+    setDesktopAppearance: inv('widget:desktop-appearance-set'),
+    onDesktopAppearance: listen('widget:desktop-appearance'),
+    setDesktopMouseCapture: (capture) => ipcRenderer.send('widget:desktop-mouse-capture', Boolean(capture)),
     importFile: inv('widget:import-file'),
     exportFile: inv('widget:export-file'),
     storeList: inv('widget:store-list'),

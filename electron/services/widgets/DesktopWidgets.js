@@ -7,12 +7,31 @@
  *
  * 层级（layer）：
  *   desktop 贴在桌面（默认）：普通窗口层级，其他窗口可以盖住它；macOS 上在每个桌面空间都显示、不进调度中心；
- *           Windows 上是不占任务栏和 Alt+Tab 的工具窗口，「显示桌面」把它收起时立即放回。
+ *           Windows 上是不占任务栏和 Alt+Tab 的工具窗口。「显示桌面」（Win+D、点墙纸、F11）不会把它收起：
+ *           Windows 上窗口属于桌面窗口 Progman，macOS 上是 Stationary 窗口（见 nativeDesktopLayer）；
+ *           原生调用不可用时退回旧做法：被最小化后立即放回。
  *           系统没有「固定在桌面底层又能点击」的接口（macOS 的桌面层窗口收不到鼠标事件），这是能做到的最接近的效果。
  *   top     置顶：始终浮在其他窗口上面。
+ *
+ * 外观（appearance，所有桌面卡片共用，仅本机）：背景不透明度、背后高斯模糊（macOS 毛玻璃 / Windows 11 亚克力）、缩放，
+ * 以及没有模糊时的「点击穿透」：卡片只显示不拦鼠标，点到的是后面的桌面和窗口；只有标题条 / 按钮区域
+ * （页面上标了 data-desktop-handle 的地方）在鼠标移上去时恢复可点，用来拖动、调外观、关掉穿透。
  */
+const { setStayOnDesktop } = require('./nativeDesktopLayer');
+
 const STORAGE_KEY = 'desktop_widgets';
 const RESTORE_KEY = 'desktop_widgets_restore';
+const APPEARANCE_KEY = 'desktop_widgets_appearance';
+const APPEARANCE_EVENT = 'widget:desktop-appearance';
+const DEFAULT_APPEARANCE = { opacity: 0.72, blur: true, scale: 0.9, clickThrough: false };
+const clamp = (value, min, max, fallback) => (Number.isFinite(Number(value)) ? Math.min(max, Math.max(min, Number(value))) : fallback);
+/** 系统能不能给透明窗口背后加模糊：macOS 都可以；Windows 要 11 22H2（build 22621）起的亚克力材质 */
+const blurSupported = (platform = process.platform, release = require('os').release()) => {
+  if (platform === 'darwin') return true;
+  if (platform !== 'win32') return false;
+  const build = Number(String(release).split('.')[2]);
+  return Number.isFinite(build) && build >= 22621;
+};
 const SAVE_DELAY_MS = 400;
 const SIZES = ['compact', 'medium'];
 const LAYERS = ['desktop', 'top'];
@@ -24,7 +43,8 @@ const HOME_PREFIX = 'home:';
 const keyOf = (entry) => (entry.cardId ? `${HOME_PREFIX}${entry.cardId}` : entry.instanceId);
 /** 旧记录只有 alwaysOnTop 布尔值 */
 const layerOf = (entry) => (LAYERS.includes(entry.layer) ? entry.layer : entry.alwaysOnTop === true ? 'top' : 'desktop');
-const DEFAULT_BOUNDS = { compact: { width: 340, height: 300 }, medium: { width: 380, height: 520 } };
+// 默认尺寸偏小：桌面卡片是瞄一眼用的，不该像个小窗口一样占地方（窗口高度会再跟着内容收）
+const DEFAULT_BOUNDS = { compact: { width: 280, height: 220 }, medium: { width: 340, height: 460 } };
 
 class DesktopWidgets {
   /**
@@ -34,8 +54,11 @@ class DesktopWidgets {
    * @param {object} deps.widgetService  校验实例是否存在、读取组件支持的尺寸
    * @param {object} [deps.screen]       electron.screen（测试时可注入）
    */
-  constructor({ settingDAO, windowManager, widgetService, screen = null, logger = console }) {
+  constructor({ settingDAO, windowManager, widgetService, screen = null, logger = console, nativeLayer = setStayOnDesktop, platform = process.platform, reopenDelayMs = 2000 }) {
     this.settingDAO = settingDAO;
+    this.nativeLayer = nativeLayer;
+    this.platform = platform;
+    this.reopenDelayMs = reopenDelayMs;
     this.windowManager = windowManager;
     this.widgetService = widgetService;
     this.screen = screen;
@@ -80,6 +103,86 @@ class DesktopWidgets {
   setRestoreOnLaunch(enabled) {
     this.settingDAO.set(RESTORE_KEY, Boolean(enabled), 'boolean', '启动时恢复桌面组件');
     return this.getRestoreOnLaunch();
+  }
+
+  // ---- 外观 ----
+
+  getAppearance() {
+    let stored = {};
+    try {
+      const raw = this.settingDAO.get(APPEARANCE_KEY)?.value;
+      stored = (typeof raw === 'string' ? JSON.parse(raw) : raw) || {};
+    } catch (_) {
+      stored = {};
+    }
+    const supported = blurSupported(this.platform);
+    return {
+      opacity: clamp(stored.opacity, 0.15, 1, DEFAULT_APPEARANCE.opacity),
+      blur: supported && (stored.blur === undefined ? DEFAULT_APPEARANCE.blur : stored.blur !== false),
+      scale: clamp(stored.scale, 0.7, 1.25, DEFAULT_APPEARANCE.scale),
+      clickThrough: stored.clickThrough === true,
+      blurSupported: supported,
+    };
+  }
+
+  /** 点击穿透实际是否生效：开了穿透，且背景没有模糊 */
+  static clickThroughActive(appearance) {
+    return Boolean(appearance?.clickThrough) && !appearance?.blur;
+  }
+
+  /** 按外观设置窗口是否拦鼠标；forward 让页面仍收到鼠标移动，好在移到标题条时恢复可点 */
+  _applyMouse(win, appearance = this.getAppearance()) {
+    if (!win || win.isDestroyed()) return;
+    const through = DesktopWidgets.clickThroughActive(appearance);
+    win.setIgnoreMouseEvents?.(through, through ? { forward: true } : undefined);
+  }
+
+  /**
+   * 页面告诉主进程鼠标是否在标题条 / 按钮上：在上面时接收鼠标，离开后继续穿透。
+   * 穿透没开时什么都不做，免得页面误把普通卡片变成穿透。
+   */
+  setMouseCapture(win, capture) {
+    if (!win || win.isDestroyed() || !this._isDesktopWindow(win)) return false;
+    if (!DesktopWidgets.clickThroughActive(this.getAppearance())) return false;
+    win.setIgnoreMouseEvents?.(!capture, capture ? undefined : { forward: true });
+    return true;
+  }
+
+  _isDesktopWindow(win) {
+    for (const [key, item] of this.windowManager.widgetWindows?.entries() || []) {
+      if (item === win) return this.list().some((entry) => entry.key === key);
+    }
+    return false;
+  }
+
+  /** 改外观：不透明度和缩放即时推给每张卡片；开关模糊要重建窗口（透明 / 材质只能在创建时设定） */
+  async setAppearance(changes = {}) {
+    const before = this.getAppearance();
+    const next = { ...before, ...changes };
+    const { blurSupported: _ignored, ...stored } = next;
+    this.settingDAO.set(APPEARANCE_KEY, JSON.stringify(stored), 'string', '桌面卡片外观（仅本机）');
+    const appearance = this.getAppearance();
+    const windows = [...(this.windowManager.widgetWindows?.entries() || [])]
+      .filter(([key, win]) => win && !win.isDestroyed() && this.list().some((entry) => entry.key === key));
+    // 「大小」变了：内容按比例缩放，窗口宽度也跟着缩放（高度由卡片按内容自己调整）
+    if (appearance.scale !== before.scale) {
+      const ratio = appearance.scale / before.scale;
+      for (const [key, win] of windows) {
+        const bounds = win.getBounds();
+        const next = { ...bounds, width: Math.max(180, Math.round(bounds.width * ratio)) };
+        win.setBounds?.(next);
+        this._update(key, { bounds: next });
+      }
+    }
+    if (appearance.blur !== before.blur) {
+      for (const [key] of windows) await this._reopen(key);
+    } else {
+      for (const [, win] of windows) {
+        this._applyMouse(win, appearance);
+        win.webContents?.send?.(APPEARANCE_EVENT, appearance);
+      }
+    }
+    return appearance;
   }
 
   /** 卡片还在不在：内置卡片看 id 是否有效，组件看实例是否存在 */
@@ -140,10 +243,14 @@ class DesktopWidgets {
       layer,
       desktop: true,
       inactive,
+      appearance: this.getAppearance(),
     });
     const win = this.windowManager.widgetWindows?.get(key);
     if (!win || win.isDestroyed()) return;
     this._applyLayer(win, layer);
+    this._applyMouse(win);
+    let closeRequested = false;
+    win.on('close', () => { closeRequested = true; });
     const saveBounds = () => {
       clearTimeout(this.saveTimers.get(key));
       this.saveTimers.set(key, setTimeout(() => {
@@ -151,9 +258,11 @@ class DesktopWidgets {
       }, SAVE_DELAY_MS));
     };
     win.on('moved', saveBounds);
+    // 拖动把手是程序挪窗口，有的系统不发 moved，用 move（已经防抖）
+    win.on('move', saveBounds);
     win.on('resized', saveBounds);
     win.on('always-on-top-changed', (_event, onTop) => this._update(key, { layer: onTop ? 'top' : 'desktop' }));
-    // 贴在桌面：「显示桌面」（Windows 的 Win+D 等）把它收起时，马上放回原处且不抢焦点
+    // 原生调用不可用时的兜底：「显示桌面」把它最小化后，马上放回原处且不抢焦点
     win.on('minimize', () => {
       if (layerOf(this.list().find((item) => item.key === key) || entry) !== 'desktop') return;
       setTimeout(() => {
@@ -164,20 +273,50 @@ class DesktopWidgets {
     });
     win.on('closed', () => {
       clearTimeout(this.saveTimers.get(key));
+      if (this.quitting || win.flotaReloading) return;
       // 用户手动关掉 = 从桌面移除；退出应用时关闭的窗口下次还要恢复
-      if (!this.quitting && !win.flotaReloading) this._remove(key);
+      if (closeRequested) {
+        this._remove(key);
+        return;
+      }
+      // 没有收到 close 就被销毁：Windows 上资源管理器重启，作为所有者的桌面窗口没了。等桌面回来后重新放上去
+      setTimeout(() => {
+        const current = this.list().find((item) => item.key === key);
+        const open = this.windowManager.widgetWindows?.get(key);
+        if (this.quitting || !current || (open && !open.isDestroyed()) || !this._exists(current)) return;
+        this._open(current, { inactive: true }).catch((error) => this.logger.warn?.('[DesktopWidgets] 重新放回桌面失败', key, error?.message));
+      }, this.reopenDelayMs);
     });
     if (!entry.bounds) this._update(key, { bounds: win.getBounds() });
   }
 
-  /** 按层级设置窗口：置顶浮在最上；贴在桌面是普通层级。两者都在每个 macOS 桌面空间显示 */
+  /**
+   * 按层级设置窗口：置顶浮在最上；贴在桌面是普通层级。两者都在每个 macOS 桌面空间显示。
+   * 贴在桌面时让系统把它当成桌面的一部分，「显示桌面」不再收起它（macOS 置顶时也保持原地不动）。
+   */
   _applyLayer(win, layer) {
     if (layer === 'top') win.setAlwaysOnTop(true, 'floating');
     else win.setAlwaysOnTop(false);
-    if (process.platform === 'darwin') {
+    if (this.platform === 'darwin') {
       win.setVisibleOnAllWorkspaces?.(true, { visibleOnFullScreen: layer === 'top' });
       win.setHiddenInMissionControl?.(layer === 'desktop');
+      this.nativeLayer?.(win, true);
+    } else {
+      this.nativeLayer?.(win, layer === 'desktop');
     }
+  }
+
+  /** 关掉再按记录重新打开（换尺寸、开关模糊），期间不算「从桌面移除」 */
+  async _reopen(key, entry = this.list().find((item) => item.key === key)) {
+    if (!entry) return null;
+    const win = this.windowManager.widgetWindows?.get(key);
+    if (win && !win.isDestroyed()) {
+      // 关窗是异步的：等旧窗口真正关掉再打开，否则会被当成「已经打开」而直接复用
+      win.flotaReloading = true;
+      await new Promise((resolve) => { win.once('closed', resolve); win.close(); });
+    }
+    await this._open(entry, { inactive: true });
+    return entry;
   }
 
   _remove(key) {
@@ -239,13 +378,7 @@ class DesktopWidgets {
     const bounds = current ? { ...current, height: DEFAULT_BOUNDS[resolved].height, width: Math.max(current.width, DEFAULT_BOUNDS[resolved].width - 40) } : null;
     const entry = this._update(key, { size: resolved, ...(bounds ? { bounds } : {}) });
     if (!entry) return null;
-    if (win && !win.isDestroyed()) {
-      // 关窗是异步的：等旧窗口真正关掉再按新尺寸打开，否则会被当成「已经打开」而直接复用
-      win.flotaReloading = true;
-      await new Promise((resolve) => { win.once('closed', resolve); win.close(); });
-    }
-    await this._open(entry);
-    return entry;
+    return this._reopen(key, entry);
   }
 
   /** 启动时恢复：设置允许时打开列表里的组件；实例已被删除的顺便清掉 */
@@ -275,4 +408,7 @@ class DesktopWidgets {
 
 DesktopWidgets.DEFAULT_BOUNDS = DEFAULT_BOUNDS;
 DesktopWidgets.HOME_CARD_IDS = HOME_CARD_IDS;
+DesktopWidgets.DEFAULT_APPEARANCE = DEFAULT_APPEARANCE;
+DesktopWidgets.APPEARANCE_EVENT = APPEARANCE_EVENT;
+DesktopWidgets.blurSupported = blurSupported;
 module.exports = DesktopWidgets;

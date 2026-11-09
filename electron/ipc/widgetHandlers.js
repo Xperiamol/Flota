@@ -72,6 +72,12 @@ const registerWidgetHandlers = (getWidgetService, getPluginManager, getDesktopWi
   desktop('widget:desktop-list', (manager) => manager.list());
   desktop('widget:desktop-restore-get', (manager) => manager.getRestoreOnLaunch());
   desktop('widget:desktop-restore-set', (manager, enabled) => manager.setRestoreOnLaunch(enabled));
+  desktop('widget:desktop-appearance-get', (manager) => manager.getAppearance());
+  desktop('widget:desktop-appearance-set', (manager, changes) => manager.setAppearance(changes || {}));
+  // 点击穿透时，鼠标移到桌面卡片的标题条 / 按钮上由页面通知，窗口临时恢复接收鼠标
+  ipcMain.on('widget:desktop-mouse-capture', (event, capture) => {
+    getDesktopWidgets()?.setMouseCapture(BrowserWindow.fromWebContents(event.sender), Boolean(capture));
+  });
   // 对话智能体写好的组件代码：确认时草稿还在就直接用，过期（超过 6 小时或应用重启）就用卡片里的代码重建
   handle('widget:draft-ensure', (service, payload = {}) => {
     const draft = payload.draftId ? service.getDraft(payload.draftId) : null;

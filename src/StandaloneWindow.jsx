@@ -29,9 +29,11 @@ import logger from './utils/logger'
  * 处理StandaloneProvider的加载状态
  */
 import { useApplyEditorPrefs } from './store/usePrefsStore'
+const IS_DESKTOP_CARD = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('desktop') === '1'
 function StandaloneContent({ windowType, windowData }) {
   const { isLoading } = useStandaloneContext()
 
+  if (isLoading && IS_DESKTOP_CARD) return null
   if (isLoading) {
     return (
       <Box sx={{
@@ -405,7 +407,8 @@ function StandaloneWindow() {
               }}
             />
           )}
-        {isLoading && (
+        {/* 桌面卡片窗口是透明的：加载中什么都不画，免得一行字悬在桌面上 */}
+        {isLoading && !IS_DESKTOP_CARD && (
           <Box sx={{
             display: 'flex',
             justifyContent: 'center',

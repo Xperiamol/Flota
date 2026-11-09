@@ -102,6 +102,7 @@
     "i18next": "^25.6.3",
     "ical.js": "^2.2.1",
     "katex": "^0.16.25",
+    "koffi": "^2.16.3",
     "linkedom": "^0.18.13",
     "lucide-react": "^0.542.0",
     "mammoth": "^1.13.0",
@@ -371,10 +372,13 @@
       "!node_modules/@earendil-works/**/*.d.ts",
       "!node_modules/@earendil-works/**/*.d.mts",
       "!node_modules/@earendil-works/**/*.d.cts",
-      "!node_modules/@earendil-works/**/*.md"
+      "!node_modules/@earendil-works/**/*.md",
+      "!node_modules/koffi/build/koffi/{linux,musl,freebsd,openbsd}_*/**",
+      "!node_modules/koffi/doc/**"
     ],
     "asarUnpack": [
       "node_modules/better-sqlite3/**/*",
+      "node_modules/koffi/**/*",
       "models/**/*"
     ],
     "extraResources": [

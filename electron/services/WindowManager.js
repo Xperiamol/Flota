@@ -1117,6 +1117,22 @@ class WindowManager extends EventEmitter {
    * @param {string} instanceId 实例 id
    * @param {object} [options] size（compact / medium）、bounds、alwaysOnTop、desktop、layer、inactive、cardId（首页内置卡片）
    */
+  /** 桌面卡片窗口的透明与模糊参数 */
+  desktopWidgetGlassOptions(appearance = {}) {
+    const blur = appearance?.blur === true && appearance?.blurSupported !== false;
+    if (process.platform === 'darwin') {
+      // visualEffectState: active —— 桌面卡片几乎总是不在焦点，默认的 followWindow 会让毛玻璃失焦后变成灰底
+      return blur
+        ? { transparent: true, backgroundColor: '#00000000', vibrancy: 'under-window', visualEffectState: 'active', roundedCorners: true }
+        : { transparent: true, backgroundColor: '#00000000', roundedCorners: true };
+    }
+    if (process.platform === 'win32' && blur) {
+      // 亚克力材质要求窗口不是 transparent，背景色全透明才能透出材质
+      return { backgroundColor: '#00000000', backgroundMaterial: 'acrylic', roundedCorners: true };
+    }
+    return { transparent: true, backgroundColor: '#00000000' };
+  }
+
   async createWidgetWindow(instanceId, options = {}) {
     if (!instanceId || typeof instanceId !== 'string') throw new Error('缺少实例 id');
     if (!this.widgetWindows) this.widgetWindows = new Map();
@@ -1132,21 +1148,26 @@ class WindowManager extends EventEmitter {
 
     const size = options.size === 'compact' ? 'compact' : 'medium';
     const bounds = options.bounds || {};
-    const width = Number(bounds.width) || Number(options.width) || (size === 'compact' ? 340 : 380);
-    const height = Number(bounds.height) || Number(options.height) || (size === 'compact' ? 300 : 520);
+    const width = Number(bounds.width) || Number(options.width) || (size === 'compact' ? 280 : 340);
+    const height = Number(bounds.height) || Number(options.height) || (size === 'compact' ? 220 : 460);
+    // 桌面卡片是半透明的：窗口本身透明，背后按设置加系统模糊（macOS 毛玻璃 / Windows 11 亚克力），
+    // 卡片底色和不透明度由页面自己画（见 useDesktopWidgetAppearance）
+    const glass = options.desktop ? this.desktopWidgetGlassOptions(options.appearance) : {};
     const widgetWindow = new BrowserWindow({
+      ...glass,
       width,
       height,
       ...(Number.isFinite(bounds.x) && Number.isFinite(bounds.y) ? { x: Math.round(bounds.x), y: Math.round(bounds.y) } : {}),
-      minWidth: 220,
-      minHeight: 120,
+      minWidth: 180,
+      minHeight: 80,
       show: false,
       frame: false,
       alwaysOnTop: options.alwaysOnTop !== false,
       // 桌面卡片不占任务栏；Windows 上「贴在桌面」用工具窗口，也不出现在 Alt+Tab 里
       skipTaskbar: options.desktop === true,
       ...(options.desktop && options.layer !== 'top' && process.platform === 'win32' ? { type: 'toolbar' } : {}),
-      resizable: true,
+      // Windows 上完全透明的窗口拖边框调大小不可靠，这种情况下只靠「缩放」设置调整大小
+      resizable: !(process.platform === 'win32' && glass.transparent),
       maximizable: false,
       icon: this.getAppIcon(),
       // 不要系统的红绿灯按钮：组件小窗有自己的置顶和关闭按钮，红绿灯会压在标题上
@@ -1173,7 +1194,7 @@ class WindowManager extends EventEmitter {
     const query = options.cardId
       ? { type: 'home-card', cardId: String(options.cardId) }
       : { type: 'widget', instanceId, size };
-    if (options.desktop) Object.assign(query, { desktop: '1', key: instanceId, layer: options.layer === 'top' ? 'top' : 'desktop' });
+    if (options.desktop) Object.assign(query, { desktop: '1', key: instanceId, layer: options.layer === 'top' ? 'top' : 'desktop', ...(options.appearance ? { appearance: JSON.stringify(options.appearance) } : {}) });
 
     if (isDev) {
       await widgetWindow.loadURL(`http://localhost:5174/standalone.html?${new URLSearchParams(query).toString()}`);
