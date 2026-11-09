@@ -3,7 +3,8 @@ import {
   Alert, Box, Button, Chip, IconButton, ListItemText, Switch, Tooltip, Typography,
 } from '@mui/material';
 import TagInput from '../common/TagInput';
-import { CheckCircle, DeleteOutline, FolderOpenRounded, WifiOff } from '../common/AppIcons';
+import { CheckCircle, DeleteOutline, WifiOff } from '../common/AppIcons';
+import ClipperInstallGuide from './ClipperInstallGuide';
 import { notifyError, notifySuccess, confirmAction, promptInput } from '../../utils/notify';
 import { settingsRowSx, settingsSectionSx, sectionDescriptionSx, sectionTitleSx } from '../../styles/commonStyles';
 
@@ -69,11 +70,6 @@ export default function ClipperSettings() {
     setStatus((current) => ({ ...current, settings: result.data }));
   };
 
-  const openExtensionFolder = async () => {
-    const result = await window.electronAPI.clipper.openExtensionFolder();
-    if (!result?.success) notifyError(result?.error || '打开目录失败');
-  };
-
   if (!status) return null;
   const settings = status.settings || {};
   const secondsLeft = pairing ? Math.max(0, Math.round((pairing.expiresAt - now) / 1000)) : 0;
@@ -96,16 +92,16 @@ export default function ClipperSettings() {
       </Box>
 
       <Box sx={settingsSectionSx}>
-        <Typography variant="subtitle1" sx={sectionTitleSx}>安装浏览器扩展</Typography>
-        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 1.5 }}>
-          支持 Chrome、Edge 等 Chromium 浏览器：打开 chrome://extensions，开启“开发者模式”，点击“加载已解压的扩展程序”，选择下面的扩展目录。
-        </Typography>
-        <Row primary="扩展目录" secondary={status.extensionDir}>
-          <Button size="small" startIcon={<FolderOpenRounded />} onClick={openExtensionFolder}>打开目录</Button>
-        </Row>
+        <ClipperInstallGuide
+          status={status}
+          onPairClick={async () => {
+            await createCode();
+            document.getElementById('clipper-pairing')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }}
+        />
       </Box>
 
-      <Box sx={settingsSectionSx}>
+      <Box sx={settingsSectionSx} id="clipper-pairing">
         <Typography variant="subtitle1" sx={sectionTitleSx}>配对</Typography>
         <Typography variant="caption" sx={{ ...sectionDescriptionSx, mb: 1.5 }}>
           在扩展弹窗中输入配对码。配对码 5 分钟内有效，只能使用一次。

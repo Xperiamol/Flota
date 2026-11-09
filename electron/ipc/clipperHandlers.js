@@ -1,14 +1,12 @@
-const { ipcMain, shell } = require('electron');
-const path = require('path');
-const fs = require('fs');
+const { ipcMain, shell, clipboard, app } = require('electron');
+const { getUserDataPath } = require('../utils/userDataPath');
+const { prepareExtensionDir, detectBrowsers, openExtensionsPage } = require('../services/clipper/browserExtension');
 
-// 浏览器扩展目录：开发环境在仓库内，打包后随 extraResources 放在 resources/extensions
+// 浏览器扩展目录：应用自带的扩展复制到用户目录（应用包内的目录在文件选择框里选不到），升级时自动更新
+let extensionDir = null;
 const getExtensionDir = () => {
-  const candidates = [
-    path.join(process.resourcesPath || '', 'extensions', 'chrome-clipper'),
-    path.join(__dirname, '..', '..', 'extensions', 'chrome-clipper'),
-  ];
-  return candidates.find((dir) => fs.existsSync(path.join(dir, 'manifest.json'))) || candidates[candidates.length - 1];
+  if (!extensionDir) extensionDir = prepareExtensionDir(getUserDataPath(), app?.getVersion?.() || '');
+  return extensionDir;
 };
 
 // 剪藏按「标签」归类（「分类」已废弃）：默认给剪藏笔记打上这些标签，逗号分隔
@@ -78,6 +76,19 @@ const registerClipperHandlers = ({ getIngress, getClipService, getPluginManager,
     const ingress = getIngress();
     if (!ingress?.status().running) throw Object.assign(new Error('本地接收服务未启动（端口 47831–47835 可能都被占用）'), { code: 'NOT_RUNNING' });
     return ingress.createPairingCode();
+  });
+  // 安装指引：电脑上有哪些 Chromium 浏览器；在其中一个里打开扩展管理页，并把扩展目录复制到剪贴板（选文件夹时可以直接粘贴）
+  handle('clipper:list-browsers', () => detectBrowsers().map(({ id, name, url }) => ({ id, name, url })));
+  handle('clipper:open-browser-extensions', async (browserId) => {
+    const browser = detectBrowsers().find((item) => item.id === browserId);
+    if (!browser) throw Object.assign(new Error('没有找到这个浏览器'), { code: 'NOT_FOUND' });
+    clipboard.writeText(getExtensionDir());
+    await openExtensionsPage(browser);
+    return { url: browser.url, extensionDir: getExtensionDir() };
+  });
+  handle('clipper:copy-extension-path', () => {
+    clipboard.writeText(getExtensionDir());
+    return getExtensionDir();
   });
   handle('clipper:open-extension-folder', async () => {
     const dir = getExtensionDir();

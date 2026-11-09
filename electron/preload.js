@@ -391,6 +391,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     saveSettings: inv('clipper:save-settings'),
     clipUrl: inv('clipper:clip-url'),
     openExtensionFolder: inv('clipper:open-extension-folder'),
+    listBrowsers: inv('clipper:list-browsers'),
+    openBrowserExtensions: inv('clipper:open-browser-extensions'),
+    copyExtensionPath: inv('clipper:copy-extension-path'),
     onClipped: listen('clipper:clipped'),
   },
 
