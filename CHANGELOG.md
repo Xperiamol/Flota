@@ -10,6 +10,11 @@
 - feat(widgets): desktop cards are translucent with optional blur, smaller, adjustable, and stay put on "show desktop"
 
 
+## [4.6.2] - 2026-11-10
+
+### Added / 新增
+- 连接手机：设置 → 云同步 最上面点「显示二维码」，用手机版 Flota 扫一下，同步账号就自动填好，不用再输入地址和密码；可以勾选同时带上 AI 设置。二维码默认模糊、点开后一分钟自动隐藏，里面含同步密码，请不要截图转发。
+
 ## [4.6.1] - 2026-11-10
 
 ### Added / 新增
