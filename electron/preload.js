@@ -550,6 +550,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     uploadImage: inv('sync:upload-image'),
     cleanupUnusedImages: inv('sync:cleanup-unused-images'),
     getUnusedImagesStats: inv('sync:get-unused-images-stats'),
+    // 连接手机：同步账号（可选 AI 设置）的二维码
+    connectQr: inv('sync:connect-qr'),
     onSyncStart: listen('sync:start'),
     onSyncProgress: listen('sync:progress'),
     onSyncComplete: listen('sync:complete'),

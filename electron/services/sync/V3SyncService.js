@@ -622,6 +622,22 @@ class V3SyncService extends EventEmitter {
   /**
    * 获取状态
    */
+  /**
+   * 「连接手机」用：当前已保存的同步账号（含密码），只在用户点了显示二维码时由主进程读取，不进渲染进程的普通状态。
+   * @returns {{ baseUrl: string, rootPath: string, username: string, password: string } | null}
+   */
+  getConnectionSecrets() {
+    const username = this.config?.credentials?.username || '';
+    const password = this.config?.credentials?.password || '';
+    if (!username || !password) return null;
+    return {
+      baseUrl: this.config?.baseUrl || 'https://dav.jianguoyun.com/dav',
+      rootPath: this.config?.rootPath || '/Flota/',
+      username,
+      password,
+    };
+  }
+
   getStatus() {
     const intervalMs = this.config?.autoSyncInterval || this.autoSyncInterval;
     return {

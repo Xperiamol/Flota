@@ -6,6 +6,7 @@ import NutcloudSyncSettings from './NutcloudSyncSettings';
 import GoogleCalendarSettings from './GoogleCalendarSettings';
 import CalendarSyncSettings from './CalendarSyncSettings';
 import CloudBackupSettings from './CloudBackupSettings';
+import ConnectPhoneCard from './ConnectPhoneCard';
 import { settingsSectionSx } from '../../styles/commonStyles';
 
 const CloudSyncSettings = () => {
@@ -37,7 +38,12 @@ const CloudSyncSettings = () => {
 
       {/* 内容区域 */}
       {currentView === 'registry' && (
-        <><SyncRegistryView onOpenSettings={handleOpenSettings} /><CloudBackupSettings /></>
+        <>
+          {/* 已登录同步账号时，在总览最上面提供「连接手机」 */}
+          <ConnectPhoneCard hideWhenUnavailable wrapperSx={(theme) => ({ ...settingsSectionSx(theme), pb: 0 })} />
+          <SyncRegistryView onOpenSettings={handleOpenSettings} />
+          <CloudBackupSettings />
+        </>
       )}
       {currentView === 'nutcloud' && <NutcloudSyncSettings />}
       {currentView === 'google-calendar' && <GoogleCalendarSettings />}

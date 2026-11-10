@@ -1588,6 +1588,22 @@ registerClipperHandlers({
   getSettingDAO: () => services.clipSettingDAO
 })
 
+// 「连接手机」：把同步账号（可选带上 AI 设置）做成二维码，手机版扫码后自动填好
+ipcMain.handle('sync:connect-qr', async (_event, options = {}) => {
+  try {
+    const secrets = require('./services/sync/V3SyncService').getInstance().getConnectionSecrets()
+    if (!secrets) return { success: false, error: '请先登录同步账号并保存密码' }
+    const ai = options.includeAI ? await services.aiService?.getConfig?.() : null
+    const aiConfig = ai?.success === false ? null : (ai?.data || ai)
+    const { buildConnectLink } = require('./services/sync/connectPayload')
+    const result = buildConnectLink(secrets, aiConfig, (url) => services.aiService?.normalizeApiUrl?.(url) || url)
+    const qr = await require('qrcode').toDataURL(result.link, { errorCorrectionLevel: 'M', margin: 1, width: 440 })
+    return { success: true, data: { qr, aiIncluded: result.aiIncluded, aiSkippedReason: result.aiSkippedReason, username: secrets.username } }
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
+
 // Mem0 记忆管理相关 IPC 处理
 registerMem0Handlers(services)
 

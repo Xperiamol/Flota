@@ -55,6 +55,7 @@ import {
 import { spacing } from '../../styles/commonStyles';
 import { useError } from '../common/ErrorProvider';
 import { NUTSTORE_BASE_URL, isNutstoreUrl, getWebdavServerLabel } from './webdavProvider';
+import ConnectPhoneCard from './ConnectPhoneCard';
 
 const DEFAULT_BASE_URL = NUTSTORE_BASE_URL;
 const DEFAULT_ROOT_PATH = '/Flota/';
@@ -652,6 +653,9 @@ const ManageView = ({
           </Tooltip>
         </Box>
       </Paper>
+
+      {/* 连接手机：扫码把同步账号带到手机版 */}
+      <ConnectPhoneCard disabled={!hasSavedPassword} />
 
       {/* 自动同步 */}
       <Paper
