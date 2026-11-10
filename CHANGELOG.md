@@ -4,6 +4,15 @@
 
 ## [4.6.3] - 2026-11-10
 
+### Changed / 更新内容
+- docs: changelog for 4.6.3
+- feat(settings): "连接手机" and "桌面卡片" get their own settings pages, plus plainer wording
+- fix(widgets): buttons on click-through desktop cards are clickable again, and the first click lands
+- fix(documents): PDFs open on Windows again - pdf.js requires the CMap and standard-font directory URLs to end with '/', but Windows paths ended with '\'; pass forward-slash directory URLs and read the files back through native paths (so files inside app.asar still load)
+
+
+## [4.6.3] - 2026-11-10
+
 ### Added / 新增
 - 设置里新增「连接手机」：先扫码下载手机版，再用手机版扫码连接这台电脑。可以勾选要带过去的内容：同步账号、AI 设置、语音转文字，不用在手机上重新填写。
 - 设置里新增「桌面卡片」：查看和移除桌面上的卡片，调整不透明度、大小、背景模糊和点击穿透。
