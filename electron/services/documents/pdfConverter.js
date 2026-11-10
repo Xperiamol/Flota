@@ -8,6 +8,27 @@ const CJK = /[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef\u3000-\u303f]/
 // 不少 PDF 的字体把“工”“心”等映射成外形相同的康熙部首，搜索时对不上；只规范部首区段，不动全角、半角字符
 const normalizeRadicals = (text) => text.replace(/[\u2e80-\u2fdf]/g, (char) => char.normalize('NFKC'))
 
+// pdf.js 要求 cMapUrl / standardFontDataUrl 以「/」结尾，Windows 的路径是反斜杠，直接拼会报
+// "Invalid factory url ... must include trailing slash"。传给它统一用正斜杠的目录地址，
+// 真正读文件时再换回本机路径（app.asar 里的文件也要用本机路径才能读到）。
+const toDirUrl = (dir) => `${dir.split(path.sep).join('/')}/`
+class NativeBinaryDataFactory {
+  constructor({ cMapUrl = null, standardFontDataUrl = null, wasmUrl = null } = {}) {
+    this.urls = { cMapUrl, standardFontDataUrl, wasmUrl }
+  }
+
+  async fetch({ kind, filename }) {
+    const base = this.urls[kind]
+    if (!base) throw new Error(`Ensure that the \`${kind}\` API parameter is provided.`)
+    const file = path.normalize(`${base}${filename}`)
+    try {
+      return new Uint8Array(await require('fs').promises.readFile(file))
+    } catch (error) {
+      throw new Error(`Unable to load ${kind === 'cMapUrl' ? 'CMap' : 'font'} data at: ${file}`)
+    }
+  }
+}
+
 let pdfjsPromise = null
 const loadPdfjs = () => {
   pdfjsPromise ||= (async () => {
@@ -50,9 +71,10 @@ const pdfToMarkdown = async (buffer) => {
   const { pdfjs, root } = await loadPdfjs()
   const task = pdfjs.getDocument({
     data: new Uint8Array(buffer),
-    cMapUrl: `${path.join(root, 'cmaps')}${path.sep}`,
+    cMapUrl: toDirUrl(path.join(root, 'cmaps')),
     cMapPacked: true,
-    standardFontDataUrl: `${path.join(root, 'standard_fonts')}${path.sep}`,
+    standardFontDataUrl: toDirUrl(path.join(root, 'standard_fonts')),
+    BinaryDataFactory: NativeBinaryDataFactory,
     isEvalSupported: false,
     disableFontFace: true,
     useSystemFonts: false,
