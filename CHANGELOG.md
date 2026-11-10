@@ -2,6 +2,13 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 规范。
 
+## [4.6.2] - 2026-11-10
+
+### Changed / 更新内容
+- docs: changelog for 4.6.2
+- feat(sync): "connect phone" QR code carries the sync account (optionally AI settings) to Flota for Android
+
+
 ## [4.6.1] - 2026-11-09
 
 ### Changed / 更新内容
