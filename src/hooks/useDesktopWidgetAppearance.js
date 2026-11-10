@@ -1,4 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+
+/** 宿主页面里能点的东西：点击穿透时鼠标在这些上面，窗口就接收点击 */
+const HOST_INTERACTIVE = [
+  '[data-desktop-handle]', '.MuiPopover-root', '.MuiTooltip-popper', '.MuiMenu-root', '.MuiDialog-root',
+  'button', 'a[href]', 'input', 'textarea', 'select', 'label', '[role="button"]', '[role="checkbox"]',
+  '[role="switch"]', '[role="slider"]', '[contenteditable="true"]',
+].join(', ')
 
 export const DEFAULT_DESKTOP_APPEARANCE = { opacity: 0.72, blur: true, scale: 0.9, clickThrough: false, blurSupported: true }
 
@@ -41,31 +48,76 @@ export default function useDesktopWidgetAppearance(enabled = true) {
     }
   }, [enabled])
 
-  // 点击穿透：窗口不拦鼠标，但仍收到鼠标移动（forward）。移到标了 data-desktop-handle 的标题条 / 按钮上时
-  // 让窗口恢复接收鼠标，离开（或移出窗口）后继续穿透；弹出的外观面板也算在内，免得调到一半点不动
+  // 点击穿透：窗口平时不拦鼠标。主进程定时把光标在卡片里的位置发过来（系统转发的鼠标移动不可靠），
+  // 这里看光标下面是不是能点的东西——按钮、输入框、勾选框、标题条、外观面板，或组件里报告可点的地方——
+  // 是就让窗口临时接收点击，移开后继续穿透。按住鼠标（拖滑块、拖卡片）期间保持不变。
   const through = enabled && clickThroughActive(appearance)
+  const [pointerInside, setPointerInside] = useState(false)
+  const pointerApi = useRef({ setFrame: () => {} })
+  const scaleRef = useRef(appearance.scale || 1)
+  scaleRef.current = appearance.scale || 1
   useEffect(() => {
     const api = window.electronAPI?.widgets
-    if (!through || !api?.setDesktopMouseCapture) return undefined
+    if (!through || !api?.setDesktopMouseCapture || !api?.onDesktopPointer) {
+      pointerApi.current.setFrame = () => {}
+      setPointerInside(false)
+      return undefined
+    }
     let capturing = null
-    const set = (value) => {
+    let hostInteractive = false
+    let frameInteractive = false
+    let pressed = false
+    const apply = () => {
+      if (pressed) return
+      const value = hostInteractive || frameInteractive
       if (value === capturing) return
       capturing = value
       api.setDesktopMouseCapture(value)
     }
-    const onMove = (event) => set(Boolean(event.target?.closest?.('[data-desktop-handle], .MuiPopover-root, .MuiTooltip-popper')))
-    const onLeave = () => set(false)
-    document.addEventListener('mousemove', onMove, true)
-    document.documentElement.addEventListener('mouseleave', onLeave)
-    set(false)
+    const onDown = () => { pressed = true }
+    const onUp = () => { pressed = false; apply() }
+    const off = api.onDesktopPointer((pointer = {}) => {
+      if (!pointer.inside) {
+        setPointerInside(false)
+        hostInteractive = false
+        frameInteractive = false
+        pressed = false
+        capturing = false // 主进程离开时已经恢复穿透
+        return
+      }
+      setPointerInside(true)
+      if (pressed) return
+      const element = document.elementFromPoint(pointer.x, pointer.y)
+      if (element?.tagName === 'IFRAME') {
+        // 组件在沙箱 iframe 里：把 iframe 内的坐标发给组件，由它回答那里能不能点（见 sdk.js 的 pointer-probe）
+        const rect = element.getBoundingClientRect()
+        const zoom = scaleRef.current
+        hostInteractive = false
+        element.contentWindow?.postMessage({ __flota: 1, type: 'pointer-probe', x: (pointer.x - rect.left) / zoom, y: (pointer.y - rect.top) / zoom }, '*')
+        return
+      }
+      frameInteractive = false
+      hostInteractive = Boolean(element?.closest?.(HOST_INTERACTIVE))
+      apply()
+    })
+    pointerApi.current.setFrame = (value) => {
+      frameInteractive = Boolean(value)
+      apply()
+    }
+    window.addEventListener('pointerdown', onDown, true)
+    window.addEventListener('pointerup', onUp, true)
     return () => {
-      document.removeEventListener('mousemove', onMove, true)
-      document.documentElement.removeEventListener('mouseleave', onLeave)
+      off?.()
+      window.removeEventListener('pointerdown', onDown, true)
+      window.removeEventListener('pointerup', onUp, true)
+      pointerApi.current.setFrame = () => {}
+      setPointerInside(false)
     }
   }, [through])
 
-  // 第二个返回值：本窗口先预览（拖动滑块时），松手后由设置保存并推给所有卡片
-  return [appearance, setAppearance]
+  // 第二个返回值：本窗口先预览（拖动滑块时），松手后由设置保存并推给所有卡片；
+  // 第三个：组件 iframe 报告「光标下面是否可点」；第四个：点击穿透时光标是否在这张卡片上（用来显示按钮）
+  return [appearance, setAppearance, (value) => pointerApi.current.setFrame(value), pointerInside]
 }
 
 /**

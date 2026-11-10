@@ -278,3 +278,28 @@ test('click-through only works without blur; the title strip takes the mouse bac
   assert.equal(win.ignoreMouse, false)
   assert.equal(manager.setMouseCapture({ isDestroyed: () => false }, false), false, 'other windows are ignored')
 })
+
+test('click-through: the cursor position is tracked and sent to the card under it; leaving restores pass-through', async () => {
+  const { manager, windowManager } = setup({ platform: 'darwin' })
+  let cursor = { x: 0, y: 0 }
+  manager.screen = { ...manager.screen, getCursorScreenPoint: () => cursor }
+  await manager.pin('i1')
+  const win = windowManager.widgetWindows.get('i1')
+  win.bounds = { x: 100, y: 100, width: 300, height: 200 }
+  await manager.setAppearance({ blur: false, clickThrough: true })
+  const card = windowManager.widgetWindows.get('i1')
+  card.bounds = { x: 100, y: 100, width: 300, height: 200 }
+  assert.ok(manager.pointerTimer, 'tracking starts when click-through is on')
+  cursor = { x: 150, y: 130 }
+  manager._pollPointer()
+  assert.deepEqual(card.sent.at(-1), [DesktopWidgets.POINTER_EVENT, { inside: true, x: 50, y: 30 }])
+  manager.setMouseCapture(card, true)
+  assert.equal(card.ignoreMouse, false)
+  cursor = { x: 900, y: 900 }
+  manager._pollPointer()
+  assert.deepEqual(card.sent.at(-1), [DesktopWidgets.POINTER_EVENT, { inside: false }])
+  assert.equal(card.ignoreMouse, true, 'leaving the card passes clicks through again')
+  await manager.setAppearance({ clickThrough: false })
+  assert.equal(manager.pointerTimer, null, 'tracking stops when click-through is off')
+  manager.markQuitting()
+})

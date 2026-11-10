@@ -369,6 +369,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setDesktopAppearance: inv('widget:desktop-appearance-set'),
     onDesktopAppearance: listen('widget:desktop-appearance'),
     setDesktopMouseCapture: (capture) => ipcRenderer.send('widget:desktop-mouse-capture', Boolean(capture)),
+    // 点击穿透时主进程跟踪到的光标位置（卡片内坐标），页面据此判断那里能不能点
+    onDesktopPointer: listen('widget:desktop-pointer'),
     importFile: inv('widget:import-file'),
     exportFile: inv('widget:export-file'),
     storeList: inv('widget:store-list'),

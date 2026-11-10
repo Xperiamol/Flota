@@ -23,6 +23,8 @@ const STORAGE_KEY = 'desktop_widgets';
 const RESTORE_KEY = 'desktop_widgets_restore';
 const APPEARANCE_KEY = 'desktop_widgets_appearance';
 const APPEARANCE_EVENT = 'widget:desktop-appearance';
+const POINTER_EVENT = 'widget:desktop-pointer';
+const POINTER_POLL_MS = 40;
 const DEFAULT_APPEARANCE = { opacity: 0.72, blur: true, scale: 0.9, clickThrough: false };
 const clamp = (value, min, max, fallback) => (Number.isFinite(Number(value)) ? Math.min(max, Math.max(min, Number(value))) : fallback);
 /** 系统能不能给透明窗口背后加模糊：macOS 都可以；Windows 要 11 22H2（build 22621）起的亚克力材质 */
@@ -65,6 +67,8 @@ class DesktopWidgets {
     this.logger = logger;
     this.quitting = false;
     this.saveTimers = new Map();
+    this.pointerTimer = null;
+    this.pointerState = new Map(); // 窗口 → 上次告诉页面的光标位置（'out' 表示不在窗口里）
   }
 
   // ---- 存储 ----
@@ -130,11 +134,64 @@ class DesktopWidgets {
     return Boolean(appearance?.clickThrough) && !appearance?.blur;
   }
 
-  /** 按外观设置窗口是否拦鼠标；forward 让页面仍收到鼠标移动，好在移到标题条时恢复可点 */
+  /** 按外观设置窗口是否拦鼠标；穿透时由光标跟踪决定哪些地方能点 */
   _applyMouse(win, appearance = this.getAppearance()) {
     if (!win || win.isDestroyed()) return;
     const through = DesktopWidgets.clickThroughActive(appearance);
     win.setIgnoreMouseEvents?.(through, through ? { forward: true } : undefined);
+    this.pointerState.delete(win);
+    this._syncPointerTracking(appearance);
+  }
+
+  /**
+   * 点击穿透时跟踪光标：窗口不拦鼠标后，系统转发的鼠标移动并不可靠（macOS 上不在最前面的普通窗口、
+   * 台前调度、Windows 工具窗口都可能收不到），所以由主进程定时读取光标位置，光标在哪张卡片上就把
+   * 卡片内的坐标告诉那张卡片；页面判断那里是不是按钮等能点的东西，再决定窗口是否接收点击。
+   */
+  _syncPointerTracking(appearance = this.getAppearance()) {
+    const need = DesktopWidgets.clickThroughActive(appearance) && Boolean(this.screen?.getCursorScreenPoint) && this._desktopWindows().length > 0;
+    if (need && !this.pointerTimer) {
+      this.pointerTimer = setInterval(() => this._pollPointer(), POINTER_POLL_MS);
+      this.pointerTimer.unref?.();
+    } else if (!need && this.pointerTimer) {
+      clearInterval(this.pointerTimer);
+      this.pointerTimer = null;
+      for (const [win] of this.pointerState) {
+        if (!win.isDestroyed()) win.webContents?.send?.(POINTER_EVENT, { inside: false });
+      }
+      this.pointerState.clear();
+    }
+  }
+
+  _desktopWindows() {
+    const keys = new Set(this.list().map((entry) => entry.key));
+    return [...(this.windowManager.widgetWindows?.entries() || [])]
+      .filter(([key, win]) => keys.has(key) && win && !win.isDestroyed())
+      .map(([, win]) => win);
+  }
+
+  _pollPointer() {
+    let point;
+    try { point = this.screen.getCursorScreenPoint(); } catch (_) { return; }
+    for (const win of this._desktopWindows()) {
+      const bounds = win.getBounds();
+      const inside = win.isVisible?.() !== false && point.x >= bounds.x && point.x < bounds.x + bounds.width && point.y >= bounds.y && point.y < bounds.y + bounds.height;
+      const previous = this.pointerState.get(win);
+      if (!inside) {
+        if (previous !== 'out') {
+          this.pointerState.set(win, 'out');
+          // 光标离开：直接恢复穿透（页面可能来不及回复）
+          if (previous !== undefined) win.setIgnoreMouseEvents?.(true, { forward: true });
+          win.webContents?.send?.(POINTER_EVENT, { inside: false });
+        }
+        continue;
+      }
+      const x = point.x - bounds.x;
+      const y = point.y - bounds.y;
+      if (previous && previous !== 'out' && previous.x === x && previous.y === y) continue;
+      this.pointerState.set(win, { x, y });
+      win.webContents?.send?.(POINTER_EVENT, { inside: true, x, y });
+    }
   }
 
   /**
@@ -273,6 +330,8 @@ class DesktopWidgets {
     });
     win.on('closed', () => {
       clearTimeout(this.saveTimers.get(key));
+      this.pointerState.delete(win);
+      setImmediate(() => this._syncPointerTracking());
       if (this.quitting || win.flotaReloading) return;
       // 用户手动关掉 = 从桌面移除；退出应用时关闭的窗口下次还要恢复
       if (closeRequested) {
@@ -403,6 +462,8 @@ class DesktopWidgets {
 
   markQuitting() {
     this.quitting = true;
+    if (this.pointerTimer) clearInterval(this.pointerTimer);
+    this.pointerTimer = null;
   }
 }
 
@@ -410,5 +471,6 @@ DesktopWidgets.DEFAULT_BOUNDS = DEFAULT_BOUNDS;
 DesktopWidgets.HOME_CARD_IDS = HOME_CARD_IDS;
 DesktopWidgets.DEFAULT_APPEARANCE = DEFAULT_APPEARANCE;
 DesktopWidgets.APPEARANCE_EVENT = APPEARANCE_EVENT;
+DesktopWidgets.POINTER_EVENT = POINTER_EVENT;
 DesktopWidgets.blurSupported = blurSupported;
 module.exports = DesktopWidgets;

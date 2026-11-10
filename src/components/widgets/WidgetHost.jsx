@@ -187,6 +187,9 @@ export default function WidgetHost({
         case 'health':
           onEventRef.current?.({ type: 'health', text: message.text, elements: message.elements, height: message.height, overflowX: message.overflowX, issues: message.issues })
           break
+        case 'pointer':
+          onEventRef.current?.({ type: 'pointer', interactive: Boolean(message.interactive) })
+          break
         default:
           break
       }

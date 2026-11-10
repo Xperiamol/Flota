@@ -255,6 +255,23 @@
     requestAnimationFrame(reportSize);
   }
 
+  // 点击穿透的桌面卡片：宿主问「这个位置能不能点」（pointer-probe），回答那里是不是按钮、输入框、
+  // 带手形光标的元素……宿主据此让窗口在按钮上接收点击、在空白处让点击穿过去
+  var INTERACTIVE = 'button, a[href], input, textarea, select, label, summary, [role="button"], [role="checkbox"], [role="switch"], [role="slider"], [role="tab"], [role="menuitem"], [contenteditable=""], [contenteditable="true"], [onclick]';
+  function isInteractive(target) {
+    for (var el = target; el && el.nodeType === 1 && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+      if (el.matches && el.matches(INTERACTIVE)) return true;
+      if (getComputedStyle(el).cursor === 'pointer') return true;
+    }
+    return false;
+  }
+  window.addEventListener('message', function (event) {
+    if (event.source !== window.parent) return;
+    var message = event.data;
+    if (!message || message.__flota !== 1 || message.type !== 'pointer-probe') return;
+    post({ type: 'pointer', interactive: isInteractive(document.elementFromPoint(Number(message.x) || 0, Number(message.y) || 0)) });
+  });
+
   document.addEventListener('DOMContentLoaded', function () {
     if (typeof ResizeObserver === 'function') {
       var observer = new ResizeObserver(scheduleSize);

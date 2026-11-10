@@ -24,7 +24,7 @@ export default function HomeCardWindow({ cardId, desktopKey, layer: initialLayer
   const data = useHomeCardData({ refreshKey })
   const card = HOME_BUILTIN_CARDS.find((item) => item.id === cardId)
   const contentRef = useRef(null)
-  const [appearance, previewAppearance] = useDesktopWidgetAppearance()
+  const [appearance, previewAppearance, , pointerInside] = useDesktopWidgetAppearance()
   // 点击穿透时只有顶部一条能点：加高一点，留一根很淡的拖动条提示位置；按钮和平时一样，鼠标移上来才出现
   const through = clickThroughActive(appearance)
   const strip = through ? 16 : STRIP
@@ -52,6 +52,8 @@ export default function HomeCardWindow({ cardId, desktopKey, layer: initialLayer
   const target = homeCardTarget(cardId)
   const open = target ? () => window.electronAPI.widgets.openInMain(target) : undefined
 
+  // 点击穿透时窗口收不到鼠标进出事件，改用主进程跟踪到的光标位置
+  const showControls = hover || pointerInside
   const iconSx = { p: 0.25, bgcolor: 'action.hover', '&:hover': { bgcolor: 'action.selected' } }
   return (
     <Box
@@ -62,9 +64,9 @@ export default function HomeCardWindow({ cardId, desktopKey, layer: initialLayer
       {/* 外框铺满窗口；「大小」缩放的是里面的内容（CSS zoom 下 height: 100% 仍然铺满） */}
       <Box sx={{ zoom: appearance.scale, height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Box data-desktop-handle sx={{ height: strip, flexShrink: 0, WebkitAppRegion: 'drag', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        {through && <Box sx={{ width: 24, height: 3, borderRadius: 2, bgcolor: 'text.disabled', opacity: hover ? 0.8 : 0.3, transition: 'opacity 150ms ease' }} />}
+        {through && <Box sx={{ width: 24, height: 3, borderRadius: 2, bgcolor: 'text.disabled', opacity: showControls ? 0.8 : 0.3, transition: 'opacity 150ms ease' }} />}
       </Box>
-      <Box data-desktop-handle sx={{ position: 'absolute', top: through ? 2 : 4, right: 6, zIndex: 2, display: 'flex', gap: 0.5, WebkitAppRegion: 'no-drag', opacity: hover ? 1 : 0, pointerEvents: hover ? 'auto' : 'none', transition: 'opacity 150ms ease' }}>
+      <Box data-desktop-handle sx={{ position: 'absolute', top: through ? 2 : 4, right: 6, zIndex: 2, display: 'flex', gap: 0.5, WebkitAppRegion: 'no-drag', opacity: showControls ? 1 : 0, pointerEvents: showControls ? 'auto' : 'none', transition: 'opacity 150ms ease' }}>
         <DesktopDragHandle sx={{ bgcolor: 'action.hover' }} />
         <DesktopAppearanceButton appearance={appearance} onPreview={previewAppearance} sx={iconSx} />
         <Tooltip title={pinned ? '取消置顶（贴在桌面）' : '置顶'}>

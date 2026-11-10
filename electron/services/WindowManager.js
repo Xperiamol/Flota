@@ -1166,6 +1166,9 @@ class WindowManager extends EventEmitter {
       // 桌面卡片不占任务栏；Windows 上「贴在桌面」用工具窗口，也不出现在 Alt+Tab 里
       skipTaskbar: options.desktop === true,
       ...(options.desktop && options.layer !== 'top' && process.platform === 'win32' ? { type: 'toolbar' } : {}),
+      // macOS：别的应用在前台时，点卡片的第一下也要生效（默认第一下只用来激活 Flota，按钮、勾选框都点不上；
+      // 点击穿透时更明显——在空白处点一下就切到了后面的应用，回来点按钮又被吞掉）
+      acceptFirstMouse: true,
       // Windows 上完全透明的窗口拖边框调大小不可靠，这种情况下只靠「缩放」设置调整大小
       resizable: !(process.platform === 'win32' && glass.transparent),
       maximizable: false,

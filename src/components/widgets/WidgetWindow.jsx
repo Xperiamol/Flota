@@ -39,7 +39,7 @@ export default function WidgetWindow({ instanceId, size = 'medium', desktop = fa
 
   const compact = size === 'compact'
   const contentRef = useRef(null)
-  const [appearance, previewAppearance] = useDesktopWidgetAppearance(desktop)
+  const [appearance, previewAppearance, reportFramePointer, pointerInside] = useDesktopWidgetAppearance(desktop)
   const headerHeight = compact ? 26 : 32
   // 卡片模式下窗口高度跟着组件内容走；展开模式由用户自己调整
   const zoom = desktop ? appearance.scale : 1
@@ -55,7 +55,7 @@ export default function WidgetWindow({ instanceId, size = 'medium', desktop = fa
   // 卡片模式下控制按钮只在悬停时出现，平时和首页卡片一样干净
   // 桌面卡片上的按钮（拖动、外观、展开、置顶、移除）只在鼠标移上来时出现，平时只留标题；
   // 点击穿透时鼠标移动仍会转给页面，移上来一样能看到按钮
-  const controlsVisible = !desktop || hover
+  const controlsVisible = !desktop || hover || pointerInside
 
   return (
     <Box
@@ -90,7 +90,8 @@ export default function WidgetWindow({ instanceId, size = 'medium', desktop = fa
       {/* 卡片模式窗口高度跟着内容走，正常不需要滚动；缩放取整差一两像素时也不要冒出滚动条 */}
       <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', ...(compact ? { px: 0.25, scrollbarWidth: 'none', '&::-webkit-scrollbar': { width: 0, height: 0 } } : {}) }}>
         <Box ref={contentRef} sx={compact ? { pb: 0.5 } : undefined}>
-          <WidgetHost instanceId={instanceId} size={compact ? 'compact' : 'medium'} surface={compact ? 'dashboard' : 'window'} minHeight={48} maxHeight={compact ? 860 : 4000} translucent={desktop && appearance.opacity < 1} />
+          <WidgetHost instanceId={instanceId} size={compact ? 'compact' : 'medium'} surface={compact ? 'dashboard' : 'window'} minHeight={48} maxHeight={compact ? 860 : 4000} translucent={desktop && appearance.opacity < 1}
+            onEvent={(event) => { if (event.type === 'pointer') reportFramePointer(event.interactive) }} />
         </Box>
       </Box>
       </Box>
