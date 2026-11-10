@@ -1588,17 +1588,50 @@ registerClipperHandlers({
   getSettingDAO: () => services.clipSettingDAO
 })
 
-// 「连接手机」：把同步账号（可选带上 AI 设置）做成二维码，手机版扫码后自动填好
+// 「连接手机」：同步不会带过去的设置（同步账号 / AI / 语音转文字）做成二维码，手机版扫码后确认即可填好
+const connectPhoneParts = async () => {
+  const sync = require('./services/sync/V3SyncService').getInstance().getConnectionSecrets()
+  const unwrap = (result) => (result?.success === false ? null : (result?.data || result || null))
+  const ai = unwrap(await services.aiService?.getConfig?.())
+  const stt = unwrap(await services.sttService?.getConfig?.())
+  return { sync, ai, stt }
+}
+// 每一项能不能带：界面据此显示勾选框是否可用、不可用的原因
+ipcMain.handle('sync:connect-options', async () => {
+  try {
+    const { sync, ai, stt } = await connectPhoneParts()
+    const { aiUnavailableReason, sttUnavailableReason } = require('./services/sync/connectPayload')
+    return { success: true, data: {
+      sync: sync ? { available: true, username: sync.username, baseUrl: sync.baseUrl } : { available: false, reason: '还没登录同步账号' },
+      ai: aiUnavailableReason(ai) ? { available: false, reason: aiUnavailableReason(ai) } : { available: true, label: [({ openai: 'OpenAI', deepseek: 'DeepSeek', qwen: '通义千问', custom: '自定义接口' })[ai.provider] || ai.provider, ai.model].filter(Boolean).join(' · ') },
+      stt: sttUnavailableReason(stt) ? { available: false, reason: sttUnavailableReason(stt) } : { available: true, label: '火山引擎' },
+    } }
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
 ipcMain.handle('sync:connect-qr', async (_event, options = {}) => {
   try {
-    const secrets = require('./services/sync/V3SyncService').getInstance().getConnectionSecrets()
-    if (!secrets) return { success: false, error: '请先登录同步账号并保存密码' }
-    const ai = options.includeAI ? await services.aiService?.getConfig?.() : null
-    const aiConfig = ai?.success === false ? null : (ai?.data || ai)
+    const parts = await connectPhoneParts()
     const { buildConnectLink } = require('./services/sync/connectPayload')
-    const result = buildConnectLink(secrets, aiConfig, (url) => services.aiService?.normalizeApiUrl?.(url) || url)
+    const result = buildConnectLink({
+      sync: options.sync !== false ? parts.sync : null,
+      ai: options.ai ? parts.ai : null,
+      stt: options.stt ? parts.stt : null,
+    }, (url) => services.aiService?.normalizeApiUrl?.(url) || url)
+    if (!result.link) return { success: true, data: { qr: null, included: [], skipped: result.skipped } }
     const qr = await require('qrcode').toDataURL(result.link, { errorCorrectionLevel: 'M', margin: 1, width: 440 })
-    return { success: true, data: { qr, aiIncluded: result.aiIncluded, aiSkippedReason: result.aiSkippedReason, username: secrets.username } }
+    return { success: true, data: { qr, included: result.included, skipped: result.skipped } }
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
+// 手机版下载二维码（不含任何个人信息）
+ipcMain.handle('sync:phone-download-qr', async () => {
+  try {
+    const { PHONE_DOWNLOAD_URL } = require('./services/sync/connectPayload')
+    const qr = await require('qrcode').toDataURL(PHONE_DOWNLOAD_URL, { errorCorrectionLevel: 'M', margin: 1, width: 360 })
+    return { success: true, data: { qr, url: PHONE_DOWNLOAD_URL } }
   } catch (error) {
     return { success: false, error: error?.message || String(error) }
   }

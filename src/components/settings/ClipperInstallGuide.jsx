@@ -64,11 +64,11 @@ export default function ClipperInstallGuide({ status, onPairClick }) {
     const result = await window.electronAPI.clipper.openBrowserExtensions(browser.id);
     if (!result?.success) return notifyError(result?.error || `打不开 ${browser.name}`);
     setOpened(browser);
-    notifySuccess(`已在 ${browser.name} 中打开扩展页，扩展文件夹的位置也复制好了`);
+    notifySuccess(`已在 ${browser.name} 打开扩展页，文件夹路径已复制`);
   };
   const copyPath = async () => {
     const result = await window.electronAPI.clipper.copyExtensionPath();
-    if (result?.success) notifySuccess('扩展文件夹的位置已复制');
+    if (result?.success) notifySuccess('路径已复制');
   };
   const copyUrl = (url) => navigator.clipboard?.writeText(url).then(() => notifySuccess(`已复制 ${url}，粘贴到浏览器地址栏打开`));
   const openFolder = async () => {
@@ -92,14 +92,11 @@ export default function ClipperInstallGuide({ status, onPairClick }) {
       </ButtonBase>
       {!open && (
         <Typography variant="caption" sx={{ ...sectionDescriptionSx, mt: 0.5 }}>
-          {paired ? '扩展已经连上 Flota。要在别的浏览器里也装一个，展开指引照着做即可。' : '在 Chrome、Edge 等浏览器里一键剪藏网页到 Flota。展开查看安装步骤。'}
+          {paired ? '已连接。要在其他浏览器安装，展开查看步骤。' : '支持 Chrome、Edge 等浏览器，展开查看安装步骤。'}
         </Typography>
       )}
 
       <Collapse in={open} unmountOnExit>
-        <Typography variant="caption" sx={{ ...sectionDescriptionSx, mt: 0.5 }}>
-          支持 Chrome、Edge、Brave、Vivaldi、Arc 等浏览器。扩展还没上架应用商店，浏览器只允许用「开发者模式」手动加载，照下面四步做一次就好，以后 Flota 升级会自动带上新版扩展。
-        </Typography>
 
         {stores.length > 0 && (
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
@@ -136,14 +133,13 @@ export default function ClipperInstallGuide({ status, onPairClick }) {
             <Hint>Chrome 在扩展页右上角，Edge 在左侧栏底部。打开后页面上会多出「加载已解压的扩展程序」按钮。</Hint>
           </Step>
 
-          <Step index={3} title="把 Flota 扩展文件夹拖进扩展页">
+          <Step index={3} title="拖入扩展文件夹">
             <Hint>
-              点「在{fileManager}中显示」，把 <b>flota-clipper</b> 文件夹整个拖到扩展页上即可。
-              也可以点「加载已解压的扩展程序」去选它：位置已经复制好了，{isMac ? '在选择框里按 ⌘⇧G 粘贴' : '在选择框的地址栏里粘贴'}后回车。
+              点「在{fileManager}中显示」，把 <b>flota-clipper</b> 文件夹拖到扩展页即可；或点「加载已解压的扩展程序」，{isMac ? '按 ⌘⇧G 粘贴路径' : '在地址栏粘贴路径'}选择。
             </Hint>
             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 0.75 }}>
               <Button size="small" startIcon={<FolderOpenRounded />} onClick={openFolder}>在{fileManager}中显示</Button>
-              <Button size="small" startIcon={<ContentCopy />} onClick={copyPath}>复制位置</Button>
+              <Button size="small" startIcon={<ContentCopy />} onClick={copyPath}>复制路径</Button>
             </Box>
             <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 0.5, wordBreak: 'break-all' }}>{status.extensionDir}</Typography>
           </Step>
@@ -151,8 +147,8 @@ export default function ClipperInstallGuide({ status, onPairClick }) {
           <Step index={4} done={paired} title={paired ? '已连接 Flota' : '和 Flota 配对'}>
             <Hint>
               {paired
-                ? '以后在网页上点工具栏里的 Flota 图标（或右键菜单）就能剪藏。'
-                : <>点浏览器工具栏上的 Flota 图标（找不到的话先点拼图图标把它固定出来），输入下面「配对」里生成的配对码。</>}
+                ? '在网页上点工具栏的 Flota 图标或右键即可剪藏。'
+                : '点浏览器工具栏的 Flota 图标（在拼图图标里可以固定出来），输入配对码。'}
             </Hint>
             {!paired && onPairClick && (
               <Button size="small" variant="contained" sx={{ mt: 0.75 }} disabled={!status.running} onClick={onPairClick}>生成配对码</Button>

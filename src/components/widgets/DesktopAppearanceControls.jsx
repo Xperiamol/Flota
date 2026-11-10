@@ -50,7 +50,7 @@ export function DesktopAppearanceFields({ appearance, onPreview, dense = false }
         <Box sx={{ minWidth: 0 }}>
           <Typography sx={label}>点击穿透</Typography>
           <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>
-            {local.blur ? '关闭背景模糊后可用' : '点卡片等于点后面的桌面，只有顶部一条还能拖动和设置'}
+            {local.blur ? '关闭背景模糊后可用' : '鼠标点击会穿过卡片，顶部仍可拖动和设置'}
           </Typography>
         </Box>
         <Switch size="small" checked={Boolean(local.clickThrough) && !local.blur} disabled={Boolean(local.blur)}
@@ -66,7 +66,7 @@ export default function DesktopAppearanceButton({ appearance, onPreview, iconSiz
   const [anchor, setAnchor] = useState(null)
   return (
     <>
-      <Tooltip title="外观（所有桌面卡片）">
+      <Tooltip title="外观">
         <IconButton size="small" sx={sx} onClick={(event) => setAnchor(event.currentTarget)}>
           <Tune sx={{ fontSize: iconSize }} />
         </IconButton>

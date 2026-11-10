@@ -6,6 +6,7 @@ export const SETTINGS_GROUPS = [
   { label: '通用', items: [
     { id: 0, name: '通用', icon: 'general' },
     { id: 1, name: '外观', icon: 'appearance' },
+    { id: 16, name: '桌面卡片', icon: 'desktopCards' },
     { id: 2, name: '快捷键', icon: 'shortcuts' },
   ] },
   { label: '记录', items: [
@@ -20,6 +21,7 @@ export const SETTINGS_GROUPS = [
     { id: 5, name: '记忆引擎', icon: 'memory' },
   ] },
   { label: '数据', items: [
+    { id: 15, name: '连接手机', icon: 'phone' },
     { id: 6, name: '云同步', icon: 'cloud' },
     { id: 8, name: '数据管理', icon: 'data' },
   ] },

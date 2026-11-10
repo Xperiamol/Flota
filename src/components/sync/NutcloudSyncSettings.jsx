@@ -654,8 +654,8 @@ const ManageView = ({
         </Box>
       </Paper>
 
-      {/* 连接手机：扫码把同步账号带到手机版 */}
-      <ConnectPhoneCard disabled={!hasSavedPassword} />
+      {/* 连接手机：扫码把同步账号带到手机版（单独的设置项） */}
+      <ConnectPhoneCard />
 
       {/* 自动同步 */}
       <Paper

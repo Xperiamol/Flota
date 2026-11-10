@@ -58,7 +58,7 @@ import ProxySettings from './ProxySettings';
 import MCPSettings from './MCPSettings';
 import TrashRetentionSetting from './TrashRetentionSetting';
 import { SettingRow, SettingGroupLabel } from './SettingRow';
-import { DesktopAppearanceFields } from '../widgets/DesktopAppearanceControls';
+import DesktopCardSettings from './DesktopCardSettings';
 import AppUpdateCard from './AppUpdateCard';
 import { usePrefsStore } from '../../store/usePrefsStore';
 import SettingsSearch from './SettingsSearch';
@@ -67,6 +67,7 @@ import { glassSx } from '../../styles/materials';
 import FileTypesSetting from './FileTypesSetting';
 import OpenSourceLicenses from './OpenSourceLicenses';
 import ClipperSettings from './ClipperSettings';
+import ConnectPhoneSettings from '../sync/ConnectPhoneSettings';
 import UsageWaveCard from '../common/UsageWaveCard';
 import ObsidianImportExport from '../ObsidianImportExport/ObsidianImportExport';
 import { SUPPORTED_LANGUAGES, t, initI18n } from '../../utils/i18n';
@@ -537,45 +538,6 @@ function buildTopUsageSegments(categories = [], limit = 4) {
             label: item.label,
             value: formatUsageBytes(item.sizeBytes),
         }));
-}
-
-// 固定在桌面的组件：启动时是否自动恢复（设置只保存在本机）
-function DesktopWidgetsRestoreRow() {
-    const [enabled, setEnabled] = useState(true)
-    const [count, setCount] = useState(0)
-    useEffect(() => {
-        window.electronAPI?.widgets?.getDesktopRestore?.().then((res) => { if (res?.success) setEnabled(Boolean(res.data)) })
-        window.electronAPI?.widgets?.listDesktop?.().then((res) => { if (res?.success) setCount(res.data.length) })
-    }, [])
-    const change = async (value) => {
-        setEnabled(value)
-        const res = await window.electronAPI?.widgets?.setDesktopRestore?.(value)
-        if (res?.success) setEnabled(Boolean(res.data))
-    }
-    return (
-        <SettingRow
-            primary="启动时恢复桌面卡片"
-            secondary={count ? `桌面上固定了 ${count} 张卡片，打开 Flota 时放回原来的位置` : '在首页卡片上右键、或组件菜单里选「固定到桌面」；打开 Flota 时自动放回原来的位置'}
-            action={<Switch checked={enabled} onChange={(e) => change(e.target.checked)} inputProps={{ 'aria-label': '启动时恢复桌面卡片' }} />}
-        />
-    )
-}
-
-// 桌面卡片外观：不透明度、背景模糊、大小（所有桌面卡片共用，仅本机）
-function DesktopWidgetsAppearanceRow() {
-    const [appearance, setAppearance] = useState(null)
-    useEffect(() => {
-        window.electronAPI?.widgets?.getDesktopAppearance?.().then((res) => { if (res?.success) setAppearance(res.data) })
-        return window.electronAPI?.widgets?.onDesktopAppearance?.((next) => next && setAppearance(next))
-    }, [])
-    if (!appearance) return null
-    return (
-        <SettingRow
-            primary="桌面卡片外观"
-            secondary="半透明程度、背后的高斯模糊和卡片大小，所有固定在桌面的卡片一起生效；也可以在卡片右上角的调节按钮里改"
-            action={<Box sx={{ width: 260 }}><DesktopAppearanceFields appearance={appearance} onPreview={setAppearance} /></Box>}
-        />
-    )
 }
 
 const Settings = () => {
@@ -1299,8 +1261,6 @@ const Settings = () => {
                             )}
                         />
 
-                        <DesktopWidgetsRestoreRow />
-                        <DesktopWidgetsAppearanceRow />
 
                         {!isStoreBuild && (
                         <SettingRow
@@ -1950,6 +1910,16 @@ const Settings = () => {
                         enabled={settings.mcpEnabled}
                         onEnabledChange={(value) => handleSettingChange('mcpEnabled', value)}
                     />
+                </TabPanel>
+
+                {/* 桌面卡片 */}
+                <TabPanel value={settingsTabValue} index={16}>
+                    <DesktopCardSettings />
+                </TabPanel>
+
+                {/* 连接手机 */}
+                <TabPanel value={settingsTabValue} index={15}>
+                    <ConnectPhoneSettings />
                 </TabPanel>
 
                 {/* 网页剪藏 */}

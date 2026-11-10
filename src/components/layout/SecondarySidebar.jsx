@@ -41,6 +41,8 @@ import {
   BookmarkBorder,
   FolderOpenRounded,
   TaskAltRounded,
+  PhoneAndroidRounded,
+  WidgetsRounded,
 } from '../common/AppIcons';
 import FlotaAIIcon from '../common/FlotaAIIcon';
 import FilterChip from '../filters/FilterChip';
@@ -674,9 +676,9 @@ const SecondarySidebar = ({ open, overlay = false, width = 304, onTodoSelect, on
       case 'settings': {
         const settingsIcons = {
           general: <SettingsIcon />, appearance: <PaletteIcon />, shortcuts: <KeyboardIcon />,
-          editor: <EditNoteIcon />, files: <FolderOpenRounded />, todo: <TaskAltRounded />, clipper: <BookmarkBorder />,
+          desktopCards: <WidgetsRounded />, editor: <EditNoteIcon />, files: <FolderOpenRounded />, todo: <TaskAltRounded />, clipper: <BookmarkBorder />,
           ai: <FlotaAIIcon sx={{ fontSize: 22 }} />, stt: <STTIcon />, memory: <MemoryIcon />,
-          cloud: <CloudIcon />, data: <ImportIcon />, proxy: <WifiIcon />, mcp: <CodeIcon />, about: <InfoIcon />,
+          phone: <PhoneAndroidRounded />, cloud: <CloudIcon />, data: <ImportIcon />, proxy: <WifiIcon />, mcp: <CodeIcon />, about: <InfoIcon />,
         }
 
         return (
