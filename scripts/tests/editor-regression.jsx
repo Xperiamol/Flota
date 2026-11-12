@@ -63,6 +63,52 @@ const mathSources = () => { const found = []; editor.state.doc.descendants(node 
 const links = () => { const found = []; editor.state.doc.descendants(node => { node.marks.forEach(mark => { if (mark.type.name === 'link') found.push(mark.attrs.href) }) }); return found }
 
 window.runEditorTests = async () => {
+  await test('外部文件：Markdown 相对引用按文档目录打开，失败显示错误', async () => {
+    const oldAPI = window.electronAPI, oldMode = usePrefsStore.getState().externalFileMode
+    const opened = [], browsed = []
+    const base = 'file:///Users/test/Canvas%E8%AF%BE%E7%A8%8B/IE5203/%E8%B5%84%E6%96%99%E7%9B%AE%E5%BD%95.md'
+    const content = [
+      '- [**封面与目录.pdf**](01%20%E8%AE%B2%E4%B9%89/00%20-%20%E5%B0%81%E9%9D%A2.pdf)',
+      '- [参考资料][ref]',
+      '- [附件](attachments/local.pdf)',
+      '- [网站](https://example.com/docs)',
+      '- [危险](javascript:alert%281%29)',
+      '', '[ref]: <../参考资料/a (b)%23.pdf> "参考"'
+    ].join('\n')
+    usePrefsStore.setState({ externalFileMode: 'preview' })
+    window.electronAPI = { ...oldAPI, system: {
+      openPath: async path => { opened.push(path); return { success: false, error: '目标文件不存在' } },
+      openExternal: async url => { browsed.push(url); return { success: true } }
+    }, externalFiles: {
+      read: async () => ({ success: true, data: { format: 'markdown', name: '资料目录.md', fileUrl: base, raw: content, content, writable: true } })
+    } }
+    try {
+      root.render(wrap(<ExternalFileWindow filePath="/Users/test/Canvas课程/IE5203/资料目录.md" />))
+      await waitFor(() => document.querySelector('.markdown-preview-content a[href]'), 'external links')
+      const anchors = [...document.querySelectorAll('.markdown-preview-content a[href]')]
+      equal(anchors.map(a => a.getAttribute('href')), [
+        new URL('01%20%E8%AE%B2%E4%B9%89/00%20-%20%E5%B0%81%E9%9D%A2.pdf', base).href,
+        new URL('../参考资料/a%20(b)%23.pdf', base).href,
+        new URL('attachments/local.pdf', base).href,
+        'https://example.com/docs'
+      ])
+      anchors[0].querySelector('strong').click()
+      anchors[1].click(); anchors[2].click(); anchors[3].click()
+      equal(opened, [
+        '/Users/test/Canvas课程/IE5203/01 讲义/00 - 封面.pdf',
+        '/Users/test/Canvas课程/参考资料/a (b)#.pdf',
+        '/Users/test/Canvas课程/IE5203/attachments/local.pdf'
+      ])
+      equal(browsed, ['https://example.com/docs'])
+      await waitFor(() => document.body.textContent.includes('目标文件不存在'), 'open error')
+      const noteHtml = createMarkdownRenderer().render('[附件](attachments/note.pdf)')
+      assert(noteHtml.includes('href="app://attachments/note.pdf"'), 'note attachment resolution changed')
+    } finally {
+      root.render(wrap(<div />)); await sleep(30)
+      window.electronAPI = oldAPI; usePrefsStore.setState({ externalFileMode: oldMode })
+    }
+  })
+
   await test('外部文件：重复保存等待同一请求，保存期间新输入继续落盘，失败阻止关闭', async () => {
     const oldAPI = window.electronAPI, oldMode = usePrefsStore.getState().externalFileMode
     let release, fail = false, saved = [], revision = 0, closed = 0

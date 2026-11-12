@@ -26,6 +26,7 @@ const MarkdownPreview = ({
   sx,
   onWikiLinkClick,
   onTagClick,
+  baseFileUrl,
   showAudioTranscription = true
 }) => {
   const { showSuccess, showError } = useError()
@@ -47,6 +48,7 @@ const MarkdownPreview = ({
   const md = useMemo(() => {
     return createMarkdownRenderer({
       html: true,
+      baseFileUrl,
       onWikiLinkClick,
       onTagClick,
       pluginOptions: {
@@ -77,7 +79,7 @@ const MarkdownPreview = ({
         }
       }
     })
-  }, [onWikiLinkClick, onTagClick, noteTitleSet])
+  }, [onWikiLinkClick, onTagClick, noteTitleSet, baseFileUrl])
 
   // 渲染 Markdown 内容
   // 性能：长文档（>5000 字符）下用户连续打字会触发频繁全量 render；
@@ -267,7 +269,9 @@ const MarkdownPreview = ({
         }
         if (absHref.startsWith('file://')) {
           e.preventDefault()
-          window.electronAPI?.system?.openPath?.(getLocalPathFromFileUrl(absHref))
+          window.electronAPI?.system?.openPath?.(getLocalPathFromFileUrl(absHref)).then(result => {
+            if (result?.success === false) notifyError(`打开失败：${result.error || '未知原因'}`)
+          }).catch(error => notifyError(`打开失败：${error.message || error}`))
           return
         }
         if (absHref.startsWith('app://')) {

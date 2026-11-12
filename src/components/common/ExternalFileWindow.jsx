@@ -576,7 +576,7 @@ export default function ExternalFileWindow({ filePath }) {
               {previewContent}
             </Box>
           ) : (
-            <MarkdownPreview content={previewContent} showAudioTranscription={false} />
+            <MarkdownPreview content={previewContent} baseFileUrl={file.fileUrl} showAudioTranscription={false} />
           )}
         </Box>
       </Box>

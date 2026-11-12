@@ -202,6 +202,7 @@ export function createMarkdownRenderer(options = {}) {
     onWikiLinkClick,
     onTagClick,
     html = false,
+    baseFileUrl,
     pluginOptions = {}
   } = options
 
@@ -226,6 +227,8 @@ export function createMarkdownRenderer(options = {}) {
 
   md.validateLink = (url) => {
     const normalized = String(url || '').trim()
+    // 外部文档的相对引用以原文件为基准；普通笔记仍只接受应用资源。
+    if (/^file:\/\//i.test(baseFileUrl || '') && normalized && !/^(?:[a-z][a-z0-9+.-]*:|#|\/\/)/i.test(normalized)) return true
     if (isLocalAppAsset(normalized)) return true
     return /^(https?:|mailto:|app:|file:|data:image\/)/i.test(normalized)
   }
@@ -289,7 +292,9 @@ export function createMarkdownRenderer(options = {}) {
     if (hrefIndex >= 0) {
       const href = token.attrs[hrefIndex][1]
       const normalizedHref = String(href || '').replace(/^\/+/, '')
-      if (normalizedHref && !/^[a-zA-Z]+:/.test(normalizedHref) && LOCAL_APP_ASSET_RE.test(normalizedHref)) {
+      if (/^file:\/\//i.test(baseFileUrl || '') && href && !/^(?:[a-z][a-z0-9+.-]*:|#|\/\/)/i.test(href)) {
+        token.attrs[hrefIndex][1] = new URL(href, baseFileUrl).href
+      } else if (normalizedHref && !/^[a-zA-Z]+:/.test(normalizedHref) && LOCAL_APP_ASSET_RE.test(normalizedHref)) {
         token.attrs[hrefIndex][1] = `app://${normalizedHref}`
       }
     }
