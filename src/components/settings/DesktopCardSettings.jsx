@@ -27,7 +27,7 @@ function SliderAction({ value, min, max, step, onChange, onCommit, label }) {
 
 /**
  * 设置 → 桌面卡片：固定在电脑桌面上的卡片（首页卡片和组件）。
- * 启动时是否放回、外观（不透明度、大小、背景模糊、点击穿透）、当前桌面上有哪些卡片。都只在这台电脑生效。
+ * 启动时是否放回、外观（不透明度、大小、玻璃效果、点击穿透）、当前桌面上有哪些卡片。都只在这台电脑生效。
  */
 export default function DesktopCardSettings() {
   const [restore, setRestore] = useState(true)
@@ -103,15 +103,15 @@ export default function DesktopCardSettings() {
                 onChange={(scale) => preview({ scale })} onCommit={(scale) => save({ scale })} />}
             />
             <SettingRow
-              primary="背景模糊"
-              secondary={appearance.blurSupported ? '透过卡片看到的桌面会被模糊' : '需要 macOS 或 Windows 11'}
+              primary="玻璃效果"
+              secondary={appearance.blurSupported ? '支持的 macOS 使用液态玻璃，其他系统使用毛玻璃' : '需要 macOS 或 Windows 11'}
               disabled={!appearance.blurSupported}
               action={<Switch checked={Boolean(appearance.blur)} disabled={!appearance.blurSupported}
-                onChange={(e) => save({ blur: e.target.checked })} inputProps={{ 'aria-label': '背景模糊' }} />}
+                onChange={(e) => save({ blur: e.target.checked })} inputProps={{ 'aria-label': '玻璃效果' }} />}
             />
             <SettingRow
               primary="点击穿透"
-              secondary={appearance.blur ? '关闭背景模糊后可用' : '鼠标点击会穿过卡片，顶部仍可拖动和设置'}
+              secondary={appearance.blur ? '关闭玻璃效果后可用' : '鼠标点击会穿过卡片，顶部仍可拖动和设置'}
               disabled={Boolean(appearance.blur)}
               action={<Switch checked={Boolean(appearance.clickThrough) && !appearance.blur} disabled={Boolean(appearance.blur)}
                 onChange={(e) => save({ clickThrough: e.target.checked })} inputProps={{ 'aria-label': '点击穿透' }} />}

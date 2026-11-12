@@ -83,6 +83,10 @@ const loadObjc = () => {
       // objc_msgSend 按每种调用的真实签名分别声明（arm64 上不能用可变参数调用）
       sendGet: lib.func('objc_msgSend', 'intptr_t', ['intptr_t', 'intptr_t']),
       sendSet: lib.func('objc_msgSend', 'void', ['intptr_t', 'intptr_t', 'uint64_t']),
+      sendIndexedGet: lib.func('objc_msgSend', 'intptr_t', ['intptr_t', 'intptr_t', 'uint64_t']),
+      sendDoubleSet: lib.func('objc_msgSend', 'void', ['intptr_t', 'intptr_t', 'double']),
+      sendIsKind: lib.func('objc_msgSend', 'bool', ['intptr_t', 'intptr_t', 'intptr_t']),
+      getClass: lib.func('intptr_t objc_getClass(const char *name)'),
     };
   } catch (error) {
     console.warn('[nativeDesktopLayer] libobjc 加载失败：', error?.message);
@@ -121,4 +125,35 @@ function setStayOnDesktop(win, enabled) {
   return false;
 }
 
-module.exports = { setStayOnDesktop };
+/** 库只设置 CALayer.cornerRadius；NSGlassEffectView 自身也必须使用相同的轮廓。 */
+function setDesktopGlassCorners(win, radius) {
+  if (process.platform !== 'darwin' || !win || win.isDestroyed() || !Number.isFinite(radius) || radius < 0) return false;
+  const api = loadObjc();
+  if (!api) return false;
+  try {
+    const root = handleOf(win);
+    const glassClass = api.getClass('NSGlassEffectView');
+    if (!glassClass) return false;
+    const children = api.sendGet(root, api.sel('subviews'));
+    const count = Number(api.sendGet(children, api.sel('count')));
+    let found = false;
+    for (let i = 0; i < count; i++) {
+      const child = api.sendIndexedGet(children, api.sel('objectAtIndex:'), i);
+      if (!api.sendIsKind(child, api.sel('isKindOfClass:'), glassClass)) continue;
+      api.sendDoubleSet(child, api.sel('setCornerRadius:'), radius);
+      found = true;
+    }
+    if (!found) return false;
+    // 同时裁剪 WebContents 和玻璃，防止两层抗锯齿轮廓之间露出亮色角块。
+    api.sendSet(root, api.sel('setWantsLayer:'), 1);
+    const layer = api.sendGet(root, api.sel('layer'));
+    api.sendDoubleSet(layer, api.sel('setCornerRadius:'), radius);
+    api.sendSet(layer, api.sel('setMasksToBounds:'), 1);
+    return true;
+  } catch (error) {
+    console.warn('[nativeDesktopLayer] 设置玻璃圆角失败:', error?.message);
+    return false;
+  }
+}
+
+module.exports = { setStayOnDesktop, setDesktopGlassCorners };

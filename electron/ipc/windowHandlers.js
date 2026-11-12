@@ -55,6 +55,16 @@ const registerWindowHandlers = (windowManager) => {
     'window:set-bounds': async (event, bounds) => { const w = getEventWindow(event); if (w) w.setBounds(bounds); return true },
     'window:get-size': async (event) => { const w = getEventWindow(event); return w ? w.getSize() : null },
     'window:set-size': async (event, width, height) => { const w = getEventWindow(event); if (w) w.setSize(width, height); return true },
+    // 自动适配卡片内容时只改高度。页面的 CSS 像素受页面缩放影响，不能直接当作窗口的 DIP 尺寸。
+    'window:fit-height': async (event, cssHeight) => {
+      const w = getEventWindow(event)
+      if (!w || !Number.isFinite(cssHeight) || cssHeight <= 0) return false
+      const zoom = w.webContents.getZoomFactor()
+      const [width, height] = w.getSize()
+      const wanted = Math.round(cssHeight * zoom)
+      if (Math.abs(wanted - height) > 3 * zoom) w.setSize(width, wanted)
+      return true
+    },
     'window:get-position': async (event) => { const w = getEventWindow(event); return w ? w.getPosition() : null },
     'window:set-position': async (event, x, y) => { const w = getEventWindow(event); if (w) w.setPosition(x, y); return true },
     'window:create-note-window': async (event, noteId, options) => windowManager.createNoteWindow(noteId, options),

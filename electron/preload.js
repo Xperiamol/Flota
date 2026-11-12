@@ -253,6 +253,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setBounds: inv('window:set-bounds'),
     getSize: inv('window:get-size'),
     setSize: inv('window:set-size'),
+    fitHeight: inv('window:fit-height'),
     getPosition: inv('window:get-position'),
     setPosition: inv('window:set-position'),
     getAllWindows: inv('window:get-all'),

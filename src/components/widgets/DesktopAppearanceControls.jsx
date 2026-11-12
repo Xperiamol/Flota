@@ -39,18 +39,18 @@ export function DesktopAppearanceFields({ appearance, onPreview, dense = false }
       </Box>
       <Box sx={{ ...row, justifyContent: 'space-between' }}>
         <Box sx={{ minWidth: 0 }}>
-          <Typography sx={label}>背景模糊</Typography>
+          <Typography sx={label}>玻璃效果</Typography>
           {!local.blurSupported && <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>需要 macOS 或 Windows 11</Typography>}
         </Box>
         <Switch size="small" checked={Boolean(local.blur)} disabled={!local.blurSupported}
           onChange={(event) => { preview({ blur: event.target.checked }); save({ blur: event.target.checked }) }}
-          inputProps={{ 'aria-label': '桌面卡片背景模糊' }} />
+          inputProps={{ 'aria-label': '桌面卡片玻璃效果' }} />
       </Box>
       <Box sx={{ ...row, justifyContent: 'space-between' }}>
         <Box sx={{ minWidth: 0 }}>
           <Typography sx={label}>点击穿透</Typography>
           <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>
-            {local.blur ? '关闭背景模糊后可用' : '鼠标点击会穿过卡片，顶部仍可拖动和设置'}
+            {local.blur ? '关闭玻璃效果后可用' : '鼠标点击会穿过卡片，顶部仍可拖动和设置'}
           </Typography>
         </Box>
         <Switch size="small" checked={Boolean(local.clickThrough) && !local.blur} disabled={Boolean(local.blur)}
@@ -77,7 +77,13 @@ export default function DesktopAppearanceButton({ appearance, onPreview, iconSiz
         onClose={() => setAnchor(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-        slotProps={{ paper: { sx: { p: 1.25, width: 230, WebkitAppRegion: 'no-drag' } } }}
+        slotProps={{ paper: { sx: {
+          p: 1.25, width: 230, WebkitAppRegion: 'no-drag',
+          // 桌面卡片已有原生玻璃；设置面板用实色，避免底下的文字透上来形成重影。
+          bgcolor: 'background.paper', backgroundImage: 'none',
+          backdropFilter: 'none', WebkitBackdropFilter: 'none',
+          color: 'text.primary',
+        } } }}
       >
         <DesktopAppearanceFields appearance={appearance} onPreview={onPreview} dense />
       </Popover>

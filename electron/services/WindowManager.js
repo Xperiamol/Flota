@@ -1,5 +1,6 @@
 const { saveWindow } = require('../utils/saveWindows');
-const { app, BrowserWindow, screen, shell } = require('electron');
+const { app, BrowserWindow, screen, shell, nativeTheme } = require('electron');
+const { createDesktopWidgetGlass } = require('./widgets/desktopWidgetGlass');
 const { EventEmitter } = require('events');
 const path = require('path');
 const http = require('http');
@@ -9,6 +10,7 @@ class WindowManager extends EventEmitter {
   constructor(settingsService) {
     super();
     this.settingsService = settingsService;
+    this.desktopGlass = createDesktopWidgetGlass({ nativeTheme });
     this.contentProtectionEnabled = false;
     this.windows = new Map(); // 存储所有窗口
     this.noteWindows = new Map(); // 存储笔记ID到窗口ID的映射
@@ -1119,18 +1121,7 @@ class WindowManager extends EventEmitter {
    */
   /** 桌面卡片窗口的透明与模糊参数 */
   desktopWidgetGlassOptions(appearance = {}) {
-    const blur = appearance?.blur === true && appearance?.blurSupported !== false;
-    if (process.platform === 'darwin') {
-      // visualEffectState: active —— 桌面卡片几乎总是不在焦点，默认的 followWindow 会让毛玻璃失焦后变成灰底
-      return blur
-        ? { transparent: true, backgroundColor: '#00000000', vibrancy: 'under-window', visualEffectState: 'active', roundedCorners: true }
-        : { transparent: true, backgroundColor: '#00000000', roundedCorners: true };
-    }
-    if (process.platform === 'win32' && blur) {
-      // 亚克力材质要求窗口不是 transparent，背景色全透明才能透出材质
-      return { backgroundColor: '#00000000', backgroundMaterial: 'acrylic', roundedCorners: true };
-    }
-    return { transparent: true, backgroundColor: '#00000000' };
+    return this.desktopGlass.options(appearance);
   }
 
   async createWidgetWindow(instanceId, options = {}) {
@@ -1181,6 +1172,11 @@ class WindowManager extends EventEmitter {
         webSecurity: true,
       },
     });
+    if (options.desktop) {
+      widgetWindow.webContents.once('dom-ready', () => {
+        if (!widgetWindow.isDestroyed()) this.desktopGlass.attach(widgetWindow, options.appearance);
+      });
+    }
     widgetWindow.webContents.setWindowOpenHandler(({ url }) => {
       if (url.startsWith('http://') || url.startsWith('https://')) shell.openExternal(url);
       return { action: 'deny' };

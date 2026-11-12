@@ -19,6 +19,10 @@ jobs:
             platform: win
           - os: macos-latest
             platform: mac
+            arch: arm64
+          - os: macos-15-intel
+            platform: mac
+            arch: x64
           - os: ubuntu-latest
             platform: linux
 
@@ -46,7 +50,7 @@ jobs:
 
       # macOS：用 logo.png 生成 logo.icns（electron-builder 需要）
       - name: Generate logo.icns (macOS only)
-        if: matrix.os == 'macos-latest'
+        if: matrix.platform == 'mac'
         run: |
           mkdir -p build
           mkdir -p /tmp/logo.iconset
@@ -59,7 +63,7 @@ jobs:
           sips -z 256 256 logo.png --out /tmp/logo.iconset/icon_256x256.png
           sips -z 512 512 logo.png --out /tmp/logo.iconset/icon_256x256@2x.png
           sips -z 512 512 logo.png --out /tmp/logo.iconset/icon_512x512.png
-          cp logo.png /tmp/logo.iconset/icon_512x512@2x.png
+          sips -z 1024 1024 logo.png --out /tmp/logo.iconset/icon_512x512@2x.png
           iconutil -c icns /tmp/logo.iconset -o build/logo.icns
 
       # 为 Electron 重新编译 better-sqlite3（使用 electron-rebuild）
@@ -102,8 +106,27 @@ jobs:
           if-no-files-found: ignore
 
       - name: Package (macOS)
-        if: matrix.os == 'macos-latest'
-        run: npx electron-builder --mac --publish never
+        if: matrix.platform == 'mac'
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          node -e "const fs=require('fs'); const config=require('./package.json').build; if(process.arch!==process.env.TARGET_ARCH) throw new Error('Runner architecture mismatch'); config.mac.target=[{target:'dmg',arch:[process.env.TARGET_ARCH]}]; fs.writeFileSync('build/mac-release.json',JSON.stringify(config));"
+          npx electron-builder --mac --config build/mac-release.json --publish never
+
+      - name: Verify macOS architecture
+        if: matrix.platform == 'mac'
+        shell: bash
+        run: |
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            APP="dist-electron/mac-arm64/Flota.app"
+            EXPECTED="arm64"
+            mv dist-electron/latest-mac.yml dist-electron/latest-mac-arm64.yml
+          else
+            APP="dist-electron/mac/Flota.app"
+            EXPECTED="x86_64"
+          fi
+          file "$APP/Contents/MacOS/Flota" | grep -q "$EXPECTED"
+          file "$APP/Contents/Resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node" | grep -q "$EXPECTED"
 
       - name: Package (Linux)
         if: matrix.os == 'ubuntu-latest'
@@ -113,7 +136,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Flota-${{ matrix.platform }}-${{ github.ref_name }}
+          name: Flota-${{ matrix.os }}-${{ github.ref_name }}
           path: dist-electron/
           if-no-files-found: warn
 

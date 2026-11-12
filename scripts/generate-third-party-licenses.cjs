@@ -50,10 +50,10 @@ const resolvePackageDir = (name, fromDir) => {
   }
 }
 
-// 运行时依赖闭包：从项目的 dependencies 出发，沿各包的 dependencies / optionalDependencies 解析
+// 运行时依赖闭包：包括已安装的可选原生依赖。
 const runtimePackageDirs = () => {
   const rootPkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
-  const queue = Object.keys(rootPkg.dependencies || {}).filter((name) => !BUILD_ONLY.has(name)).map((name) => [name, root])
+  const queue = Object.keys({ ...rootPkg.dependencies, ...rootPkg.optionalDependencies }).filter((name) => !BUILD_ONLY.has(name)).map((name) => [name, root])
   const dirs = new Set()
   while (queue.length) {
     const [name, from] = queue.shift()

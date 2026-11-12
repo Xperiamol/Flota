@@ -128,11 +128,14 @@ export const desktopCardSurfaceSx = (appearance) => (theme) => {
   const dark = theme.palette.mode === 'dark'
   const base = dark ? '24, 28, 36' : '252, 252, 253'
   const opacity = Math.min(1, Math.max(0.05, Number(appearance?.opacity) || 0.72))
-  const alpha = appearance?.blur ? opacity : Math.min(1, opacity + 0.08)
+  // 系统材质已经提供模糊和明暗对比，只叠一层轻底色，避免把玻璃盖成灰白色实心卡片。
+  // 滑块仍可调到完全不透明；关闭玻璃后继续使用普通半透明底色。
+  const alpha = appearance?.blur ? Math.pow(opacity, 2) : Math.min(1, opacity + 0.08)
   return {
     bgcolor: `rgba(${base}, ${alpha.toFixed(3)})`,
     borderRadius: '14px',
-    border: `1px solid ${dark ? 'rgba(255,255,255,0.10)' : 'rgba(15,23,42,0.08)'}`,
+    // 原生玻璃已有高光轮廓；额外的 CSS 描边和内阴影会形成双边、亮色角块。
+    border: appearance?.blur ? 'none' : `1px solid ${dark ? 'rgba(255,255,255,0.10)' : 'rgba(15,23,42,0.08)'}`,
     boxSizing: 'border-box',
     // 不透明度很低时给文字加一层很淡的投影，压在花哨的墙纸上也看得清
     ...(opacity < 0.45 ? { textShadow: dark ? '0 1px 2px rgba(0,0,0,0.45)' : '0 1px 2px rgba(255,255,255,0.6)' } : {}),

@@ -1,6 +1,6 @@
 {
   "name": "flota",
-  "version": "4.6.4",
+  "version": "4.6.5",
   "description": "Flota - 简洁高效的记录应用",
   "main": "electron/main.js",
   "homepage": "./",
@@ -380,6 +380,7 @@
     "asarUnpack": [
       "node_modules/better-sqlite3/**/*",
       "node_modules/koffi/**/*",
+      "node_modules/electron-liquid-glass/prebuilds/**/*",
       "models/**/*"
     ],
     "extraResources": [
@@ -504,5 +505,8 @@
       ],
       "category": "Office"
     }
+  },
+  "optionalDependencies": {
+    "electron-liquid-glass": "1.1.1"
   }
 }

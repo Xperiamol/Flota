@@ -23,7 +23,8 @@ export default function useFitWindowHeight(contentRef, chromeHeight, enabled = t
         const contentHeight = element.getBoundingClientRect().height || element.scrollHeight * zoom
         // 向上取整，再留 1px 余量：缩放后的小数高度四舍五入会比内容矮一点，导致出现滚动条
         const wanted = Math.ceil(Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT * Math.min(1, zoom), chromeHeight * zoom + contentHeight + 1)))
-        if (Math.abs(wanted - window.innerHeight) > 3) window.electronAPI?.window?.setSize?.(window.innerWidth, wanted)
+        // 由主进程保留当前窗口宽度并转换页面缩放单位，避免把 innerWidth 写回后反复放大 / 缩小。
+        window.electronAPI?.window?.fitHeight?.(wanted)
       }, 30)
     }
     const observer = new ResizeObserver(fit)

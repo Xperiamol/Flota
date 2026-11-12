@@ -20,6 +20,12 @@ test('生成的许可清单覆盖生产依赖，许可证均可随应用分发',
   assert.ok(packages.length > 100)
 
   const find = (name) => packages.find((item) => item.name === name)
+  const rootPackage = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
+  for (const name of Object.keys(rootPackage.optionalDependencies || {})) {
+    if (fs.existsSync(path.join(root, 'node_modules', name, 'package.json'))) {
+      assert.ok(find(name)?.text.length > 100, `${name} 可选运行时依赖缺少许可声明`)
+    }
+  }
   for (const [name, license] of [['pdfjs-dist', 'Apache-2.0'], ['xlsx', 'Apache-2.0'], ['mammoth', 'BSD-2-Clause'], ['cfb', 'Apache-2.0'], ['word-extractor', 'MIT'], ['turndown', 'MIT']]) {
     const item = find(name)
     assert.ok(item, `${name} 不在清单中`)
