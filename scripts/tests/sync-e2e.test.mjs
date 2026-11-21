@@ -314,6 +314,41 @@ test('提交中断且云端未变：重启后恢复并收敛', () => {
   } finally { cloud.cleanup() }
 })
 
+test('待办已上传但索引提交中断且索引丢失：恢复索引并继续同步', () => {
+  const cloud = createCloud()
+  try {
+    const title = '已删除的画布'
+    const scene = scrollX => JSON.stringify({ elements: [], fileMap: {}, appState: { scrollX, scrollY: 0 } })
+    cloud.run('A', [{ op: 'create', title, content: scene(0), noteType: 'whiteboard' }, { op: 'sync' }])
+    cloud.sync('B')
+    cloud.run('A', [{ op: 'edit', title, content: scene(42) }, { op: 'delete', title }, { op: 'sync' }])
+    const [failure] = cloud.run('A', [{ op: 'createTodo', content: '中断前已上传' },
+      { op: 'failUpload', path: 'manifest.json' }, { op: 'trySync' }, { op: 'dropManifest' }])
+    assert.match(failure.error, /模拟上传中断/)
+    assert.equal(cloud.run('A', [{ op: 'readRemoteNote', title }])[0].content, scene(0))
+    const result = cloud.sync('A')
+    assert.deepEqual(result.calls.filter(call => /^upload|^delete/.test(call.method)).map(call => call.path),
+      ['/Flota/manifest.json'])
+    cloud.sync('B')
+    assert.equal(cloud.note('B', title).is_deleted, 1)
+    assert.deepEqual(cloud.run('B', [{ op: 'dumpTodos' }])[0].todos,
+      [{ content: '中断前已上传', is_deleted: 0 }])
+  } finally { cloud.cleanup() }
+})
+
+test('索引丢失且云端正文与待提交快照不同：停止恢复并保留正文', () => {
+  const cloud = createCloud()
+  try {
+    startWithSharedNote(cloud, '共享笔记', '原正文')
+    cloud.run('A', [{ op: 'createTodo', content: '中断前已上传' },
+      { op: 'failUpload', path: 'manifest.json' }, { op: 'trySync' },
+      { op: 'corruptRemote', title: '共享笔记', content: '其他设备的新正文' }, { op: 'dropManifest' }])
+    const [result, remote] = cloud.run('A', [{ op: 'trySync' }, { op: 'readRemoteNote', title: '共享笔记' }])
+    assert.match(result.error, /与待提交快照不同/)
+    assert.equal(remote.content, '其他设备的新正文')
+  } finally { cloud.cleanup() }
+})
+
 test('损坏的画布 JSON 不覆盖本地，修复云端文件后可以重试', () => {
   const cloud = createCloud()
   const initial = JSON.stringify({ elements: [], fileMap: {} })

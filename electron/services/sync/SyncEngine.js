@@ -290,7 +290,7 @@ class SyncEngine extends EventEmitter {
    * 初始化检查
    *
    * 逻辑：
-   * - 如果云端 manifest 不存在，触发初始化程序
+   * - 如果云端 manifest 不存在，优先恢复待提交索引，否则触发初始化程序
    * - 如果云端 manifest 存在，返回 true 继续同步
    *
    * @returns {Promise<boolean|{uploaded: number}>} true=已初始化，{uploaded}=刚完成初始化
@@ -303,11 +303,59 @@ class SyncEngine extends EventEmitter {
       return true;
     } catch (error) {
       if (error.response?.status === 404 || /^(?:WebDAV 资源不存在|文件不存在:)/.test(error.message || '')) {
+        const pending = this.loadLocalManifest();
+        if (pending?._pendingCommit) {
+          this._bootstrapManifest = await this.restoreMissingManifest(pending);
+          return true;
+        }
         return this.initializeCleanSlate();
       }
       // 网络、权限、损坏 JSON 不能被误当成空云端，避免触发初始化写入。
       throw error;
     }
+  }
+
+  /** 云端索引丢失时，只恢复与云端现有正文匹配的待提交索引。 */
+  async restoreMissingManifest(pending) {
+    const { _pendingCommit, _pendingBase, _pendingLocalCache, _pendingPreviousCache, ...manifest } = pending;
+    if (!this.isValidManifest(_pendingBase) || !this.isValidManifest(_pendingLocalCache)) {
+      throw new Error('云端索引缺失且本机恢复快照不完整，请恢复云端索引');
+    }
+
+    const { global_todos: todosEntry, global_settings: settingsEntry, ...notes } = manifest.files;
+    const mismatch = file => new Error(`云端索引缺失且 ${file} 与待提交快照不同，已保留数据，请恢复云端索引`);
+    const remoteFiles = await this.client.list(this.config.rootPath + 'notes/', 1);
+    const remoteNotes = new Set(remoteFiles.filter(file => !file.isDirectory)
+      .map(file => decodeURIComponent(file.href.split('/').pop() || ''))
+      .filter(name => /\.(md|wb)$/i.test(name)));
+
+    for (const [id, entry] of Object.entries(notes)) {
+      const ext = entry.ext || '.md';
+      const name = id + ext;
+      if (!remoteNotes.delete(name)) {
+        if (entry.d === 1) continue;
+        throw mismatch(name);
+      }
+      const content = await this.client.downloadText(this.getRemotePath(id, ext));
+      if (this.matchesNoteHash(content, entry)) continue;
+      // 已同步的删除标记会保留旧正文。只允许这类画布的滚动位置不同。
+      if (entry.d === 1 && ext === '.wb' && isDeepStrictEqual(entry, _pendingBase.files[id]) &&
+          this.matchesDeletedWhiteboardIgnoringScroll(id, content, entry)) continue;
+      throw mismatch(name);
+    }
+    if (remoteNotes.size) throw mismatch('云端笔记列表');
+
+    const todos = validateTodos(await this.client.downloadJson(this.getRemotePath('global_todos')));
+    if (this.storage.calculateTodosHash(todos) !== todosEntry?.h) throw mismatch('todos.json');
+    const settings = validateSettings(await this.client.downloadJson(this.getRemotePath('global_settings')));
+    const values = settings.__schema === 'kv-ts' ? settings.values : settings;
+    if (this.storage.calculateSettingsHash(values) !== settingsEntry?.h) throw mismatch('settings.json');
+
+    const manifestPath = this.config.rootPath + 'manifest.json';
+    if (await this.client.exists(manifestPath)) throw new Error('云端索引已恢复，请重新同步');
+    await this.client.uploadJson(manifestPath, manifest);
+    this.saveLocalManifest(_pendingLocalCache);
+    return manifest;
   }
 
   /**
@@ -582,6 +630,36 @@ class SyncEngine extends EventEmitter {
     const ext = note.note_type === 'whiteboard' ? '.wb' : '.md';
     const remotePath = this.config.rootPath + 'notes/' + note.id + ext;
     await this.client.uploadText(remotePath, note.content);
+  }
+
+  matchesNoteHash(content, entry) {
+    if (entry.ext !== '.wb') {
+      return this.storage.calculateNoteHash({ content, note_type: 'markdown' }) === entry.h;
+    }
+    const title = entry.meta?.title || '';
+    if (this.storage.calculateNoteHash({ content, title, note_type: 'whiteboard' }) === entry.h) return true;
+    // 兼容旧 Android 的 Gson HTML 安全转义。
+    const legacy = JSON.stringify({ content, title }).replace(/[<>&='\u2028\u2029]/g,
+      char => '\\u' + char.charCodeAt(0).toString(16).padStart(4, '0'));
+    return crypto.createHash('md5').update(legacy, 'utf8').digest('hex') === entry.h;
+  }
+
+  matchesDeletedWhiteboardIgnoringScroll(id, remoteContent, entry) {
+    const local = this.storage.getNoteById(id);
+    if (!local?.is_deleted || local.note_type !== 'whiteboard' || !this.matchesNoteHash(local.content, entry)) return false;
+
+    const withoutScroll = content => {
+      const scene = JSON.parse(content);
+      if (!Array.isArray(scene?.elements) || !scene.appState || typeof scene.appState !== 'object' || Array.isArray(scene.appState)) return null;
+      const { scrollX, scrollY, ...appState } = scene.appState;
+      return { ...scene, appState };
+    };
+    try {
+      const remote = withoutScroll(remoteContent);
+      return remote !== null && isDeepStrictEqual(remote, withoutScroll(local.content));
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -1415,15 +1493,7 @@ class SyncEngine extends EventEmitter {
       if (!remote) return false;
       if (!/^[a-f0-9]{32}$/i.test(remote.h || '')) return true;
       if (task.fileId === 'global_todos' || task.fileId === 'global_settings') return true;
-      if (remote.ext === '.wb') {
-        const title = remote.meta?.title || '';
-        if (this.storage.calculateNoteHash({ content, title, note_type: 'whiteboard' }) === remote.h) return true;
-        // 旧 Android 使用 Gson 的 HTML 安全转义；只接受可验证的旧编码，不跳过完整性检查。
-        const legacy = JSON.stringify({ content, title }).replace(/[<>&='\u2028\u2029]/g,
-          char => '\\u' + char.charCodeAt(0).toString(16).padStart(4, '0'));
-        return crypto.createHash('md5').update(legacy, 'utf8').digest('hex') === remote.h;
-      }
-      return this.storage.calculateNoteHash({ content, note_type: 'markdown' }) === remote.h;
+      return this.matchesNoteHash(content, remote);
     });
 
     if (task.fileId === 'global_todos' || task.fileId === 'global_settings') {

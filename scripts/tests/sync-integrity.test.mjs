@@ -81,6 +81,22 @@ test('索引第 11 项损坏也必须拒绝', () => {
   assert.equal(engine().isValidManifest(manifest), false)
 })
 
+test('已删除画布恢复索引时只接受滚动坐标差异', () => {
+  const e = engine()
+  const { calculateJsonHash } = require('../../electron/services/sync/utils/hash')
+  const scene = { elements: [], fileMap: {}, appState: { scrollX: 0, scrollY: 0, viewBackgroundColor: '#fff' } }
+  const local = { content: JSON.stringify(scene), note_type: 'whiteboard', is_deleted: 1 }
+  const entry = { ext: '.wb', h: calculateJsonHash({ title: '', content: local.content }) }
+  e.storage = { getNoteById: () => local, calculateNoteHash: ({ title, content }) => calculateJsonHash({ title, content }) }
+  const remote = { ...scene, appState: { ...scene.appState, scrollX: 25, scrollY: -10 } }
+  assert.equal(e.matchesDeletedWhiteboardIgnoringScroll('note', JSON.stringify(remote), entry), true)
+  remote.appState.viewBackgroundColor = '#000'
+  assert.equal(e.matchesDeletedWhiteboardIgnoringScroll('note', JSON.stringify(remote), entry), false)
+  assert.equal(e.matchesDeletedWhiteboardIgnoringScroll('note', '{', entry), false)
+  local.is_deleted = 0
+  assert.equal(e.matchesDeletedWhiteboardIgnoringScroll('note', local.content, entry), false)
+})
+
 test('中断恢复先验证正文；已提交的索引不重复上传，正文变化时放弃重放', async () => {
   const hash = require('../../electron/services/sync/utils/hash')
   const base = { version: 3, files: { note: { h: hash.calculateMarkdownHash('old'), t: 1, d: 0, ext: '.md' } } }
@@ -219,6 +235,7 @@ test('启动检查的网络或权限错误不触发云端初始化', async () =>
 test('真实客户端的 404 文案触发初始化且正常快照只读一次', async () => {
   const e = engine()
   e.config.rootPath = '/Flota/'
+  e.loadLocalManifest = () => null
   e.client = { downloadJson: async () => { throw new Error('WebDAV 资源不存在 /Flota/manifest.json') } }
   e.initializeCleanSlate = async () => 'initialized'
   assert.equal(await e.bootstrap(), 'initialized')
