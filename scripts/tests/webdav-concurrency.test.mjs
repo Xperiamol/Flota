@@ -157,3 +157,85 @@ test('返回强 ETag 但忽略 If-Match 的服务器（实测 flota.cn 的 dufs�
     assert.equal(entries.get('/manifest.json').body, 'C')
   } finally { await new Promise(resolve => server.close(resolve)) }
 })
+
+// 模拟 flota.cn 实测行为：PUT 传到一半断开时服务端把目标文件删掉；不处理条件请求；支持 MOVE。
+function createMoveServer({ moveSupported = true } = {}) {
+  const entries = new Map([['/manifest.json', 'base']])
+  const log = []
+  const server = http.createServer(async (req, res) => {
+    log.push(`${req.method} ${req.url}`)
+    if (req.method === 'GET') {
+      if (!entries.has(req.url)) { res.writeHead(404); res.end(); return }
+      res.end(entries.get(req.url)); return
+    }
+    if (req.method === 'DELETE') { entries.delete(req.url); res.writeHead(204); res.end(); return }
+    if (req.method === 'MOVE') {
+      if (!moveSupported) { res.writeHead(405); res.end(); return }
+      const dest = new URL(req.headers.destination).pathname
+      entries.set(dest, entries.get(req.url)); entries.delete(req.url)
+      res.writeHead(204); res.end(); return
+    }
+    const declared = Number(req.headers['content-length'])
+    let body = ''
+    req.on('data', chunk => { body += chunk })
+    await new Promise(resolve => { req.on('end', resolve); req.on('close', resolve); req.on('aborted', resolve) })
+    if (Buffer.byteLength(body) < declared) { entries.delete(req.url); return } // 中断：目标被服务端删除
+    entries.set(req.url, body); res.writeHead(201); res.end()
+  })
+  return { server, entries, log }
+}
+
+test('索引通过临时文件 + MOVE 发布：上传中断不丢目标文件，发布前仍拦截并发修改', async () => {
+  const { server, entries, log } = createMoveServer()
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const create = () => { const c = new Client({ baseUrl: `http://127.0.0.1:${server.address().port}`, retryAttempts: 1, timeout: 300 }); c.beginSync(); return c }
+  try {
+    const a = create()
+    await a.downloadText('/manifest.json')
+    await a.publishJson('/manifest.json', { v: 1 })
+    assert.equal(entries.get('/manifest.json'), '{"v":1}')
+    assert.ok(log.some(line => line.startsWith('MOVE /manifest.json.')), log.join('\n'))
+    assert.equal([...entries.keys()].filter(k => k.endsWith('.tmp')).length, 0)
+    await a.publishJson('/manifest.json', { v: 2 }) // 本机刚写过的版本可以继续覆盖
+    assert.equal(entries.get('/manifest.json'), '{"v":2}')
+
+    // 另一台设备在读后、发布前改了索引 → 拒绝，目标保持对方版本，临时文件被清理
+    const b = create(); await b.downloadText('/manifest.json')
+    await a.publishJson('/manifest.json', { v: 3 })
+    await assert.rejects(b.publishJson('/manifest.json', { v: 'B' }), /发生变化|其他设备修改/)
+    assert.equal(entries.get('/manifest.json'), '{"v":3}')
+    assert.equal([...entries.keys()].filter(k => k.endsWith('.tmp')).length, 0)
+
+    // 上传中断（请求体被截断）：以前目标直接消失，现在目标仍是完整的上一版
+    const c = create(); await c.downloadText('/manifest.json')
+    const big = { pad: 'x'.repeat(200000) }
+    const originalRequest = c.request.bind(c)
+    c.request = async (options) => {
+      if (options.method === 'PUT') {
+        const req = http.request({ host: '127.0.0.1', port: server.address().port, method: 'PUT', path: new URL(options.url).pathname,
+          headers: { 'Content-Length': String(Buffer.byteLength(options.data)) } })
+        req.on('error', () => {})
+        req.write(options.data.slice(0, 10)); await new Promise(r => setTimeout(r, 50)); req.destroy()
+        await new Promise(r => setTimeout(r, 50))
+        throw Object.assign(new Error('timeout'), { code: 'ECONNABORTED' })
+      }
+      return originalRequest(options)
+    }
+    await assert.rejects(c.publishJson('/manifest.json', big))
+    assert.equal(entries.get('/manifest.json'), '{"v":3}')
+  } finally { await new Promise(resolve => server.close(resolve)) }
+})
+
+test('不支持 MOVE 的服务器自动回退为直接写入，且只探测一次', async () => {
+  const { server, entries, log } = createMoveServer({ moveSupported: false })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const c = new Client({ baseUrl: `http://127.0.0.1:${server.address().port}`, retryAttempts: 1 }); c.beginSync()
+    await c.downloadText('/manifest.json')
+    await c.publishJson('/manifest.json', { v: 1 })
+    await c.publishJson('/manifest.json', { v: 2 })
+    assert.equal(entries.get('/manifest.json'), '{"v":2}')
+    assert.equal(log.filter(line => line.startsWith('MOVE')).length, 1)
+    assert.equal([...entries.keys()].filter(k => k.endsWith('.tmp')).length, 0)
+  } finally { await new Promise(resolve => server.close(resolve)) }
+})

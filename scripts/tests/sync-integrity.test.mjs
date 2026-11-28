@@ -48,7 +48,7 @@ test('索引修复只接受已同步且逐字相同的正文，提交前云端�
   e.saveLocalManifest = value => { saved = value }
   e.config.rootPath = '/Flota/'
   let uploads = 0
-  e.client.uploadJson = async (_, manifest) => { uploads++; assert.equal(manifest.files.note.h, entry.h) }
+  e.client.publishJson = async (_, manifest) => { uploads++; assert.equal(manifest.files.note.h, entry.h) }
   await e.commit({ files: { note: entry } }, { files: { note: remote } }, [task], { successfulTaskKeys: ['note:download'] })
   assert.equal(saved.files.note.h, entry.h)
   assert.equal(uploads, 1)
@@ -110,7 +110,7 @@ test('恢复缺失索引：已发布的墓碑不校验正文，新墓碑接受�
       downloadText: async p => { const id = p.split('/').pop().replace('.md', ''); if (!(id in files)) throw new Error('WebDAV 资源不存在'); return files[id] },
       downloadJson: async p => p.endsWith('todos.json') ? [] : {},
       exists: async () => false,
-      uploadJson: async (p, data) => { uploads.push(p); return data },
+      publishJson: async (p, data) => { uploads.push(p); return data },
     }
     const pending = { ...recovery, _pendingCommit: true, _pendingBase: base, _pendingLocalCache: recovery, _pendingPreviousCache: base }
     const manifest = await e.restoreMissingManifest(pending)
@@ -147,7 +147,7 @@ test('中断恢复先验证正文；已提交的索引不重复上传，正文�
         if (scenario === 'network failure') throw new Error('offline')
         return scenario === 'changed body' ? 'another device body' : 'new'
       },
-      uploadJson: async () => { uploads++ },
+      publishJson: async () => { uploads++ },
     }
     if (scenario === 'network failure') {
       await assert.rejects(e.scanAndDiff(), /offline/)
@@ -278,7 +278,7 @@ test('真实客户端的 404 文案触发初始化且正常快照只读一次', 
 test('待办合并下载失败不得上传本地列表', async () => {
   const e = engine()
   let uploaded = false
-  e.client = { downloadJson: async () => { throw new Error('offline') }, uploadJson: async () => { uploaded = true } }
+  e.client = { downloadJson: async () => { throw new Error('offline') }, publishJson: async () => { uploaded = true } }
   e.storage = { getAllTodos: async () => ({}) }
   await assert.rejects(e.executeMergeTodos({ remotePath: 'todos.json' }), /offline/)
   assert.equal(uploaded, false)
@@ -326,7 +326,7 @@ test('待办合并索引使用实际上传快照，不读取上传后的新编�
   e.config.rootPath = '/Flota/'
   e.loadLocalManifest = () => remote
   e.saveLocalManifest = () => {}
-  e.client = { uploadJson: async (_, value) => { manifest = value } }
+  e.client = { publishJson: async (_, value) => { manifest = value } }
   e.storage = {
     getAllTodos: async () => { throw new Error('不能用实时数据库代替上传快照') },
     parseTimestamp: value => value,

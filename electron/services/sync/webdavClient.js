@@ -55,6 +55,8 @@ class WebDAVClient {
     this.password = config.password;
     this.timeout = config.timeout || 30000;
     this.retryAttempts = config.retryAttempts || 3;
+    // 服务端是否支持 MOVE：未知时先尝试，失败一次后本进程内改用直接 PUT。
+    this._moveSupported = config.moveSupported ?? null;
 
     // 节流参数按服务商区分：坚果云有 600 次 / 30 分钟的硬限制；自建或其他 WebDAV 没有，
     // 沿用同一套节流只会让首次全量同步白白变慢。429 退避对所有服务都生效。
@@ -192,7 +194,7 @@ class WebDAVClient {
               username: this.username,
               password: this.password,
             },
-            timeout: this.timeout,
+            timeout: this.timeoutFor(options.data),
             maxRedirects: 5,
           });
 
@@ -235,6 +237,17 @@ class WebDAVClient {
 
       throw this.normalizeError(lastError);
     });
+  }
+
+  /**
+   * 按请求体大小放宽超时：基础超时只够小请求，索引、待办这类百 KB 文件在慢上行
+   * （实测不到 15KB/s）上会被固定 30s 切掉。按 5KB/s 的下限估算，最多 5 分钟。
+   * @private
+   */
+  timeoutFor(data) {
+    const bytes = Buffer.isBuffer(data) ? data.length : typeof data === 'string' ? Buffer.byteLength(data) : 0;
+    if (!bytes) return this.timeout;
+    return Math.min(Math.max(this.timeout, this.timeout + Math.ceil(bytes / 5120) * 1000), 300000);
   }
 
   /**
@@ -509,14 +522,74 @@ class WebDAVClient {
   }
 
   /**
-   * 上传 JSON 文件
+   * 上传 JSON 文件（紧凑格式：索引这类文件缩程後小三分之一，上传快、也更难超时）
    * @param {string} remotePath - 远程路径
    * @param {Object} data - JSON 数据
    * @returns {Promise<void>}
    */
   async uploadJson(remotePath, data) {
-    const content = JSON.stringify(data, null, 2);
+    const content = JSON.stringify(data);
     await this.uploadText(remotePath, content, 'application/json; charset=utf-8');
+  }
+
+  /**
+   * 原子发布：先上传到临时文件，再 MOVE 覆盖目标。
+   *
+   * 有的服务端（实测 flota.cn）在 PUT 传到一半断开时会把目标文件直接删掉，
+   * 索引这类单点文件一旦丢失，所有设备都要走恢复流程。改成写临时文件 + MOVE 后，
+   * 中断只会留下临时文件，目标文件要么是旧版本要么是完整的新版本。
+   * MOVE 前仍然做本轮的“目标未被别人改过”校验；服务端不支持 MOVE 时回退到直接写入。
+   * 临时文件名含进程随机位，多台设备同时发布不会互相踩。
+   * @param {string} remotePath
+   * @param {Object} data
+   */
+  async publishJson(remotePath, data) {
+    if (this._moveSupported === false) return this.uploadJson(remotePath, data);
+    const content = JSON.stringify(data);
+    const tmpPath = `${remotePath}.${Math.random().toString(36).slice(2, 10)}.tmp`;
+    await this.request({
+      method: 'PUT',
+      url: this.getFullPath(tmpPath),
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      data: content,
+    });
+    try {
+      // 和 uploadText 一样的并发校验：目标必须还是本轮读到或本机写入的版本。
+      await this.verifyUnchangedBeforeOverwrite(remotePath);
+      let response;
+      try {
+        response = await this.request({
+          method: 'MOVE',
+          url: this.getFullPath(tmpPath),
+          headers: { Destination: this.getFullPath(remotePath), Overwrite: 'T' },
+        });
+      } catch (error) {
+        if (this._moveSupported === null && this.isMoveUnsupported(error)) {
+          this._moveSupported = false;
+          await this.delete(tmpPath).catch(() => {});
+          await this.uploadText(remotePath, content, 'application/json; charset=utf-8');
+          return;
+        }
+        throw error;
+      }
+      this._moveSupported = true;
+      if (this._writeVersions) {
+        const etag = response.headers?.etag;
+        this._writeVersions.set(remotePath, etag && !etag.startsWith('W/') ? etag : '');
+        this._writtenBodies.set(remotePath, content);
+        this._readBodies.delete(remotePath);
+      }
+    } catch (error) {
+      await this.delete(tmpPath).catch(() => {});
+      throw error;
+    }
+  }
+
+  /** MOVE 未实现（405/501/403 且非权限问题）才回退；网络错误、412 之类照常抛出。 */
+  isMoveUnsupported(error) {
+    const status = error?.status || error?.response?.status;
+    if (status === 405 || status === 501 || status === 400) return true;
+    return /^WebDAV 不支持该操作|\((?:501|400)\)/.test(error?.message || '');
   }
 
   /**

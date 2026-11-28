@@ -360,7 +360,7 @@ class SyncEngine extends EventEmitter {
 
     const manifestPath = this.config.rootPath + 'manifest.json';
     if (await this.client.exists(manifestPath)) throw new Error('云端索引已恢复，请重新同步');
-    await this.client.uploadJson(manifestPath, manifest);
+    await this.client.publishJson(manifestPath, manifest);
     this.saveLocalManifest(_pendingLocalCache);
     return manifest;
   }
@@ -516,13 +516,13 @@ class SyncEngine extends EventEmitter {
     const todosArray = Object.values(localTodos).map(({ db_id, ...todo }) => todo);
     if (enabledCategories.includes('todos') && todosArray.length > 0) {
       await this.syncTodoAssets(todosArray, true);
-      await this.client.uploadJson(this.config.rootPath + 'todos.json', todosArray);
+      await this.client.publishJson(this.config.rootPath + 'todos.json', todosArray);
       this.log('[Init] todos 上传完成');
     }
     if (enabledCategories.includes('settings') && Object.keys(localSettings).length > 0) {
       // 上传 kv-ts 新格式：携带每个 key 的 updated_at（来自本地 settings.updated_at）
       const bundle = await this.storage.getAllSettingsWithTimestamps();
-      await this.client.uploadJson(this.config.rootPath + 'settings.json', {
+      await this.client.publishJson(this.config.rootPath + 'settings.json', {
         __schema: 'kv-ts',
         values: bundle.values,
         timestamps: bundle.timestamps,
@@ -567,7 +567,7 @@ class SyncEngine extends EventEmitter {
       }
     }
 
-    await this.client.uploadJson(this.config.rootPath + 'manifest.json', manifest);
+    await this.client.publishJson(this.config.rootPath + 'manifest.json', manifest);
     uploadCount += 1;
     this.saveLocalManifest(manifest);
     this.log('[Init] 初始 manifest 上传完成');
@@ -835,7 +835,7 @@ class SyncEngine extends EventEmitter {
         }
       }
       if (alreadyCommitted || canReplay) {
-        if (!alreadyCommitted) await this.client.uploadJson(this.config.rootPath + 'manifest.json', recovery);
+        if (!alreadyCommitted) await this.client.publishJson(this.config.rootPath + 'manifest.json', recovery);
         this.saveLocalManifest(_pendingLocalCache);
         remoteManifest = recovery;
       } else {
@@ -1506,7 +1506,7 @@ class SyncEngine extends EventEmitter {
     if (task.fileId === 'global_todos' || task.fileId === 'global_settings') {
       // 上传 JSON
       if (task.fileId === 'global_todos') await this.syncTodoAssets(task.data, true);
-      await this.client.uploadJson(task.remotePath, task.data);
+      await this.client.publishJson(task.remotePath, task.data);
       if (task.fileId === 'global_settings') {
         await this.syncWallpaperAsset(task.data, true);
       }
@@ -2286,7 +2286,7 @@ class SyncEngine extends EventEmitter {
     await this.syncTodoAssets(remoteTodos, false);
     await this.syncTodoAssets(mergedArray, true);
     if (this.storage.calculateTodosHash(mergedArray) !== this.storage.calculateTodosHash(remoteTodos)) {
-      await this.client.uploadJson(task.remotePath, mergedArray);
+      await this.client.publishJson(task.remotePath, mergedArray);
       this.log(`[MergeTodos] 上传成功 ${mergedArray.length} 条 todos`);
     }
     task.uploadedTodos = mergedArray;
@@ -2496,7 +2496,7 @@ class SyncEngine extends EventEmitter {
     this.saveLocalManifest(pendingMarker);
 
     try {
-      await this.client.uploadJson(this.config.rootPath + 'manifest.json', newManifest);
+      await this.client.publishJson(this.config.rootPath + 'manifest.json', newManifest);
     } catch (uploadErr) {
       // 上传失败：cached 仍带 _pendingCommit 标记，下次同步会识别并走恢复路径
       this.logError('[Commit] 上传远端 manifest 失败，本地 cached 已标记 _pendingCommit 待恢复', uploadErr);

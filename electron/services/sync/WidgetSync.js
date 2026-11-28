@@ -285,7 +285,7 @@ class WidgetSync {
         }
       }
     }
-    await this.client.uploadJson(`${this.dir}manifest.json`, merged);
+    await this.client.publishJson(`${this.dir}manifest.json`, merged);
     saveObservedCache();
 
     if (stats.changed) notifyRenderer('widget:list-changed', { at: Date.now(), reason: 'sync' });

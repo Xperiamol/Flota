@@ -20,7 +20,7 @@ class FolderDav {
   constructor(root) {
     this.root = root
     this.calls = []
-    for (const name of ['exists', 'createDirectory', 'uploadText', 'uploadBinary', 'downloadText', 'downloadBinary', 'delete', 'list']) {
+    for (const name of ['exists', 'createDirectory', 'uploadText', 'uploadBinary', 'publishJson', 'downloadText', 'downloadBinary', 'delete', 'list']) {
       const method = this[name].bind(this)
       this[name] = async (...args) => {
         this.calls.push({ method: name, path: args[0] })
@@ -37,7 +37,8 @@ class FolderDav {
     fs.mkdirSync(path.dirname(this.file(remotePath)), { recursive: true })
     fs.writeFileSync(this.file(remotePath), content, 'utf8')
   }
-  async uploadJson(remotePath, data) { await this.uploadText(remotePath, JSON.stringify(data, null, 2)) }
+  async uploadJson(remotePath, data) { await this.uploadText(remotePath, JSON.stringify(data)) }
+  async publishJson(remotePath, data) { await this.uploadText(remotePath, JSON.stringify(data)) }
   async uploadBinary(remotePath, buffer) {
     fs.mkdirSync(path.dirname(this.file(remotePath)), { recursive: true })
     fs.writeFileSync(this.file(remotePath), buffer)
