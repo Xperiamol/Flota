@@ -522,7 +522,7 @@ class WebDAVClient {
   }
 
   /**
-   * 上传 JSON 文件（紧凑格式：索引这类文件缩程後小三分之一，上传快、也更难超时）
+   * 上传 JSON 文件（紧凑格式：索引这类文件比缩进格式小三分之一，上传快、也更难超时）
    * @param {string} remotePath - 远程路径
    * @param {Object} data - JSON 数据
    * @returns {Promise<void>}
@@ -577,7 +577,6 @@ class WebDAVClient {
         const etag = response.headers?.etag;
         this._writeVersions.set(remotePath, etag && !etag.startsWith('W/') ? etag : '');
         this._writtenBodies.set(remotePath, content);
-        this._readBodies.delete(remotePath);
       }
     } catch (error) {
       await this.delete(tmpPath).catch(() => {});
@@ -585,7 +584,7 @@ class WebDAVClient {
     }
   }
 
-  /** MOVE 未实现（405/501/403 且非权限问题）才回退；网络错误、412 之类照常抛出。 */
+  /** MOVE 未实现（405/501，或服务端不认 Destination 的 400）才回退；网络错误、403、412 之类照常抛出。 */
   isMoveUnsupported(error) {
     const status = error?.status || error?.response?.status;
     if (status === 405 || status === 501 || status === 400) return true;
