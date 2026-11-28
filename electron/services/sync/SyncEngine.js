@@ -336,11 +336,18 @@ class SyncEngine extends EventEmitter {
         if (entry.d === 1) continue;
         throw mismatch(name);
       }
+      const baseEntry = _pendingBase.files[id];
+      if (entry.d === 1) {
+        // 删除只发布墓碑、不上传正文，墓碑的 h 是本机删除前的本地内容，云端正文可能一直对不上。
+        // 云端基线里已经是同一条墓碑：本次提交没改它，正文无需校验（本地可能已被回收站清理）。
+        if (isDeepStrictEqual(entry, baseEntry)) continue;
+        // 本次新产生的墓碑：云端正文应仍是基线版本（或恰好与本地一致）。
+        const content = await this.client.downloadText(this.getRemotePath(id, ext));
+        if (this.matchesNoteHash(content, entry) || (baseEntry && this.matchesNoteHash(content, baseEntry))) continue;
+        throw mismatch(name);
+      }
       const content = await this.client.downloadText(this.getRemotePath(id, ext));
       if (this.matchesNoteHash(content, entry)) continue;
-      // 已同步的删除标记会保留旧正文。只允许这类画布的滚动位置不同。
-      if (entry.d === 1 && ext === '.wb' && isDeepStrictEqual(entry, _pendingBase.files[id]) &&
-          this.matchesDeletedWhiteboardIgnoringScroll(id, content, entry)) continue;
       throw mismatch(name);
     }
     if (remoteNotes.size) throw mismatch('云端笔记列表');
@@ -421,21 +428,39 @@ class SyncEngine extends EventEmitter {
     // 3. 获取本地数据（根据启用的类别过滤）
     const enabledCategories = this.config.syncCategories || [];
     const localNotes = enabledCategories.includes('notes') ? await this.storage.getAllNotes(false) : {}; // 不包含已删除
-    const localTodos = enabledCategories.includes('todos') ? await this.storage.getAllTodos(false) : {};
-    const localSettings = enabledCategories.includes('settings') ? await this.storage.getAllSettings() : {};
+    let localTodos = enabledCategories.includes('todos') ? await this.storage.getAllTodos(true) : {};
+    let localSettings = enabledCategories.includes('settings') ? await this.storage.getAllSettings() : {};
 
-    // 缺失索引不代表旧数据可以覆盖。无法证明一致时停止初始化，保留双方快照。
-    if (todosExisted) {
+    // 缺失索引不代表旧数据可以覆盖。待办和设置都带逐条时间戳，按正常同步的 LWW 规则合并；
+    // 以前要求云端与本地深度相等——顺序、墓碑、默认字段稍有不同就永远停在这里。
+    if (todosExisted && enabledCategories.includes('todos')) {
       const remoteTodos = validateTodos(await this.client.downloadJson(todosRemotePath));
-      if (remoteTodos.length && !isDeepStrictEqual(remoteTodos, Object.values(localTodos))) {
-        throw new Error('云端索引缺失且已有待办与本地不同，已保留数据，请恢复云端索引');
+      if (remoteTodos.length) {
+        const merged = this.mergeTodoLists(Object.values(localTodos), remoteTodos);
+        const remoteWinners = remoteTodos.filter(todo => merged.byId.get(todo.id) === todo);
+        if (remoteWinners.length) {
+          await this.syncTodoAssets(remoteWinners, false);
+          this.storage.applyTodos(remoteWinners);
+          this.log(`[Init] 云端待办合并到本地: ${remoteWinners.length} 条`);
+        }
+        localTodos = await this.storage.getAllTodos(true);
       }
     }
-    if (settingsExisted) {
+    if (settingsExisted && enabledCategories.includes('settings')) {
       const payload = validateSettings(await this.client.downloadJson(settingsRemotePath));
       const values = payload.__schema === 'kv-ts' ? payload.values : payload;
-      if (Object.keys(values).length && !isDeepStrictEqual(values, localSettings)) {
-        throw new Error('云端索引缺失且已有设置与本地不同，已保留数据，请恢复云端索引');
+      if (Object.keys(values).length) {
+        if (payload.__schema !== 'kv-ts') {
+          // 旧格式没有时间戳，无法仲裁：只有完全一致才继续
+          if (!isDeepStrictEqual(values, localSettings)) {
+            throw new Error('云端索引缺失且已有设置与本地不同，已保留数据，请恢复云端索引');
+          }
+        } else {
+          const stat = await this.storage.mergeSettingsByKey(values, payload.timestamps || {});
+          this.log(`[Init] 云端设置逐 key 合并: 更新=${stat.updated}, 跳过=${stat.skipped}`);
+          localSettings = await this.storage.getAllSettings();
+          await this.syncWallpaperAsset(localSettings, false).catch(() => {});
+        }
       }
     }
 
@@ -488,7 +513,7 @@ class SyncEngine extends EventEmitter {
     }
 
     // 6. 上传 todos 和 settings（如果有数据且类别已启用，覆盖空文件）
-    const todosArray = Object.values(localTodos);
+    const todosArray = Object.values(localTodos).map(({ db_id, ...todo }) => todo);
     if (enabledCategories.includes('todos') && todosArray.length > 0) {
       await this.syncTodoAssets(todosArray, true);
       await this.client.uploadJson(this.config.rootPath + 'todos.json', todosArray);
@@ -642,24 +667,6 @@ class SyncEngine extends EventEmitter {
     const legacy = JSON.stringify({ content, title }).replace(/[<>&='\u2028\u2029]/g,
       char => '\\u' + char.charCodeAt(0).toString(16).padStart(4, '0'));
     return crypto.createHash('md5').update(legacy, 'utf8').digest('hex') === entry.h;
-  }
-
-  matchesDeletedWhiteboardIgnoringScroll(id, remoteContent, entry) {
-    const local = this.storage.getNoteById(id);
-    if (!local?.is_deleted || local.note_type !== 'whiteboard' || !this.matchesNoteHash(local.content, entry)) return false;
-
-    const withoutScroll = content => {
-      const scene = JSON.parse(content);
-      if (!Array.isArray(scene?.elements) || !scene.appState || typeof scene.appState !== 'object' || Array.isArray(scene.appState)) return null;
-      const { scrollX, scrollY, ...appState } = scene.appState;
-      return { ...scene, appState };
-    };
-    try {
-      const remote = withoutScroll(remoteContent);
-      return remote !== null && isDeepStrictEqual(remote, withoutScroll(local.content));
-    } catch {
-      return false;
-    }
   }
 
   /**
@@ -2219,6 +2226,33 @@ class SyncEngine extends EventEmitter {
   }
 
   /**
+   * 本地与云端待办逐条按 updated_at LWW 合并（纯内存，不写库）。
+   * 远端胜出的条目保持原对象引用，调用方据此判断哪些要写回本地。
+   * @returns {{ byId: Map<string, object> }}
+   */
+  mergeTodoLists(localTodos, remoteTodos) {
+    const byId = new Map();
+    for (const todo of localTodos) {
+      const { db_id, ...syncData } = todo;
+      void db_id;
+      byId.set(syncData.id, syncData);
+    }
+    for (const remoteTodo of remoteTodos) {
+      const sid = remoteTodo.id || remoteTodo.sync_id;
+      if (!sid) continue;
+      const localOne = byId.get(sid);
+      if (!localOne) {
+        byId.set(sid, remoteTodo);
+        continue;
+      }
+      const lt = this.storage.parseTimestamp(localOne.updated_at) || 0;
+      const rt = this.storage.parseTimestamp(remoteTodo.updated_at) || 0;
+      if (rt > lt) byId.set(sid, remoteTodo);
+    }
+    return { byId };
+  }
+
+  /**
    * 执行 todos 合并（双端冲突专用）
    *
    * 策略：
@@ -2244,26 +2278,7 @@ class SyncEngine extends EventEmitter {
 
     // Step 2: 在内存中按 sync_id 聚合本地 + 远端，逐条按 updated_at LWW 仲裁
     const localTodos = await this.storage.getAllTodos(true);
-    const mergedMap = new Map();
-    // 先放本地
-    for (const [syncId, todo] of Object.entries(localTodos)) {
-      const { db_id, ...syncData } = todo;
-      void db_id;
-      mergedMap.set(syncId, syncData);
-    }
-    // 再用远端覆盖（仅当远端 updated_at > 本地）
-    for (const remoteTodo of remoteTodos) {
-      const sid = remoteTodo.id || remoteTodo.sync_id;
-      if (!sid) continue;
-      const localOne = mergedMap.get(sid);
-      if (!localOne) {
-        mergedMap.set(sid, remoteTodo);
-      } else {
-        const lt = this.storage.parseTimestamp(localOne.updated_at) || 0;
-        const rt = this.storage.parseTimestamp(remoteTodo.updated_at) || 0;
-        if (rt > lt) mergedMap.set(sid, remoteTodo);
-      }
-    }
+    const { byId: mergedMap } = this.mergeTodoLists(Object.values(localTodos), remoteTodos);
     const mergedArray = Array.from(mergedMap.values());
 
     // Step 3: 上传合并结果到远端（先于本地写入，确保失败时本地仍是旧状态）

@@ -336,6 +336,27 @@ test('待办已上传但索引提交中断且索引丢失：恢复索引并继�
   } finally { cloud.cleanup() }
 })
 
+test('已同步的删除墓碑不校验云端旧正文：索引丢失后仍可恢复', () => {
+  const cloud = createCloud()
+  try {
+    const title = '编辑后删除的笔记'
+    cloud.run('A', [{ op: 'create', title, content: 'v1' }, { op: 'sync' }])
+    cloud.sync('B')
+    // 编辑后未同步就删除：墓碑指纹是 v2，云端正文仍是 v1
+    cloud.run('A', [{ op: 'edit', title, content: 'v2' }, { op: 'delete', title }, { op: 'sync' }])
+    const [failure] = cloud.run('A', [{ op: 'createTodo', content: '中断前已上传' },
+      { op: 'failUpload', path: 'manifest.json' }, { op: 'trySync' }, { op: 'dropManifest' }])
+    assert.match(failure.error, /模拟上传中断/)
+    const result = cloud.sync('A')
+    assert.deepEqual(result.calls.filter(call => /^upload|^delete/.test(call.method)).map(call => call.path),
+      ['/Flota/manifest.json'])
+    cloud.sync('B')
+    assert.equal(cloud.note('B', title).is_deleted, 1)
+    assert.deepEqual(cloud.run('B', [{ op: 'dumpTodos' }])[0].todos,
+      [{ content: '中断前已上传', is_deleted: 0 }])
+  } finally { cloud.cleanup() }
+})
+
 test('索引丢失且云端正文与待提交快照不同：停止恢复并保留正文', () => {
   const cloud = createCloud()
   try {
@@ -476,6 +497,21 @@ test('云端索引丢失时不把本地旧正文登记成云端新正文的版�
   } finally { cloud.cleanup() }
 })
 
+
+test('云端索引丢失且待办两端不同：按逐条时间戳合并后重建索引', () => {
+  const cloud = createCloud()
+  try {
+    cloud.run('A', [{ op: 'createTodo', content: 'shared' }, { op: 'sync' }])
+    cloud.sync('B')
+    cloud.run('A', [{ op: 'createTodo', content: 'only-A' }, { op: 'sync' }, { op: 'dropManifest' }])
+    cloud.run('B', [{ op: 'createTodo', content: 'only-B' }, { op: 'sync' }])
+    cloud.sync('A')
+    for (const device of ['A', 'B']) {
+      const [dump] = cloud.run(device, [{ op: 'dumpTodos' }])
+      assert.deepEqual(dump.todos.map(t => t.content), ['only-A', 'only-B', 'shared'], device)
+    }
+  } finally { cloud.cleanup() }
+})
 
 test('两端新增待办合并后均保留，删除依赖墓碑传播', () => {
   const cloud = createCloud()

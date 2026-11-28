@@ -81,20 +81,49 @@ test('索引第 11 项损坏也必须拒绝', () => {
   assert.equal(engine().isValidManifest(manifest), false)
 })
 
-test('已删除画布恢复索引时只接受滚动坐标差异', () => {
-  const e = engine()
-  const { calculateJsonHash } = require('../../electron/services/sync/utils/hash')
-  const scene = { elements: [], fileMap: {}, appState: { scrollX: 0, scrollY: 0, viewBackgroundColor: '#fff' } }
-  const local = { content: JSON.stringify(scene), note_type: 'whiteboard', is_deleted: 1 }
-  const entry = { ext: '.wb', h: calculateJsonHash({ title: '', content: local.content }) }
-  e.storage = { getNoteById: () => local, calculateNoteHash: ({ title, content }) => calculateJsonHash({ title, content }) }
-  const remote = { ...scene, appState: { ...scene.appState, scrollX: 25, scrollY: -10 } }
-  assert.equal(e.matchesDeletedWhiteboardIgnoringScroll('note', JSON.stringify(remote), entry), true)
-  remote.appState.viewBackgroundColor = '#000'
-  assert.equal(e.matchesDeletedWhiteboardIgnoringScroll('note', JSON.stringify(remote), entry), false)
-  assert.equal(e.matchesDeletedWhiteboardIgnoringScroll('note', '{', entry), false)
-  local.is_deleted = 0
-  assert.equal(e.matchesDeletedWhiteboardIgnoringScroll('note', local.content, entry), false)
+test('恢复缺失索引：已发布的墓碑不校验正文，新墓碑接受基线正文，活跃笔记必须逐字匹配', async () => {
+  const hash = require('../../electron/services/sync/utils/hash')
+  const md = content => ({ h: hash.calculateMarkdownHash(content), t: 1, d: 0, ext: '.md' })
+  const bodies = { 'old-tomb': 'stale body never uploaded', 'new-tomb': 'base body', active: 'active body' }
+  const base = { version: 3, files: {
+    'old-tomb': { ...md('local body before delete'), d: 1 },
+    'new-tomb': md('base body'),
+    active: md('active body'),
+    global_todos: { h: hash.calculateTodosHash([]), t: 1, d: 0, ext: '.json' },
+    global_settings: { h: hash.calculateSettingsHash({}), t: 1, d: 0, ext: '.json' },
+  } }
+  const recovery = { version: 3, files: { ...base.files, 'new-tomb': { ...md('local edited then deleted'), d: 1, t: 2 } } }
+  const run = async (mutate = () => {}) => {
+    const e = engine()
+    e.config.rootPath = '/Flota/'
+    e.storage = {
+      calculateNoteHash: note => hash.calculateMarkdownHash(note.content),
+      calculateTodosHash: hash.calculateTodosHash, calculateSettingsHash: hash.calculateSettingsHash,
+    }
+    const uploads = []
+    let saved
+    e.saveLocalManifest = value => { saved = value }
+    const files = { ...bodies }
+    mutate(files)
+    e.client = {
+      list: async () => Object.keys(files).map(id => ({ href: `/Flota/notes/${id}.md`, isDirectory: false })),
+      downloadText: async p => { const id = p.split('/').pop().replace('.md', ''); if (!(id in files)) throw new Error('WebDAV 资源不存在'); return files[id] },
+      downloadJson: async p => p.endsWith('todos.json') ? [] : {},
+      exists: async () => false,
+      uploadJson: async (p, data) => { uploads.push(p); return data },
+    }
+    const pending = { ...recovery, _pendingCommit: true, _pendingBase: base, _pendingLocalCache: recovery, _pendingPreviousCache: base }
+    const manifest = await e.restoreMissingManifest(pending)
+    return { manifest, uploads, saved }
+  }
+  const ok = await run()
+  assert.deepEqual(ok.uploads, ['/Flota/manifest.json'])
+  assert.deepEqual(JSON.parse(JSON.stringify(ok.manifest)), recovery)
+  assert.deepEqual(JSON.parse(JSON.stringify(ok.saved)), recovery)
+  await assert.rejects(run(files => { files.active = 'someone else wrote this' }), /active\.md 与待提交快照不同/)
+  await assert.rejects(run(files => { files['new-tomb'] = 'someone else wrote this' }), /new-tomb\.md 与待提交快照不同/)
+  await assert.rejects(run(files => { delete files.active }), /active\.md 与待提交快照不同/)
+  await assert.rejects(run(files => { files.extra = 'unknown' }), /云端笔记列表/)
 })
 
 test('中断恢复先验证正文；已提交的索引不重复上传，正文变化时放弃重放', async () => {
